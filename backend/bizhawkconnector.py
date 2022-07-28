@@ -2,8 +2,8 @@ import threading
 import socket
 import time
 import json
+import logging
 from classes.Pokemon import Pokemon
-from classes.ServerLog import ServerLog
 from classes.Spieler import Spieler
 from classes.Slot import Slot
 from classes.Game import Game

@@ -3,6 +3,7 @@ import socket
 import time
 import json
 import logging
+logging.basicConfig(format='[%(asctime)s; %(levelname)s] %(message)s', datefmt='%d.%m.%Y-%H:%M:%S', filename='../logs/log.txt', filemode='a', level=logging.DEBUG)
 from classes.Pokemon import Pokemon
 from classes.Spieler import Spieler
 from classes.Slot import Slot
@@ -52,7 +53,7 @@ def accept():
             if __name__ == '__main__':
                 print('accepted new client')
             if DEBUG:
-                ServerLog.WriteDebugMessages("neuer akzeptierter Client: " + str(client))
+                logging.debug("neuer akzeptierter Client: " + str(client))
             connections[client] = threading.Thread(target=interact, args=([client]), daemon=True)
             connections[client].start()
 
@@ -64,12 +65,12 @@ def interact(client):
             lasttime = time.time()
             recieve(client)
             if DEBUG:
-                ServerLog.WriteBizHawkData(f'Antwort nach {time.time() - lasttime}')
-                ServerLog.WriteDebugMessages("Verbindung mit Client erfolgreich: " + str(client))
+                logging.info(f'Antwort nach {time.time() - lasttime}')
+                logging.debug("Verbindung mit Client erfolgreich: " + str(client))
         except KeyError as keyErr:
-            ServerLog.WriteErrorMessages(str(type(keyErr)) + " aufgetreten für Client: " + str(client) + " Code: " + str(keyErr))
+            logging.error(str(type(keyErr)) + " aufgetreten für Client: " + str(client) + " Code: " + str(keyErr))
         except Exception as err:
-            ServerLog.WriteErrorMessages("Verbindung mit Client gelöst: " + str(client)+ "Fehler: " + str(type(err)) + " " + str(err))
+            logging.error("Verbindung mit Client gelöst: " + str(client)+ "Fehler: " + str(type(err)) + " " + str(err))
             connections.pop(client, None)
             teams.pop(client, None)
             interacting = False
@@ -81,7 +82,7 @@ def recieve(client):
     edition = msg[0]
 
     if DEBUG:
-        ServerLog.WriteDebugMessages("Kontrolldaten von Client " + str(client) + " erhalten: " + str(msg))
+        logging.debug("Kontrolldaten von Client " + str(client) + " erhalten: " + str(msg))
 
     if edition < 20:
         if edition == 11:

@@ -24,6 +24,8 @@ Frontend:
 ---
 [ ] mit Kivy auseinandersetzen
 
+[ ] Screen Manager kivy
+
 [ ] Design der Fenster
 *    [ ] Startfenseter
 *    [ ] Settingsfenster

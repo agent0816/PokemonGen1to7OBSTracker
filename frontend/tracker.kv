@@ -1,0 +1,19 @@
+#:kivy 2.1.0
+
+MainView:
+
+<MainView@BoxLayout>:
+    orientation: 'vertical'
+    Button:
+        text: "Tracker Logo"
+        pos_hint: {'center_x': 0.5}
+    BoxLayout:
+        size_hint: 1, 0.5
+        spacing: "20dp"
+        padding: "20dp"
+        Button:
+            text: "Start Server"
+        Button:
+            text: "Einstellungen"
+        Button:
+            text: "Starte Emulator"

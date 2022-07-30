@@ -1,3 +1,7 @@
-import frontend.app as app
+import frontend.app as FEApp
 
-app.TrackerApp().run()
+def main():
+    FEApp.TrackerApp().run()
+
+if __name__ == '__main__':
+    main()

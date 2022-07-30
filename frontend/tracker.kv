@@ -1,19 +1,33 @@
 #:kivy 2.1.0
 
-MainView:
+Screens:
 
-<MainView@BoxLayout>:
-    orientation: 'vertical'
+<Screens@ScreenManager>:
+    current: "MainMenu"
+    MainMenu:
+    SettingsMenu:
+
+<SettingsMenu>:
+    name: "SettingsMenu"
     Button:
-        text: "Tracker Logo"
-        pos_hint: {'center_x': 0.5}
+        text: "Hauptmenü"
+        on_press: root.manager.current = "MainMenu"
+
+<MainMenu>:
+    name: "MainMenu"
     BoxLayout:
-        size_hint: 1, 0.5
-        spacing: "20dp"
-        padding: "20dp"
+        orientation: 'vertical'
         Button:
-            text: "Start Server"
-        Button:
-            text: "Einstellungen"
-        Button:
-            text: "Starte Emulator"
+            text: "Tracker Logo"
+            pos_hint: {'center_x': 0.5}
+        BoxLayout:
+            size_hint: 1, 0.5
+            spacing: "20dp"
+            padding: "20dp"
+            Button:
+                text: "Einstellungen"
+                on_press: root.manager.current = "SettingsMenu"
+            Button:
+                text: "Start Server"
+            Button:
+                text: "Starte Emulator"

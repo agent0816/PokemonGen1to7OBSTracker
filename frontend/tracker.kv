@@ -9,9 +9,26 @@ Screens:
 
 <SettingsMenu>:
     name: "SettingsMenu"
-    Button:
-        text: "Hauptmenü"
-        on_press: root.manager.current = "MainMenu"
+    BoxLayout:
+        orientation: "horizontal"
+        size_hint: 1, 0.25
+        pos_hint: {"top": 0}
+        Button:
+            text: "Sptite Pfade"
+        Button:
+            text: "Bizhawk"
+        Button:
+            text: "OBS"
+        Button:
+            text: "Remote"
+        Button:
+            text: "Spieler"
+        Button:
+            text: "Hauptmenü"
+            on_press: root.manager.current = "MainMenu"
+    GridLayout:
+        pos_hint: {"bottom":0}
+        size_hint: 1, 0.75
 
 <MainMenu>:
     name: "MainMenu"

@@ -7,6 +7,27 @@ Screens:
     MainMenu:
     SettingsMenu:
 
+<MainMenu>:
+    name: "MainMenu"
+    BoxLayout:
+        orientation: 'vertical'
+        Button:
+            text: "Tracker Logo"
+            pos_hint: {'center_x': 0.5}
+        BoxLayout:
+            size_hint: 1, 0.5
+            spacing: "20dp"
+            padding: "20dp"
+            Button:
+                text: "Einstellungen"
+                on_press: root.manager.current = "SettingsMenu"
+            Button:
+                text: "Start Server"
+                on_press: root.launchserver()
+            Button:
+                text: "Starte Emulator"
+                on_press: root.launchbh()
+
 <SettingsMenu>:
     name: "SettingsMenu"
     GridLayout:
@@ -39,28 +60,6 @@ Screens:
                 text: "Hauptmenü"
                 on_press: root.manager.current = "MainMenu"
         PlayerSettings:
-
-<MainMenu>:
-    name: "MainMenu"
-    BoxLayout:
-        orientation: 'vertical'
-        Button:
-            text: "Tracker Logo"
-            pos_hint: {'center_x': 0.5}
-        BoxLayout:
-            size_hint: 1, 0.5
-            spacing: "20dp"
-            padding: "20dp"
-            Button:
-                text: "Einstellungen"
-                on_press: root.manager.current = "SettingsMenu"
-            Button:
-                text: "Start Server"
-                on_press: root.launchserver()
-            Button:
-                text: "Starte Emulator"
-                on_press: root.launchbh()
-
 
 <SpriteSettings>:
     GridLayout:

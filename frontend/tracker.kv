@@ -40,26 +40,31 @@ Screens:
                 group: "settings"
                 text: "Sprite Pfade"
                 on_press: root.changesettingscreen('sprite')
+                allow_no_selection: False
             ToggleButton:
                 group: "settings"
                 text: "Bizhawk"
                 on_press: root.changesettingscreen('bizhawk')
+                allow_no_selection: False
             ToggleButton:
                 group: "settings"
                 text: "OBS"
                 on_press: root.changesettingscreen('obs')
+                allow_no_selection: False
             ToggleButton:
                 group: "settings"
                 text: "Remote"
                 on_press: root.changesettingscreen('remote')
+                allow_no_selection: False
             ToggleButton:
                 group: "settings"
                 text: "Spieler"
                 on_press: root.changesettingscreen('player')
+                allow_no_selection: False
             Button:
                 text: "Hauptmenü"
                 on_press: root.manager.current = "MainMenu"
-        PlayerSettings:
+        Screen:
 
 <SpriteSettings>:
     GridLayout:
@@ -67,36 +72,57 @@ Screens:
         Label:
             text: 'Speicherort'
             size_hint: .2, 1
-        TextInput:
-            multiline: False
-            on_text_validate: root.save_changes()
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                size_hint: 1, .25
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
         Label:
             text: 'animierte Sprites'
             size_hint: .2, 1
-        ToggleButton:
-            multiline: False
-            on_press: root.save_changes()
+        AnchorLayout:
+            anchor_x: 'left'
+            CheckBox:
+                size_hint: None, None
+                size: "20dp", "20dp"
+                on_press: root.save_changes()
         Label:
             text: 'Sortierung'
             size_hint: .2, 1
         BoxLayout:
             orientation: "horizontal"
+            spacing: "20dp"
+            padding: "5dp", 0
             ToggleButton:
+                size_hint: 1, .5
+                pos_hint: {"center_y": .5}
                 on_press: root.save_changes()
                 text: 'DexNr.'
                 group:"sort"
+                allow_no_selection: False
             ToggleButton:
+                size_hint: 1, .5
+                pos_hint: {"center_y": .5}
                 on_press: root.save_changes()
                 text: 'Team'
                 group:"sort"
+                allow_no_selection: False
             ToggleButton:
+                size_hint: 1, .5
+                pos_hint: {"center_y": .5}
                 on_press: root.save_changes()
                 text: 'Level'
                 group:"sort"
+                allow_no_selection: False
             ToggleButton:
+                size_hint: 1, .5
+                pos_hint: {"center_y": .5}
                 on_press: root.save_changes()
                 text: 'Route'
                 group:"sort"
+                allow_no_selection: False
 
 <BizhawkSettings>:
     GridLayout:
@@ -106,18 +132,21 @@ Screens:
             size_hint: .2, 1
         TextInput:
             multiline: False
+            write_tab: False
             on_text_validate: root.save_changes()
         Label:
             text: 'host'
             size_hint: .2, 1
         TextInput:
             multiline: False
+            write_tab: False
             on_text_validate: root.save_changes()
         Label:
             text: 'port'
             size_hint: .2, 1
         TextInput:
             multiline: False
+            write_tab: False
             on_text_validate: root.save_changes()
 
 <OBSSettings>:
@@ -129,18 +158,21 @@ Screens:
         TextInput:
             password: True
             multiline: False
+            write_tab: False
             on_text_validate: root.save_changes()
         Label:
             text: 'host'
             size_hint: .2, 1
         TextInput:
             multiline: False
+            write_tab: False
             on_text_validate: root.save_changes()
         Label:
             text: 'port'
             size_hint: .2, 1
         TextInput:
             multiline: False
+            write_tab: False
             on_text_validate: root.save_changes()
 
 <RemoteSettings>:

@@ -9,17 +9,31 @@ from kivy.uix.screenmanager import FadeTransition
 bh = yaml.safe_load(open('backend/config/bh_config.yml'))
 obs = yaml.safe_load(open('backend/config/obs_config.yml'))
 sp = yaml.safe_load(open('backend/config/sprites.yml'))
+cc = yaml.safe_load(open('backend/config/common_config.yml'))
 
 class Screens(ScreenManager):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
 
-class SettingsMenu(Screen):
+class MainMenu(Screen):
+    def launchbh(self):
+        pass
+        # subprocess.Popen([bh['path'], f'--lua={os.path.abspath("./backend/obsautomation.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
+
+    def launchserver(self):
+        pass
+
+class SettingsMenu(Screen):   
     def changesettingscreen(self, settings):
         if len(self.children[0].children) > 1:
             self.children[0].remove_widget(self.children[0].children[0])
 
+        widget = self.checkSettingScreen(settings)
+
+        self.children[0].add_widget(widget)
+
+    def checkSettingScreen(self, settings):
         if settings == 'sprite':
             widget = SpriteSettings()
         elif settings == 'bizhawk':
@@ -30,25 +44,14 @@ class SettingsMenu(Screen):
             widget = RemoteSettings()
         elif settings == 'player':
             widget = PlayerSettings()
+        return widget
 
-        self.children[0].add_widget(widget)
-
-class MainMenu(Screen):
-    def launchbh(self):
-        subprocess.Popen([bh['path'], f'--lua={os.path.abspath("./backend/obsautomation.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
-
-
-    def launchserver(self):
-        pass
-    pass
 
 class SpriteSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.children[0].children[4].text = sp['path']
         self.children[0].children[2].state = 'down' if sp['animated'] else 'normal'
-#        print(f"{sp['order']}")
-#        print(['route', 'lvl', 'team', 'dexnr'].index(sp['order']))
         for i in range(4):
             if i == ['route', 'lvl', 'team', 'dexnr'].index(sp['order']):
                 self.children[0].children[0].children[i].state = 'down'

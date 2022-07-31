@@ -2,42 +2,35 @@ class Game:
     def __init__(self, edition: str):
         self.edition: str = edition
         self.spritePath: str = self.setSpritePath(edition)
-
+        self.path = self.setSpritePath(self.edition)
     def setSpritePath(self, edition: str) -> str:
+        path = '/pokemon/versions/generation-'
+
         if edition == 'red' or edition == 'blue':
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen1RB/rb/Slot01/'
+            path += 'i/red-blue/transparent/'
         elif edition == 'yellow':
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen1RB/gelb/Slot01/'
+            path += 'i/yellow/transparent/'
         elif edition == 'gold':
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen2GS/gold/Slot1/'
+            path += 'ii/gold/transparent/'
         elif edition == 'silver':
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen2GS/silber/Slot1/'
+            path += 'ii/silver/transparent/'
         elif edition == 'crystal':
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen2GS/kristall/Slot1/'
+            path += 'ii/crystal/transparent/'
         elif edition == 'ruby' or edition == 'sapphire':
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen3RS/rs/Slot1/'
+            path += 'iii/ruby-sapphire/'
         elif edition == 'emerald':
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen3RS/e/Slot1/'
+            path += 'iii/emerald/'
         elif edition == 'fire red' or edition == 'leaf green':
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen3FRBG/frbg/Slot1/'
+            path += 'iii/firered-leafgreen/'
         elif edition == 'diamond' or edition == 'pearl':
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen4DP/dp/Slot1/'
+            path += 'iv/diamond-pearl/'
         elif edition == 'platinum':
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen4DP/sprites-platin/Slot1/'
+            path += 'iv/platinum/'
         elif edition == 'heart gold' or edition == 'soul silver':
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen4HGSS/sprites-hgss/Slot1/'
+            path += 'iv/heartgold-soulsilver/'
         elif edition == 'black' or edition == 'white':
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen5BW/sprites-bw/Slot1/'
-        else:
-            folder: str = 'Z:/Raketenagenten/Icons/Pokemon/PokemonSprites/Gen6_7_8/normal'
-
-        return folder
-
-    def getSpritePath(self) -> str:
-        return self.spritePath
-
-    def getEdition(self) -> str:
-        return self.edition
+            path += 'v/black-white/'
+        return path
 
     def __repr__(self) -> str:
         return self.edition

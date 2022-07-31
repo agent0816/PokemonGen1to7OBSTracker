@@ -1,0 +1,10 @@
+bizhost : '127.45.45.45'
+bizport : 43885
+obshost : 'localhost'
+obsport : 4444
+obspassword : 'pokemon'
+show_nicknames : True
+# sortiere nach 'dexnr', 'team', 'lvl' oder 'route'
+order : 'team'
+# gen 5 sprites als gifs?
+animated : True

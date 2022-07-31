@@ -14,9 +14,6 @@ class Spieler:
     def setSlot(self, slot: Slot):
         self.slots[slot.getId() - 1] = slot
 
-    def getGame(self) -> Game:
-        return self.game
-
     def getId(self) -> int:
         return self.id
 

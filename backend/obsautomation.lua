@@ -32,7 +32,6 @@ elseif text == '2' then PLAYER = 2
 elseif text == '3' then PLAYER = 3
 elseif text == '4' then PLAYER = 4 end
 
-
 -- wie viele Sekunden zwischen den Updates
 local INTERVAL = 1
 
@@ -44,7 +43,9 @@ local NRBG = 0xF2B9       --Nicknames Rot/Blau/Gelb
 local GS = 0xFA2A         --Gold/Silber
 local Kr = 0xFCDF         --Kristall
 local NGS = 0xFB8C        --Nicknames Gold/Silber
+local EGS = 0xFA23        --Eier Gold/Silber
 local NKr = 0xDE41        --Nicknames Kristall
+local EKr = 0xDCD8        --Eier Kristall
 
 local FrLg = 0x02024284   --Feuerrot/Blattgrün
 local RS = 0x03004370     --Rubin/Saphir
@@ -62,29 +63,32 @@ local W2 = 0x0221E34C     --Weiß 2
 local length = 0
 local gameversion = ''
 
-if emu.getsystemid() =='GBC' then
-    gameversion = bizstring.substring(gameinfo.getromname(),10,3)
-    if gameversion == 'Rot' then 
+if emu.getsystemid() =='GBC' or emu.getsystemid() == 'GB' then
+    gameversion = memory.read_u24_be(0x13c, 'ROM')
+    if gameversion == 5391684 then 
         pointer = RB 
         gameversion = 11
-    elseif gameversion == 'Bla' then 
+    elseif gameversion == 4344917 then 
         pointer = RB 
         gameversion = 12
-    elseif gameversion == 'Gel' then 
+    elseif gameversion == 5850444 then 
         pointer = G 
         gameversion = 13
-    elseif gameversion == 'Gol' then 
+    elseif gameversion == 4672580 then 
         pointer = GS 
         gameversion = 21
         namepointer = NGS
-    elseif gameversion == 'Sil' then 
+        eggpointer = EGS
+    elseif gameversion == 5459030 then 
         pointer = GS 
         gameversion = 22
         namepointer = NGS
-    elseif gameversion == 'Kri' then 
+        eggpointer = EGS
+    elseif gameversion == 4279296 then 
         pointer = Kr
         gameversion = 23
         namepointer = NKr
+        eggpointer = EKr
     end
     if gameversion < 20 then 
         length = 264
@@ -96,73 +100,49 @@ if emu.getsystemid() =='GBC' then
 
 elseif emu.getsystemid() == 'GBA' then
     length = 600
-    gameversion = bizstring.substring(gameinfo.getromname(),10,3)
-    if gameversion == 'Rub' then pointer = RS 
+    gameversion = memory.read_u24_be(0xa8, 'ROM')
+    if gameversion == 5395778 then pointer = RS 
         gameversion = 31
-    elseif gameversion == 'Sap' then pointer = RS
+    elseif gameversion == 5456208 then pointer = RS
     gameversion = 32 
-    elseif gameversion == 'Sma' or gameversion == 'Eme' then 
+    elseif gameversion == 4541765 then 
         pointer = E
         gameversion = 33 
-    elseif gameversion == 'Feu' or gameversion == 'Fir' then 
+    elseif gameversion == 4606290 then 
         pointer = FrLg
         gameversion = 34 
-    elseif gameversion == 'Bla' or gameversion == 'Lea' then 
+    elseif gameversion == 4998465 then 
         pointer = FrLg
-        gameversion = 35
-    else
-        gameversion = memory.readbyte(0xA8,'ROM')
-        if gameversion == 0x46 then 
-            pointer = FrLg
-            gameversion = 34 
-        elseif gameversion == 0x4C then 
-            pointer = FrLg
-            gameversion = 35 
-        elseif gameversion == 0x52 then 
-            pointer = RS
-            gameversion = 31 
-        elseif gameversion == 0x53 then 
-            pointer = RS
-            gameversion = 32 
-        elseif gameversion == 0x45 then 
-            pointer = E
-            gameversion = 33 end
-    end
+        gameversion = 35 end
     domain = 'System Bus'
 
 elseif emu.getsystemid() =='NDS' then
-    gameversion = bizstring.substring(gameinfo.getromname(),10,3)
-    if gameversion == 'Dia' then 
+    gameversion = memory.read_u16_be(0x23FFE08,'ARM9 System Bus')
+    if gameversion == 17408 then 
         pointer = DP 
         gameversion = 41
-    elseif gameversion == 'Per' then 
+    elseif gameversion == 20480 then 
         pointer = DP 
         gameversion = 42
-    elseif gameversion == 'Pla' then 
+    elseif gameversion == 20556 then 
         pointer = Pl 
         gameversion = 43
-    elseif gameversion == 'Gol' then 
+    elseif gameversion == 18503 then 
         pointer = HgSs 
         gameversion = 44
-    elseif gameversion == 'Sil' then 
+    elseif gameversion == 21331 then 
         pointer = HgSs 
         gameversion = 45
-    end
-    
-    if type(gameversion) ~= 'number' then
-        gameversion = bizstring.substring(gameinfo.getromname(),16,19)
-    end
-
-    if gameversion == ' Schwarze Edition (' then 
+    elseif gameversion == 16896 then 
         pointer = S
         gameversion = 51
-    elseif gameversion == ' Weisse Edition (Ge' then
+    elseif gameversion == 22272 then
         pointer = W
         gameversion = 52
-    elseif gameversion == ' Schwarze Edition 2' then
+    elseif gameversion == 16946 then
         pointer = S2
         gameversion = 53
-    elseif gameversion == ' Weisse Edition 2 (' then
+    elseif gameversion == 22322 then
         pointer = W2
         gameversion = 54
     end
@@ -189,6 +169,11 @@ while true do
             msg = {gameversion, PLAYER, unpack(memory.read_bytes_as_array(pointer, length, domain))}
             for i=0,65 do
                 msg[#msg + 1] = memory.readbyte(namepointer + i, domain)
+            end
+            if gameversion > 20 then
+                for i=0,5 do
+                    msg[#msg + 1] = memory.readbyte(eggpointer + i, domain)
+                end
             end
         else
             msg = {gameversion, PLAYER, unpack(memory.read_bytes_as_array(pointer, length, domain))}

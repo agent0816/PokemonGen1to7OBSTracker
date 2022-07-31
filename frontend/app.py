@@ -1,10 +1,10 @@
+import os
+import subprocess
+import yaml
 from kivy.app import App
 from kivy.uix.screenmanager import Screen
 from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.screenmanager import FadeTransition
-import os
-import subprocess
-import yaml
 
 bh = yaml.safe_load(open('backend/config/bh_config.yml'))
 obs = yaml.safe_load(open('backend/config/obs_config.yml'))
@@ -47,8 +47,8 @@ class SpriteSettings(Screen):
         super().__init__(**kwargs)
         self.children[0].children[4].text = sp['path']
         self.children[0].children[2].state = 'down' if sp['animated'] else 'normal'
-        print(f"{sp['order']}")
-        print(['route', 'lvl', 'team', 'dexnr'].index(sp['order']))
+#        print(f"{sp['order']}")
+#        print(['route', 'lvl', 'team', 'dexnr'].index(sp['order']))
         for i in range(4):
             if i == ['route', 'lvl', 'team', 'dexnr'].index(sp['order']):
                 self.children[0].children[0].children[i].state = 'down'

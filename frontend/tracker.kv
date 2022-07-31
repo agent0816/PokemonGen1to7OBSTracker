@@ -15,22 +15,30 @@ Screens:
             orientation: "horizontal"
             size_hint: 1, 0.15
             pos_hint: {"top": 0}
-            Button:
-                text: "Sptite Pfade"
-            Button:
+            ToggleButton:
+                group: "settings"
+                text: "Sprite Pfade"
+                on_press: root.changesettingscreen('sprite')
+            ToggleButton:
+                group: "settings"
                 text: "Bizhawk"
-            Button:
+                on_press: root.changesettingscreen('bizhawk')
+            ToggleButton:
+                group: "settings"
                 text: "OBS"
-            Button:
+                on_press: root.changesettingscreen('obs')
+            ToggleButton:
+                group: "settings"
                 text: "Remote"
-            Button:
+                on_press: root.changesettingscreen('remote')
+            ToggleButton:
+                group: "settings"
                 text: "Spieler"
+                on_press: root.changesettingscreen('player')
             Button:
                 text: "Hauptmenü"
                 on_press: root.manager.current = "MainMenu"
-        GridLayout:
-            pos_hint: {"bottom":0}
-            size_hint: 1, 0.85
+        PlayerSettings:
 
 <MainMenu>:
     name: "MainMenu"
@@ -48,5 +56,98 @@ Screens:
                 on_press: root.manager.current = "SettingsMenu"
             Button:
                 text: "Start Server"
+                on_press: root.launchserver()
             Button:
                 text: "Starte Emulator"
+                on_press: root.launchbh()
+
+
+<SpriteSettings>:
+    GridLayout:
+        cols: 2
+        Label:
+            text: 'Speicherort'
+            size_hint: .2, 1
+        TextInput:
+            multiline: False
+            on_text_validate: root.save_changes()
+        Label:
+            text: 'animierte Sprites'
+            size_hint: .2, 1
+        ToggleButton:
+            multiline: False
+            on_press: root.save_changes()
+        Label:
+            text: 'Sortierung'
+            size_hint: .2, 1
+        BoxLayout:
+            orientation: "horizontal"
+            ToggleButton:
+                on_press: root.save_changes()
+                text: 'DexNr.'
+                group:"sort"
+            ToggleButton:
+                on_press: root.save_changes()
+                text: 'Team'
+                group:"sort"
+            ToggleButton:
+                on_press: root.save_changes()
+                text: 'Level'
+                group:"sort"
+            ToggleButton:
+                on_press: root.save_changes()
+                text: 'Route'
+                group:"sort"
+
+<BizhawkSettings>:
+    GridLayout:
+        cols: 2
+        Label:
+            text: 'path'
+            size_hint: .2, 1
+        TextInput:
+            multiline: False
+            on_text_validate: root.save_changes()
+        Label:
+            text: 'host'
+            size_hint: .2, 1
+        TextInput:
+            multiline: False
+            on_text_validate: root.save_changes()
+        Label:
+            text: 'port'
+            size_hint: .2, 1
+        TextInput:
+            multiline: False
+            on_text_validate: root.save_changes()
+
+<OBSSettings>:
+    GridLayout:
+        cols: 2
+        Label:
+            text: 'password'
+            size_hint: .2, 1
+        TextInput:
+            password: True
+            multiline: False
+            on_text_validate: root.save_changes()
+        Label:
+            text: 'host'
+            size_hint: .2, 1
+        TextInput:
+            multiline: False
+            on_text_validate: root.save_changes()
+        Label:
+            text: 'port'
+            size_hint: .2, 1
+        TextInput:
+            multiline: False
+            on_text_validate: root.save_changes()
+
+<RemoteSettings>:
+    Label:
+        text: 'remote'
+
+<PlayerSettings>:
+    Label:
+        text: 'player'

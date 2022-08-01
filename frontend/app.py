@@ -2,6 +2,7 @@ import os
 import subprocess
 import yaml
 from kivy.app import App
+from kivy.config import Config
 from kivy.uix.screenmanager import Screen
 from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.screenmanager import FadeTransition
@@ -105,4 +106,9 @@ class PlayerSettings(Screen):
     pass
 
 class TrackerApp(App):
-    pass
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        Config.set('graphics', 'resizable', 0)
+        Config.set('graphics', 'width', "600")
+        Config.set('graphics', 'height', "600")
+

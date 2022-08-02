@@ -1,27 +1,8 @@
-import threading
-import socket
-import time
-from classes.Pokemon import Pokemon
-import logging
-from classes.Spieler import Spieler
-from classes.Slot import Slot
-from classes.Game import Game
 import yaml
-import os
-logging.basicConfig(level=logging.DEBUG, filename='bizhawk-obs-bridge.log',format='[%(asctime)s] %(levelname)s: %(message)s', filemode='w', encoding='utf-8')
+from classes.Pokemon import Pokemon
 
-
-config = yaml.safe_load(open('config.yml'))
+config = yaml.safe_load(open('config/sprites.yml'))
 ORDER = config['order']
-
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server.bind((config['bizhost'], config['bizport']))
-server.listen()
-
-clients = []
-connections = {}
-teams = {}
 
 species1_lut = yaml.safe_load(open('data/species1.yml'))
 species3_lut = yaml.safe_load(open('data/species3.yml'))
@@ -30,103 +11,6 @@ gen3charset = yaml.safe_load(open('data/gen3charset.yml'))
 gen4charset = yaml.safe_load(open('data/gen4charset.yml'))
 gen5charset = yaml.safe_load(open('data/gen5charset.yml'))
 gender_lut = yaml.safe_load(open('data/gender_lut.yml'))
-
-def accept():
-    while True:
-        try:
-            client, _ = server.accept()
-        except:
-            pass
-        if client not in clients:
-            clients.append(client)
-            if __name__ == '__main__':
-                print('accepted new client')
-            logging.debug("neuer akzeptierter Client: " + str(client))
-            connections[client] = threading.Thread(target=interact, args=([client]), daemon=True)
-            connections[client].start()
-
-
-def interact(client):
-    interacting = True
-    while interacting:
-        try:
-            recieve(client)
-            logging.debug("Verbindung mit Client erfolgreich: " + str(client))
-        except Exception as err:
-            logging.debug("Verbindung mit Client gelöst: " + str(client) + str(err))
-            connections.pop(client, None)
-            teams.pop(client, None)
-            interacting = False
-
-
-def recieve(client):
-    msg = client.recv(2)
-    player = msg[1]
-    edition = msg[0]
-    logging.debug("Kontrolldaten von Client " + str(client) + " erhalten: " + str(msg))
-
-    if edition < 20:
-        if edition == 11:
-            edition = 'red'
-        elif edition == 12:
-            edition = 'blue'
-        elif edition == 13:
-            edition = 'yellow'
-        msg = client.recv(330)
-        teams[client] = Spieler(player, Game(edition), team(msg, 1))
-
-    elif edition < 30:
-        if edition == 21:
-            edition = 'gold'
-        elif edition == 22:
-            edition = 'silver'
-        elif edition == 23:
-            edition = 'crystal'
-
-        msg = client.recv(360)
-        teams[client] = Spieler(player, Game(edition), team(msg, 2))
-
-    elif edition < 40:
-        if edition == 31:
-            edition = 'ruby'
-        elif edition == 32:
-            edition = 'sapphire'
-        elif edition == 33:
-            edition = 'emerald'
-        elif edition == 34:
-            edition = 'fire red'
-        elif edition == 35:
-            edition = 'leaf green'
-        msg = client.recv(600)
-        teams[client] = Spieler(player, Game(edition), team(msg, edition))
-
-    elif edition < 50:
-        if edition == 41:
-            edition = 'diamond'
-        elif edition == 42:
-            edition = 'pearl'
-        elif edition == 43:
-            edition = 'platinum'
-        elif edition == 44:
-            edition = 'heart gold'
-        elif edition == 45:
-            edition = 'soul silver'
-        msg = client.recv(1416)
-        teams[client] = Spieler(player, Game(edition), team(msg, 4))
-
-    elif edition < 60:
-        if edition == 51:
-            edition = 'black'
-        if edition == 52:
-            edition = 'white'
-        if edition == 53:
-            edition = 'black'
-        if edition == 54:
-            edition = 'white'
-        msg = client.recv(1320)
-        teams[client] = Spieler(player, Game(edition), team(msg, 5))
-
-
 
 def pokemon1(data):
     dexnr = data[0]
@@ -169,7 +53,6 @@ def pokemon3(data, edition):
     misc_lut =     [68, 56, 68, 56, 44, 44, 68, 56, 68, 56, 44, 44, 68, 56, 68, 56, 44, 44, 32, 32, 32, 32, 32, 32]
     egg = False
     form = ''
-    female = False
     personality = int.from_bytes(data[:4], 'little')
     otid = int.from_bytes(data[4:8], 'little')
     key = personality ^ otid
@@ -194,8 +77,9 @@ def pokemon3(data, edition):
         form = ''
         species = 'egg'
     lvl = data[84]
-    if not egg:
-        female = personality % 256 < gender_lut[species]
+    #female = False
+    #if not egg:
+    #    female = personality % 256 < gender_lut[species]
     met_location = data[misc_lut[offset]+1]
     met_location = met_location ^ ((key >> 8) % 0x100)
     nickname = ''
@@ -204,7 +88,7 @@ def pokemon3(data, edition):
             nickname += gen3charset[char]
         if char == 0xFF:
             break
-    return Pokemon(species, not (key % 0x10000 ^ key >> 16) > 8, female, form=form, lvl=lvl, nickname=nickname, route=met_location)
+    return Pokemon(species, not (key % 0x10000 ^ key >> 16) > 8, form=form, lvl=lvl, nickname=nickname, route=met_location)
 
 
 def decryptpokemon(data):
@@ -311,38 +195,36 @@ def pokemon45(data, charset):
     return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, nickname=nickname, route=met_location)
 
 
-def team(data, edition):
+def team(data, gen, edition=None):
     length = len(data) // 6
     liste = []
 
-    if edition == 1:
+    if gen == 1:
         newdata = b''
         for i in range(6):
             newdata += data[i * 44:i * 44 + 44] + data[i * 11 + 264:11 + i * 11 + 264]
         data = newdata
         for i in range(6):
             liste.append(pokemon1(data[i * length: (i + 1) * length]))
-    if edition == 2:
+    if gen == 2:
         newdata = b''
         for i in range(6):
             newdata += data[i * 48:i * 48 + 48] + data[i * 11 + 288:11 + i * 11 + 288] + data[i + 354:i + 355]
         data = newdata
         for i in range(6):
             liste.append(pokemon2(data[i * length: (i + 1) * length]))
-    if edition in ('ruby', 'sapphire', 'emerald', 'fire red', 'leaf green'):
+    if gen == 3:
         for i in range(6):
             liste.append(pokemon3(data[i * length: (i + 1) * length], edition))
-    if edition == 4:
+    if gen == 4:
         for i in range(6):
             liste.append(pokemon45(data[i * length: (i + 1) * length], gen4charset))
-    if edition == 5:
+    if gen == 5:
         for i in range(6):
             liste.append(pokemon45(data[i * length: (i + 1) * length], gen5charset))
     
 
     liste = sort(liste, ORDER)
-    for i in range(6):
-        liste[i] = Slot(i+1, liste[i])
     return liste
 
 def sort(liste, key):
@@ -356,17 +238,3 @@ def sort(liste, key):
         algorithm = lambda a: a.route if a.dexnr != 0 else 999999
 
     return sorted(sorted(liste), key=algorithm)
-
-
-new_connection_listener = threading.Thread(target=accept, args=(), daemon=True)
-new_connection_listener.start()
-print(f'Start Bizhawk from command line with flags --socket_ip={config["bizhost"]} --socket_port={config["bizport"]} --lua={os.path.abspath("./obsautomation.lua")}')
-if __name__ == '__main__':
-    while True:
-        time.sleep(5)
-        for t in teams:
-            print(teams[t])
-        print('')
-        
-
-        

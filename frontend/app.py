@@ -19,8 +19,7 @@ class Screens(ScreenManager):
 
 class MainMenu(Screen):
     def launchbh(self):
-        pass
-        # subprocess.Popen([bh['path'], f'--lua={os.path.abspath("./backend/obsautomation.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
+        subprocess.Popen([bh['path'], f'--lua={os.path.abspath("./backend/obsautomation.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
 
     def launchserver(self):
         pass

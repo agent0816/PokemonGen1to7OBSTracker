@@ -13,3 +13,5 @@ red: "Pfad f\xFCr rot"
 ruby: ''
 silver: ''
 yellow: ''
+edition_override: ''
+show_nicknames: true

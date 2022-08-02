@@ -35,8 +35,11 @@ class SettingsMenu(Screen):
         self.children[0].add_widget(widget)
 
     def checkSettingScreen(self, settings):
+        widget = Screen()
         if settings == 'sprite':
             widget = SpriteSettings()
+        elif settings == 'games':
+            widget = SpritesGames()
         elif settings == 'bizhawk':
             widget = BizhawkSettings()
         elif settings == 'obs':
@@ -51,35 +54,66 @@ class SettingsMenu(Screen):
 class SpriteSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.children[0].children[4].text = sp['path']
-        self.children[0].children[2].state = 'down' if sp['animated'] else 'normal'
+        self.ids.common_path.text = sp['common_path']
+        self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'
         for i in range(4):
             if i == ['route', 'lvl', 'team', 'dexnr'].index(sp['order']):
-                self.children[0].children[0].children[i].state = 'down'
+                self.ids.sortierung.children[i].state = 'down'
 
     def save_changes(self):
-        sp['path'] = self.children[0].children[4].text
-        sp['animated'] = self.children[0].children[2].state == 'down'
+        sp['common_path'] = self.ids.common_path.text
+        sp['animated'] = self.ids.animated_check.state == 'down'
         for i in range(4):
-            if self.children[0].children[0].children[i].state == 'down':
+            if self.ids.sortierung.children[i].state == 'down':
                 sp['order'] = ['route', 'lvl', 'team', 'dexnr'][i]
 
         with open('backend/config/sprites.yml', 'w') as file:
             yaml.dump(sp, file)
 
+class SpritesGames(Screen):
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
+        self.ids.gen1_red.text = sp['red']
+        self.ids.gen1_yellow.text = sp['yellow']
+        self.ids.gen2_silver.text = sp['silver']
+        self.ids.gen2_gold.text = sp['gold']
+        self.ids.gen2_crystal.text = sp['crystal']
+        self.ids.gen3_ruby.text = sp['ruby']
+        self.ids.gen3_emerald.text = sp['emerald']
+        self.ids.gen3_firered.text = sp['firered']
+        self.ids.gen4_diamond.text = sp['diamond']
+        self.ids.gen4_platinum.text = sp['platinum']
+        self.ids.gen4_heartgold.text = sp['heartgold']
+        self.ids.gen5_black.text = sp['black']
 
+    def save_changes(self):
+        sp['red'] = self.ids.gen1_red.text
+        sp['yellow'] = self.ids.gen1_yellow.text
+        sp['silver'] = self.ids.gen2_silver.text
+        sp['gold'] = self.ids.gen2_gold.text
+        sp['crystal'] = self.ids.gen2_crystal.text
+        sp['ruby'] = self.ids.gen3_ruby.text
+        sp['emerald'] = self.ids.gen3_emerald.text
+        sp['firered'] = self.ids.gen3_firered.text
+        sp['diamond'] = self.ids.gen4_diamond.text
+        sp['platinum'] = self.ids.gen4_platinum.text
+        sp['heartgold'] = self.ids.gen4_heartgold.text
+        sp['black'] = self.ids.gen5_black.text
+
+        with open('backend/config/sprites.yml', 'w') as file:
+            yaml.dump(sp, file)
 
 class BizhawkSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.children[0].children[4].text = bh['path']
-        self.children[0].children[2].text = bh['host']
-        self.children[0].children[0].text = bh['port']
+        self.ids.bizhawk_exe.text = bh['path']
+        self.ids.bizhawk_host.text = bh['host']
+        self.ids.bizhawk_port.text = bh['port']
 
     def save_changes(self):
-        bh['path'] = self.children[0].children[4].text
-        bh['host'] = self.children[0].children[2].text
-        bh['port'] = self.children[0].children[0].text
+        bh['path'] = self.ids.bizhawk_exe.text
+        bh['host'] = self.ids.bizhawk_host.text
+        bh['port'] = self.ids.bizhawk_port.text
         
         with open('backend/config/bh_config.yml', 'w') as file:
             yaml.dump(bh, file)
@@ -87,14 +121,14 @@ class BizhawkSettings(Screen):
 class OBSSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.children[0].children[4].text = obs['password']
-        self.children[0].children[2].text = obs['host']
-        self.children[0].children[0].text = obs['port']
+        self.ids.obs_password.text = obs['password']
+        self.ids.obs_host.text = obs['host']
+        self.ids.obs_port.text = obs['port']
 
     def save_changes(self):
-        obs['password'] = self.children[0].children[4].text
-        obs['host'] = self.children[0].children[2].text
-        obs['port'] = self.children[0].children[0].text
+        obs['password'] = self.ids.obs_password.text
+        obs['host'] = self.ids.obs_host.text
+        obs['port'] = self.ids.obs_port.text
         
         with open('backend/config/obs_config.yml', 'w') as file:
             yaml.dump(obs, file)
@@ -110,5 +144,5 @@ class TrackerApp(App):
         super().__init__(**kwargs)
         Config.set('graphics', 'resizable', 0)
         Config.set('graphics', 'width', "600")
-        Config.set('graphics', 'height', "600")
+        Config.set('graphics', 'height', "400")
 

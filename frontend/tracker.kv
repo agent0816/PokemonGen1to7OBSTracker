@@ -38,7 +38,7 @@ Screens:
             pos_hint: {"top": 0}
             ToggleButton:
                 group: "settings"
-                text: "Sprite Pfade"
+                text: "Sprite\nPfade"
                 on_press: root.changesettingscreen('sprite')
                 allow_no_selection: False
             ToggleButton:
@@ -75,23 +75,34 @@ Screens:
         AnchorLayout:
             anchor_x: 'left'
             TextInput:
-                size_hint: 1, .25
+                id: common_path
+                size_hint: 1, .3
                 multiline: False
                 write_tab: False
                 on_text_validate: root.save_changes()
         Label:
-            text: 'animierte Sprites'
+            text: 'animierte\nSprites'
             size_hint: .2, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            CheckBox:
-                size_hint: None, None
-                size: "20dp", "20dp"
-                on_press: root.save_changes()
+        BoxLayout:
+            orientation: 'horizontal'
+            AnchorLayout:
+                anchor_x: 'left'
+                CheckBox:
+                    id: animated_check
+                    size_hint: None, None
+                    size: "20dp", "20dp"
+                    on_press: root.save_changes()
+            AnchorLayout:
+                anchor_x: 'center'
+                Button:
+                    text: 'Spritepfade der einzelnen Games'
+                    size: "40dp", "40dp"
+                    on_press: root.parent.parent.changesettingscreen('games')
         Label:
             text: 'Sortierung'
             size_hint: .2, 1
         BoxLayout:
+            id: sortierung
             orientation: "horizontal"
             spacing: "20dp"
             padding: "5dp", 0
@@ -124,56 +135,222 @@ Screens:
                 group:"sort"
                 allow_no_selection: False
 
+<SpritesGames>:
+    GridLayout:
+        cols: 2
+        Label:
+            text: "rot/blau"
+            size_hint: .4, 1
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: gen1_red
+                size_hint: 1, 1
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
+        Label:
+            text: "gelb"
+            size_hint: .4, 1
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: gen1_yellow
+                size_hint: 1, 1
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
+        Label:
+            text: "silber"
+            size_hint: .4, 1
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: gen2_silver
+                size_hint: 1, 1
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
+        Label:
+            text: "gold"
+            size_hint: .4, 1
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: gen2_gold
+                size_hint: 1, 1
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
+        Label:
+            text: "kristall"
+            size_hint: .4, 1
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: gen2_crystal
+                size_hint: 1, 1
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
+        Label:
+            text: "rubin/saphir"
+            size_hint: .4, 1
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: gen3_ruby
+                size_hint: 1, 1
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
+        Label:
+            text: "smaragd"
+            size_hint: .4, 1
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: gen3_emerald
+                size_hint: 1, 1
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
+        Label:
+            text: "feuerrot/blattgrün"
+            size_hint: .4, 1
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: gen3_firered
+                size_hint: 1, 1
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
+        Label:
+            text: "diamant/perl"
+            size_hint: .4, 1
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: gen4_diamond
+                size_hint: 1, 1
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
+        Label:
+            text: "platin"
+            size_hint: .4, 1
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: gen4_platinum
+                size_hint: 1, 1
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
+        Label:
+            text: "herzgold/seelensilber"
+            size_hint: .4, 1
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: gen4_heartgold
+                size_hint: 1, 1
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
+        Label:
+            text: "schwarz/weiß (s2/w2)"
+            size_hint: .4, 1
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: gen5_black
+                size_hint: 1, 1
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
+        Label:
+            size_hint: .4, 1
+        Button:
+            text: "Zurück"
+            size_hint: .75, 1
+            on_press: root.parent.parent.changesettingscreen('sprite')
+
 <BizhawkSettings>:
     GridLayout:
         cols: 2
         Label:
-            text: 'path'
+            text: 'Pfad der\nEmuHawk.exe'
             size_hint: .2, 1
-        TextInput:
-            multiline: False
-            write_tab: False
-            on_text_validate: root.save_changes()
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: bizhawk_exe
+                size_hint: 1, .3
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
         Label:
-            text: 'host'
+            text: 'IP-Adresse'
             size_hint: .2, 1
-        TextInput:
-            multiline: False
-            write_tab: False
-            on_text_validate: root.save_changes()
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: bizhawk_host
+                size_hint: 1, .3
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
         Label:
-            text: 'port'
+            text: 'Port'
             size_hint: .2, 1
-        TextInput:
-            multiline: False
-            write_tab: False
-            on_text_validate: root.save_changes()
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: bizhawk_port
+                size_hint: 1, .3
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
 
 <OBSSettings>:
     GridLayout:
         cols: 2
         Label:
-            text: 'password'
+            text: 'Passwort\nWebsocket'
             size_hint: .2, 1
-        TextInput:
-            password: True
-            multiline: False
-            write_tab: False
-            on_text_validate: root.save_changes()
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: obs_password
+                size_hint: 1, .3
+                password: True
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
         Label:
-            text: 'host'
+            text: 'IP-Adresse\nWebsocket'
             size_hint: .2, 1
-        TextInput:
-            multiline: False
-            write_tab: False
-            on_text_validate: root.save_changes()
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: obs_host
+                size_hint: 1, .3
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
         Label:
-            text: 'port'
+            text: 'Port des\nWebsocket'
             size_hint: .2, 1
-        TextInput:
-            multiline: False
-            write_tab: False
-            on_text_validate: root.save_changes()
+        AnchorLayout:
+            anchor_x: 'left'
+            TextInput:
+                id: obs_port
+                size_hint: 1, .3
+                multiline: False
+                write_tab: False
+                on_text_validate: root.save_changes()
 
 <RemoteSettings>:
     Label:

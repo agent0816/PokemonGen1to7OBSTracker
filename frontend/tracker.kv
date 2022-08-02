@@ -357,5 +357,78 @@ Screens:
         text: 'remote'
 
 <PlayerSettings>:
-    Label:
-        text: 'player'
+    GridLayout:
+        cols: 2
+        Label:
+            text: 'Anzahl Spieler'
+        BoxLayout:
+            orientation: 'horizontal'
+            CheckBox:
+                id: player_count_1
+                group: 'player_count'
+                pos_hint: {"center_y": .5}
+                size_hint: None, None
+                size: "20dp", "20dp"
+            Label:
+                text: "1"
+                pos_hint: {"center_y": .5}
+                size_hint: None, None
+                size: "20dp", "20dp"
+            CheckBox:
+                id: player_count_2
+                group: 'player_count'
+                pos_hint: {"center_y": .5}
+                size_hint: None, None
+                size: "20dp", "20dp"
+            Label:
+                text: "2"
+                pos_hint: {"center_y": .5}
+                size_hint: None, None
+                size: "20dp", "20dp"
+            CheckBox:
+                id: player_count_3
+                group: 'player_count'
+                pos_hint: {"center_y": .5}
+                size_hint: None, None
+                size: "20dp", "20dp"
+            Label:
+                text: "3"
+                pos_hint: {"center_y": .5}
+                size_hint: None, None
+                size: "20dp", "20dp"
+            CheckBox:
+                id: player_count_4
+                group: 'player_count'
+                pos_hint: {"center_y": .5}
+                size_hint: None, None
+                size: "20dp", "20dp"
+            Label:
+                text: "4"
+                pos_hint: {"center_y": .5}
+                size_hint: None, None
+                size: "20dp", "20dp"
+        Label:
+            text: 'Spieler 1'
+        BoxLayout:
+            orientation: 'horizontal'
+            CheckBox:
+                id: remote_player_1
+                pos_hint: {"center_y": .5}
+                size_hint: None, None
+                size: "20dp", "20dp"
+            Label:
+                text: "remote"
+                pos_hint: {"center_y": .5}
+                size_hint: None, None
+                size: "60dp", "20dp"
+            CheckBox:
+                id: obs_player_1
+                pos_hint: {"center_y": .5}
+                size_hint: None, None
+                size: "20dp", "20dp"
+            Label:
+                text: "OBS"
+                pos_hint: {"center_y": .5}
+                size_hint: None, None
+                size: "40dp", "20dp"
+        

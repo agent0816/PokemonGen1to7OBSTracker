@@ -7,10 +7,13 @@ from kivy.uix.screenmanager import Screen
 from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.screenmanager import FadeTransition
 
-bh = yaml.safe_load(open('backend/config/bh_config.yml'))
-obs = yaml.safe_load(open('backend/config/obs_config.yml'))
-sp = yaml.safe_load(open('backend/config/sprites.yml'))
-cc = yaml.safe_load(open('backend/config/common_config.yml'))
+configsave = 'backend/config/'
+
+bh = yaml.safe_load(open(f"{configsave}bh_config.yml"))
+obs = yaml.safe_load(open(f"{configsave}obs_config.yml"))
+sp = yaml.safe_load(open(f"{configsave}sprites.yml"))
+pl = yaml.safe_load(open(f"{configsave}player.yml"))
+cc = yaml.safe_load(open(f"{configsave}common_config.yml"))
 
 class Screens(ScreenManager):
     def __init__(self, **kwargs):
@@ -66,7 +69,7 @@ class SpriteSettings(Screen):
             if self.ids.sortierung.children[i].state == 'down':
                 sp['order'] = ['route', 'lvl', 'team', 'dexnr'][i]
 
-        with open('backend/config/sprites.yml', 'w') as file:
+        with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)
 
 class SpritesGames(Screen):
@@ -99,7 +102,7 @@ class SpritesGames(Screen):
         sp['heartgold'] = self.ids.gen4_heartgold.text
         sp['black'] = self.ids.gen5_black.text
 
-        with open('backend/config/sprites.yml', 'w') as file:
+        with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)
 
 class BizhawkSettings(Screen):
@@ -114,7 +117,7 @@ class BizhawkSettings(Screen):
         bh['host'] = self.ids.bizhawk_host.text
         bh['port'] = self.ids.bizhawk_port.text
         
-        with open('backend/config/bh_config.yml', 'w') as file:
+        with open(f"{configsave}bh_config.yml", 'w') as file:
             yaml.dump(bh, file)
 
 class OBSSettings(Screen):
@@ -129,13 +132,16 @@ class OBSSettings(Screen):
         obs['host'] = self.ids.obs_host.text
         obs['port'] = self.ids.obs_port.text
         
-        with open('backend/config/obs_config.yml', 'w') as file:
+        with open(f"{configsave}obs_config.yml", 'w') as file:
             yaml.dump(obs, file)
 
 class RemoteSettings(Screen):
     pass
 
 class PlayerSettings(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+    
     pass
 
 class TrackerApp(App):

@@ -2,7 +2,10 @@ import os
 import subprocess
 import yaml
 from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.checkbox import CheckBox
 from kivy.config import Config
+from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.screenmanager import FadeTransition
@@ -141,8 +144,23 @@ class RemoteSettings(Screen):
 class PlayerSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-    
-    pass
+        self.addCheckBoxes()
+
+    def addCheckBoxes(self):
+        for i in range(1, pl['player_count'] + 1):
+            idBox = f"box_spieler_{i}"
+            self.children[0].add_widget(Label(text=f"Spieler {i}", id=f"label_spieler_{i}"))
+            self.children[0].add_widget(BoxLayout(orientation="horizontal", id=idBox))
+            idRemote = f"remote_player_{i}"
+            idOBS = f"obs_player_{i}"
+            checkRemote = CheckBox(active=pl[f"remote_{i}"], id=idRemote, pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
+            checkRemoteLabel = Label(text="remote", pos_hint={"center_y": .5}, size_hint=[None, None], size=["40dp", "20dp"])
+            checkOBS = CheckBox(active=pl[f"obs_{i}"], id = idOBS, pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
+            checkOBSLabel = Label(text="OBS", pos_hint={"center_y": .5}, size_hint=[None, None], size=["40dp", "20dp"])
+            self.idBox.add_widget(checkRemote)
+            self.idBox.add_widget(checkRemoteLabel)
+            self.idBox.add_widget(checkOBS)
+            self.idBox.add_widget(checkOBSLabel)
 
 class TrackerApp(App):
     def __init__(self, **kwargs):

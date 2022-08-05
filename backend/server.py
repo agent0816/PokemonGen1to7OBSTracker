@@ -128,7 +128,7 @@ async def handle_client(reader, writer):
         elif edition < 50:
             msg = await reader.read(1416)
             team = pokedecoder.team(msg, 4)
-        elif edition <60:
+        elif edition < 60:
             msg = await reader.read(1320)
             team = pokedecoder.team(msg, 5)
 

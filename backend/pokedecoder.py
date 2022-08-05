@@ -63,16 +63,16 @@ def pokemon3(data, edition):
     species = species ^ (key % 0x10000)
     if species in range(252, 440):
         species = species3_lut[species]
-    if type(species) == str:
-        form = species[3:]
-        species = int(species[:3])
-    if species == 386:
-        if edition == 'fire red':
-            form = '-attack'
-        if edition== 'leaf green':
-            form = '-defense'
-        if edition == 'emerald':
-            form = '-speed'
+        if type(species) == str:
+            form = species[3:]
+            species = int(species[:3])
+        if species == 386:
+            if edition == 'fire red':
+                form = '-attack'
+            if edition== 'leaf green':
+                form = '-defense'
+            if edition == 'emerald':
+                form = '-speed'
     if egg:
         form = ''
         species = 'egg'

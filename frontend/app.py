@@ -168,4 +168,4 @@ class TrackerApp(App):
         Config.set('graphics', 'resizable', 0)
         Config.set('graphics', 'width', "600")
         Config.set('graphics', 'height', "400")
-
+        Config.set('input', 'mouse', 'mouse,multitouch_on_demand')

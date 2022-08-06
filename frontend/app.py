@@ -1,5 +1,6 @@
 import os
 import subprocess
+import weakref
 import yaml
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -145,22 +146,63 @@ class PlayerSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.addCheckBoxes()
+        self.pressCheckBoxes()
+
+    def changeScreen(self, player):
+        pl['player_count'] = player
+        self.removeCheckBoxes()
+        self.addCheckBoxes()
+        self.save_changes()
+
+    def save_changes(self):
+        for i in range(1, pl['player_count'] + 1):
+            if self.ids[f"player_count_i"].state == "down":
+                pl['player_count'] = i
+            pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
+            pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
+
+    def pressCheckBoxes(self):
+        self.ids[f"player_count_{pl['player_count']}"].state = "down"
+        for i in range(1, pl['player_count'] + 1):
+            if pl[f"remote_{i}"]:
+                self.ids[f"remote_player_{i}"].state = "down"
+            if pl[f"obs_{i}"]:
+                self.ids[f"obs_player_{i}"].state = "down"
+    
+    def removeCheckBoxes(self):
+        for i in range(1, pl['player_count'] + 1):
+            self.children[0].remove_widget(self.ids[f"label_spieler_{i}"])
+            self.children[0].remove_widget(self.ids[f"box_spieler_{i}"])
 
     def addCheckBoxes(self):
         for i in range(1, pl['player_count'] + 1):
+            idLabel = f"label_spieler_{i}"
+            label = Label(text=f"Spieler {i}")
+            self.children[0].add_widget(label)
+            self.ids[idLabel] = weakref.proxy(label)
+
             idBox = f"box_spieler_{i}"
-            self.children[0].add_widget(Label(text=f"Spieler {i}", id=f"label_spieler_{i}"))
-            self.children[0].add_widget(BoxLayout(orientation="horizontal", id=idBox))
+            box = BoxLayout(orientation="horizontal")
+            self.children[0].add_widget(box)
+            self.ids[idBox] = weakref.proxy(box)
+
             idRemote = f"remote_player_{i}"
+            idRemoteLabel = f"remote_label_{i}"
             idOBS = f"obs_player_{i}"
-            checkRemote = CheckBox(active=pl[f"remote_{i}"], id=idRemote, pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
-            checkRemoteLabel = Label(text="remote", pos_hint={"center_y": .5}, size_hint=[None, None], size=["40dp", "20dp"])
-            checkOBS = CheckBox(active=pl[f"obs_{i}"], id = idOBS, pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
+            idOBSLabel = f"obs_label_{i}"
+            checkRemote = CheckBox(active=pl[f"remote_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
+            checkRemoteLabel = Label(text="remote", pos_hint={"center_y": .5}, size_hint=[None, None], size=["60dp", "20dp"])
+            checkOBS = CheckBox(active=pl[f"obs_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
             checkOBSLabel = Label(text="OBS", pos_hint={"center_y": .5}, size_hint=[None, None], size=["40dp", "20dp"])
-            self.idBox.add_widget(checkRemote)
-            self.idBox.add_widget(checkRemoteLabel)
-            self.idBox.add_widget(checkOBS)
-            self.idBox.add_widget(checkOBSLabel)
+
+            self.ids[idBox].add_widget(checkRemote)
+            self.ids[idRemote] = weakref.proxy(checkRemote)
+            self.ids[idBox].add_widget(checkRemoteLabel)
+            self.ids[idRemoteLabel] = weakref.proxy(checkRemoteLabel)
+            self.ids[idBox].add_widget(checkOBS)
+            self.ids[idOBS] = weakref.proxy(checkOBS)
+            self.ids[idBox].add_widget(checkOBSLabel)
+            self.ids[idOBSLabel] = weakref.proxy(checkOBSLabel)
 
 class TrackerApp(App):
     def __init__(self, **kwargs):

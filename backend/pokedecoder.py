@@ -1,16 +1,20 @@
 import yaml
-from classes.Pokemon import Pokemon
+from backend.classes.Pokemon import Pokemon
 
-config = yaml.safe_load(open('config/sprites.yml'))
+config = yaml.safe_load(open('backend/config/sprites.yml'))
 ORDER = config['order']
 
-species1_lut = yaml.safe_load(open('data/species1.yml'))
-species3_lut = yaml.safe_load(open('data/species3.yml'))
-gen1charset = yaml.safe_load(open('data/gen1charset.yml'))
-gen3charset = yaml.safe_load(open('data/gen3charset.yml'))
-gen4charset = yaml.safe_load(open('data/gen4charset.yml'))
-gen5charset = yaml.safe_load(open('data/gen5charset.yml'))
-gender_lut = yaml.safe_load(open('data/gender_lut.yml'))
+def setorder(order):
+    global ORDER
+    ORDER = order
+
+species1_lut = yaml.safe_load(open('backend/data/species1.yml'))
+species3_lut = yaml.safe_load(open('backend/data/species3.yml'))
+gen1charset = yaml.safe_load(open('backend/data/gen1charset.yml'))
+gen3charset = yaml.safe_load(open('backend/data/gen3charset.yml'))
+gen4charset = yaml.safe_load(open('backend/data/gen4charset.yml'))
+gen5charset = yaml.safe_load(open('backend/data/gen5charset.yml'))
+gender_lut = yaml.safe_load(open('backend/data/gender_lut.yml'))
 
 def pokemon1(data):
     dexnr = data[0]
@@ -227,7 +231,7 @@ def team(data, gen, edition=None):
     liste = sort(liste, ORDER)
     return liste
 
-def sort(liste, key):
+def sort(liste, key=ORDER):
     if key == 'dexnr':
         algorithm = lambda a: a
     if key == 'team':

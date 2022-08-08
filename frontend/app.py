@@ -10,6 +10,11 @@ from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.screenmanager import FadeTransition
+import backend.server as server
+import backend.pokedecoder
+import threading
+
+connector = threading.Thread(target=server.main, args=(), daemon=True)
 
 configsave = 'backend/config/'
 
@@ -29,7 +34,8 @@ class MainMenu(Screen):
         subprocess.Popen([bh['path'], f'--lua={os.path.abspath("./backend/obsautomation.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
 
     def launchserver(self):
-        pass
+        connector.start()
+
 
 class SettingsMenu(Screen):   
     def changesettingscreen(self, settings):
@@ -67,12 +73,15 @@ class SpriteSettings(Screen):
                 self.ids.sortierung.children[i].state = 'down'
 
     def save_changes(self):
+        
         sp['common_path'] = self.ids.common_path.text
         sp['animated'] = self.ids.animated_check.state == 'down'
         for i in range(4):
             if self.ids.sortierung.children[i].state == 'down':
                 sp['order'] = ['route', 'lvl', 'team', 'dexnr'][i]
-
+                backend.pokedecoder.setorder(sp['order'])
+        server.spriteconf = sp
+        server.update = True
         with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)
 
@@ -156,7 +165,7 @@ class PlayerSettings(Screen):
 
     def save_changes(self):
         for i in range(1, pl['player_count'] + 1):
-            if self.ids[f"player_count_i"].state == "down":
+            if self.ids[f"player_count_{i}"].state == "down":
                 pl['player_count'] = i
             pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
             pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"

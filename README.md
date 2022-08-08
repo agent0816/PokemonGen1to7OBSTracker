@@ -2,11 +2,11 @@
 
 Backend:
 ---
-[ ] OBS-Verbindung einbauen
+[x] OBS-Verbindung einbauen
 
-[ ] Wechseln der Quellen einbauen
-*    [ ] Bilder
-*    [ ] Spitznamen
+[x] Wechseln der Quellen einbauen
+*    [x] Bilder
+*    [x] Spitznamen
 
 [ ] Remote-Funktionen
 *    [ ] Peer to Peer Verbindung

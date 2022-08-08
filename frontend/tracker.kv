@@ -2,7 +2,7 @@
 
 Screens:
 
-<Screens@ScreenManager>:
+<Screens>:
     current: "MainMenu"
     MainMenu:
     SettingsMenu:
@@ -369,6 +369,7 @@ Screens:
                 pos_hint: {"center_y": .5}
                 size_hint: None, None
                 size: "20dp", "20dp"
+                on_press: root.changeScreen(1)
             Label:
                 text: "1"
                 pos_hint: {"center_y": .5}
@@ -380,6 +381,7 @@ Screens:
                 pos_hint: {"center_y": .5}
                 size_hint: None, None
                 size: "20dp", "20dp"
+                on_press: root.changeScreen(2)
             Label:
                 text: "2"
                 pos_hint: {"center_y": .5}
@@ -391,6 +393,7 @@ Screens:
                 pos_hint: {"center_y": .5}
                 size_hint: None, None
                 size: "20dp", "20dp"
+                on_press: root.changeScreen(3)
             Label:
                 text: "3"
                 pos_hint: {"center_y": .5}
@@ -402,6 +405,7 @@ Screens:
                 pos_hint: {"center_y": .5}
                 size_hint: None, None
                 size: "20dp", "20dp"
+                on_press: root.changeScreen(4)
             Label:
                 text: "4"
                 pos_hint: {"center_y": .5}

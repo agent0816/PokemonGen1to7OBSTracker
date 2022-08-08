@@ -6,23 +6,15 @@ from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.checkbox import CheckBox
 from kivy.config import Config
+Config.read('gui.ini')
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.screenmanager import FadeTransition
+from kivy.core.window import Window
 import backend.server as server
 import backend.pokedecoder
 import threading
-
-connector = threading.Thread(target=server.main, args=(), daemon=True)
-
-configsave = 'backend/config/'
-
-bh = yaml.safe_load(open(f"{configsave}bh_config.yml"))
-obs = yaml.safe_load(open(f"{configsave}obs_config.yml"))
-sp = yaml.safe_load(open(f"{configsave}sprites.yml"))
-pl = yaml.safe_load(open(f"{configsave}player.yml"))
-cc = yaml.safe_load(open(f"{configsave}common_config.yml"))
 
 class Screens(ScreenManager):
     def __init__(self, **kwargs):
@@ -36,10 +28,12 @@ class MainMenu(Screen):
     def launchserver(self):
         connector.start()
 
-
 class SettingsMenu(Screen):   
     def changesettingscreen(self, settings):
         if len(self.children[0].children) > 1:
+            curScreen = self.children[0].children[0]
+            if type(curScreen) is not Screen:
+                type(curScreen).save_changes(curScreen)
             self.children[0].remove_widget(self.children[0].children[0])
 
         widget = self.checkSettingScreen(settings)
@@ -47,7 +41,6 @@ class SettingsMenu(Screen):
         self.children[0].add_widget(widget)
 
     def checkSettingScreen(self, settings):
-        widget = Screen()
         if settings == 'sprite':
             widget = SpriteSettings()
         elif settings == 'games':
@@ -60,7 +53,7 @@ class SettingsMenu(Screen):
             widget = RemoteSettings()
         elif settings == 'player':
             widget = PlayerSettings()
-        return widget
+        return widget # type: ignore
 
 
 class SpriteSettings(Screen):
@@ -73,7 +66,6 @@ class SpriteSettings(Screen):
                 self.ids.sortierung.children[i].state = 'down'
 
     def save_changes(self):
-        
         sp['common_path'] = self.ids.common_path.text
         sp['animated'] = self.ids.animated_check.state == 'down'
         for i in range(4):
@@ -149,7 +141,8 @@ class OBSSettings(Screen):
             yaml.dump(obs, file)
 
 class RemoteSettings(Screen):
-    pass
+    def save_changes(self):
+        pass
 
 class PlayerSettings(Screen):
     def __init__(self, **kwargs):
@@ -158,17 +151,27 @@ class PlayerSettings(Screen):
         self.pressCheckBoxes()
 
     def changeScreen(self, player):
-        pl['player_count'] = player
         self.removeCheckBoxes()
-        self.addCheckBoxes()
+        pl['player_count'] = player
         self.save_changes()
+        self.addCheckBoxes()
+        self.pressCheckBoxes()
 
-    def save_changes(self):
+    def save_changes(self, *args):
         for i in range(1, pl['player_count'] + 1):
             if self.ids[f"player_count_{i}"].state == "down":
                 pl['player_count'] = i
-            pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
-            pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
+            try:
+                pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
+            except KeyError:
+                pl[f"remote_{i}"] = False
+            try:
+                pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
+            except KeyError:
+                pl[f"obs_{i}"] = False
+
+            with open(f"{configsave}player.yml", 'w') as file:
+                yaml.dump(pl, file)
 
     def pressCheckBoxes(self):
         self.ids[f"player_count_{pl['player_count']}"].state = "down"
@@ -199,10 +202,15 @@ class PlayerSettings(Screen):
             idRemoteLabel = f"remote_label_{i}"
             idOBS = f"obs_player_{i}"
             idOBSLabel = f"obs_label_{i}"
-            checkRemote = CheckBox(active=pl[f"remote_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
+            checkRemote = CheckBox(on_press=self.save_changes,active=pl[f"remote_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
+            # checkRemote.bind(on_press=self.save_changes())
             checkRemoteLabel = Label(text="remote", pos_hint={"center_y": .5}, size_hint=[None, None], size=["60dp", "20dp"])
-            checkOBS = CheckBox(active=pl[f"obs_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
+            checkOBS = CheckBox(on_press=self.save_changes,active=pl[f"obs_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
+            # checkOBS.bind(on_press=self.save_changes())  # type: ignore
             checkOBSLabel = Label(text="OBS", pos_hint={"center_y": .5}, size_hint=[None, None], size=["40dp", "20dp"])
+
+            # testBox = CheckBox(on_press=self.save_changes)
+            # self.ids[idBox].add_widget(testBox)
 
             self.ids[idBox].add_widget(checkRemote)
             self.ids[idRemote] = weakref.proxy(checkRemote)
@@ -213,10 +221,38 @@ class PlayerSettings(Screen):
             self.ids[idBox].add_widget(checkOBSLabel)
             self.ids[idOBSLabel] = weakref.proxy(checkOBSLabel)
 
-class TrackerApp(App):
+class TrackerApp(App):  
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        Window.bind(on_request_close=self.exit_check)
         Config.set('graphics', 'resizable', 0)
         Config.set('graphics', 'width', "600")
         Config.set('graphics', 'height', "400")
         Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
+
+    def on_start(self):
+        global connector
+        connector = threading.Thread(target=server.main, args=(), daemon=True)
+        global configsave
+        configsave = 'backend/config/'
+        global bh
+        bh = yaml.safe_load(open(f"{configsave}bh_config.yml"))
+        global obs
+        obs = yaml.safe_load(open(f"{configsave}obs_config.yml"))
+        global sp
+        sp = yaml.safe_load(open(f"{configsave}sprites.yml"))
+        global pl
+        pl = yaml.safe_load(open(f"{configsave}player.yml"))
+        global cc
+        cc = yaml.safe_load(open(f"{configsave}common_config.yml"))
+
+    def exit_check(self, *args):
+        self.save_config(f"{configsave}bh_config.yml", bh)
+        self.save_config(f"{configsave}obs_config.yml", obs)
+        self.save_config(f"{configsave}sprites.yml", sp)
+        self.save_config(f"{configsave}player.yml", pl)
+        self.save_config(f"{configsave}common_config.yml", cc)
+
+    def save_config(self, path, setting):
+        with open(path, 'w') as file:
+            yaml.dump(setting, file)

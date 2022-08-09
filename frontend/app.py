@@ -26,7 +26,8 @@ class MainMenu(Screen):
         subprocess.Popen([bh['path'], f'--lua={os.path.abspath("./backend/obsautomation.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
 
     def launchserver(self):
-        connector.start()
+        if not connector.is_alive():
+            connector.start()
 
 class SettingsMenu(Screen):   
     def changesettingscreen(self, settings):

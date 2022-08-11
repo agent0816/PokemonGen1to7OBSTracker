@@ -39,7 +39,7 @@ async def connect_to_obs():
 async def changeSource(player, slots, team, edition):
     batch = []
     if spriteconf['edition_override'] != '':
-        edition = spriteconf['edition_override']
+        edition = max(edition, spriteconf['edition_override'])
     for slot in slots:
         sprite = get_sprite(team[slot], spriteconf['animated'], edition)
 

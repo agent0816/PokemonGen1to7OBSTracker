@@ -95,28 +95,34 @@ def pokemon3(data, edition):
     return Pokemon(species, not (key % 0x10000 ^ key >> 16) > 8, form=form, lvl=lvl, nickname=nickname, route=met_location)
 
 
-def decryptpokemon(data):
+def decryptpokemon(data, gen):
     offset_lut = [[0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 3, 1, 2], [0, 2, 3, 1], [0, 3, 2, 1], [1, 0, 2, 3], [1, 0, 3, 2], [2, 0, 1, 3], [3, 0, 1, 2], [2, 0, 3, 1], [3, 0, 2, 1], [1, 2, 0, 3], [1, 3, 0, 2], [2, 1, 0, 3], [3, 1, 0, 2], [2, 3, 0, 1], [3, 2, 0, 1], [1, 2, 3, 0], [1, 3, 2, 0], [2, 1, 3, 0], [3, 1, 2, 0], [2, 3, 1, 0], [3, 2, 1, 0]]
     prng = lambda seed : (0x41C64E6D * seed + 0x6073) % 0x100000000
     personality_value = int.from_bytes(data[:4], 'little')
-    checksum = int.from_bytes(data[6:8], 'little')
     shift_value = ((personality_value & 0x3E000) >> 0xD) % 24
-    encrypted_bytes = data[8:136]
-    key = checksum
+    if gen == '45':
+        cutoff = 136
+        blocksize = 32
+        key = int.from_bytes(data[6:8], 'little')
+    else:
+        cutoff = 232
+        blocksize = 56
+        key = personality_value
+    encrypted_bytes = data[8:cutoff]
     decrypted_bytes = b''
-    for i in range(64):
+    for i in range(len(encrypted_bytes)//2):
         key = prng(key)
         decrypted_bytes += (int.from_bytes(encrypted_bytes[i * 2:i * 2 + 2], 'little') ^ (key >> 16)).to_bytes(2, 'little')
     unshuffled_bytes = b''
     for i in range(4):
-        unshuffled_bytes += decrypted_bytes[offset_lut[shift_value][i] * 32:offset_lut[shift_value][i] * 32 + 32]
+        unshuffled_bytes += decrypted_bytes[offset_lut[shift_value][i] * blocksize:offset_lut[shift_value][i] * blocksize + blocksize]
     tid = int.from_bytes(unshuffled_bytes[4:6], 'little')
     sid = int.from_bytes(unshuffled_bytes[6:8], 'little')
     shiny_value = tid ^ sid ^ (personality_value >> 16) ^ (personality_value % 0x10000)
-    encrypted_battle_stats = data[136:]
+    encrypted_battle_stats = data[cutoff:]
     key = personality_value
     decrypted_battle_stats = b''
-    for i in range(int(len(encrypted_battle_stats)/2)):
+    for i in range(len(encrypted_battle_stats)//2):
         key = prng(key)
         decrypted_battle_stats += (int.from_bytes(encrypted_battle_stats[i * 2:i * 2 + 2], 'little') ^ (key >> 16)).to_bytes(2, 'little')
     return (unshuffled_bytes, decrypted_battle_stats, shiny_value, personality_value)
@@ -139,7 +145,7 @@ def pokemon45(data, charset):
     genesect = {0x00:'' , 0x08: '-douse', 0x10: '-shock', 0x18: '-burn', 0x20: '-chill'}
 
 
-    unshuffled_bytes, decrypted_battle_stats, shiny_value, personality = decryptpokemon(data)
+    unshuffled_bytes, decrypted_battle_stats, shiny_value, personality = decryptpokemon(data, '45')
     dexnr = int.from_bytes(unshuffled_bytes[0:2], 'little')
     met_location = int.from_bytes(unshuffled_bytes[0x3E:0x40], 'little')
     if met_location == 0:  # diamant/perl

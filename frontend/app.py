@@ -56,7 +56,6 @@ class SettingsMenu(Screen):
             widget = PlayerSettings()
         return widget # type: ignore
 
-
 class SpriteSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

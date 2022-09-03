@@ -11,8 +11,6 @@ with open('backend/config/sprites.yml') as file:
 with open('backend/config/bh_config.yml') as file:
     bizhawk_config = yaml.safe_load(file)
 
-
-
 ws = None
 
 def update_config():

@@ -61,12 +61,26 @@ class SpriteSettings(Screen):
         super().__init__(**kwargs)
         self.ids.common_path.text = sp['common_path']
         self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'
+        self.ids.game_sprites_check.state = 'down' if sp['single_path_check'] else 'normal'
+        self.sprite_paths_setting(initializing=True)
         for i in range(4):
             if i == ['route', 'lvl', 'team', 'dexnr'].index(sp['order']):
                 self.ids.sortierung.children[i].state = 'down'
 
+    def sprite_paths_setting(self, initializing=False):
+        print(self.ids.sortierung.children[0].opacity)
+        if self.ids.game_sprites_check.state == 'normal':
+            self.ids.game_sprites.opacity = 0
+            self.ids.game_sprites.disabled = True
+        else:
+            self.ids.game_sprites.opacity = 1
+            self.ids.game_sprites.disabled = False
+        if not initializing:
+            self.save_changes()
+
     def save_changes(self):
         sp['common_path'] = self.ids.common_path.text
+        sp['single_path_check'] = self.ids.game_sprites_check.state == 'down'
         sp['animated'] = self.ids.animated_check.state == 'down'
         for i in range(4):
             if self.ids.sortierung.children[i].state == 'down':
@@ -225,7 +239,7 @@ class TrackerApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         Window.bind(on_request_close=self.exit_check)
-        Config.set('graphics', 'resizable', 0)
+        Config.set('graphics', 'resizable', 1)
         Config.set('graphics', 'width', "600")
         Config.set('graphics', 'height', "400")
         Config.set('input', 'mouse', 'mouse,multitouch_on_demand')

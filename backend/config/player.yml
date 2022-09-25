@@ -1,9 +1,9 @@
 obs_1: false
 obs_2: false
-obs_3: false
+obs_3: true
 obs_4: false
 player_count: 4
 remote_1: true
 remote_2: true
-remote_3: false
-remote_4: false
+remote_3: true
+remote_4: true

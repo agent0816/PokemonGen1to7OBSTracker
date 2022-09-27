@@ -14,5 +14,5 @@ red: /generation-i/red-blue/transparent/
 ruby: /generation-iii/ruby-sapphire/
 show_nicknames: true
 silver: /generation-ii/silver/transparent/
-single_path_check: false
+single_path_check: true
 yellow: /generation-i/yellow/transparent/

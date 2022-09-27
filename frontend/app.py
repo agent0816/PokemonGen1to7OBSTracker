@@ -68,7 +68,6 @@ class SpriteSettings(Screen):
                 self.ids.sortierung.children[i].state = 'down'
 
     def sprite_paths_setting(self, initializing=False):
-        print(self.ids.sortierung.children[0].opacity)
         if self.ids.game_sprites_check.state == 'normal':
             self.ids.game_sprites.opacity = 0
             self.ids.game_sprites.disabled = True

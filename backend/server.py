@@ -5,13 +5,17 @@ import yaml
 import simpleobsws
 import backend.pokedecoder as pokedecoder
 
+#from backend.citra import Citra
+
 SPIELERANZAHL = 4
 with open('backend/config/sprites.yml') as file:
     spriteconf = yaml.safe_load(file)
 with open('backend/config/bh_config.yml') as file:
     bizhawk_config = yaml.safe_load(file)
 
-ws = None
+
+
+websockets = []
 
 def update_config():
     global spriteconf
@@ -23,13 +27,14 @@ def update_config():
 
 def load_obsws():
     obsconf = yaml.safe_load(open('backend/config/obs_config.yml'))
-    global ws
-    if obsconf['host'] != '' and obsconf['port'] != '':
-        ws = simpleobsws.WebSocketClient(url = 'ws://' + obsconf['host'] + ':' + obsconf['port'], password = obsconf['password'], identification_parameters = simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks = False))
+    global websockets
+    for c in obsconf:
+        if c['host'] != None and c['port'] != None:
+            websockets.append(simpleobsws.WebSocketClient(url = 'ws://' + c['host'] + ':' + c['port'], password = c['password'], identification_parameters = simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks = False)))
 
 
 async def connect_to_obs():
-    if ws is not None:
+    for ws in websockets:
         await ws.connect()
         await ws.wait_until_identified()
 
@@ -47,7 +52,8 @@ async def changeSource(player, slots, team, edition):
             batch.append(simpleobsws.Request('SetInputSettings', {'inputName': f'name{slot + 6 * (player -1) +1}', 'inputSettings': {'text': team[slot].nickname}}))
         
     if batch != []:
-        await ws.call_batch(batch)
+        for ws in websockets:
+            await ws.call_batch(batch)
 
 edition_lut = {
     11: 'red',
@@ -93,7 +99,8 @@ async def hide_nicknames():
     batch = []
     for i in range(24):
         batch.append(simpleobsws.Request('SetInputSettings', {'inputName': f'name{i + 1}', 'inputSettings': {'text': ''}}))
-    await ws.call_batch(batch)
+    for ws in websockets:
+        await ws.call_batch(batch)
 
 async def bizhawk_server():
     server = await asyncio.start_server(handle_client, bizhawk_config['host'], bizhawk_config['port'])
@@ -151,8 +158,38 @@ async def handle_client(reader, writer):
 async def start():
     load_obsws()
     await connect_to_obs()
+#    await citra()
     await bizhawk_server()
 
+async def citra():
+    pointer = 0x8CE1CE8
+    c = Citra()
+    team = []
+    while True:
+        party = b''
+        for i in range(6):
+            pokemon = c.read_memory(pointer + i * 484, 232)
+            battle_stats = c.read_memory(pointer + i * 484 + 112, 28)
+            party += pokemon + battle_stats
+
+        if team == []:
+            print('first')
+            team = pokedecoder.team(party, 6)
+            for p in team:
+                print(p)
+            await changeSource(1, range(6), team, 51)
+
+        else:
+            diff =[]
+            new_team =pokedecoder.team(party, 6)
+            for i in range(6):
+                if team[i] != new_team[i]:
+                    diff.append(i)
+            team = new_team
+            if diff !=[]:
+                print('new')
+                print(team)
+                await changeSource(1, diff, team, 51)
 
 def main():
     asyncio.run(start())

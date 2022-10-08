@@ -208,7 +208,9 @@ def pokemon45(data, charset):
 def pokemon67(data):
     unshuffled_bytes, decrypted_battle_stats, shiny_value, personality = decryptpokemon(data, '67')
     dexnr = int.from_bytes(unshuffled_bytes[:2] , 'little')
-    female = personality % 256 < gender_lut[dexnr]
+    female = False
+    if dexnr in gender_lut:
+        female = personality % 256 < gender_lut[dexnr]
     lvl = int(decrypted_battle_stats[4])
     met_location = int.from_bytes(unshuffled_bytes[0xD2:0xD4], 'little')
     nickname = ''
@@ -232,20 +234,20 @@ def team(data, gen, edition=None):
         data = newdata
         for i in range(6):
             liste.append(pokemon1(data[i * length: (i + 1) * length]))
-    if gen == 2:
+    elif gen == 2:
         newdata = b''
         for i in range(6):
             newdata += data[i * 48:i * 48 + 48] + data[i * 11 + 288:11 + i * 11 + 288] + data[i + 354:i + 355]
         data = newdata
         for i in range(6):
             liste.append(pokemon2(data[i * length: (i + 1) * length]))
-    if gen == 3:
+    elif gen == 3:
         for i in range(6):
             liste.append(pokemon3(data[i * length: (i + 1) * length], edition))
-    if gen == 4:
+    elif gen == 4:
         for i in range(6):
             liste.append(pokemon45(data[i * length: (i + 1) * length], gen4charset))
-    if gen == 5:
+    elif gen == 5:
         for i in range(6):
             liste.append(pokemon45(data[i * length: (i + 1) * length], gen5charset))
     else:

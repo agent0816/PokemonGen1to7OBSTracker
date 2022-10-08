@@ -1,3 +1,12 @@
-host: localhost
-password: pokemon
-port: '4444'
+- host: localhost
+  password: pokemon
+  port: '4444'
+- host: localhost
+  password: pokemon
+  port: '44445'
+- host: null
+  password: null
+  port: null
+- host: null
+  password: null
+  port: null

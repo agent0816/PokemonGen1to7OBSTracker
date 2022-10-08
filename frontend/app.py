@@ -141,14 +141,14 @@ class BizhawkSettings(Screen):
 class OBSSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.ids.obs_password.text = obs['password']
-        self.ids.obs_host.text = obs['host']
-        self.ids.obs_port.text = obs['port']
+        self.ids.obs_password.text = obs[0]['password']
+        self.ids.obs_host.text = obs[0]['host']
+        self.ids.obs_port.text = obs[0]['port']
 
     def save_changes(self):
-        obs['password'] = self.ids.obs_password.text
-        obs['host'] = self.ids.obs_host.text
-        obs['port'] = self.ids.obs_port.text
+        obs[0]['password'] = self.ids.obs_password.text
+        obs[0]['host'] = self.ids.obs_host.text
+        obs[0]['port'] = self.ids.obs_port.text
         
         with open(f"{configsave}obs_config.yml", 'w') as file:
             yaml.dump(obs, file)

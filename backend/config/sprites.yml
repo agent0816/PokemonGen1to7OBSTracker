@@ -1,4 +1,4 @@
-animated: true
+animated: false
 black: /generation-v/black-white/
 common_path: https://raw.githubusercontent.com/IntegerOverFlori/sprites/master/sprites/pokemon/versions
 crystal: /generation-ii/crystal/transparent/
@@ -8,7 +8,7 @@ emerald: /generation-iii/emerald/
 firered: /generation-iii/firered-leafgreen/
 gold: /generation-ii/gold/transparent/
 heartgold: /generation-iv/heartgold-soulsilver/
-order: dexnr
+order: lvl
 platinum: /generation-iv/platinum/
 red: /generation-i/red-blue/transparent/
 ruby: /generation-iii/ruby-sapphire/

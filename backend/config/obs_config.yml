@@ -1,7 +1,7 @@
 - host: localhost
   password: pokemon
   port: '4444'
-- host: localhost
+- host: null
   password: pokemon
   port: '44445'
 - host: null

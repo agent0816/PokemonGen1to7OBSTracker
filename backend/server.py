@@ -84,7 +84,7 @@ def get_sprite(pokemon, anim, edition):
         female = 'female/' 
     else:
         female = ''
-    if anim and edition in (51, 52, 53, 54):
+    if anim and edition in (33, 41, 42, 43, 44, 45, 51, 52, 53, 54):
         filetype = '.gif'
         animated = 'animated/'
     else:

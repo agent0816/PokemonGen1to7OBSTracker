@@ -346,44 +346,45 @@ Screens:
 
 <OBSSettings>:
     GridLayout:
+        id: obs_settings
         cols: 2
-        Label:
-            text: 'Passwort\nWebsocket'
-            size_hint: .2, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: obs_password
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                password: True
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: 'IP-Adresse\nWebsocket'
-            size_hint: .2, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: obs_host
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: 'Port des\nWebsocket'
-            size_hint: .2, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: obs_port
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
+        # Label:
+        #     text: 'Passwort\nWebsocket'
+        #     size_hint: .2, 1
+        # AnchorLayout:
+        #     anchor_x: 'left'
+        #     TextInput:
+        #         id: obs_password
+        #         size_hint: 1, None
+        #         size: "20dp", "30dp"
+        #         password: True
+        #         multiline: False
+        #         write_tab: False
+        #         on_text_validate: root.save_changes()
+        # Label:
+        #     text: 'IP-Adresse\nWebsocket'
+        #     size_hint: .2, 1
+        # AnchorLayout:
+        #     anchor_x: 'left'
+        #     TextInput:
+        #         id: obs_host
+        #         size_hint: 1, None
+        #         size: "20dp", "30dp"
+        #         multiline: False
+        #         write_tab: False
+        #         on_text_validate: root.save_changes()
+        # Label:
+        #     text: 'Port des\nWebsocket'
+        #     size_hint: .2, 1
+        # AnchorLayout:
+        #     anchor_x: 'left'
+        #     TextInput:
+        #         id: obs_port
+        #         size_hint: 1, None
+        #         size: "20dp", "30dp"
+        #         multiline: False
+        #         write_tab: False
+        #         on_text_validate: root.save_changes()
 
 <RemoteSettings>:
     GridLayout:

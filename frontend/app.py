@@ -3,8 +3,11 @@ import subprocess
 import weakref
 import yaml
 from kivy.app import App
+from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.checkbox import CheckBox
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.textinput import TextInput
 from kivy.config import Config
 Config.read('gui.ini')
 from kivy.uix.label import Label
@@ -141,14 +144,45 @@ class BizhawkSettings(Screen):
 class OBSSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.ids.obs_password.text = obs[0]['password']
-        self.ids.obs_host.text = obs[0]['host']
-        self.ids.obs_port.text = obs[0]['port']
+        grid: GridLayout = self.ids["obs_settings"]
+        for spieler in range(pl['player_count']):
+            labelBox = BoxLayout(orientation="vertical",size_hint=(.2,1))
+            grid.add_widget(labelBox)
+
+            labelBox.add_widget(Label(text=f"Spieler {spieler+1}", size_hint=(1,.15)))
+            labelBox.add_widget(Label(text='Passwort\nWebsocket', size_hint=(1,.85)))
+            anchorPasswort=AnchorLayout(anchor_x='left')
+            grid.add_widget(anchorPasswort)
+            passwortInput = TextInput(size_hint=(1,None), size=("20dp","40dp"), password=True, multiline=False, write_tab=False)
+            passwortInput.bind(on_text_validate=self.save_changes) #type: ignore
+            self.ids[f"obs_password{spieler+1}"] = weakref.proxy(passwortInput)
+            anchorPasswort.add_widget(passwortInput)
+
+            grid.add_widget(Label(text='IP-Adresse\nWebsocket', size_hint=(.2,1)))
+            anchorHost=AnchorLayout(anchor_x='left')
+            grid.add_widget(anchorHost)
+            hostInput = TextInput(size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
+            hostInput.bind(on_text_validate=self.save_changes) #type: ignore
+            self.ids[f"obs_host{spieler+1}"] = weakref.proxy(hostInput)
+            anchorHost.add_widget(hostInput)
+
+            grid.add_widget(Label(text='Port des\nWebsocket',size_hint=(.2,1)))
+            anchorPort=AnchorLayout(anchor_x='left')
+            grid.add_widget(anchorPort)
+            portInput = TextInput(size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
+            portInput.bind(on_text_validate=self.save_changes) #type: ignore
+            self.ids[f"obs_port{spieler+1}"] = weakref.proxy(portInput)
+            anchorPort.add_widget(portInput)
+
+            self.ids[f"obs_password{spieler+1}"].text = obs[spieler]['password']
+            self.ids[f"obs_host{spieler+1}"].text = obs[spieler]['host']
+            self.ids[f"obs_port{spieler+1}"].text = obs[spieler]['port']
 
     def save_changes(self):
-        obs[0]['password'] = self.ids.obs_password.text
-        obs[0]['host'] = self.ids.obs_host.text
-        obs[0]['port'] = self.ids.obs_port.text
+        for spieler in range(pl['player_count']):
+            obs[spieler]['password'] = self.ids[f"obs_password{spieler+1}"].text
+            obs[spieler]['host'] = self.ids[f"obs_host{spieler+1}"].text
+            obs[spieler]['port'] = self.ids[f"obs_port{spieler+1}"].text
         
         with open(f"{configsave}obs_config.yml", 'w') as file:
             yaml.dump(obs, file)

@@ -348,110 +348,11 @@ Screens:
     GridLayout:
         id: obs_settings
         cols: 2
-        # Label:
-        #     text: 'Passwort\nWebsocket'
-        #     size_hint: .2, 1
-        # AnchorLayout:
-        #     anchor_x: 'left'
-        #     TextInput:
-        #         id: obs_password
-        #         size_hint: 1, None
-        #         size: "20dp", "30dp"
-        #         password: True
-        #         multiline: False
-        #         write_tab: False
-        #         on_text_validate: root.save_changes()
-        # Label:
-        #     text: 'IP-Adresse\nWebsocket'
-        #     size_hint: .2, 1
-        # AnchorLayout:
-        #     anchor_x: 'left'
-        #     TextInput:
-        #         id: obs_host
-        #         size_hint: 1, None
-        #         size: "20dp", "30dp"
-        #         multiline: False
-        #         write_tab: False
-        #         on_text_validate: root.save_changes()
-        # Label:
-        #     text: 'Port des\nWebsocket'
-        #     size_hint: .2, 1
-        # AnchorLayout:
-        #     anchor_x: 'left'
-        #     TextInput:
-        #         id: obs_port
-        #         size_hint: 1, None
-        #         size: "20dp", "30dp"
-        #         multiline: False
-        #         write_tab: False
-        #         on_text_validate: root.save_changes()
 
 <RemoteSettings>:
     GridLayout:
+        id: remote_settings
         cols: 2
-        Label:
-            text: 'Deine öffentliche Ip-Adresse:'
-        Label:
-            id: public_ip
-            text: 'hier öffentliche Ip-Adresse\neinfügen mit Python'
-        Label:
-            text: 'freizugebender Port:'
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: externer_port
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-        Label:
-            text: 'Welcher Spieler bist du?'
-        BoxLayout:
-            orientation: 'horizontal'
-            CheckBox:
-                id: player_1
-                group: 'player'
-                pos_hint: {"center_y": .5}
-                size_hint: None, None
-                size: "20dp", "20dp"
-            Label:
-                text: "1"
-                pos_hint: {"center_y": .5}
-                size_hint: None, None
-                size: "20dp", "20dp"
-            CheckBox:
-                id: player_2
-                group: 'player'
-                pos_hint: {"center_y": .5}
-                size_hint: None, None
-                size: "20dp", "20dp"
-            Label:
-                text: "2"
-                pos_hint: {"center_y": .5}
-                size_hint: None, None
-                size: "20dp", "20dp"
-            CheckBox:
-                id: player_3
-                group: 'player'
-                pos_hint: {"center_y": .5}
-                size_hint: None, None
-                size: "20dp", "20dp"
-            Label:
-                text: "3"
-                pos_hint: {"center_y": .5}
-                size_hint: None, None
-                size: "20dp", "20dp"
-            CheckBox:
-                id: player_4
-                group: 'player'
-                pos_hint: {"center_y": .5}
-                size_hint: None, None
-                size: "20dp", "20dp"
-            Label:
-                text: "4"
-                pos_hint: {"center_y": .5}
-                size_hint: None, None
-                size: "20dp", "20dp"
 
 <PlayerSettings>:
     GridLayout:

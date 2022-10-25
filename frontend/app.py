@@ -188,6 +188,14 @@ class OBSSettings(Screen):
             yaml.dump(obs, file)
 
 class RemoteSettings(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        grid: GridLayout = self.ids["remote_settings"]
+        grid.add_widget(Label(text="Deine öffentliche\nIpv4-Adresse"))
+        grid.add_widget(Label(text=externalIPv4))
+        grid.add_widget(Label(text="Deine öffentliche\nIpv6-Adresse"))
+        grid.add_widget(Label(text=externalIPv6))
+
     def save_changes(self):
         pass
 
@@ -250,10 +258,10 @@ class PlayerSettings(Screen):
             idOBS = f"obs_player_{i}"
             idOBSLabel = f"obs_label_{i}"
             checkRemote = CheckBox(on_press=self.save_changes,active=pl[f"remote_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
-            # checkRemote.bind(on_press=self.save_changes())
+            checkRemote.bind(on_press=self.save_changes) # type: ignore
             checkRemoteLabel = Label(text="remote", pos_hint={"center_y": .5}, size_hint=[None, None], size=["60dp", "20dp"])
             checkOBS = CheckBox(on_press=self.save_changes,active=pl[f"obs_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
-            # checkOBS.bind(on_press=self.save_changes())  # type: ignore
+            checkOBS.bind(on_press=self.save_changes)  # type: ignore
             checkOBSLabel = Label(text="OBS", pos_hint={"center_y": .5}, size_hint=[None, None], size=["40dp", "20dp"])
 
             # testBox = CheckBox(on_press=self.save_changes)
@@ -278,6 +286,10 @@ class TrackerApp(App):
         Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
     def on_start(self):
+        global externalIPv4
+        externalIPv4 = os.popen('curl -s -4 ifconfig.co/').readline().split('\n')[0]
+        global externalIPv6
+        externalIPv6 = os.popen('curl -s -6 ifconfig.co/').readline().split('\n')[0]
         global connector
         connector = threading.Thread(target=server.main, args=(), daemon=True)
         global configsave

@@ -265,9 +265,6 @@ class PlayerSettings(Screen):
             checkOBS.bind(on_press=self.save_changes)  # type: ignore
             checkOBSLabel = Label(text="OBS", pos_hint={"center_y": .5}, size_hint=[None, None], size=["40dp", "20dp"])
 
-            # testBox = CheckBox(on_press=self.save_changes)
-            # self.ids[idBox].add_widget(testBox)
-
             self.ids[idBox].add_widget(checkRemote)
             self.ids[idRemote] = weakref.proxy(checkRemote)
             self.ids[idBox].add_widget(checkRemoteLabel)

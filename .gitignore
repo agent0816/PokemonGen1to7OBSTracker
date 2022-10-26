@@ -1,2 +1,2 @@
 __pycache__/
-backend/config/*.yml
+backend/config/

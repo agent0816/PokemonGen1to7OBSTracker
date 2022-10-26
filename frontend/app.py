@@ -144,19 +144,6 @@ class BizhawkSettings(Screen):
 class OBSSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-
-    def save_changes(self):
-        for spieler in range(pl['player_count']):
-            obs[spieler]['password'] = self.ids[f"obs_password{spieler+1}"].text
-            obs[spieler]['host'] = self.ids[f"obs_host{spieler+1}"].text
-            obs[spieler]['port'] = self.ids[f"obs_port{spieler+1}"].text
-        
-        with open(f"{configsave}obs_config.yml", 'w') as file:
-            yaml.dump(obs, file)
-
-class OBSPlayerSettings(Screen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
         grid: GridLayout = self.ids["obs_settings"]
         for spieler in range(pl['player_count']):
             labelBox = BoxLayout(orientation="vertical",size_hint=(.2,1))
@@ -190,6 +177,15 @@ class OBSPlayerSettings(Screen):
             self.ids[f"obs_password{spieler+1}"].text = obs[spieler]['password']
             self.ids[f"obs_host{spieler+1}"].text = obs[spieler]['host']
             self.ids[f"obs_port{spieler+1}"].text = obs[spieler]['port']
+
+    def save_changes(self):
+        for spieler in range(pl['player_count']):
+            obs[spieler]['password'] = self.ids[f"obs_password{spieler+1}"].text
+            obs[spieler]['host'] = self.ids[f"obs_host{spieler+1}"].text
+            obs[spieler]['port'] = self.ids[f"obs_port{spieler+1}"].text
+        
+        with open(f"{configsave}obs_config.yml", 'w') as file:
+            yaml.dump(obs, file)       
 
 class RemoteSettings(Screen):
     def __init__(self, **kwargs):

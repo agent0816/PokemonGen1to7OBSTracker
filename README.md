@@ -8,38 +8,30 @@ Backend:
 *    [x] Bilder
 *    [x] Spitznamen
 
-[ ] Remote-Funktionen
-*    [ ] Peer to Peer Verbindung
-
-[ ] eventuell neue Klasse für die Mitspieler-Menge
-*    [ ] remote Spieler
-*    [ ] lokale Spieler
-*    [ ] wer ändert Bilder in OBS
-
-[ ] Liste der Voraussetzungen zum Starten von bizhawk setzen
-
-[ ] starte_bizhawk script anpassen
-
 Frontend:
 ---
-[ ] mit Kivy auseinandersetzen
+[x] mit Kivy auseinandersetzen
 
-[ ] Screen Manager kivy
+[x] Screen Manager kivy
 
-[ ] Design der Fenster
-*    [ ] Startfenseter
-*    [ ] Settingsfenster
-     *   [ ] Sprite-Einstellungen Pfade
-     *   [ ] Bizhhawk-Einstellungen
+[x] Design der Fenster
+*    [x] Startfenseter
+*    [x] Settingsfenster
+     *   [x] Sprite-Einstellungen Pfade
+     *   [x] Bizhhawk-Einstellungen
      *   [ ] OBS-Settings
-     *   [ ] Remote-Settings
+          *    [ ] Standard-OBS Einstellungen für localhost auf separatem Screen
+          *    [ ] Websocketeinstellungen für jeden Spieler anpassen
+     *   [x] Remote-Settings
      *   [ ] Spielereinstellungen (wer ist lokal und wer remote)
+          *    [ ] remote Knopf enabled den OBS Knopf
+          *    [ ] lokale Spieler bekommen den localhost Websocket zugeteilt
      *   [ ] aktueller Spieler (mit ROM?)
 
 [ ] UI einbetten
 
 allgemein:
 ---
-[ ] in main.py das Frontend aufrufen
+[x] in main.py das Frontend aufrufen
 
 [ ] alles mit asyncio asynchron gestalten

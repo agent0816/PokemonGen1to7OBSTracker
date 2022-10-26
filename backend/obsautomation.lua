@@ -4,33 +4,33 @@ if gameinfo.getromname() == 'Null' then
     end
 end
 
-playerselected = false
-
-
-function playerSelected()
-    playerselected = true
-    form = forms.destroyall()
-end
-
-
--- Forms testen
-local table = {"1", "2", "3", "4"}
-local form = forms.newform(300, 200, "Spieler")
-local picture = forms.pictureBox(form, 0, 0, 300, 20)
-forms.drawText(picture, 5, 5, "Bitte den Spieler auswaehlen:")
-local dropdown = forms.dropdown(form, table, 5, 20)
-forms.button(form, "Bestaetigen", playerSelected, 5, 40)
-
-while not playerselected do
-    text = forms.gettext(dropdown)
-    emu.frameadvance()
-end
-
-
-if text == '1' then PLAYER = 1
-elseif text == '2' then PLAYER = 2
-elseif text == '3' then PLAYER = 3
-elseif text == '4' then PLAYER = 4 end
+--playerselected = false
+--
+--
+--function playerSelected()
+--    playerselected = true
+--    form = forms.destroyall()
+--end
+--
+--
+---- Forms testen
+--local table = {"1", "2", "3", "4"}
+--local form = forms.newform(300, 200, "Spieler")
+--local picture = forms.pictureBox(form, 0, 0, 300, 20)
+--forms.drawText(picture, 5, 5, "Bitte den Spieler auswaehlen:")
+--local dropdown = forms.dropdown(form, table, 5, 20)
+--forms.button(form, "Bestaetigen", playerSelected, 5, 40)
+--
+--while not playerselected do
+--    text = forms.gettext(dropdown)
+--    emu.frameadvance()
+--end
+--
+--
+--if text == '1' then PLAYER = 1
+--elseif text == '2' then PLAYER = 2
+--elseif text == '3' then PLAYER = 3
+--elseif text == '4' then PLAYER = 4 end
 
 -- wie viele Sekunden zwischen den Updates
 local INTERVAL = 1

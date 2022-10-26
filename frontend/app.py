@@ -26,7 +26,8 @@ class Screens(ScreenManager):
 
 class MainMenu(Screen):
     def launchbh(self):
-        subprocess.Popen([bh['path'], f'--lua={os.path.abspath("./backend/obsautomation.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
+        for i in range(pl['player_count']):
+            subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
 
     def launchserver(self):
         if not connector.is_alive():

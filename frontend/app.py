@@ -211,9 +211,9 @@ class PlayerSettings(Screen):
         self.removeCheckBoxes()
         pl['player_count'] = player
         server.SPIELERANZAHL = player
-        self.save_changes()
         self.addCheckBoxes()
         self.pressCheckBoxes()
+        self.save_changes()
 
     def save_changes(self, *args):
         for i in range(1, pl['player_count'] + 1):

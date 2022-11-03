@@ -3,7 +3,7 @@ obs_2: false
 obs_3: true
 obs_4: false
 player_count: 2
-remote_1: true
-remote_2: true
+remote_1: false
+remote_2: false
 remote_3: true
 remote_4: true

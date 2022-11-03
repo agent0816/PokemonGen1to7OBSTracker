@@ -288,59 +288,54 @@ class TrackerApp(App):
         global configsave
         configsave = 'backend/config/'
         global bh
-        bh: dict
         if os.path.exists(f"{configsave}bh_config.yml"):
             with open(f"{configsave}bh_config.yml") as file:
                 bh = yaml.safe_load(file)
         else:
-            bh['host'] = "127.45.45.45"
-            bh['path'] = ""
-            bh['port'] = "43885"
+            bh['host'] = "127.45.45.45" #type: ignore
+            bh['path'] = "" #type: ignore
+            bh['port'] = "43885" #type: ignore
         global obs
-        obs: dict
         if os.path.exists(f"{configsave}obs_config.yml"):
             with open(f"{configsave}obs_config.yml") as file:
                 obs = yaml.safe_load(file)
         else:
-            obs['host'] = "localhost"
-            obs['port'] = "4455"
-            obs['password'] = ""
+            obs['host'] = "localhost" #type: ignore
+            obs['port'] = "4455" #type: ignore
+            obs['password'] = "" #type: ignore
         global sp
-        sp: dict
         if os.path.exists(f"{configsave}sprites.yml"):
             with open(f"{configsave}sprites.yml") as file:
                 sp = yaml.safe_load(file)
         else:
-            sp['animated'] = False
-            sp['black'] = ""
-            sp['common_path'] = ""
-            sp['crystal'] = ""
-            sp['diamond'] = ""
-            sp['edition_override'] = ""
-            sp['emerald'] = ""
-            sp['firered'] = ""
-            sp['gold'] = ""
-            sp['heartgold'] = ""
-            sp['order'] = "lvl"
-            sp['platinum'] = ""
-            sp['red'] = ""
-            sp['ruby'] = ""
-            sp['show_nicknames'] = False
-            sp['silver'] = ""
-            sp['single_path_check'] = True
-            sp['yellow'] = ""
+            sp['animated'] = False #type: ignore
+            sp['black'] = "" #type: ignore
+            sp['common_path'] = "" #type: ignore
+            sp['crystal'] = "" #type: ignore
+            sp['diamond'] = "" #type: ignore
+            sp['edition_override'] = "" #type: ignore
+            sp['emerald'] = "" #type: ignore
+            sp['firered'] = "" #type: ignore
+            sp['gold'] = "" #type: ignore
+            sp['heartgold'] = "" #type: ignore
+            sp['order'] = "lvl" #type: ignore
+            sp['platinum'] = "" #type: ignore
+            sp['red'] = "" #type: ignore
+            sp['ruby'] = "" #type: ignore
+            sp['show_nicknames'] = False #type: ignore
+            sp['silver'] = "" #type: ignore
+            sp['single_path_check'] = True #type: ignore
+            sp['yellow'] = "" #type: ignore
         global pl
-        pl: dict
         if os.path.exists(f"{configsave}player.yml"):
             with open(f"{configsave}player.yml") as file:
                 pl = yaml.safe_load(file)
         else:
-            pl['player_count'] = 2
+            pl['player_count'] = 2 #type: ignore
             for i in range(1,5):
-                pl[f'obs_{i}'] = False
-                pl[f'remote_{i}'] = False
+                pl[f'obs_{i}'] = False #type: ignore
+                pl[f'remote_{i}'] = False #type: ignore
         global cc
-        cc: dict
         if os.path.exists(f"{configsave}common_config.yml"):
             with open(f"{configsave}common_config.yml") as file:
                 cc = yaml.safe_load(file)

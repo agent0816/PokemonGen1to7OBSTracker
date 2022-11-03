@@ -3,14 +3,18 @@ logging.basicConfig(level=logging.DEBUG, filename='logs/server.log',format='[%(a
 import asyncio
 import yaml
 import simpleobsws
+from simpleobsws import WebSocketClient
 import backend.pokedecoder as pokedecoder
 
 #from backend.citra import Citra
 
+global configsave
+configsave = 'backend/config/'
+
 SPIELERANZAHL = 4
-with open('backend/config/sprites.yml') as file:
+with open(f'{configsave}sprites.yml') as file:
     spriteconf = yaml.safe_load(file)
-with open('backend/config/bh_config.yml') as file:
+with open(f'{configsave}bh_config.yml') as file:
     bizhawk_config = yaml.safe_load(file)
 
 
@@ -20,22 +24,24 @@ with open('backend/config/bh_config.yml') as file:
 def update_config():
     global spriteconf
     global bizhawk_config
-    with open('backend/config/sprites.yml') as file:
+    with open(f'{configsave}sprites.yml') as file:
         spriteconf = yaml.safe_load(file)
-    with open('backend/config/bh_config.yml') as file:
+    with open(f'{configsave}bh_config.yml') as file:
         bizhawk_config = yaml.safe_load(file)
 
 def load_obsws():
-    obsconf = yaml.safe_load(open('backend/config/obs_config.yml'))
+    with open(f'{configsave}obs_config.yml') as file:
+        obsconf = yaml.safe_load(file)
     global ws
-    ws: WebSocketClient # type: ignore
     if obsconf['host'] not in [None,''] and obsconf['port'] not in [None,'']:
         ws = simpleobsws.WebSocketClient(url = 'ws://' + obsconf['host'] + ':' + obsconf['port'], password = obsconf['password'], identification_parameters = simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks = False))
+    else:
+        ws = None
 
 
 async def connect_to_obs():
-    await ws.connect()
-    await ws.wait_until_identified()
+    await ws.connect() #type: ignore
+    await ws.wait_until_identified() #type: ignore
 
 
 async def changeSource(player, slots, team, edition):
@@ -51,7 +57,7 @@ async def changeSource(player, slots, team, edition):
             batch.append(simpleobsws.Request('SetInputSettings', {'inputName': f'name{slot + 6 * (player -1) +1}', 'inputSettings': {'text': team[slot].nickname}}))
         
     if batch != []:
-        await ws.call_batch(batch)
+        await ws.call_batch(batch) #type: ignore
 
 luts = yaml.safe_load(open('backend/data/luts.yml'))
 
@@ -81,7 +87,7 @@ async def hide_nicknames():
     batch = []
     for i in range(24):
         batch.append(simpleobsws.Request('SetInputSettings', {'inputName': f'name{i + 1}', 'inputSettings': {'text': ''}}))
-    await ws.call_batch(batch)
+    await ws.call_batch(batch) #type: ignore
 
 async def bizhawk_server():
     server = await asyncio.start_server(handle_client, bizhawk_config['host'], bizhawk_config['port'])

@@ -153,7 +153,7 @@ class OBSSettings(Screen):
         grid.add_widget(anchorPasswort)
         passwortInput = TextInput(size_hint=(1,None), size=("20dp","40dp"), password=True, multiline=False, write_tab=False)
         passwortInput.bind(on_text_validate=self.save_changes) #type: ignore
-        self.ids[f"obs_password"] = weakref.proxy(passwortInput)
+        self.ids["obs_password"] = weakref.proxy(passwortInput)
         anchorPasswort.add_widget(passwortInput)
 
         grid.add_widget(Label(text='IP-Adresse\nWebsocket', size_hint=(.2,1)))
@@ -161,7 +161,7 @@ class OBSSettings(Screen):
         grid.add_widget(anchorHost)
         hostInput = TextInput(size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
         hostInput.bind(on_text_validate=self.save_changes) #type: ignore
-        self.ids[f"obs_host"] = weakref.proxy(hostInput)
+        self.ids["obs_host"] = weakref.proxy(hostInput)
         anchorHost.add_widget(hostInput)
 
         grid.add_widget(Label(text='Port des\nWebsocket',size_hint=(.2,1)))
@@ -169,17 +169,17 @@ class OBSSettings(Screen):
         grid.add_widget(anchorPort)
         portInput = TextInput(size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
         portInput.bind(on_text_validate=self.save_changes) #type: ignore
-        self.ids[f"obs_port"] = weakref.proxy(portInput)
+        self.ids["obs_port"] = weakref.proxy(portInput)
         anchorPort.add_widget(portInput)
 
-        self.ids[f"obs_password"].text = obs['password']
-        self.ids[f"obs_host"].text = obs['host']
-        self.ids[f"obs_port"].text = obs['port']
+        self.ids["obs_password"].text = obs['password']
+        self.ids["obs_host"].text = obs['host']
+        self.ids["obs_port"].text = obs['port']
 
     def save_changes(self):
-        obs['password'] = self.ids[f"obs_password"].text
-        obs['host'] = self.ids[f"obs_host"].text
-        obs['port'] = self.ids[f"obs_port"].text
+        obs['password'] = self.ids["obs_password"].text
+        obs['host'] = self.ids["obs_host"].text
+        obs['port'] = self.ids["obs_port"].text
         
         with open(f"{configsave}obs_config.yml", 'w') as file:
             yaml.dump(obs, file)       

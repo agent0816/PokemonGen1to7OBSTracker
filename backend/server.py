@@ -15,7 +15,7 @@ with open('backend/config/bh_config.yml') as file:
 
 
 
-websockets = []
+ws = None
 
 def update_config():
     global spriteconf
@@ -26,19 +26,15 @@ def update_config():
         bizhawk_config = yaml.safe_load(file)
 
 def load_obsws():
-    obsconf = yaml.safe_load(open('backend/config/obs_config.yml'))[:SPIELERANZAHL]
-    # entfernen von Duplikaten, wegen localhost
-    obsconf = [dict(obstuple) for obstuple in {tuple(obs.items()) for obs in obsconf}]
-    global websockets
-    for c in obsconf:
-        if c['host'] not in [None,''] and c['port'] not in [None,'']:
-            websockets.append(simpleobsws.WebSocketClient(url = 'ws://' + c['host'] + ':' + c['port'], password = c['password'], identification_parameters = simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks = False)))
+    obsconf = yaml.safe_load(open('backend/config/obs_config.yml'))
+    global ws
+    if obsconf['host'] not in [None,''] and obsconf['port'] not in [None,'']:
+        ws = simpleobsws.WebSocketClient(url = 'ws://' + obsconf['host'] + ':' + obsconf['port'], password = obsconf['password'], identification_parameters = simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks = False))
 
 
 async def connect_to_obs():
-    for ws in websockets:
-        await ws.connect()
-        await ws.wait_until_identified()
+    await ws.connect()
+    await ws.wait_until_identified()
 
 
 async def changeSource(player, slots, team, edition):
@@ -54,8 +50,7 @@ async def changeSource(player, slots, team, edition):
             batch.append(simpleobsws.Request('SetInputSettings', {'inputName': f'name{slot + 6 * (player -1) +1}', 'inputSettings': {'text': team[slot].nickname}}))
         
     if batch != []:
-        for ws in websockets:
-            await ws.call_batch(batch)
+        await ws.call_batch(batch)
 
 luts = yaml.safe_load(open('backend/data/luts.yml'))
 
@@ -85,8 +80,7 @@ async def hide_nicknames():
     batch = []
     for i in range(24):
         batch.append(simpleobsws.Request('SetInputSettings', {'inputName': f'name{i + 1}', 'inputSettings': {'text': ''}}))
-    for ws in websockets:
-        await ws.call_batch(batch)
+    await ws.call_batch(batch)
 
 async def bizhawk_server():
     server = await asyncio.start_server(handle_client, bizhawk_config['host'], bizhawk_config['port'])

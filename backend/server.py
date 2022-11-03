@@ -1,5 +1,5 @@
 import logging
-logging.basicConfig(level=logging.DEBUG, filename='server.log',format='[%(asctime)s] %(levelname)s: %(message)s', filemode='w', encoding='utf-8')
+logging.basicConfig(level=logging.DEBUG, filename='logs/server.log',format='[%(asctime)s] %(levelname)s: %(message)s', filemode='w', encoding='utf-8')
 import asyncio
 import yaml
 import simpleobsws

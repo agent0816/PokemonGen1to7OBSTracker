@@ -15,7 +15,7 @@ with open('backend/config/bh_config.yml') as file:
 
 
 
-ws = None
+# ws = None
 
 def update_config():
     global spriteconf
@@ -28,6 +28,7 @@ def update_config():
 def load_obsws():
     obsconf = yaml.safe_load(open('backend/config/obs_config.yml'))
     global ws
+    ws: WebSocketClient # type: ignore
     if obsconf['host'] not in [None,''] and obsconf['port'] not in [None,'']:
         ws = simpleobsws.WebSocketClient(url = 'ws://' + obsconf['host'] + ':' + obsconf['port'], password = obsconf['password'], identification_parameters = simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks = False))
 

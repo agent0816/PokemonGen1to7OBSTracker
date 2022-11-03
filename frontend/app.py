@@ -288,15 +288,64 @@ class TrackerApp(App):
         global configsave
         configsave = 'backend/config/'
         global bh
-        bh = yaml.safe_load(open(f"{configsave}bh_config.yml"))
+        bh: dict
+        if os.path.exists(f"{configsave}bh_config.yml"):
+            with open(f"{configsave}bh_config.yml") as file:
+                bh = yaml.safe_load(file)
+        else:
+            bh['host'] = "127.45.45.45"
+            bh['path'] = ""
+            bh['port'] = "43885"
         global obs
-        obs = yaml.safe_load(open(f"{configsave}obs_config.yml"))
+        obs: dict
+        if os.path.exists(f"{configsave}obs_config.yml"):
+            with open(f"{configsave}obs_config.yml") as file:
+                obs = yaml.safe_load(file)
+        else:
+            obs['host'] = "localhost"
+            obs['port'] = "4455"
+            obs['password'] = ""
         global sp
-        sp = yaml.safe_load(open(f"{configsave}sprites.yml"))
+        sp: dict
+        if os.path.exists(f"{configsave}sprites.yml"):
+            with open(f"{configsave}sprites.yml") as file:
+                sp = yaml.safe_load(file)
+        else:
+            sp['animated'] = False
+            sp['black'] = ""
+            sp['common_path'] = ""
+            sp['crystal'] = ""
+            sp['diamond'] = ""
+            sp['edition_override'] = ""
+            sp['emerald'] = ""
+            sp['firered'] = ""
+            sp['gold'] = ""
+            sp['heartgold'] = ""
+            sp['order'] = "lvl"
+            sp['platinum'] = ""
+            sp['red'] = ""
+            sp['ruby'] = ""
+            sp['show_nicknames'] = False
+            sp['silver'] = ""
+            sp['single_path_check'] = True
+            sp['yellow'] = ""
         global pl
-        pl = yaml.safe_load(open(f"{configsave}player.yml"))
+        pl: dict
+        if os.path.exists(f"{configsave}player.yml"):
+            with open(f"{configsave}player.yml") as file:
+                pl = yaml.safe_load(file)
+        else:
+            pl['player_count'] = 2
+            for i in range(1,5):
+                pl[f'obs_{i}'] = False
+                pl[f'remote_{i}'] = False
         global cc
-        cc = yaml.safe_load(open(f"{configsave}common_config.yml"))
+        cc: dict
+        if os.path.exists(f"{configsave}common_config.yml"):
+            with open(f"{configsave}common_config.yml") as file:
+                cc = yaml.safe_load(file)
+        else:
+            pass
 
     def exit_check(self, *args):
         self.save_config(f"{configsave}bh_config.yml", bh)

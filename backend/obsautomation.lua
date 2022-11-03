@@ -4,6 +4,8 @@ if gameinfo.getromname() == 'Null' then
     end
 end
 
+gui.clearGraphics()
+
 --playerselected = false
 --
 --

@@ -16,8 +16,10 @@ with open(f'{configsave}sprites.yml') as file:
     spriteconf = yaml.safe_load(file)
 with open(f'{configsave}bh_config.yml') as file:
     bizhawk_config = yaml.safe_load(file)
-
-
+with open(f'{configsave}player.yml') as file:
+    player_config = yaml.safe_load(file)
+with open(f'{configsave}player.yml') as file:
+    remote_config = yaml.safe_load(file)
 
 # ws = None
 
@@ -94,13 +96,18 @@ async def bizhawk_server():
     async with server:
         await server.serve_forever()
 
-teams = [[]] * SPIELERANZAHL
-editions = [[]] * SPIELERANZAHL
+teams = [[]] * (SPIELERANZAHL + 1)
+editions = [[]] * (SPIELERANZAHL + 1)
 update = False
+running = True
 async def handle_client(reader, writer):
     global update
-    request = None
-    while request != 'exit':
+    connections = []
+    loop = asyncio.get_running_loop()
+    for i in range(SPIELERANZAHL):
+        if player_config[f'obs_{i}']:
+            connections.append(loop.create_connection(protocol_factory=asyncio.Protocol,host=remote_config[f'ip_{i}'], port=int(remote_config[f'port_{i}'])))
+    while running:
         if update:
             update = False
             for i in range(SPIELERANZAHL):
@@ -128,6 +135,11 @@ async def handle_client(reader, writer):
             msg = await reader.read(1320)
             team = pokedecoder.team(msg, 5)
 
+
+        for connection in connections:
+            if not player_config[f'remote_{player+1}']:
+                connection.sendall(header+msg) #type:ignore
+
         logging.debug(f'{team=}') # type: ignore
         if teams[player] == []:
             teams[player] = team # type: ignore
@@ -141,13 +153,16 @@ async def handle_client(reader, writer):
             teams[player] = team # type: ignore
             await changeSource(player, diff, team, edition) # type: ignore
     writer.close()
+    #await ws.disconnect() #type: ignore
 
 async def start():
+    global running
+    running = True
     load_obsws()
     await connect_to_obs()
 #    await citra()
     await bizhawk_server()
-
+#NYI
 async def citra():
     pointer = 0x8CE1CE8
     c = Citra()

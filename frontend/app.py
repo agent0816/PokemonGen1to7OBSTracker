@@ -31,8 +31,14 @@ class MainMenu(Screen):
                 subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
 
     def launchserver(self):
-        if not connector.is_alive():
+        global connector
+        try:
             connector.start()
+        except RuntimeError:
+            server.running = False
+            connector = threading.Thread(target=server.main, args=(), daemon=True)
+            connector.start()
+
 
 class SettingsMenu(Screen):   
     def changesettingscreen(self, settings):
@@ -176,7 +182,7 @@ class OBSSettings(Screen):
         self.ids["obs_host"].text = obs['host']
         self.ids["obs_port"].text = obs['port']
 
-    def save_changes(self):
+    def save_changes(self, *args):
         obs['password'] = self.ids["obs_password"].text
         obs['host'] = self.ids["obs_host"].text
         obs['port'] = self.ids["obs_port"].text
@@ -188,13 +194,34 @@ class RemoteSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         grid: GridLayout = self.ids["remote_settings"]
-        grid.add_widget(Label(text="Deine öffentliche\nIpv4-Adresse"))
-        grid.add_widget(Label(text=externalIPv4))
-        grid.add_widget(Label(text="Deine öffentliche\nIpv6-Adresse"))
-        grid.add_widget(Label(text=externalIPv6))
+        grid.add_widget(Label(text="Deine öffentliche\nIpv4-Adresse", size_hint=(1,.5)))
+        grid.add_widget(Label(text=externalIPv4, size_hint=(1,.5)))
+        grid.add_widget(Label(text="Deine öffentliche\nIpv6-Adresse", size_hint=(1,.5)))
+        grid.add_widget(Label(text=externalIPv6, size_hint=(1,.5)))
+        for spieler in range(1, pl['player_count']+1):
+            if pl[f'obs_{spieler}']:
+                playerBox = BoxLayout(orientation='vertical')
+                playerBox.add_widget(Label(text = f'Spieler {spieler}', size_hint=(1,.5)))
+                playerGrid = GridLayout(cols=2)
+                playerGrid.add_widget(Label(text='IP-Adresse', size_hint=(.3,1)))
+                IPText = TextInput(on_text_validate=self.save_changes,size_hint=(.7,None), size=("20dp","40dp"), multiline=False, write_tab=False)
+                self.ids[f'ip_{spieler}'] = weakref.proxy(IPText)
+                playerGrid.add_widget(IPText)
+                playerGrid.add_widget(Label(text='Port', size_hint=(.3,1)))
+                PortText = TextInput(on_text_validate=self.save_changes,size_hint=(.7,None), size=("20dp","40dp"), multiline=False, write_tab=False)
+                self.ids[f'port_{spieler}'] = weakref.proxy(PortText)
+                playerGrid.add_widget(PortText)
+                playerBox.add_widget(playerGrid)
+                grid.add_widget(playerBox)
 
-    def save_changes(self):
-        pass
+    def save_changes(self, *args):
+        for spieler in range(1,pl['player_count']+1):
+            if pl[f'obs_{spieler}']:
+                rem[f'ip_adresse_{spieler}'] = self.ids[f'ip_{spieler}'].text
+                rem[f'port_{spieler}'] = self.ids[f'port_{spieler}'].text
+
+        with open(f"{configsave}remote.yml", 'w') as file:
+            yaml.dump(rem, file)
 
 class PlayerSettings(Screen):
     def __init__(self, **kwargs):
@@ -253,11 +280,9 @@ class PlayerSettings(Screen):
             idRemoteLabel = f"remote_label_{i}"
             idOBS = f"obs_player_{i}"
             idOBSLabel = f"obs_label_{i}"
-            checkRemote = CheckBox(on_press=self.save_changes,active=pl[f"remote_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
-            checkRemote.bind(on_press=self.save_changes) # type: ignore
+            checkRemote = CheckBox(on_press=self.toggle_obs,active=pl[f"remote_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
             checkRemoteLabel = Label(text="remote", pos_hint={"center_y": .5}, size_hint=[None, None], size=["60dp", "20dp"])
-            checkOBS = CheckBox(on_press=self.save_changes,active=pl[f"obs_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
-            checkOBS.bind(on_press=self.save_changes)  # type: ignore
+            checkOBS = CheckBox(on_press=self.save_changes,active=pl[f"obs_{i}"], disabled=not pl[f"remote_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
             checkOBSLabel = Label(text="OBS", pos_hint={"center_y": .5}, size_hint=[None, None], size=["40dp", "20dp"])
 
             self.ids[idBox].add_widget(checkRemote)
@@ -266,8 +291,19 @@ class PlayerSettings(Screen):
             self.ids[idRemoteLabel] = weakref.proxy(checkRemoteLabel)
             self.ids[idBox].add_widget(checkOBS)
             self.ids[idOBS] = weakref.proxy(checkOBS)
+            checkRemote.ids[idOBS] = weakref.proxy(checkOBS)
             self.ids[idBox].add_widget(checkOBSLabel)
             self.ids[idOBSLabel] = weakref.proxy(checkOBSLabel)
+            checkRemote.ids[idOBSLabel] = weakref.proxy(checkOBSLabel)
+
+    def toggle_obs(self, widgets):
+        for obs in widgets.ids:
+            ObsCheckBox = widgets.ids[obs]
+            ObsCheckBox.disabled = widgets.state != 'down'
+            if 'state' in dir(ObsCheckBox):
+                ObsCheckBox.state = 'normal'
+        self.save_changes()
+        self.pressCheckBoxes()
 
 class TrackerApp(App):  
     def __init__(self, **kwargs):
@@ -280,14 +316,15 @@ class TrackerApp(App):
 
     def on_start(self):
         global externalIPv4
-        externalIPv4 = os.popen('curl -s -4 ifconfig.co/').readline().split('\n')[0]
+        externalIPv4 = ''#os.popen('curl -s -4 ifconfig.co/').readline().split('\n')[0]
         global externalIPv6
-        externalIPv6 = os.popen('curl -s -6 ifconfig.co/').readline().split('\n')[0]
-        global connector
-        connector = threading.Thread(target=server.main, args=(), daemon=True)
+        externalIPv6 = ''#os.popen('curl -s -6 ifconfig.co/').readline().split('\n')[0]
         global configsave
         configsave = 'backend/config/'
+        global connector
+        connector = threading.Thread(target=server.main, args=(), daemon=True)
         global bh
+        bh = {}
         if os.path.exists(f"{configsave}bh_config.yml"):
             with open(f"{configsave}bh_config.yml") as file:
                 bh = yaml.safe_load(file)
@@ -296,6 +333,7 @@ class TrackerApp(App):
             bh['path'] = "" #type: ignore
             bh['port'] = "43885" #type: ignore
         global obs
+        obs = {}
         if os.path.exists(f"{configsave}obs_config.yml"):
             with open(f"{configsave}obs_config.yml") as file:
                 obs = yaml.safe_load(file)
@@ -304,6 +342,7 @@ class TrackerApp(App):
             obs['port'] = "4455" #type: ignore
             obs['password'] = "" #type: ignore
         global sp
+        sp = {}
         if os.path.exists(f"{configsave}sprites.yml"):
             with open(f"{configsave}sprites.yml") as file:
                 sp = yaml.safe_load(file)
@@ -327,6 +366,7 @@ class TrackerApp(App):
             sp['single_path_check'] = True #type: ignore
             sp['yellow'] = "" #type: ignore
         global pl
+        pl = {}
         if os.path.exists(f"{configsave}player.yml"):
             with open(f"{configsave}player.yml") as file:
                 pl = yaml.safe_load(file)
@@ -336,11 +376,21 @@ class TrackerApp(App):
                 pl[f'obs_{i}'] = False #type: ignore
                 pl[f'remote_{i}'] = False #type: ignore
         global cc
+        cc = {}
         if os.path.exists(f"{configsave}common_config.yml"):
             with open(f"{configsave}common_config.yml") as file:
                 cc = yaml.safe_load(file)
         else:
             pass
+        global rem
+        rem = {}
+        if os.path.exists(f"{configsave}remote.yml"):
+            with(open(f"{configsave}remote.yml")) as file:
+                rem = yaml.safe_load(file)
+        else:
+            for i in range(1,5):
+                rem[f'ip_adresse_{i}'] = ''
+                rem[f'port_{i}'] = ''
 
     def exit_check(self, *args):
         self.save_config(f"{configsave}bh_config.yml", bh)
@@ -348,6 +398,7 @@ class TrackerApp(App):
         self.save_config(f"{configsave}sprites.yml", sp)
         self.save_config(f"{configsave}player.yml", pl)
         self.save_config(f"{configsave}common_config.yml", cc)
+        self.save_config(f"{configsave}remote.yml", rem)
 
     def save_config(self, path, setting):
         with open(path, 'w') as file:

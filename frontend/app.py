@@ -204,15 +204,16 @@ class RemoteSettings(Screen):
                 playerBox.add_widget(Label(text = f'Spieler {spieler}', size_hint=(1,.5)))
                 playerGrid = GridLayout(cols=2)
                 playerGrid.add_widget(Label(text='IP-Adresse', size_hint=(.3,1)))
-                IPText = TextInput(on_text_validate=self.save_changes,size_hint=(.7,None), size=("20dp","40dp"), multiline=False, write_tab=False)
+                IPText = TextInput(text=rem[f'ip_adresse_{spieler}'],on_text_validate=self.save_changes,size_hint=(.7,None), size=("20dp","40dp"), multiline=False, write_tab=False)
                 self.ids[f'ip_{spieler}'] = weakref.proxy(IPText)
                 playerGrid.add_widget(IPText)
                 playerGrid.add_widget(Label(text='Port', size_hint=(.3,1)))
-                PortText = TextInput(on_text_validate=self.save_changes,size_hint=(.7,None), size=("20dp","40dp"), multiline=False, write_tab=False)
+                PortText = TextInput(text=rem[f'port_{spieler}'],on_text_validate=self.save_changes,size_hint=(.7,None), size=("20dp","40dp"), multiline=False, write_tab=False)
                 self.ids[f'port_{spieler}'] = weakref.proxy(PortText)
                 playerGrid.add_widget(PortText)
                 playerBox.add_widget(playerGrid)
                 grid.add_widget(playerBox)
+
 
     def save_changes(self, *args):
         for spieler in range(1,pl['player_count']+1):

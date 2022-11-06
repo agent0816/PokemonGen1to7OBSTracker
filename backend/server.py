@@ -11,25 +11,34 @@ import backend.pokedecoder as pokedecoder
 global configsave
 configsave = 'backend/config/'
 
-SPIELERANZAHL = 4
 with open(f'{configsave}sprites.yml') as file:
     spriteconf = yaml.safe_load(file)
 with open(f'{configsave}bh_config.yml') as file:
     bizhawk_config = yaml.safe_load(file)
 with open(f'{configsave}player.yml') as file:
     player_config = yaml.safe_load(file)
-with open(f'{configsave}player.yml') as file:
+with open(f'{configsave}remote.yml') as file:
     remote_config = yaml.safe_load(file)
+SPIELERANZAHL = player_config['player_count']
 
 # ws = None
 
 def update_config():
     global spriteconf
     global bizhawk_config
+    global player_config
+    global remote_config
+    global SPIELERANZAHL
     with open(f'{configsave}sprites.yml') as file:
         spriteconf = yaml.safe_load(file)
     with open(f'{configsave}bh_config.yml') as file:
         bizhawk_config = yaml.safe_load(file)
+    with open(f'{configsave}player.yml') as file:
+        player_config = yaml.safe_load(file)
+    with open(f'{configsave}remote.yml') as file:
+        remote_config = yaml.safe_load(file)
+    SPIELERANZAHL = player_config['player_count']
+    
 
 def load_obsws():
     with open(f'{configsave}obs_config.yml') as file:
@@ -104,9 +113,11 @@ async def handle_client(reader, writer):
     global update
     connections = []
     loop = asyncio.get_running_loop()
-    for i in range(SPIELERANZAHL):
+    for i in range(1,SPIELERANZAHL+1):
         if player_config[f'obs_{i}']:
-            connections.append(loop.create_connection(protocol_factory=asyncio.Protocol,host=remote_config[f'ip_{i}'], port=int(remote_config[f'port_{i}'])))
+            portStr = remote_config[f'port_{i}']
+            port = int(portStr)
+            connections.append(loop.create_connection(protocol_factory=asyncio.Protocol,host=remote_config[f'ip_adresse_{i}'], port=port))
     while running:
         if update:
             update = False

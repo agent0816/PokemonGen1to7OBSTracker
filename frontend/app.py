@@ -3,6 +3,7 @@ import subprocess
 import weakref
 import yaml
 from kivy.app import App
+from kivy.core.clipboard import Clipboard
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.checkbox import CheckBox
@@ -195,9 +196,9 @@ class RemoteSettings(Screen):
         super().__init__(**kwargs)
         grid: GridLayout = self.ids["remote_settings"]
         grid.add_widget(Label(text="Deine öffentliche\nIpv4-Adresse", size_hint=(1,.5)))
-        grid.add_widget(Label(text=externalIPv4, size_hint=(1,.5)))
+        grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ip]{externalIPv4}[/ref]", size_hint=(1,.5), markup=True))
         grid.add_widget(Label(text="Deine öffentliche\nIpv6-Adresse", size_hint=(1,.5)))
-        grid.add_widget(Label(text=externalIPv6, size_hint=(1,.5)))
+        grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ipv6]{externalIPv6}[/ref]", size_hint=(1,.5),markup=True))
         for spieler in range(1, pl['player_count']+1):
             if pl[f'obs_{spieler}']:
                 playerBox = BoxLayout(orientation='vertical')
@@ -213,6 +214,10 @@ class RemoteSettings(Screen):
                 playerGrid.add_widget(PortText)
                 playerBox.add_widget(playerGrid)
                 grid.add_widget(playerBox)
+
+    def clipboard(self,*args):
+        result = (args[0].text).split(']')[1].split('[')[0]
+        Clipboard.copy(result)
 
 
     def save_changes(self, *args):
@@ -317,9 +322,9 @@ class TrackerApp(App):
 
     def on_start(self):
         global externalIPv4
-        externalIPv4 = ''#os.popen('curl -s -4 ifconfig.co/').readline().split('\n')[0]
+        externalIPv4 = os.popen('curl -s -4 ifconfig.co/').readline().split('\n')[0]
         global externalIPv6
-        externalIPv6 = ''#os.popen('curl -s -6 ifconfig.co/').readline().split('\n')[0]
+        externalIPv6 = os.popen('curl -s -6 ifconfig.co/').readline().split('\n')[0]
         global configsave
         configsave = 'backend/config/'
         global connector

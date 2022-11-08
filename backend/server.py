@@ -146,9 +146,13 @@ async def handle_client(reader, writer):
             msg = await reader.read(1320)
             team = pokedecoder.team(msg, 5)
 
+        if not player_config[f'remote_{player+1}']:
+            responsecontent = ' '
+            response = str(len(responsecontent)).encode('utf-8') + b' ' + responsecontent.encode('utf-8')
+            writer.write(response)
+            await writer.drain()
 
-        for connection in connections:
-            if not player_config[f'remote_{player+1}']:
+            for connection in connections:
                 connection.sendall(header+msg) #type:ignore
 
         logging.debug(f'{team=}') # type: ignore

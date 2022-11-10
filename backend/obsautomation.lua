@@ -160,8 +160,8 @@ while true do
             for i = 1, string.len(response) - 1, 2 do
                 arr[(i + 1) / 2] = tonumber(string.sub(response, i, i + 1), 16)
             end
-            --print(arr)
-            memory.write_bytes_as_array(pointer, arr)
+            print(arr)
+            --memory.write_bytes_as_array(pointer, arr)
         end
     end
     emu.frameadvance()

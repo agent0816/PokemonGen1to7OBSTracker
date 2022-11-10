@@ -1,3 +1,4 @@
+import logging
 import asyncio
 import yaml
 import simpleobsws
@@ -26,6 +27,8 @@ def update_config():
     global player_config
     global remote_config
     global SPIELERANZAHL
+    global teams
+    global editions
     with open(f'{configsave}sprites.yml') as file:
         spriteconf = yaml.safe_load(file)
     with open(f'{configsave}bh_config.yml') as file:
@@ -35,7 +38,12 @@ def update_config():
     with open(f'{configsave}remote.yml') as file:
         remote_config = yaml.safe_load(file)
     SPIELERANZAHL = player_config['player_count']
-    
+    if len(teams) < SPIELERANZAHL:
+        teams += [[]] * (SPIELERANZAHL - len(teams))
+        editions += [[]] * (SPIELERANZAHL - len(editions))
+    teams = teams[:SPIELERANZAHL]
+    editions = editions[:SPIELERANZAHL] 
+    print(SPIELERANZAHL, teams)
 
 def load_obsws():
     with open(f'{configsave}obs_config.yml') as file:
@@ -102,8 +110,8 @@ async def bizhawk_server():
     async with server:
         await server.serve_forever()
 
-teams = [[]] * (SPIELERANZAHL + 1)
-editions = [[]] * (SPIELERANZAHL + 1)
+teams = [[]] * (SPIELERANZAHL)
+editions = [[]] * (SPIELERANZAHL)
 update = False
 running = True
 async def handle_client(reader, writer):
@@ -120,11 +128,11 @@ async def handle_client(reader, writer):
             update = False
             for i in range(SPIELERANZAHL):
                 if teams[i] != []:
-                    await changeSource(i, range(6), teams[i], editions[i])
+                    await changeSource(i + 1, range(6), teams[i], editions[i])
         header =  await reader.read(2)
         player = header[1]
         edition = header[0]
-        editions[player] = edition
+        editions[player - 1] = edition
         logging.debug(f'{player=}{edition=}')
 
         if edition < 20:
@@ -153,16 +161,16 @@ async def handle_client(reader, writer):
                 connection.sendall(header+msg) #type:ignore
 
         logging.debug(f'{team=}') # type: ignore
-        if teams[player] == []:
-            teams[player] = team # type: ignore
+        if teams[player - 1] == []:
+            teams[player - 1] = team # type: ignore
             await changeSource(player, range(6), team, edition) # type: ignore
 
         else:
             diff =[]
             for i in range(6):
-                if teams[player][i] != team[i]: # type: ignore
+                if teams[player - 1][i] != team[i]: # type: ignore
                     diff.append(i)
-            teams[player] = team # type: ignore
+            teams[player - 1] = team # type: ignore
             await changeSource(player, diff, team, edition) # type: ignore
     writer.close()
     #await ws.disconnect() #type: ignore

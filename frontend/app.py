@@ -101,6 +101,7 @@ class SpriteSettings(Screen):
         server.update = True
         with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)
+        server.update_config()
 
 class SpritesGames(Screen):
     def __init__(self,**kwargs):
@@ -134,6 +135,7 @@ class SpritesGames(Screen):
 
         with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)
+        server.update_config()
 
 class BizhawkSettings(Screen):
     def __init__(self, **kwargs):
@@ -149,6 +151,7 @@ class BizhawkSettings(Screen):
         
         with open(f"{configsave}bh_config.yml", 'w') as file:
             yaml.dump(bh, file)
+        server.update_config()
 
 class OBSSettings(Screen):
     def __init__(self, **kwargs):
@@ -189,7 +192,8 @@ class OBSSettings(Screen):
         obs['port'] = self.ids["obs_port"].text
         
         with open(f"{configsave}obs_config.yml", 'w') as file:
-            yaml.dump(obs, file)       
+            yaml.dump(obs, file)
+        server.update_config()       
 
 class RemoteSettings(Screen):
     def __init__(self, **kwargs):
@@ -228,6 +232,7 @@ class RemoteSettings(Screen):
 
         with open(f"{configsave}remote.yml", 'w') as file:
             yaml.dump(rem, file)
+        server.update_config()
 
 class PlayerSettings(Screen):
     def __init__(self, **kwargs):
@@ -256,6 +261,7 @@ class PlayerSettings(Screen):
 
             with open(f"{configsave}player.yml", 'w') as file:
                 yaml.dump(pl, file)
+        server.update_config()
 
     def pressCheckBoxes(self):
         self.ids[f"player_count_{pl['player_count']}"].state = "down"

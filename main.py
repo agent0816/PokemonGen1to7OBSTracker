@@ -1,4 +1,3 @@
-
 from pathlib import Path
 Path('logs').mkdir(parents=True, exist_ok=True)
 import logging
@@ -16,7 +15,7 @@ if not player.exists():
 obs = Path('backend/config/obs_config.yml')
 if not obs.exists():
     obs.touch()
-    obs.write_text("host: localhost\npassword: ''\nport: '4444'")
+    obs.write_text("host: '127.0.0.1'\npassword: ''\nport: '4444'")
 biz = Path('backend/config/bh_config.yml')
 if not biz.exists():
     biz.touch()

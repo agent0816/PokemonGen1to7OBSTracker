@@ -43,7 +43,6 @@ def update_config():
         editions += [[]] * (SPIELERANZAHL - len(editions))
     teams = teams[:SPIELERANZAHL]
     editions = editions[:SPIELERANZAHL] 
-    print(SPIELERANZAHL, teams)
 
 def load_obsws():
     with open(f'{configsave}obs_config.yml') as file:

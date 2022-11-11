@@ -6,7 +6,7 @@ logging.basicConfig(level=logging.DEBUG, filename='logs/server.log',format='[%(a
 Path('backend/config').mkdir(parents=True, exist_ok=True)
 sprites = Path('backend/config/sprites.yml')
 if not sprites.exists():
-    sprites.write_text("animated: false\nblack: ''\ncommon_path: ''\ncrystal: ''\ndiamond: ''\nedition_override: ''\nemerald: ''\nfirered: ''\ngold: ''\nheartgold: ''\norder: lvl\nplatinum: ''\nred: ''\nruby: ''\nshow_nicknames: true\nsilver: ''\nsingle_path_check: true\nyellow: ''")
+    sprites.write_text("animated: false\nblack: ''\ncommon_path: ''\ncrystal: ''\ndiamond: ''\nedition_override: ''\nemerald: ''\nfirered: ''\ngold: ''\nheartgold: ''\nitems_path: ''\norder: lvl\nplatinum: ''\nred: ''\nruby: ''\nshow_items: true\nshow_nicknames: true\nsilver: ''\nsingle_path_check: true\nyellow: ''")
 player = Path('backend/config/player.yml')
 if not player.exists():
     player.write_text('obs_1: true\nobs_2: false\nobs_3: false\nobs_4: false\nplayer_count: 1\nremote_1: true\nremote_2: false\nremote_3: false\nremote_4: false')

@@ -15,6 +15,10 @@ gen3charset = yaml.safe_load(open('backend/data/gen3charset.yml'))
 gen4charset = yaml.safe_load(open('backend/data/gen4charset.yml'))
 gen5charset = yaml.safe_load(open('backend/data/gen5charset.yml'))
 gender_lut = yaml.safe_load(open('backend/data/gender_lut.yml'))
+items2 = yaml.safe_load(open('backend/data/items2.yml'))
+items3 = yaml.safe_load(open('backend/data/items3.yml'))
+items4 = yaml.safe_load(open('backend/data/items4.yml'))
+items5 = yaml.safe_load(open('backend/data/items5.yml'))
 
 def pokemon1(data):
     dexnr = data[0]
@@ -31,6 +35,9 @@ def pokemon1(data):
 def pokemon2(data):
     unown_letter = ['-a', '-b', '-c', '-d', '-e', '-f', '-g', '-h', '-i', '-j', '-k', '-l', '-m', '-n', '-o', '-p', '-q', '-r', '-s', '-t', '-u', '-v', '-w', '-x', '-y', '-z']
     dexnr = data[0]
+    item = data[1]
+    if item in items2:
+        item = items2[item]
     lvl = data[0x1F]
     nickname = ''
     form = ''
@@ -47,7 +54,7 @@ def pokemon2(data):
         dexnr = 'egg'
         form = ''
 
-    return Pokemon(dexnr, False, lvl=lvl, form=form, nickname=nickname)
+    return Pokemon(dexnr, False, lvl=lvl, form=form, nickname=nickname, item=item)
 
 
 def pokemon3(data, edition):
@@ -65,6 +72,10 @@ def pokemon3(data, edition):
         egg = True
     species = int.from_bytes(data[growth_lut[offset]:growth_lut[offset]+2], 'little')
     species = species ^ (key % 0x10000)
+    item = int.from_bytes(data[growth_lut[offset]+2:growth_lut[offset]+4], 'little')
+    item = item ^ (key // 0x10000)
+    if item in items3:
+        item = items3[item]
     if species in range(252, 440):
         species = species3_lut[species]
         if type(species) == str:
@@ -92,7 +103,7 @@ def pokemon3(data, edition):
             nickname += gen3charset[char]
         if char == 0xFF:
             break
-    return Pokemon(species, not (key % 0x10000 ^ key >> 16) > 8, form=form, lvl=lvl, nickname=nickname, route=met_location)
+    return Pokemon(species, not (key % 0x10000 ^ key >> 16) > 8, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location)
 
 
 def decryptpokemon(data, gen):
@@ -128,7 +139,7 @@ def decryptpokemon(data, gen):
     return (unshuffled_bytes, decrypted_battle_stats, shiny_value, personality_value)
 
 
-def pokemon45(data, charset):
+def pokemon45(data, gen):
     unown={0x00:'' , 0x08:'-b' ,0x10:'-c' ,0x18:'-d' ,0x20:'-e' ,0x28:'-f' ,0x30:'-g' ,0x38:'-h' ,0x40:'-i' ,0x48:'-j' ,0x50:'-k' ,0x58:'-l' ,0x60:'-m' ,0x68:'-n' ,0x70:'-o' ,0x78:'-p' ,0x80:'-q' ,0x88:'-r' ,0x90:'-s' ,0x98:'-t' ,0xA0:'-u' ,0xA8:'-v' ,0xB0:'-w' ,0xB8:'-x' ,0xC0:'-y' ,0xC8:'-z' ,0xD0:'-exclamation' ,0xD8:'-question'}
     burmy={0x00: '-plant', 0x08: '-sandy',0x10: '-trash'}
     shellos={0x00: '-west', 0x08: '-east'}
@@ -144,9 +155,14 @@ def pokemon45(data, charset):
     keldeo = {0x00:'' , 0x08: '-resolute'}
     genesect = {0x00:'' , 0x08: '-douse', 0x10: '-shock', 0x18: '-burn', 0x20: '-chill'}
 
+    charset = gen4charset if gen == 4 else gen5charset
+    items = items4 if gen == 4 else items5
 
     unshuffled_bytes, decrypted_battle_stats, shiny_value, personality = decryptpokemon(data, '45')
     dexnr = int.from_bytes(unshuffled_bytes[0:2], 'little')
+    item = int.from_bytes(unshuffled_bytes[2:4], 'little')
+    if item in items:
+        item = items[item]
     met_location = int.from_bytes(unshuffled_bytes[0x3E:0x40], 'little')
     if met_location == 0:  # diamant/perl
         met_location = int.from_bytes(unshuffled_bytes[0x78:0x7A], 'little')
@@ -202,7 +218,7 @@ def pokemon45(data, charset):
         else:
             form = ''
         dexnr = 'egg'
-    return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, nickname=nickname, route=met_location)
+    return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location)
 
 
 def pokemon67(data):
@@ -246,10 +262,10 @@ def team(data, gen, edition=None):
             liste.append(pokemon3(data[i * length: (i + 1) * length], edition))
     elif gen == 4:
         for i in range(6):
-            liste.append(pokemon45(data[i * length: (i + 1) * length], gen4charset))
+            liste.append(pokemon45(data[i * length: (i + 1) * length], 4))
     elif gen == 5:
         for i in range(6):
-            liste.append(pokemon45(data[i * length: (i + 1) * length], gen5charset))
+            liste.append(pokemon45(data[i * length: (i + 1) * length], 5))
     else:
         for i in range(6):
             liste.append(pokemon67(data[i * length: (i + 1) * length]))

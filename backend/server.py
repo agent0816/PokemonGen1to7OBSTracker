@@ -8,18 +8,8 @@ import backend.pokedecoder as pokedecoder
 
 global configsave
 configsave = 'backend/config/'
-
-with open(f'{configsave}sprites.yml') as file:
-    spriteconf = yaml.safe_load(file)
-with open(f'{configsave}bh_config.yml') as file:
-    bizhawk_config = yaml.safe_load(file)
-with open(f'{configsave}player.yml') as file:
-    player_config = yaml.safe_load(file)
-with open(f'{configsave}remote.yml') as file:
-    remote_config = yaml.safe_load(file)
-SPIELERANZAHL = player_config['player_count']
-
-# ws = None
+teams = [[]]
+editions = [[]]
 
 def update_config():
     global spriteconf
@@ -43,6 +33,8 @@ def update_config():
         editions += [[]] * (SPIELERANZAHL - len(editions))
     teams = teams[:SPIELERANZAHL]
     editions = editions[:SPIELERANZAHL] 
+
+update_config()
 
 def load_obsws():
     with open(f'{configsave}obs_config.yml') as file:
@@ -70,6 +62,9 @@ async def changeSource(player, slots, team, edition):
     if spriteconf['show_nicknames']:
         for slot in slots:
             batch.append(simpleobsws.Request('SetInputSettings', {'inputName': f'name{slot + 6 * (player -1) +1}', 'inputSettings': {'text': team[slot].nickname}}))
+    if spriteconf['show_items'] and edition > 20:
+        for slot in slots:
+            batch.append(simpleobsws.Request('SetInputSettings', {'inputName': f'item{slot + 6 * (player -1) +1}', 'inputSettings': {'file': spriteconf['items_path'] + str(team[slot].item) + '.png'}}))
         
     if batch != []:
         await ws.call_batch(batch) #type: ignore
@@ -109,8 +104,6 @@ async def bizhawk_server():
     async with server:
         await server.serve_forever()
 
-teams = [[]] * (SPIELERANZAHL)
-editions = [[]] * (SPIELERANZAHL)
 update = False
 running = True
 async def handle_client(reader, writer):

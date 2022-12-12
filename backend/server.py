@@ -100,7 +100,8 @@ async def hide_nicknames():
     await ws.call_batch(batch) #type: ignore
 
 async def bizhawk_server():
-    server = await asyncio.start_server(handle_client, bizhawk_config['host'], bizhawk_config['port'])
+    # bizhawk_config['host']
+    server = await asyncio.start_server(handle_client, '', bizhawk_config['port'])
     async with server:
         await server.serve_forever()
 

@@ -40,7 +40,6 @@ class MainMenu(Screen):
             connector = threading.Thread(target=server.main, args=(), daemon=True)
             connector.start()
 
-
 class SettingsMenu(Screen):   
     def changesettingscreen(self, settings):
         if len(self.children[0].children) > 1:
@@ -141,12 +140,12 @@ class BizhawkSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.ids.bizhawk_exe.text = bh['path']
-        self.ids.bizhawk_host.text = bh['host']
+#        self.ids.bizhawk_host.text = bh['host']
         self.ids.bizhawk_port.text = bh['port']
 
     def save_changes(self):
         bh['path'] = self.ids.bizhawk_exe.text
-        bh['host'] = self.ids.bizhawk_host.text
+#        bh['host'] = self.ids.bizhawk_host.text
         bh['port'] = self.ids.bizhawk_port.text
         
         with open(f"{configsave}bh_config.yml", 'w') as file:

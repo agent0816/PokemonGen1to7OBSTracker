@@ -115,7 +115,7 @@ async def handle_client(reader, writer):
         if player_config[f'obs_{i}']:
             portStr = remote_config[f'port_{i}']
             port = int(portStr)
-            connections.append(loop.create_connection(protocol_factory=asyncio.Protocol,host=remote_config[f'ip_adresse_{i}'], port=port))
+            connections.append(await loop.create_connection(protocol_factory=asyncio.Protocol,host=remote_config[f'ip_adresse_{i}'], port=port, ssl_handshake_timeout=2))
     while running:
         if update:
             update = False
@@ -144,11 +144,6 @@ async def handle_client(reader, writer):
             msg = await reader.read(1320)
             team = pokedecoder.team(msg, 5)
 
-        if not player_config[f'remote_{player+1}']:
-            responsecontent = ' '
-            response = str(len(responsecontent)).encode('utf-8') + b' ' + responsecontent.encode('utf-8')
-            writer.write(response)
-            await writer.drain()
 
             for connection in connections:
                 connection.sendall(header+msg) #type:ignore

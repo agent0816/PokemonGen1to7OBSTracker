@@ -15,7 +15,7 @@ if not obs.exists():
     obs.write_text("host: '127.0.0.1'\npassword: ''\nport: '4444'")
 biz = Path('backend/config/bh_config.yml')
 if not biz.exists():
-    biz.write_text("host: localhost\npath: ''\nport: '43885'")
+    biz.write_text("host: 127.0.0.1\npath: ''\nport: '43885'")
 remote = Path('backend/config/remote.yml')
 if not remote.exists():
     remote.write_text("ip_adresse_1: ''\nip_adresse_2: ''\nip_adresse_3: ''\nip_adresse_4: ''\nport_1: ''\nport_2: ''\nport_3: ''\nport_4: ''")

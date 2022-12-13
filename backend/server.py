@@ -4,12 +4,13 @@ import yaml
 import simpleobsws
 import backend.pokedecoder as pokedecoder
 
-#from backend.citra import Citra
+# from backend.citra import Citra
 
 global configsave
-configsave = 'backend/config/'
+configsave = "backend/config/"
 teams = [[]]
 editions = [[]]
+
 
 def update_config():
     global spriteconf
@@ -19,76 +20,120 @@ def update_config():
     global SPIELERANZAHL
     global teams
     global editions
-    with open(f'{configsave}sprites.yml') as file:
+    with open(f"{configsave}sprites.yml") as file:
         spriteconf = yaml.safe_load(file)
-    with open(f'{configsave}bh_config.yml') as file:
+    with open(f"{configsave}bh_config.yml") as file:
         bizhawk_config = yaml.safe_load(file)
-    with open(f'{configsave}player.yml') as file:
+    with open(f"{configsave}player.yml") as file:
         player_config = yaml.safe_load(file)
-    with open(f'{configsave}remote.yml') as file:
+    with open(f"{configsave}remote.yml") as file:
         remote_config = yaml.safe_load(file)
-    SPIELERANZAHL = player_config['player_count']
+    SPIELERANZAHL = player_config["player_count"]
     if len(teams) < SPIELERANZAHL:
         teams += [[]] * (SPIELERANZAHL - len(teams))
         editions += [[]] * (SPIELERANZAHL - len(editions))
     teams = teams[:SPIELERANZAHL]
-    editions = editions[:SPIELERANZAHL] 
+    editions = editions[:SPIELERANZAHL]
+
 
 update_config()
 
+
 def load_obsws():
-    with open(f'{configsave}obs_config.yml') as file:
+    with open(f"{configsave}obs_config.yml") as file:
         obsconf = yaml.safe_load(file)
     global ws
-    if obsconf['host'] not in [None,''] and obsconf['port'] not in [None,'']:
-        ws = simpleobsws.WebSocketClient(url = 'ws://' + obsconf['host'] + ':' + obsconf['port'], password = obsconf['password'], identification_parameters = simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks = False))
+    if obsconf["host"] not in [None, ""] and obsconf["port"] not in [None, ""]:
+        ws = simpleobsws.WebSocketClient(
+            url="ws://" + obsconf["host"] + ":" + obsconf["port"],
+            password=obsconf["password"],
+            identification_parameters=simpleobsws.IdentificationParameters(
+                ignoreNonFatalRequestChecks=False
+            ),
+        )
     else:
         ws = None
 
 
 async def connect_to_obs():
-    await ws.connect() #type: ignore
-    await ws.wait_until_identified() #type: ignore
+    await ws.connect()  # type: ignore
+    await ws.wait_until_identified()  # type: ignore
 
 
 async def changeSource(player, slots, team, edition):
     batch = []
-    if spriteconf['edition_override'] != '':
-        edition = max(edition, spriteconf['edition_override'])
+    if spriteconf["edition_override"] != "":
+        edition = max(edition, spriteconf["edition_override"])
     for slot in slots:
-        sprite = get_sprite(team[slot], spriteconf['animated'], edition)
+        sprite = get_sprite(team[slot], spriteconf["animated"], edition)
 
-        batch.append(simpleobsws.Request('SetInputSettings', {'inputName':f'Slot{slot + 6 * (player -1) +1}', 'inputSettings':{'file': sprite}}))
-    if spriteconf['show_nicknames']:
+        batch.append(
+            simpleobsws.Request(
+                "SetInputSettings",
+                {
+                    "inputName": f"Slot{slot + 6 * (player -1) +1}",
+                    "inputSettings": {"file": sprite},
+                },
+            )
+        )
+    if spriteconf["show_nicknames"]:
         for slot in slots:
-            batch.append(simpleobsws.Request('SetInputSettings', {'inputName': f'name{slot + 6 * (player -1) +1}', 'inputSettings': {'text': team[slot].nickname}}))
-    if spriteconf['show_items'] and edition > 20:
+            batch.append(
+                simpleobsws.Request(
+                    "SetInputSettings",
+                    {
+                        "inputName": f"name{slot + 6 * (player -1) +1}",
+                        "inputSettings": {"text": team[slot].nickname},
+                    },
+                )
+            )
+    if spriteconf["show_items"] and edition > 20:
         for slot in slots:
-            batch.append(simpleobsws.Request('SetInputSettings', {'inputName': f'item{slot + 6 * (player -1) +1}', 'inputSettings': {'file': spriteconf['items_path'] + str(team[slot].item) + '.png'}}))
-        
+            batch.append(
+                simpleobsws.Request(
+                    "SetInputSettings",
+                    {
+                        "inputName": f"item{slot + 6 * (player -1) +1}",
+                        "inputSettings": {
+                            "file": spriteconf["items_path"]
+                            + str(team[slot].item)
+                            + ".png"
+                        },
+                    },
+                )
+            )
+
     if batch != []:
-        await ws.call_batch(batch) #type: ignore
+        await ws.call_batch(batch)  # type: ignore
 
-luts = yaml.safe_load(open('backend/data/luts.yml'))
 
-edition_lut = luts['edition_lut']
+luts = yaml.safe_load(open("backend/data/luts.yml"))
 
-female_lut = luts['female_lut']
+edition_lut = luts["edition_lut"]
+
+female_lut = luts["female_lut"]
+
 
 def get_sprite(pokemon, anim, edition):
-    
-    shiny = 'shiny/' if pokemon.shiny else ''
+
+    shiny = "shiny/" if pokemon.shiny else ""
     if pokemon.female and pokemon.dexnr in female_lut:
-        female = 'female/' 
+        female = "female/"
     else:
-        female = ''
+        female = ""
     if anim and edition in (23, 33, 41, 42, 43, 44, 45, 51, 52, 53, 54):
-        filetype = '.gif'
-        animated = 'animated/'
+        filetype = ".gif"
+        animated = "animated/"
     else:
-        animated = ''
-        filetype = '.png'
-    path = spriteconf['common_path'] + spriteconf[edition_lut[edition]] + animated + shiny + female
+        animated = ""
+        filetype = ".png"
+    path = (
+        spriteconf["common_path"]
+        + spriteconf[edition_lut[edition]]
+        + animated
+        + shiny
+        + female
+    )
     file = str(pokemon.dexnr) + pokemon.form + filetype
     return path + file
 
@@ -96,37 +141,63 @@ def get_sprite(pokemon, anim, edition):
 async def hide_nicknames():
     batch = []
     for i in range(24):
-        batch.append(simpleobsws.Request('SetInputSettings', {'inputName': f'name{i + 1}', 'inputSettings': {'text': ''}}))
-    await ws.call_batch(batch) #type: ignore
+        batch.append(
+            simpleobsws.Request(
+                "SetInputSettings",
+                {"inputName": f"name{i + 1}", "inputSettings": {"text": ""}},
+            )
+        )
+    await ws.call_batch(batch)  # type: ignore
+
 
 async def bizhawk_server():
     # bizhawk_config['host']
-    server = await asyncio.start_server(handle_client, '', bizhawk_config['port'])
+    server = await asyncio.start_server(handle_client, "", bizhawk_config["port"])
     async with server:
         await server.serve_forever()
 
+
 update = False
 running = True
+
+
 async def handle_client(reader, writer):
     global update
     connections = []
     loop = asyncio.get_running_loop()
-    for i in range(1,SPIELERANZAHL+1):
-        if player_config[f'obs_{i}']:
-            portStr = remote_config[f'port_{i}']
+    # Create a list of remote connections to establish
+    # connections = []
+    # for player, obs in player_config.items():
+    #   if obs:
+    #       ip = remote_config[f'ip_{player}']
+    #       port = int(remote_config[f'port_{player}'])
+    #       connections.append(asyncio.open_connection(ip, port))
+
+    # Wait for the connections to be established concurrently
+    # await asyncio.gather(*connections)
+
+    for i in range(1, SPIELERANZAHL + 1):
+        if player_config[f"obs_{i}"]:
+            portStr = remote_config[f"port_{i}"]
             port = int(portStr)
-            connections.append(await loop.create_connection(protocol_factory=asyncio.Protocol,host=remote_config[f'ip_adresse_{i}'], port=port, ssl_handshake_timeout=2))
+            connections.append(
+                await loop.create_connection(
+                    protocol_factory=asyncio.Protocol,
+                    host=remote_config[f"ip_adresse_{i}"],
+                    port=port,
+                )
+            )
     while running:
         if update:
             update = False
             for i in range(SPIELERANZAHL):
                 if teams[i] != []:
                     await changeSource(i + 1, range(6), teams[i], editions[i])
-        header =  await reader.read(2)
+        header = await reader.read(2)
         player = header[1]
         edition = header[0]
         editions[player - 1] = edition
-        logging.debug(f'{player=}{edition=}')
+        logging.debug(f"{player=}{edition=}")
 
         if edition < 20:
             msg = await reader.read(330)
@@ -144,62 +215,65 @@ async def handle_client(reader, writer):
             msg = await reader.read(1320)
             team = pokedecoder.team(msg, 5)
 
-
             for connection in connections:
-                connection.sendall(header+msg) #type:ignore
+                connection.sendall(header + msg)  # type:ignore
 
-        logging.debug(f'{team=}') # type: ignore
+        logging.debug(f"{team=}")  # type: ignore
         if teams[player - 1] == []:
-            teams[player - 1] = team # type: ignore
-            await changeSource(player, range(6), team, edition) # type: ignore
+            teams[player - 1] = team  # type: ignore
+            await changeSource(player, range(6), team, edition)  # type: ignore
 
         else:
-            diff =[]
+            diff = []
             for i in range(6):
-                if teams[player - 1][i] != team[i]: # type: ignore
+                if teams[player - 1][i] != team[i]:  # type: ignore
                     diff.append(i)
-            teams[player - 1] = team # type: ignore
-            await changeSource(player, diff, team, edition) # type: ignore
+            teams[player - 1] = team  # type: ignore
+            await changeSource(player, diff, team, edition)  # type: ignore
     writer.close()
-    #await ws.disconnect() #type: ignore
+    # await ws.disconnect() #type: ignore
+
 
 async def start():
     global running
     running = True
     load_obsws()
     await connect_to_obs()
-#    await citra()
+    #    await citra()
     await bizhawk_server()
-#NYI
+
+
+# NYI
 async def citra():
     pointer = 0x8CE1CE8
     c = Citra()
     team = []
     while True:
-        party = b''
+        party = b""
         for i in range(6):
             pokemon = c.read_memory(pointer + i * 484, 232)
             battle_stats = c.read_memory(pointer + i * 484 + 112, 28)
             party += pokemon + battle_stats
 
         if team == []:
-            print('first')
+            print("first")
             team = pokedecoder.team(party, 6)
             for p in team:
                 print(p)
             await changeSource(1, range(6), team, 51)
 
         else:
-            diff =[]
-            new_team =pokedecoder.team(party, 6)
+            diff = []
+            new_team = pokedecoder.team(party, 6)
             for i in range(6):
                 if team[i] != new_team[i]:
                     diff.append(i)
             team = new_team
-            if diff !=[]:
-                print('new')
+            if diff != []:
+                print("new")
                 print(team)
                 await changeSource(1, diff, team, 51)
+
 
 def main():
     asyncio.run(start())

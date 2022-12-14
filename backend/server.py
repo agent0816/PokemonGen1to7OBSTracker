@@ -164,29 +164,29 @@ running = True
 async def handle_client(reader, writer):
     global update
     connections = []
-    loop = asyncio.get_running_loop()
+    # loop = asyncio.get_running_loop()
     # Create a list of remote connections to establish
-    # connections = []
-    # for player, obs in player_config.items():
-    #   if obs:
-    #       ip = remote_config[f'ip_{player}']
-    #       port = int(remote_config[f'port_{player}'])
-    #       connections.append(asyncio.open_connection(ip, port))
-
-    # Wait for the connections to be established concurrently
-    # await asyncio.gather(*connections)
-
+    connections = []
     for i in range(1, SPIELERANZAHL + 1):
         if player_config[f"obs_{i}"]:
-            portStr = remote_config[f"port_{i}"]
-            port = int(portStr)
-            connections.append(
-                await loop.create_connection(
-                    protocol_factory=asyncio.Protocol,
-                    host=remote_config[f"ip_adresse_{i}"],
-                    port=port,
-                )
-            )
+            ip = remote_config[f"ip_adresse_{i}"]
+            port = int(remote_config[f"port_{i}"])
+            connections.append(asyncio.open_connection(ip, port))
+
+    # Wait for the connections to be established concurrently
+    await asyncio.gather(*connections)
+
+    # for i in range(1, SPIELERANZAHL + 1):
+    #     if player_config[f"obs_{i}"]:
+    #         portStr = remote_config[f"port_{i}"]
+    #         port = int(portStr)
+    #         connections.append(
+    #             await loop.create_connection(
+    #                 protocol_factory=asyncio.Protocol,
+    #                 host=remote_config[f"ip_adresse_{i}"],
+    #                 port=port,
+    #             )
+    #         )
     while running:
         if update:
             update = False

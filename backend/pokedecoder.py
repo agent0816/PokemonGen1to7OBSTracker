@@ -1,13 +1,6 @@
 import yaml
 from backend.classes.Pokemon import Pokemon
 
-config = yaml.safe_load(open('backend/config/sprites.yml'))
-ORDER = config['order']
-
-def setorder(order):
-    global ORDER
-    ORDER = order
-
 species1_lut = yaml.safe_load(open('backend/data/species1.yml'))
 species3_lut = yaml.safe_load(open('backend/data/species3.yml'))
 gen1charset = yaml.safe_load(open('backend/data/gen1charset.yml'))
@@ -19,6 +12,7 @@ items2 = yaml.safe_load(open('backend/data/items2.yml'))
 items3 = yaml.safe_load(open('backend/data/items3.yml'))
 items4 = yaml.safe_load(open('backend/data/items4.yml'))
 items5 = yaml.safe_load(open('backend/data/items5.yml'))
+
 
 def pokemon1(data):
     dexnr = data[0]
@@ -70,9 +64,9 @@ def pokemon3(data, edition):
     offset = personality % 24
     if data[19] == 6:
         egg = True
-    species = int.from_bytes(data[growth_lut[offset]:growth_lut[offset]+2], 'little')
+    species = int.from_bytes(data[growth_lut[offset]:growth_lut[offset] + 2], 'little')
     species = species ^ (key % 0x10000)
-    item = int.from_bytes(data[growth_lut[offset]+2:growth_lut[offset]+4], 'little')
+    item = int.from_bytes(data[growth_lut[offset] + 2:growth_lut[offset] + 4], 'little')
     item = item ^ (key // 0x10000)
     if item in items3:
         item = items3[item]
@@ -84,7 +78,7 @@ def pokemon3(data, edition):
         if species == 386:
             if edition == 'fire red':
                 form = '-attack'
-            if edition== 'leaf green':
+            if edition == 'leaf green':
                 form = '-defense'
             if edition == 'emerald':
                 form = '-speed'
@@ -95,7 +89,7 @@ def pokemon3(data, edition):
     #female = False
     #if not egg:
     #    female = personality % 256 < gender_lut[species]
-    met_location = data[misc_lut[offset]+1]
+    met_location = data[misc_lut[offset] + 1]
     met_location = met_location ^ ((key >> 8) % 0x100)
     nickname = ''
     for char in data[8:18]:
@@ -108,7 +102,7 @@ def pokemon3(data, edition):
 
 def decryptpokemon(data, gen):
     offset_lut = [[0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 3, 1, 2], [0, 2, 3, 1], [0, 3, 2, 1], [1, 0, 2, 3], [1, 0, 3, 2], [2, 0, 1, 3], [3, 0, 1, 2], [2, 0, 3, 1], [3, 0, 2, 1], [1, 2, 0, 3], [1, 3, 0, 2], [2, 1, 0, 3], [3, 1, 0, 2], [2, 3, 0, 1], [3, 2, 0, 1], [1, 2, 3, 0], [1, 3, 2, 0], [2, 1, 3, 0], [3, 1, 2, 0], [2, 3, 1, 0], [3, 2, 1, 0]]
-    prng = lambda seed : (0x41C64E6D * seed + 0x6073) % 0x100000000
+    prng = lambda seed: (0x41C64E6D * seed + 0x6073) % 0x100000000
     personality_value = int.from_bytes(data[:4], 'little')
     shift_value = ((personality_value & 0x3E000) >> 0xD) % 24
     if gen == '45':
@@ -121,7 +115,7 @@ def decryptpokemon(data, gen):
         key = personality_value
     encrypted_bytes = data[8:cutoff]
     decrypted_bytes = b''
-    for i in range(len(encrypted_bytes)//2):
+    for i in range(len(encrypted_bytes) // 2):
         key = prng(key)
         decrypted_bytes += (int.from_bytes(encrypted_bytes[i * 2:i * 2 + 2], 'little') ^ (key >> 16)).to_bytes(2, 'little')
     unshuffled_bytes = b''
@@ -133,27 +127,27 @@ def decryptpokemon(data, gen):
     encrypted_battle_stats = data[cutoff:]
     key = personality_value
     decrypted_battle_stats = b''
-    for i in range(len(encrypted_battle_stats)//2):
+    for i in range(len(encrypted_battle_stats) // 2):
         key = prng(key)
         decrypted_battle_stats += (int.from_bytes(encrypted_battle_stats[i * 2:i * 2 + 2], 'little') ^ (key >> 16)).to_bytes(2, 'little')
     return (unshuffled_bytes, decrypted_battle_stats, shiny_value, personality_value)
 
 
 def pokemon45(data, gen):
-    unown={0x00:'' , 0x08:'-b' ,0x10:'-c' ,0x18:'-d' ,0x20:'-e' ,0x28:'-f' ,0x30:'-g' ,0x38:'-h' ,0x40:'-i' ,0x48:'-j' ,0x50:'-k' ,0x58:'-l' ,0x60:'-m' ,0x68:'-n' ,0x70:'-o' ,0x78:'-p' ,0x80:'-q' ,0x88:'-r' ,0x90:'-s' ,0x98:'-t' ,0xA0:'-u' ,0xA8:'-v' ,0xB0:'-w' ,0xB8:'-x' ,0xC0:'-y' ,0xC8:'-z' ,0xD0:'-exclamation' ,0xD8:'-question'}
-    burmy={0x00: '-plant', 0x08: '-sandy',0x10: '-trash'}
-    shellos={0x00: '-west', 0x08: '-east'}
-    rotom={0x00: '', 0x08: '-heat', 0x10: '-wash',0x18: '-frost',0x20: '-fan',0x28: '-mow'}
-    giratina={0x00: '', 0x08: '-origin'}
-    shaymin={0x00: '', 0x08: '-sky'}
-    deoxys={0x00: '', 0x08: '-attack', 0x10: '-defense', 0x18: '-speed'}
-    arceus={0x00:'' , 0x08:'-fighting' ,0x10:'-flying' ,0x18:'-poison' ,0x20:'-ground' ,0x28:'-rock' ,0x30:'-bug' ,0x38:'-ghost' ,0x40:'-steel' ,0x48:'-unknown' ,0x50:'-fire' ,0x58:'-water' ,0x60:'-grass' ,0x68:'-electric' ,0x70:'-psychic' ,0x78:'-ice' ,0x80:'-dragon' ,0x88:'-dark'}
-    deerling = {0x00:'' , 0x08: '-spring', 0x10: '-summer', 0x18: '-autumn', 0x20: '-winter'}
-    basculin = {0x00:'' , 0x08: '-blue-striped'}
-    boreos = {0x00:'' , 0x08: '-therian'}
-    kyurem = {0x00:'' , 0x08: '-white', 0x18: '-black'}
-    keldeo = {0x00:'' , 0x08: '-resolute'}
-    genesect = {0x00:'' , 0x08: '-douse', 0x10: '-shock', 0x18: '-burn', 0x20: '-chill'}
+    unown = {0x00: '', 0x08: '-b', 0x10: '-c', 0x18: '-d', 0x20: '-e', 0x28: '-f', 0x30: '-g', 0x38: '-h', 0x40: '-i', 0x48: '-j', 0x50: '-k', 0x58: '-l', 0x60: '-m', 0x68: '-n', 0x70: '-o', 0x78: '-p', 0x80: '-q', 0x88: '-r', 0x90: '-s', 0x98: '-t', 0xA0: '-u', 0xA8: '-v', 0xB0: '-w', 0xB8: '-x', 0xC0: '-y', 0xC8: '-z', 0xD0: '-exclamation', 0xD8: '-question'}
+    burmy = {0x00: '-plant', 0x08: '-sandy', 0x10: '-trash'}
+    shellos = {0x00: '-west', 0x08: '-east'}
+    rotom = {0x00: '', 0x08: '-heat', 0x10: '-wash', 0x18: '-frost', 0x20: '-fan', 0x28: '-mow'}
+    giratina = {0x00: '', 0x08: '-origin'}
+    shaymin = {0x00: '', 0x08: '-sky'}
+    deoxys = {0x00: '', 0x08: '-attack', 0x10: '-defense', 0x18: '-speed'}
+    arceus = {0x00: '', 0x08: '-fighting', 0x10: '-flying', 0x18: '-poison', 0x20: '-ground', 0x28: '-rock', 0x30: '-bug', 0x38: '-ghost', 0x40: '-steel', 0x48: '-unknown', 0x50: '-fire', 0x58: '-water', 0x60: '-grass', 0x68: '-electric', 0x70: '-psychic', 0x78: '-ice', 0x80: '-dragon', 0x88: '-dark'}
+    deerling = {0x00: '', 0x08: '-spring', 0x10: '-summer', 0x18: '-autumn', 0x20: '-winter'}
+    basculin = {0x00: '', 0x08: '-blue-striped'}
+    boreos = {0x00: '', 0x08: '-therian'}
+    kyurem = {0x00: '', 0x08: '-white', 0x18: '-black'}
+    keldeo = {0x00: '', 0x08: '-resolute'}
+    genesect = {0x00: '', 0x08: '-douse', 0x10: '-shock', 0x18: '-burn', 0x20: '-chill'}
 
     charset = gen4charset if gen == 4 else gen5charset
     items = items4 if gen == 4 else items5
@@ -183,7 +177,7 @@ def pokemon45(data, gen):
         form = unown[form]
     if dexnr in [412, 413]:
         form = burmy[form]
-    if dexnr in[422, 423]:
+    if dexnr in [422, 423]:
         form = shellos[form]
     if dexnr == 479:
         form = rotom[form]
@@ -223,7 +217,7 @@ def pokemon45(data, gen):
 
 def pokemon67(data):
     unshuffled_bytes, decrypted_battle_stats, shiny_value, personality = decryptpokemon(data, '67')
-    dexnr = int.from_bytes(unshuffled_bytes[:2] , 'little')
+    dexnr = int.from_bytes(unshuffled_bytes[:2], 'little')
     female = False
     if dexnr in gender_lut:
         female = personality % 256 < gender_lut[dexnr]
@@ -269,19 +263,5 @@ def team(data, gen, edition=None):
     else:
         for i in range(6):
             liste.append(pokemon67(data[i * length: (i + 1) * length]))
-    
 
-    liste = sort(liste, ORDER)
     return liste
-
-def sort(liste, key=ORDER):
-    if key == 'dexnr':
-        algorithm = lambda a: a
-    if key == 'team':
-        return liste
-    if key == 'lvl':
-        algorithm = lambda a: - a.lvl if a.dexnr != 0 else 999999
-    if key == 'route':
-        algorithm = lambda a: a.route if a.dexnr != 0 else 999999
-
-    return sorted(sorted(liste), key=algorithm)

@@ -10,6 +10,7 @@ import os
 
 ws = None
 teams = {}
+unsorted_teams ={}
 
 
 def load_obsws():
@@ -23,10 +24,16 @@ async def connect_to_obs():
     try:
         await ws.connect()
         await ws.wait_until_identified()
-        for player in teams:
-            await changeSource(player, range(6), teams[player], edition=33)
+        await redraw_obs()
     except:
         pass
+
+
+async def redraw_obs():
+    if ws and ws.is_identified():
+        for player in teams:
+            await changeSource(player, range(6), teams[player], edition=33)
+        print('redrew')
 
 
 def get_sprite(pokemon, anim, edition):
@@ -114,18 +121,25 @@ def sort(liste, key):
 
 async def indeedee():
     global teams
+    global unsorted_teams
     reader, writer = await asyncio.open_connection(ip, port)
     writer.write(b'\x00\x00')
     await writer.drain()
     response = await reader.read(4096)
-    teams = pickle.loads(response)
+    unsorted_teams = pickle.loads(response)
+    teams = unsorted_teams.copy()
+    for team in teams:
+        teams[team] = sort(teams[team], order.get())
     old_teams = teams.copy()
     for player in teams:
         await changeSource(player, range(6), teams[player], edition=33)
     while True:
         try:
             response = await reader.read(4096)
-            teams = pickle.loads(response)
+            unsorted_teams = pickle.loads(response)
+            teams = unsorted_teams.copy()
+            for team in teams.values():
+                team = sort(team, order.get())
             if old_teams != teams:
                 for player in teams:
                     diff = []
@@ -143,9 +157,14 @@ async def indeedee():
 
 
 async def tk_main(root):
+    old_order = order.get()
     while True:
         root.update()
         await asyncio.sleep(0.05)
+
+        if old_order != order.get():
+            old_order = order.get()
+            await redraw_obs()
 
 
 def on_closing():
@@ -163,6 +182,7 @@ def save_config():
     config['items'] = show_items.get()
     config['itemspath'] = items_path.get()
     config['emupath'] = emu_path.get()
+    config['last_game'] = game.get()
 
     with open('config.yml', 'w') as file:
         yaml.dump(config, file)
@@ -191,6 +211,13 @@ def openbiz():
     subprocess.Popen([emu_path.get(), f'--lua={os.path.abspath(f"./backend/Player{selectedplayer.get()}.lua")}', f'--socket_ip={ip}', f'--socket_port={port}', game.get()])
 
 
+def change_order(*args):
+    print(teams)
+    for team in  teams:
+        teams[team] = sort(unsorted_teams[team], order.get())
+    print(teams)
+
+
 if __name__ == '__main__':
     root = tk.Tk()
     root.protocol("WM_DELETE_WINDOW", on_closing)
@@ -204,6 +231,7 @@ if __name__ == '__main__':
     obspassword = tk.StringVar(value=config['obspassword'])
     spritespath = tk.StringVar(value=config['spritespath'])
     order = tk.StringVar(value=config['order'])
+    order.trace_add('write', change_order)
     animated = tk.IntVar(value=config['animated'])
     show_nicknames = tk.IntVar(value=config['nicknames'])
     show_items = tk.IntVar(value=config['items'])

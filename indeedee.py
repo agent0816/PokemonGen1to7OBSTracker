@@ -72,6 +72,7 @@ async def handle_munchlax(writer):
     print('new client connected')
     old_teams = teams.copy()
     msg = pickle.dumps(teams)
+    writer.write(int.to_bytes(len(msg), 3))
     writer.write(msg)
     await writer.drain()
     while True:
@@ -79,6 +80,7 @@ async def handle_munchlax(writer):
             if old_teams != teams:
                 old_teams = teams.copy()
                 msg = pickle.dumps(teams)
+                writer.write(int.to_bytes(len(msg), 3))
                 writer.write(msg)
                 await writer.drain()
             await asyncio.sleep(1)

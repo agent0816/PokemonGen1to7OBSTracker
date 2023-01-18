@@ -7,6 +7,7 @@ import tkinter.filedialog as fd
 import yaml
 import subprocess
 import os
+from pathlib import Path
 
 ws = None
 teams = {}
@@ -124,7 +125,9 @@ async def indeedee():
     reader, writer = await asyncio.open_connection(ip, port)
     writer.write(b'\x00\x00')
     await writer.drain()
-    response = await reader.read(4096)
+    length = await reader.read(3)
+    length = int.from_bytes(length, 'big')
+    response = await reader.read(length)
     unsorted_teams = pickle.loads(response)
     teams = unsorted_teams.copy()
     for team in teams:
@@ -134,7 +137,8 @@ async def indeedee():
         await changeSource(player, range(6), teams[player], edition=33)
     while True:
         try:
-            response = await reader.read(4096)
+            length = int.from_bytes(await reader.read(3), 'big')
+            response = await reader.read(length)
             unsorted_teams = pickle.loads(response)
             teams = unsorted_teams.copy()
             for team in teams.values():
@@ -202,14 +206,20 @@ def connect_indeedee():
 def setaddr(*args):
     global ip, port
     string = address.get()
-    if string[0] != '[':
-        ip, port = string.split(':')
-    else:
-        ip, port = string[1:].split(']:')
+    try:
+        if string[0] != '[':
+            ip, port = string.split(':')
+        else:
+            ip, port = string[1:].split(']:')
+    except:
+        pass
 
 
 def openbiz():
-    subprocess.Popen([emu_path.get(), f'--lua={os.path.abspath(f"./backend/Player{selectedplayer.get()}.lua")}', f'--socket_ip={ip}', f'--socket_port={port}', game.get()])
+    player = selectedplayer.get()
+    if player in range(1, 256) and not Path(f'backend/Player{player}.lua').exists():
+        Path(f'backend/Player{player}.lua').write_text(f'PLAYER={player}\ngui.drawText(10,10, "Player {player}")\npackage.path = "./obsautomation.lua;"\nconnect = loadfile(\'obsautomation.lua\')\nconnect()')
+    subprocess.Popen([emu_path.get(), f'--lua={os.path.abspath(f"./backend/Player{player}.lua")}', f'--socket_ip={ip}', f'--socket_port={port}', game.get()])
 
 
 def change_order(*args):
@@ -244,27 +254,22 @@ if __name__ == '__main__':
 
     tkmain = asyncio.ensure_future(tk_main(root))
 
-    height = 0
     iddframe = tk.LabelFrame(root, text='Indeedee')
-    iddframe.place(y=height, relwidth=1)
+    iddframe.pack(fill='both', expand=True)
     ttk.Label(iddframe, text='Address: ').pack(side='left')
     ttk.Entry(iddframe, textvariable=address).pack(fill='x', side='left', expand=True)
     ttk.Button(iddframe, text='Connect', command=connect_indeedee).pack(side='left')
-    root.update()
-    height += iddframe.winfo_height()
 
     obsframe = tk.LabelFrame(root, text='OBS')
-    obsframe.place(y=height, relwidth=1)
+    obsframe.pack(fill='both', expand=True)
     ttk.Label(obsframe, text='Port:').pack(side='left')
     ttk.Entry(obsframe, textvariable=obsport).pack(side='left', fill='x', expand=True)
     ttk.Label(obsframe, text='Password:').pack(side='left')
     ttk.Entry(obsframe, textvariable=obspassword, show='\u25CF').pack(side='left', fill='x', expand=True)
     ttk.Button(obsframe, text='Connect', command=load_obsws).pack(side='left')
-    root.update()
-    height += obsframe.winfo_height()
 
     bizframe = tk.LabelFrame(root, text='BizHawk')
-    bizframe.place(y=height, relwidth=1)
+    bizframe.pack(fill='both', expand=True)
     frame = ttk.Frame(bizframe)
     frame.pack(expand=True, fill='both')
     ttk.Label(frame, text='EmuHawk.exe: ').pack(side='left')
@@ -281,11 +286,9 @@ if __name__ == '__main__':
     ttk.Combobox(frame, textvariable=selectedplayer, values=[1, 2, 3, 4]).pack(side='left', fill='x', expand=True)
     bizbutton = ttk.Button(frame, text='Launch Emulator for Player 1', command=lambda: openbiz())
     bizbutton.pack(side='left')
-    root.update()
-    height += bizframe.winfo_height()
 
     spriteframe = tk.LabelFrame(root, text='Sprites')
-    spriteframe.place(y=height, relwidth=1)
+    spriteframe.pack(fill='both', expand=True)
     frame = ttk.Frame(spriteframe)
     frame.pack(expand=True, fill='both')
     ttk.Label(frame, text='Pokemon Sprites: ').pack(side='left')
@@ -302,8 +305,6 @@ if __name__ == '__main__':
     ttk.Checkbutton(spriteframe, text='Animated Sprites', variable=animated).pack()
     ttk.Checkbutton(spriteframe, text='Show Names       ', variable=show_nicknames).pack()
     ttk.Checkbutton(spriteframe, text='Show Items         ', variable=show_items).pack()
-    root.update()
-    height += spriteframe.winfo_height()
     ttk.Button(root, text='Save Settings', command=save_config).pack(side='bottom')
 
     loop = asyncio.get_event_loop()

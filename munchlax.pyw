@@ -201,8 +201,11 @@ def connect_indeedee():
 
 def setaddr(*args):
     global ip, port
-    ip, port = address.get().split(':')
-
+    string = address.get()
+    if string[0] != '[':
+        ip, port = string.split(':')
+    else:
+        ip, port = string[1:].split(']:')
 
 def openbiz():
     subprocess.Popen([emu_path.get(), f'--lua={os.path.abspath(f"./backend/Player{selectedplayer.get()}.lua")}', f'--socket_ip={ip}', f'--socket_port={port}', game.get()])

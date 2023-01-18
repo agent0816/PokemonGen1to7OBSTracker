@@ -14,7 +14,7 @@ teams = {}
 
 
 async def main():
-    server = await asyncio.start_server(new_connection, '0.0.0.0', port)
+    server = await asyncio.start_server(new_connection, '', port)
     async with server:
         await server.serve_forever()
 

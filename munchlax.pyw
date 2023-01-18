@@ -33,7 +33,6 @@ async def redraw_obs():
     if ws and ws.is_identified():
         for player in teams:
             await changeSource(player, range(6), teams[player], edition=33)
-        print('redrew')
 
 
 def get_sprite(pokemon, anim, edition):
@@ -145,7 +144,6 @@ async def indeedee():
                     diff = []
                     teams[player] = sort(teams[player], order.get())
                     team = teams[player]
-                    print(team)
                     old_team = old_teams[player]
                     for i in range(6):
                         if team[i] != old_team[i]:
@@ -207,15 +205,12 @@ def setaddr(*args):
 
 
 def openbiz():
-    print(ip, port)
     subprocess.Popen([emu_path.get(), f'--lua={os.path.abspath(f"./backend/Player{selectedplayer.get()}.lua")}', f'--socket_ip={ip}', f'--socket_port={port}', game.get()])
 
 
 def change_order(*args):
-    print(teams)
     for team in  teams:
         teams[team] = sort(unsorted_teams[team], order.get())
-    print(teams)
 
 
 if __name__ == '__main__':

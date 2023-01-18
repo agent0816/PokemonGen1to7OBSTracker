@@ -27,6 +27,8 @@ async def new_connection(reader, writer):
 
 
 async def handle_bizhawk(reader, e, p):
+    print('new emulator connected')
+
     def get_length():
         if edition < 20:
             return 1, 330
@@ -45,7 +47,6 @@ async def handle_bizhawk(reader, e, p):
             if teams[player] == team:
                 return
         teams[player] = team
-        print(teams)
 
     edition = e
     player = p
@@ -66,6 +67,7 @@ async def handle_bizhawk(reader, e, p):
 
 
 async def handle_munchlax(writer):
+    print('new client connected')
     old_teams = teams.copy()
     msg = pickle.dumps(teams)
     writer.write(msg)

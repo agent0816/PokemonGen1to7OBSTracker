@@ -1,9 +1,11 @@
 animated: 0
-indeedeeaddress: localhost:43885
+emupath: ''
+indeedeeaddress: 127.0.0.1:43885
 items: 1
 itemspath: ''
+last_game: ''
 nicknames: 1
-obspassword: pokemon
-obsport: 4444
-order: DexNr.
-spritespath: C:/Users/Flori/OneDrive/Dokumente/GitHub/sprites/sprites/pokemon/versions/generation-iii/emerald
+obspassword: ''
+obsport: 4455
+order: Team
+spritespath: ''

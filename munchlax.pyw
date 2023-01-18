@@ -5,7 +5,8 @@ import simpleobsws
 from tkinter import ttk
 import tkinter.filedialog as fd
 import yaml
-
+import subprocess
+import os
 
 ws = None
 teams = {}
@@ -113,7 +114,7 @@ def sort(liste, key):
 
 async def indeedee():
     global teams
-    reader, writer = await asyncio.open_connection(*address.get().split(':'))
+    reader, writer = await asyncio.open_connection(ip, port)
     writer.write(b'\x00\x00')
     await writer.drain()
     response = await reader.read(4096)
@@ -161,6 +162,7 @@ def save_config():
     config['nicknames'] = show_nicknames.get()
     config['items'] = show_items.get()
     config['itemspath'] = items_path.get()
+    config['emupath'] = emu_path.get()
 
     with open('config.yml', 'w') as file:
         yaml.dump(config, file)
@@ -178,13 +180,26 @@ def connect_indeedee():
 
     iddmain = asyncio.ensure_future(indeedee())
 
+
+def setaddr(*args):
+    global ip, port
+    ip, port = address.get().split(':')
+
+
+def openbiz():
+    print(ip, port)
+    subprocess.Popen([emu_path.get(), f'--lua={os.path.abspath(f"./backend/Player{selectedplayer.get()}.lua")}', f'--socket_ip={ip}', f'--socket_port={port}', game.get()])
+
+
 if __name__ == '__main__':
     root = tk.Tk()
     root.protocol("WM_DELETE_WINDOW", on_closing)
 
     with open('config.yml') as file:
         config = yaml.safe_load(file)
-    address = tk.StringVar(value=config['indeedeeaddress'])
+    address = tk.StringVar()
+    address.trace_add('write', setaddr)
+    address.set(config['indeedeeaddress'])
     obsport = tk.IntVar(value=config['obsport'])
     obspassword = tk.StringVar(value=config['obspassword'])
     spritespath = tk.StringVar(value=config['spritespath'])
@@ -193,12 +208,12 @@ if __name__ == '__main__':
     show_nicknames = tk.IntVar(value=config['nicknames'])
     show_items = tk.IntVar(value=config['items'])
     items_path = tk.StringVar(value=config['itemspath'])
-
-
-
+    emu_path = tk.StringVar(value=config['emupath'])
+    game = tk.StringVar(value=config['last_game'])
+    selectedplayer = tk.IntVar(value=1)
+    selectedplayer.trace_add('write', lambda *x: bizbutton.configure(text=f'Launch Emulator for Player {selectedplayer.get()}'))
 
     tkmain = asyncio.ensure_future(tk_main(root))
-
 
     iddframe = tk.Frame(root)
     iddframe.pack()
@@ -212,6 +227,18 @@ if __name__ == '__main__':
     ttk.Label(obsframe, text='OBS Password:').pack()
     ttk.Entry(obsframe, textvariable=obspassword, show='\u25CF').pack()
     ttk.Button(obsframe, text='Connent', command=load_obsws).pack()
+    bizframe = tk.Frame(root)
+    bizframe.pack()
+    ttk.Label(bizframe, text='EmuHawk.exe: ').pack()
+    ttk.Entry(bizframe, textvariable=emu_path).pack()
+    ttk.Button(bizframe, text='Browse', command=lambda var=emu_path: var.set(fd.askopenfilename())).pack()
+    ttk.Label(bizframe, text='Player: ').pack()
+    ttk.Combobox(bizframe, textvariable=selectedplayer, values=[1, 2, 3, 4]).pack()
+    ttk.Label(bizframe, text='ROM Path: ').pack()
+    ttk.Entry(bizframe, textvariable=game).pack()
+    ttk.Button(bizframe, text='Browse', command=lambda var=game: var.set(fd.askopenfilename())).pack()
+    bizbutton = ttk.Button(bizframe, text='Launch Emulator for Player 1', command=lambda: openbiz())
+    bizbutton.pack()
     spriteframe = tk.Frame(root)
     spriteframe.pack()
     ttk.Label(spriteframe, text='Pokemon Sprites: ').pack()

@@ -10,7 +10,7 @@ import os
 
 ws = None
 teams = {}
-unsorted_teams ={}
+unsorted_teams = {}
 
 
 def load_obsws():
@@ -209,12 +209,14 @@ def openbiz():
 
 
 def change_order(*args):
-    for team in  teams:
+    for team in teams:
         teams[team] = sort(unsorted_teams[team], order.get())
 
 
 if __name__ == '__main__':
     root = tk.Tk()
+    root.title('Munchlax')
+    root.geometry('230x625')
     root.protocol("WM_DELETE_WINDOW", on_closing)
 
     with open('config.yml') as file:

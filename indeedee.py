@@ -8,6 +8,8 @@ if len(sys.argv) > 1:
 else:
     port = 43885
 
+print(f'listening on port {port}')
+
 teams = {}
 
 

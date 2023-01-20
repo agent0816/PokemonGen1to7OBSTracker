@@ -1,17 +1,17 @@
-import yaml
-from backend.classes.Pokemon import Pokemon
+import pickle
+from classes.Pokemon import Pokemon
 
-species1_lut = yaml.safe_load(open('backend/data/species1.yml'))
-species3_lut = yaml.safe_load(open('backend/data/species3.yml'))
-gen1charset = yaml.safe_load(open('backend/data/gen1charset.yml'))
-gen3charset = yaml.safe_load(open('backend/data/gen3charset.yml'))
-gen4charset = yaml.safe_load(open('backend/data/gen4charset.yml'))
-gen5charset = yaml.safe_load(open('backend/data/gen5charset.yml'))
-gender_lut = yaml.safe_load(open('backend/data/gender_lut.yml'))
-items2 = yaml.safe_load(open('backend/data/items2.yml'))
-items3 = yaml.safe_load(open('backend/data/items3.yml'))
-items4 = yaml.safe_load(open('backend/data/items4.yml'))
-items5 = yaml.safe_load(open('backend/data/items5.yml'))
+species1_lut = pickle.load(open('data/species1', 'rb'))
+species3_lut = pickle.load(open('data/species3', 'rb'))
+gen1charset = pickle.load(open('data/gen1charset', 'rb'))
+gen3charset = pickle.load(open('data/gen3charset', 'rb'))
+gen4charset = pickle.load(open('data/gen4charset', 'rb'))
+gen5charset = pickle.load(open('data/gen5charset', 'rb'))
+gender_lut = pickle.load(open('data/gender_lut', 'rb'))
+items2 = pickle.load(open('data/items2', 'rb'))
+items3 = pickle.load(open('data/items3', 'rb'))
+items4 = pickle.load(open('data/items4', 'rb'))
+items5 = pickle.load(open('data/items5', 'rb'))
 
 
 def pokemon1(data):
@@ -86,9 +86,9 @@ def pokemon3(data, edition):
         form = ''
         species = 'egg'
     lvl = data[84]
-    #female = False
-    #if not egg:
-    #    female = personality % 256 < gender_lut[species]
+    # female = False
+    # if not egg:
+    #     female = personality % 256 < gender_lut[species]
     met_location = data[misc_lut[offset] + 1]
     met_location = met_location ^ ((key >> 8) % 0x100)
     nickname = ''
@@ -215,24 +215,6 @@ def pokemon45(data, gen):
     return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location)
 
 
-def pokemon67(data):
-    unshuffled_bytes, decrypted_battle_stats, shiny_value, personality = decryptpokemon(data, '67')
-    dexnr = int.from_bytes(unshuffled_bytes[:2], 'little')
-    female = False
-    if dexnr in gender_lut:
-        female = personality % 256 < gender_lut[dexnr]
-    lvl = int(decrypted_battle_stats[4])
-    met_location = int.from_bytes(unshuffled_bytes[0xD2:0xD4], 'little')
-    nickname = ''
-    charset = gen5charset
-    for char in unshuffled_bytes[0x38:0x4E]:
-        if char in charset:
-            nickname += charset[char]
-    #TODO
-    form = ''
-    return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, nickname=nickname, route=met_location)
-
-
 def team(data, gen, edition=None):
     length = len(data) // 6
     liste = []
@@ -260,8 +242,5 @@ def team(data, gen, edition=None):
     elif gen == 5:
         for i in range(6):
             liste.append(pokemon45(data[i * length: (i + 1) * length], 5))
-    else:
-        for i in range(6):
-            liste.append(pokemon67(data[i * length: (i + 1) * length]))
 
     return liste

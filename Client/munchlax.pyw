@@ -209,17 +209,21 @@ def setaddr(*args):
     try:
         if string[0] != '[':
             ip, port = string.split(':')
+            proxy.set(0)
         else:
             ip, port = string[1:].split(']:')
+            proxy.set(1)
     except:
         pass
 
 
 def openbiz():
+    bip = '127.0.0.1' if proxy.get() else ip
+    bport = int(port) + proxy.get()
     player = selectedplayer.get()
-    if player in range(1, 256) and not Path(f'backend/Player{player}.lua').exists():
-        Path(f'backend/Player{player}.lua').write_text(f'PLAYER={player}\ngui.drawText(10,10, "Player {player}")\npackage.path = "./obsautomation.lua;"\nconnect = loadfile(\'obsautomation.lua\')\nconnect()')
-    subprocess.Popen([emu_path.get(), f'--lua={os.path.abspath(f"./backend/Player{player}.lua")}', f'--socket_ip={ip}', f'--socket_port={port}', game.get()])
+    if player in range(1, 256) and not Path(f'Player{player}.lua').exists():
+        Path(f'Player{player}.lua').write_text(f'PLAYER={player}\ngui.drawText(10,10, "Player {player}")\npackage.path = "./obsautomation.lua;"\nconnect = loadfile(\'obsautomation.lua\')\nconnect()')
+    subprocess.Popen([emu_path.get(), f'--lua={os.path.abspath(f"Player{player}.lua")}', f'--socket_ip={bip}', f'--socket_port={bport}', game.get()])
 
 
 def change_order(*args):
@@ -227,14 +231,43 @@ def change_order(*args):
         teams[team] = sort(unsorted_teams[team], order.get())
 
 
+proxyserver = None
+
+def toggle_proxy(*args):
+    global proxyserver
+    if proxy.get():
+        proxyserver = asyncio.ensure_future(run_proxy())
+    else:
+        try:
+            proxyserver.cancel()
+        except AttributeError:
+            pass
+
+
+async def run_proxy():
+    async def bizreader(reader, _):
+        msg = await reader.read(1322)
+        writer.write(msg)
+        await writer.drain()
+    while True:
+        _, writer = await asyncio.open_connection(ip, port)
+        server = await asyncio.start_server(bizreader, '127.0.0.1', int(port) + 1)
+        async with server:
+            await server.serve_forever()
+
+
+
+
 if __name__ == '__main__':
     root = tk.Tk()
     root.title('Munchlax')
-    root.geometry('400x340')
+    root.minsize(400, 340)
     root.protocol("WM_DELETE_WINDOW", on_closing)
 
     with open('config.yml') as file:
         config = yaml.safe_load(file)
+    proxy = tk.IntVar()
+    proxy.trace_add('write', toggle_proxy)
     address = tk.StringVar()
     address.trace_add('write', setaddr)
     address.set(config['indeedeeaddress'])
@@ -254,6 +287,19 @@ if __name__ == '__main__':
 
     tkmain = asyncio.ensure_future(tk_main(root))
 
+    m = tk.Menu(root, tearoff=0)
+    m.add_command(label='Cut')
+    m.add_command(label='Copy')
+    m.add_command(label='Paste')
+
+    def show_menu(event):
+        m.entryconfigure('Cut', command=lambda: event.widget.event_generate('<<Cut>>'))
+        m.entryconfigure('Copy', command=lambda: event.widget.event_generate('<<Copy>>'))
+        m.entryconfigure('Paste', command=lambda: event.widget.event_generate('<<Paste>>'))
+        m.tk.call('tk_popup', m, event.x_root, event.y_root)
+
+    ttk.Entry().bind_class('TEntry', '<Button-3>', show_menu)
+
     iddframe = tk.LabelFrame(root, text='Indeedee')
     iddframe.pack(fill='both', expand=True)
     ttk.Label(iddframe, text='Address: ').pack(side='left')
@@ -264,8 +310,10 @@ if __name__ == '__main__':
     obsframe.pack(fill='both', expand=True)
     ttk.Label(obsframe, text='Port:').pack(side='left')
     ttk.Entry(obsframe, textvariable=obsport).pack(side='left', fill='x', expand=True)
+
     ttk.Label(obsframe, text='Password:').pack(side='left')
     ttk.Entry(obsframe, textvariable=obspassword, show='\u25CF').pack(side='left', fill='x', expand=True)
+
     ttk.Button(obsframe, text='Connect', command=load_obsws).pack(side='left')
 
     bizframe = tk.LabelFrame(root, text='BizHawk')
@@ -274,14 +322,17 @@ if __name__ == '__main__':
     frame.pack(expand=True, fill='both')
     ttk.Label(frame, text='EmuHawk.exe: ').pack(side='left')
     ttk.Entry(frame, textvariable=emu_path).pack(side='left', fill='x', expand=True)
+
     ttk.Button(frame, text='Browse', command=lambda var=emu_path: var.set(fd.askopenfilename())).pack(side='left')
     frame = ttk.Frame(bizframe)
     frame.pack(expand=True, fill='both')
     ttk.Label(frame, text='ROM Path:        ').pack(side='left')
     ttk.Entry(frame, textvariable=game).pack(side='left', fill='x', expand=True)
+
     ttk.Button(frame, text='Browse', command=lambda var=game: var.set(fd.askopenfilename())).pack(side='left')
     frame = ttk.Frame(bizframe)
     frame.pack(expand=True, fill='both')
+    # ttk.Checkbutton(frame, text='Connect BizHawk\ndirectly to Indeedee', variable=proxy).pack(side='left')
     ttk.Label(frame, text='Player: ').pack(side='left')
     ttk.Combobox(frame, textvariable=selectedplayer, values=[1, 2, 3, 4]).pack(side='left', fill='x', expand=True)
     bizbutton = ttk.Button(frame, text='Launch Emulator for Player 1', command=lambda: openbiz())
@@ -293,11 +344,13 @@ if __name__ == '__main__':
     frame.pack(expand=True, fill='both')
     ttk.Label(frame, text='Pokemon Sprites: ').pack(side='left')
     ttk.Entry(frame, textvariable=spritespath).pack(side='left', fill='x', expand=True)
+
     ttk.Button(frame, text='Browse', command=lambda var=spritespath: var.set(fd.askdirectory())).pack(side='left')
     frame = ttk.Frame(spriteframe)
     frame.pack(expand=True, fill='both')
     ttk.Label(frame, text='Item Sprites:          ').pack(side='left')
     ttk.Entry(frame, textvariable=items_path).pack(side='left', fill='x', expand=True)
+
     ttk.Button(frame, text='Browse', command=lambda var=items_path: var.set(fd.askdirectory())).pack(side='left')
 
     ttk.Label(spriteframe, text='Order: ').pack(side='left')

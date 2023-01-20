@@ -1,6 +1,6 @@
 import asyncio
 import sys
-import backend.pokedecoder as pokedecoder
+import pokedecoder
 import pickle
 
 if len(sys.argv) > 1:

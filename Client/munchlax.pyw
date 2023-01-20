@@ -263,9 +263,24 @@ if __name__ == '__main__':
     root.title('Munchlax')
     root.minsize(400, 340)
     root.protocol("WM_DELETE_WINDOW", on_closing)
+    if Path('config.yml').exists():
+        with open('config.yml') as file:
+            config = yaml.safe_load(file)
+    else:
+        config = {
+            'animated': 0,
+            'indeedeeaddress': '',
+            'items': 1,
+            'itemspath': '',
+            'nicknames': 1,
+            'obspassword': '',
+            'obsport': '',
+            'order': 'DexNr.',
+            'spritespath': '',
+            'emupath': '',
+            'last_game': ''
 
-    with open('config.yml') as file:
-        config = yaml.safe_load(file)
+        }
     proxy = tk.IntVar()
     proxy.trace_add('write', toggle_proxy)
     address = tk.StringVar()

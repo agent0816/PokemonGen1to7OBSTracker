@@ -121,6 +121,8 @@ def sort(liste, key):
 
 
 async def change_badges(player):
+    if not handle_badges.get():
+        return
     if not ws or not ws.is_identified():
         log.append('not changing badges' + '\n')
         return
@@ -226,6 +228,7 @@ def save_config():
     config['itemspath'] = items_path.get()
     config['emupath'] = emu_path.get()
     config['last_game'] = game.get()
+    config['show_badges'] = handle_badges.get()
 
     with open('config.yml', 'w') as file:
         yaml.dump(config, file)
@@ -318,7 +321,8 @@ if __name__ == '__main__':
             'order': 'DexNr.',
             'spritespath': '',
             'emupath': '',
-            'last_game': ''
+            'last_game': '',
+            'show_badges': 0,
 
         }
     proxy = tk.IntVar()
@@ -337,6 +341,7 @@ if __name__ == '__main__':
     items_path = tk.StringVar(value=config['itemspath'])
     emu_path = tk.StringVar(value=config['emupath'])
     game = tk.StringVar(value=config['last_game'])
+    handle_badges = tk.IntVar(value=config['show_badges'])
     selectedplayer = tk.IntVar(value=1)
     selectedplayer.trace_add('write', lambda *x: bizbutton.configure(text=f'Launch Emulator for Player {selectedplayer.get()}'))
 
@@ -412,7 +417,8 @@ if __name__ == '__main__':
     ttk.Combobox(spriteframe, textvariable=order, state='readonly', values=['DexNr.', 'Team', 'Level', 'Route']).pack(side='left')
     ttk.Checkbutton(spriteframe, text='Animated Sprites', variable=animated).pack()
     ttk.Checkbutton(spriteframe, text='Show Names       ', variable=show_nicknames).pack()
-    ttk.Checkbutton(spriteframe, text='Show Items         ', variable=show_items).pack()
+    ttk.Checkbutton(spriteframe, text='Show Items        \u2009\u2009', variable=show_items).pack()
+    ttk.Checkbutton(spriteframe, text='Show Badges      \u2009', variable=handle_badges).pack()
     ttk.Button(root, text='Save Settings', command=save_config).pack(side='bottom')
     info = ttk.Label(text='INFO')
     # info.pack()

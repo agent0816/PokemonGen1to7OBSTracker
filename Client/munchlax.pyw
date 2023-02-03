@@ -8,10 +8,11 @@ import yaml
 import subprocess
 import os
 from pathlib import Path
-
+log = []
 ws = None
 teams = {}
 unsorted_teams = {}
+badges = {}
 
 
 def load_obsws():
@@ -26,14 +27,16 @@ async def connect_to_obs():
         await ws.connect()
         await ws.wait_until_identified()
         await redraw_obs()
-    except:
-        pass
+        log.append('connected to OBS\n')
+    except Exception as err:
+        log.append(err + '\n')
 
 
 async def redraw_obs():
     if ws and ws.is_identified():
         for player in teams:
             await changeSource(player, range(6), teams[player], edition=33)
+            await change_badges(player)
 
 
 def get_sprite(pokemon, anim, edition):
@@ -59,9 +62,7 @@ def get_sprite(pokemon, anim, edition):
 
 
 async def changeSource(player, slots, team, edition):
-    if not ws:
-        return
-    if not ws.is_identified():
+    if not ws or not ws.is_identified():
         return
     batch = []
     for slot in slots:
@@ -93,7 +94,7 @@ async def changeSource(player, slots, team, edition):
                 simpleobsws.Request(
                     "SetInputSettings",
                     {
-                        "inputName": f"item{slot + 6 * (player -1) +1}",
+                        "inputName": f"item{slot + 6 * (player - 1) + 1}",
                         "inputSettings": {
                             "file": items_path.get() + '/'
                             + str(team[slot].item)
@@ -119,42 +120,78 @@ def sort(liste, key):
         return sorted(sorted(liste), key=lambda a: a.route if a.dexnr != 0 else 999999)
 
 
+async def change_badges(player):
+    if not ws or not ws.is_identified():
+        log.append('not changing badges' + '\n')
+        return
+    log.append(f'changing badges {bin(badges[player])}' + '\n')
+    batch = []
+    for i in range(16):
+        if badges[player] & 2**i:
+            batch.append(
+                simpleobsws.Request(
+                    "SetInputSettings",
+                    {
+                        "inputName": f"badge{i + 6 * (player - 1) + 1}",
+                        "inputSettings": {
+                            "file": "C:/Users/Flori/OneDrive/Dokumente/GitHub/sprites/sprites/badges" + '/' + str(i + 1) + ".png"
+                        }
+                    }
+                )
+            )
+        else:
+            batch.append(
+                simpleobsws.Request(
+                    "SetInputSettings",
+                    {
+                        "inputName": f"badge{i + 6 * (player - 1) + 1}",
+                        "inputSettings": {
+                            "file": "C:/Users/Flori/OneDrive/Dokumente/GitHub/sprites/sprites/badges" + '/' + str(i + 1) + 'empty' + ".png"
+                        }
+                    }
+                )
+            )
+
+    await ws.call_batch(batch)
+
+
 async def indeedee():
     global teams
     global unsorted_teams
+    global badges
     reader, writer = await asyncio.open_connection(ip, port)
     writer.write(b'\x00\x00')
     await writer.drain()
-    length = await reader.read(3)
-    length = int.from_bytes(length, 'big')
-    response = await reader.read(length)
-    unsorted_teams = pickle.loads(response)
-    teams = unsorted_teams.copy()
-    for team in teams:
-        teams[team] = sort(teams[team], order.get())
-    old_teams = teams.copy()
-    for player in teams:
-        await changeSource(player, range(6), teams[player], edition=33)
+
     while True:
         try:
             length = int.from_bytes(await reader.read(3), 'big')
-            response = await reader.read(length)
-            unsorted_teams = pickle.loads(response)
-            teams = unsorted_teams.copy()
-            for team in teams.values():
-                team = sort(team, order.get())
-            if old_teams != teams:
-                for player in teams:
+            unsorted_teams = pickle.loads(await reader.read(length))
+            new_teams = unsorted_teams.copy()
+            for player in new_teams:
+                team = new_teams[player]
+                new_teams[player] = sort(team[:6], order.get())
+                if player not in badges or unsorted_teams[player][6] != badges[player]:
+                    badges[player] = unsorted_teams[player][6]
+                    if isinstance(badges[player], bytes):
+                        badges[player] = int.from_bytes(badges[player], 'little')
+                    await change_badges(player)
+            if new_teams != teams:
+                for player in new_teams:
+                    if player not in teams:
+                        await changeSource(player, range(6), new_teams[player], edition=33)
+                        continue
+
                     diff = []
-                    teams[player] = sort(teams[player], order.get())
-                    team = teams[player]
-                    old_team = old_teams[player]
+                    team = new_teams[player]
+                    old_team = teams[player]
                     for i in range(6):
                         if team[i] != old_team[i]:
                             diff.append(i)
                     await changeSource(player, diff, team, edition=33)
-            old_teams = teams.copy()
-        except Exception:
+                teams = new_teams.copy()
+        except Exception as err:
+            log.append(err + '\n')
             break
 
 
@@ -162,6 +199,10 @@ async def tk_main(root):
     old_order = order.get()
     while True:
         root.update()
+        t = ''
+        for line in log:
+            t += line
+        info.configure(text=str(teams) + '\n' + str(badges) + '\n' + t)
         await asyncio.sleep(0.05)
 
         if old_order != order.get():
@@ -195,10 +236,8 @@ iddmain = None
 
 def connect_indeedee():
     global iddmain
-    try:
+    if iddmain:
         iddmain.cancel()
-    except:
-        pass
 
     iddmain = asyncio.ensure_future(indeedee())
 
@@ -213,8 +252,8 @@ def setaddr(*args):
         else:
             ip, port = string[1:].split(']:')
             proxy.set(1)
-    except:
-        pass
+    except Exception as err:
+        log.append(err + '\n')
 
 
 def openbiz():
@@ -228,10 +267,11 @@ def openbiz():
 
 def change_order(*args):
     for team in teams:
-        teams[team] = sort(unsorted_teams[team], order.get())
+        teams[team] = sort(unsorted_teams[team][:6], order.get())
 
 
 proxyserver = None
+
 
 def toggle_proxy(*args):
     global proxyserver
@@ -239,8 +279,10 @@ def toggle_proxy(*args):
         proxyserver = asyncio.ensure_future(run_proxy())
     else:
         try:
-            proxyserver.cancel()
-        except AttributeError:
+            if proxyserver:
+                proxyserver.cancel()
+        except AttributeError as err:
+            print(err)
             pass
 
 
@@ -254,8 +296,6 @@ async def run_proxy():
         server = await asyncio.start_server(bizreader, '127.0.0.1', int(port) + 1)
         async with server:
             await server.serve_forever()
-
-
 
 
 if __name__ == '__main__':
@@ -374,6 +414,8 @@ if __name__ == '__main__':
     ttk.Checkbutton(spriteframe, text='Show Names       ', variable=show_nicknames).pack()
     ttk.Checkbutton(spriteframe, text='Show Items         ', variable=show_items).pack()
     ttk.Button(root, text='Save Settings', command=save_config).pack(side='bottom')
+    info = ttk.Label(text='INFO')
+    # info.pack()
 
     loop = asyncio.get_event_loop()
 

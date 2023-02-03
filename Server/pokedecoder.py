@@ -223,16 +223,16 @@ def team(data, gen, edition=None):
         newdata = b''
         for i in range(6):
             newdata += data[i * 44:i * 44 + 44] + data[i * 11 + 264:11 + i * 11 + 264]
-        data = newdata
         for i in range(6):
-            liste.append(pokemon1(data[i * length: (i + 1) * length]))
+            liste.append(pokemon1(newdata[i * length: (i + 1) * length]))
+        liste.append(data[-1])
     elif gen == 2:
         newdata = b''
         for i in range(6):
             newdata += data[i * 48:i * 48 + 48] + data[i * 11 + 288:11 + i * 11 + 288] + data[i + 354:i + 355]
-        data = newdata
         for i in range(6):
-            liste.append(pokemon2(data[i * length: (i + 1) * length]))
+            liste.append(pokemon2(newdata[i * length: (i + 1) * length]))
+        liste.append(data[-2:])
     elif gen == 3:
         for i in range(6):
             liste.append(pokemon3(data[i * length: (i + 1) * length], edition))

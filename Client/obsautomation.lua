@@ -42,27 +42,33 @@ if emu.getsystemid() =='GBC' or emu.getsystemid() == 'GB' then
     if gameversion == 5391684 then 
         pointer = RB 
         gameversion = 11
+        badgepointer = 0xD35B
     elseif gameversion == 4344917 then 
         pointer = RB 
         gameversion = 12
+        badgepointer = 0xD35B
     elseif gameversion == 5850444 then 
         pointer = G 
         gameversion = 13
+        badgepointer = 0xD35A
     elseif gameversion == 4672580 then 
         pointer = GS 
         gameversion = 21
         namepointer = NGS
         eggpointer = EGS
+        badgepointer = 0xD57C
     elseif gameversion == 5459030 then 
         pointer = GS 
         gameversion = 22
         namepointer = NGS
         eggpointer = EGS
+        badgepointer = 0xD57C
     elseif gameversion == 4279296 then 
         pointer = Kr
         gameversion = 23
         namepointer = NKr
         eggpointer = EKr
+        badgepointer = 0xD857
     end
     if gameversion < 20 then 
         length = 264
@@ -139,8 +145,8 @@ while true do
     currTime = os.time()
     if lastTime + INTERVAL <= currTime then
         lastTime = currTime
+        msg = {gameversion, PLAYER, unpack(memory.read_bytes_as_array(pointer, length, domain))}
         if gameversion < 30 then
-            msg = {gameversion, PLAYER, unpack(memory.read_bytes_as_array(pointer, length, domain))}
             for i=0,65 do
                 msg[#msg + 1] = memory.readbyte(namepointer + i, domain)
             end
@@ -149,8 +155,13 @@ while true do
                     msg[#msg + 1] = memory.readbyte(eggpointer + i, domain)
                 end
             end
-        else
-            msg = {gameversion, PLAYER, unpack(memory.read_bytes_as_array(pointer, length, domain))}
+        end
+
+        if gameversion < 30 then
+            msg[#msg + 1] = memory.readbyte(badgepointer, domain)
+            if gameversion > 20 then
+                msg[#msg + 1] = memory.readbyte(badgepointer + 1, domain)
+            end
         end
         comm.socketServerSendBytes(msg)
         

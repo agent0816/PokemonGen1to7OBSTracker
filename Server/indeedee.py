@@ -33,9 +33,9 @@ async def handle_bizhawk(reader, e, p):
 
     def get_length():
         if edition < 20:
-            return 1, 330
+            return 1, 331
         elif edition < 30:
-            return 2, 360
+            return 2, 362
         elif edition < 40:
             return 3, 600
         elif edition < 50:

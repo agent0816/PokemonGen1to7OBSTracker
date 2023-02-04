@@ -126,15 +126,19 @@ elseif emu.getsystemid() =='NDS' then
     elseif gameversion == 16896 then 
         pointer = S
         gameversion = 51
+        badgepointer = 0x23CCF0
     elseif gameversion == 22272 then
         pointer = W
         gameversion = 52
+        badgepointer = 0x23CD10
     elseif gameversion == 16946 then
         pointer = S2
         gameversion = 53
+        badgepointer = 0x226628
     elseif gameversion == 22322 then
         pointer = W2
         gameversion = 54
+        badgepointer = 0x226648
     end
 
     if gameversion < 50 then
@@ -183,6 +187,9 @@ while true do
             if gameversion > 43 then
                 msg[#msg + 1] = memory.readbyte(badges + 0x5, domain)
             end
+        end
+        if gameversion > 50 then
+            msg[#msg + 1] = memory.readbyte(badgepointer, 'Main RAM')
         end
         comm.socketServerSendBytes(msg)
         

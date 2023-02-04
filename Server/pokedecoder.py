@@ -246,5 +246,6 @@ def team(data, gen, edition=None):
     elif gen == 5:
         for i in range(6):
             liste.append(pokemon45(data[i * length: (i + 1) * length], 5))
+        liste.append(data[-1])
 
     return liste

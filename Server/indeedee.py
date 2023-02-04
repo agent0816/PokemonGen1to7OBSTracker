@@ -37,14 +37,15 @@ async def handle_bizhawk(reader, e, p):
         elif edition < 30:
             return 2, 362
         elif edition < 40:
-            return 3, 600
+            return 3, 601
         elif edition < 50:
-            return 4, 1416
+            return 4, 1418
         elif edition < 60:
-            return 5, 1320
+            return 5, 1321
 
     def update_teams(team):
         team = pokedecoder.team(team, gen, edition)
+        print(team)
         if player in teams:
             if teams[player] == team:
                 return

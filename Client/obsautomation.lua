@@ -101,18 +101,28 @@ elseif emu.getsystemid() =='NDS' then
     if gameversion == 17408 then 
         pointer = DP 
         gameversion = 41
+        badgepointer = 0xB70
+        badgeoffset = 0x292
     elseif gameversion == 20480 then 
         pointer = DP 
         gameversion = 42
+        badgepointer = 0xB70
+        badgeoffset = 0x292
     elseif gameversion == 20556 then 
         pointer = Pl 
         gameversion = 43
+        badgepointer = 0xBA8
+        badgeoffset = 0x96
     elseif gameversion == 18503 then 
         pointer = HgSs 
         gameversion = 44
+        badgepointer = 0xBA8
+        badgeoffset = 0x8E
     elseif gameversion == 21331 then 
         pointer = HgSs 
         gameversion = 45
+        badgepointer = 0xBA8
+        badgeoffset = 0x8E
     elseif gameversion == 16896 then 
         pointer = S
         gameversion = 51
@@ -161,6 +171,17 @@ while true do
             msg[#msg + 1] = memory.readbyte(badgepointer, domain)
             if gameversion > 20 then
                 msg[#msg + 1] = memory.readbyte(badgepointer + 1, domain)
+            end
+        end
+        if gameversion > 30 and gameversion < 40 then
+            print('nothing to see here')
+        end
+        if gameversion > 40 and gameversion < 50 then
+            badges = bit.band(memory.read_u32_le(badgepointer, domain), 0xFFFFFF) + 0x20
+            badges = bit.band(memory.read_u32_le(badges, domain), 0xFFFFFF) + badgeoffset
+            msg[#msg + 1] = memory.readbyte(badges, domain)
+            if gameversion > 43 then
+                msg[#msg + 1] = memory.readbyte(badges + 0x5, domain)
             end
         end
         comm.socketServerSendBytes(msg)

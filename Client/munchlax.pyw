@@ -175,8 +175,6 @@ async def indeedee():
                 new_teams[player] = sort(team[:6], order.get())
                 if player not in badges or unsorted_teams[player][6] != badges[player]:
                     badges[player] = unsorted_teams[player][6]
-                    if isinstance(badges[player], bytes):
-                        badges[player] = int.from_bytes(badges[player], 'little')
                     await change_badges(player)
             if new_teams != teams:
                 for player in new_teams:

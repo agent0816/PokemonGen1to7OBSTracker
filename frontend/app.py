@@ -73,6 +73,7 @@ class SpriteSettings(Screen):
         self.ids.common_path.text = sp['common_path']
         self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'
         self.ids.game_sprites_check.state = 'down' if sp['single_path_check'] else 'normal'
+        self.ids.names_check.state = 'down' if sp['show_nicknames'] else 'normal'
         self.sprite_paths_setting(initializing=True)
         for i in range(4):
             if i == ['route', 'lvl', 'team', 'dexnr'].index(sp['order']):
@@ -92,6 +93,7 @@ class SpriteSettings(Screen):
         sp['common_path'] = self.ids.common_path.text
         sp['single_path_check'] = self.ids.game_sprites_check.state == 'down'
         sp['animated'] = self.ids.animated_check.state == 'down'
+        sp['show_nicknames'] = self.ids.names_check.state == 'down'
         for i in range(4):
             if self.ids.sortierung.children[i].state == 'down':
                 sp['order'] = ['route', 'lvl', 'team', 'dexnr'][i]

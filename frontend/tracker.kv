@@ -96,6 +96,17 @@ Screens:
                     on_press: root.save_changes()
             Label:
                 size_hint: 1, 1
+                text: 'Namen anzeigen?'
+            AnchorLayout:
+                anchor_x: 'left'
+                size_hint: .1, 1
+                CheckBox:
+                    id: names_check
+                    size_hint: None, None
+                    size: "20dp", "20dp"
+                    on_press: root.save_changes()
+            Label:
+                size_hint: 1, 1
                 text: 'Sprites jedes\nSpiels einzeln\nfestlegen?'
             AnchorLayout:
                 anchor_x: 'left'

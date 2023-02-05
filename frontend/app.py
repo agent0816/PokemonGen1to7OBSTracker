@@ -2,10 +2,12 @@ import os
 import subprocess
 import weakref
 import yaml
+import asyncio
 from kivy.app import App
 from kivy.core.clipboard import Clipboard
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.textinput import TextInput
@@ -17,8 +19,9 @@ from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.screenmanager import FadeTransition
 from kivy.core.window import Window
 import backend.server as server
-import backend.pokedecoder
-import threading
+import backend.munchlax as client
+
+connector = None
 
 class Screens(ScreenManager):
     def __init__(self, **kwargs):
@@ -31,14 +34,6 @@ class MainMenu(Screen):
             if not pl[f'remote_{i+1}']:
                 subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
 
-    def launchserver(self):
-        global connector
-        try:
-            connector.start()
-        except RuntimeError:
-            server.running = False
-            connector = threading.Thread(target=server.main, args=(), daemon=True)
-            connector.start()
 
 class SettingsMenu(Screen):   
     def changesettingscreen(self, settings):
@@ -94,15 +89,8 @@ class SpriteSettings(Screen):
         sp['single_path_check'] = self.ids.game_sprites_check.state == 'down'
         sp['animated'] = self.ids.animated_check.state == 'down'
         sp['show_nicknames'] = self.ids.names_check.state == 'down'
-        for i in range(4):
-            if self.ids.sortierung.children[i].state == 'down':
-                sp['order'] = ['route', 'lvl', 'team', 'dexnr'][i]
-                backend.pokedecoder.setorder(sp['order'])
-        server.spriteconf = sp
-        server.update = True
         with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)
-        server.update_config()
 
 class SpritesGames(Screen):
     def __init__(self,**kwargs):
@@ -136,7 +124,6 @@ class SpritesGames(Screen):
 
         with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)
-        server.update_config()
 
 class BizhawkSettings(Screen):
     def __init__(self, **kwargs):
@@ -152,7 +139,6 @@ class BizhawkSettings(Screen):
         
         with open(f"{configsave}bh_config.yml", 'w') as file:
             yaml.dump(bh, file)
-        server.update_config()
 
 class OBSSettings(Screen):
     def __init__(self, **kwargs):
@@ -193,8 +179,7 @@ class OBSSettings(Screen):
         obs['port'] = self.ids["obs_port"].text
         
         with open(f"{configsave}obs_config.yml", 'w') as file:
-            yaml.dump(obs, file)
-        server.update_config()       
+            yaml.dump(obs, file)     
 
 class RemoteSettings(Screen):
     def __init__(self, **kwargs):
@@ -204,36 +189,109 @@ class RemoteSettings(Screen):
         grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ip]{externalIPv4}[/ref]", size_hint=(1,.5), markup=True))
         grid.add_widget(Label(text="Deine öffentliche\nIpv6-Adresse", size_hint=(1,.5)))
         grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ipv6]{externalIPv6}[/ref]", size_hint=(1,.5),markup=True))
-        for spieler in range(1, pl['player_count']+1):
-            if pl[f'obs_{spieler}']:
-                playerBox = BoxLayout(orientation='vertical')
-                playerBox.add_widget(Label(text = f'Spieler {spieler}', size_hint=(1,.5)))
-                playerGrid = GridLayout(cols=2)
-                playerGrid.add_widget(Label(text='IP-Adresse', size_hint=(.3,1)))
-                IPText = TextInput(text=rem[f'ip_adresse_{spieler}'],on_text_validate=self.save_changes,size_hint=(.7,None), size=("20dp","40dp"), multiline=False, write_tab=False)
-                self.ids[f'ip_{spieler}'] = weakref.proxy(IPText)
-                playerGrid.add_widget(IPText)
-                playerGrid.add_widget(Label(text='Port', size_hint=(.3,1)))
-                PortText = TextInput(text=rem[f'port_{spieler}'],on_text_validate=self.save_changes,size_hint=(.7,None), size=("20dp","40dp"), multiline=False, write_tab=False)
-                self.ids[f'port_{spieler}'] = weakref.proxy(PortText)
-                playerGrid.add_widget(PortText)
-                playerBox.add_widget(playerGrid)
-                grid.add_widget(playerBox)
+        
+        grid.add_widget(Label(text="Hauptspieler?", size_hint=(1,.5)))
+        mainPlayerBox = BoxLayout(orientation='horizontal')
+        yesCheck = CheckBox(pos_hint={"center_y": .5},size_hint=(None, None), size=("20dp","20dp"),on_press=self.change_Screen)
+        self.ids['main_Yes'] = weakref.proxy(yesCheck)
+        mainPlayerBox.add_widget(yesCheck)
+        grid.add_widget(mainPlayerBox)
 
+        if rem['start_server']:
+            yesCheck.state = "normal"
+            self.set_server_info_widgets()
+        else:
+            yesCheck.state = "down"
+            self.set_main_server_info()
+
+    def set_server_info_widgets(self):
+        box = self.ids["remote_settings_box"]
+        grid = self.ids["remote_settings"]
+        connectionLabel = Label(text = f'Server Verbindung', size_hint=(1,.5))
+        self.ids["server_label"] = weakref.proxy(connectionLabel)
+        grid.add_widget(connectionLabel)
+        serverGrid = GridLayout(cols=2)
+        self.ids["server_grid"] = weakref.proxy(serverGrid)
+        serverGrid.add_widget(Label(text='IP-Adresse:', size_hint=(.3,1)))
+        anchorIPText = AnchorLayout(anchor_x='left')
+        IPText = TextInput(text=rem[f'server_ip_adresse'],on_text_validate=self.save_changes,size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
+        self.ids['ip_server'] = weakref.proxy(IPText)
+        anchorIPText.add_widget(IPText)
+        serverGrid.add_widget(anchorIPText)
+        serverGrid.add_widget(Label(text='Port:', size_hint=(.3,1)))
+        anchorPortText = AnchorLayout(anchor_x='left')
+        PortText = TextInput(text=rem[f'server_port'],on_text_validate=self.save_changes,size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
+        self.ids['port_server'] = weakref.proxy(PortText)
+        anchorPortText.add_widget(PortText)
+        serverGrid.add_widget(anchorPortText)
+        grid.add_widget(serverGrid)
+
+        connectClient = Button(text="Verbinde Client", size_hint=(.5,.2), pos_hint={"center_x": .5}, on_press=self.connect_client)
+        self.ids["connect_Client"] = weakref.proxy(connectClient)
+        box.add_widget(connectClient)
+
+    def remove_server_info_widgets(self):
+        grid = self.ids["remote_settings"]
+        grid.remove_widget(self.ids["server_label"])
+        grid.remove_widget(self.ids["server_grid"])
+        self.children[0].remove_widget(self.ids["connect_Client"])
+
+    def set_main_server_info(self):
+        grid = self.ids["remote_settings"]
+        serverGrid = GridLayout(cols=2)
+        self.ids["client_grid"] = weakref.proxy(serverGrid)
+        serverGrid.add_widget(Label(text='Port:', size_hint=(.3,1)))
+        anchorPortText = AnchorLayout(anchor_x='left')
+        PortText = TextInput(text=rem[f'client_port'],on_text_validate=self.save_changes,size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
+        self.ids['port_client'] = weakref.proxy(PortText)
+        anchorPortText.add_widget(PortText)
+        serverGrid.add_widget(anchorPortText)
+        grid.add_widget(serverGrid)
+
+        startServer = Button(text="Start Server", on_press=self.launchserver)
+        self.ids["start_Server"] = weakref.proxy(startServer)
+        grid.add_widget(startServer)
+
+    def remove_main_server_info(self):
+        grid = self.ids["remote_settings"]
+        grid.remove_widget(self.ids["start_Server"])
+        grid.remove_widget(self.ids["client_grid"])
+    
+    def change_Screen(self, *args):
+        if self.ids["main_Yes"].state == "down":
+            self.remove_server_info_widgets()
+            self.set_main_server_info()
+        else:
+            self.remove_main_server_info()
+            self.set_server_info_widgets()
+        self.save_changes()
+    
     def clipboard(self,*args):
         result = (args[0].text).split(']')[1].split('[')[0]
         Clipboard.copy(result)
 
-
     def save_changes(self, *args):
-        for spieler in range(1,pl['player_count']+1):
-            if pl[f'obs_{spieler}']:
-                rem[f'ip_adresse_{spieler}'] = self.ids[f'ip_{spieler}'].text
-                rem[f'port_{spieler}'] = self.ids[f'port_{spieler}'].text
+        try:
+            rem['server_ip_adresse'] = self.ids['ip_server'].text
+            rem['server_port'] = self.ids['port_server'].text
+        except KeyError:
+            pass
+        try:
+            rem['client_port'] = self.ids['port_client'].text
+        except KeyError:
+            pass
+        rem['start_server'] = not self.ids['main_Yes'].state == "down"
 
         with open(f"{configsave}remote.yml", 'w') as file:
             yaml.dump(rem, file)
-        server.update_config()
+
+    def launchserver(self,*args):
+        global connector
+        if not connector:
+            connector = asyncio.run(server.main(port=rem['server_port']))
+
+    def connect_client(self,*args):
+        pass
 
 class PlayerSettings(Screen):
     def __init__(self, **kwargs):
@@ -244,7 +302,6 @@ class PlayerSettings(Screen):
     def changeScreen(self, player):
         self.removeCheckBoxes()
         pl['player_count'] = player
-        server.SPIELERANZAHL = player
         self.addCheckBoxes()
         self.pressCheckBoxes()
         self.save_changes()
@@ -262,7 +319,6 @@ class PlayerSettings(Screen):
 
             with open(f"{configsave}player.yml", 'w') as file:
                 yaml.dump(pl, file)
-        server.update_config()
 
     def pressCheckBoxes(self):
         self.ids[f"player_count_{pl['player_count']}"].state = "down"
@@ -329,13 +385,11 @@ class TrackerApp(App):
 
     def on_start(self):
         global externalIPv4
-        externalIPv4 = os.popen('curl -s -4 ifconfig.co/').readline().split('\n')[0]
+        externalIPv4 = os.popen('curl -s -4 -m 1 ifconfig.co/').readline().split('\n')[0]
         global externalIPv6
-        externalIPv6 = os.popen('curl -s -6 ifconfig.co/').readline().split('\n')[0]
+        externalIPv6 = os.popen('curl -s -6 -m 1 ifconfig.co/').readline().split('\n')[0]
         global configsave
         configsave = 'backend/config/'
-        global connector
-        connector = threading.Thread(target=server.main, args=(), daemon=True)
         global bh
         bh = {}
         if os.path.exists(f"{configsave}bh_config.yml"):

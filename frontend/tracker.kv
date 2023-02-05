@@ -22,9 +22,6 @@ Screens:
                 text: "Einstellungen"
                 on_press: root.manager.current = "SettingsMenu"
             Button:
-                text: "Start Server"
-                on_press: root.launchserver()
-            Button:
                 text: "Starte Emulatoren"
                 on_press: root.launchbh()
 
@@ -81,11 +78,8 @@ Screens:
                 multiline: False
                 write_tab: False
                 on_text_validate: root.save_changes()
-        Label:
-            text: 'animierte\nSprites?'
-            size_hint: .2, 1
-        BoxLayout:
-            orientation: 'horizontal'
+        GridLayout:
+            cols: 2
             AnchorLayout:
                 anchor_x: 'left'
                 size_hint: .1, 1
@@ -95,8 +89,8 @@ Screens:
                     size: "20dp", "20dp"
                     on_press: root.save_changes()
             Label:
-                size_hint: 1, 1
-                text: 'Namen anzeigen?'
+                text: 'animierte Sprites'
+                size_hint: .2, 1
             AnchorLayout:
                 anchor_x: 'left'
                 size_hint: .1, 1
@@ -105,6 +99,33 @@ Screens:
                     size_hint: None, None
                     size: "20dp", "20dp"
                     on_press: root.save_changes()
+            Label:
+                size_hint: 1, 1
+                text: 'Namen anzeigen'
+            AnchorLayout:
+                anchor_x: 'left'
+                size_hint: .1, 1
+                CheckBox:
+                    id: names_check
+                    size_hint: None, None
+                    size: "20dp", "20dp"
+                    on_press: root.save_changes()
+            Label:
+                size_hint: 1, 1
+                text: 'Items anzeigen'
+            AnchorLayout:
+                anchor_x: 'left'
+                size_hint: .1, 1
+                CheckBox:
+                    id: names_check
+                    size_hint: None, None
+                    size: "20dp", "20dp"
+                    on_press: root.save_changes()
+            Label:
+                size_hint: 1, 1
+                text: 'Orden anzeigen'
+        GridLayout:
+            cols: 2
             Label:
                 size_hint: 1, 1
                 text: 'Sprites jedes\nSpiels einzeln\nfestlegen?'
@@ -116,14 +137,14 @@ Screens:
                     size_hint: None, None
                     size: "20dp", "20dp"
                     on_press: root.sprite_paths_setting()
-            AnchorLayout:
-                anchor_x: 'center'
-                size_hint: .8, 1
-                Button:
-                    id: game_sprites
-                    text: 'Spritepfade der\neinzelnen Games'
-                    size_hint: 1, .5
-                    on_press: root.parent.parent.changesettingscreen('games')
+        AnchorLayout:
+            anchor_x: 'center'
+            size_hint: .8, 1
+            Button:
+                id: game_sprites
+                text: 'Spritepfade der\neinzelnen Games'
+                size_hint: 1, .5
+                on_press: root.parent.parent.changesettingscreen('games')
         Label:
             text: 'Sortierung'
             size_hint: .2, 1
@@ -361,9 +382,12 @@ Screens:
         cols: 2
 
 <RemoteSettings>:
-    GridLayout:
-        id: remote_settings
-        cols: 2
+    BoxLayout:
+        orientation: 'vertical'
+        id: remote_settings_box
+        GridLayout:
+            id: remote_settings
+            cols: 2
 
 <PlayerSettings>:
     GridLayout:

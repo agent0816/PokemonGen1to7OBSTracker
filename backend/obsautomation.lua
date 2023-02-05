@@ -42,27 +42,33 @@ if emu.getsystemid() =='GBC' or emu.getsystemid() == 'GB' then
     if gameversion == 5391684 then 
         pointer = RB 
         gameversion = 11
+        badgepointer = 0xD35B
     elseif gameversion == 4344917 then 
         pointer = RB 
         gameversion = 12
+        badgepointer = 0xD35B
     elseif gameversion == 5850444 then 
         pointer = G 
         gameversion = 13
+        badgepointer = 0xD35A
     elseif gameversion == 4672580 then 
         pointer = GS 
         gameversion = 21
         namepointer = NGS
         eggpointer = EGS
+        badgepointer = 0xD57C
     elseif gameversion == 5459030 then 
         pointer = GS 
         gameversion = 22
         namepointer = NGS
         eggpointer = EGS
+        badgepointer = 0xD57C
     elseif gameversion == 4279296 then 
         pointer = Kr
         gameversion = 23
         namepointer = NKr
         eggpointer = EKr
+        badgepointer = 0xD857
     end
     if gameversion < 20 then 
         length = 264
@@ -95,30 +101,44 @@ elseif emu.getsystemid() =='NDS' then
     if gameversion == 17408 then 
         pointer = DP 
         gameversion = 41
+        badgepointer = 0xB70
+        badgeoffset = 0x292
     elseif gameversion == 20480 then 
         pointer = DP 
         gameversion = 42
+        badgepointer = 0xB70
+        badgeoffset = 0x292
     elseif gameversion == 20556 then 
         pointer = Pl 
         gameversion = 43
+        badgepointer = 0xBA8
+        badgeoffset = 0x96
     elseif gameversion == 18503 then 
         pointer = HgSs 
         gameversion = 44
+        badgepointer = 0xBA8
+        badgeoffset = 0x8E
     elseif gameversion == 21331 then 
         pointer = HgSs 
         gameversion = 45
+        badgepointer = 0xBA8
+        badgeoffset = 0x8E
     elseif gameversion == 16896 then 
         pointer = S
         gameversion = 51
+        badgepointer = 0x23CCF0
     elseif gameversion == 22272 then
         pointer = W
         gameversion = 52
+        badgepointer = 0x23CD10
     elseif gameversion == 16946 then
         pointer = S2
         gameversion = 53
+        badgepointer = 0x226628
     elseif gameversion == 22322 then
         pointer = W2
         gameversion = 54
+        badgepointer = 0x226648
     end
 
     if gameversion < 50 then
@@ -139,8 +159,8 @@ while true do
     currTime = os.time()
     if lastTime + INTERVAL <= currTime then
         lastTime = currTime
+        msg = {gameversion, PLAYER, unpack(memory.read_bytes_as_array(pointer, length, domain))}
         if gameversion < 30 then
-            msg = {gameversion, PLAYER, unpack(memory.read_bytes_as_array(pointer, length, domain))}
             for i=0,65 do
                 msg[#msg + 1] = memory.readbyte(namepointer + i, domain)
             end
@@ -149,8 +169,27 @@ while true do
                     msg[#msg + 1] = memory.readbyte(eggpointer + i, domain)
                 end
             end
-        else
-            msg = {gameversion, PLAYER, unpack(memory.read_bytes_as_array(pointer, length, domain))}
+        end
+
+        if gameversion < 30 then
+            msg[#msg + 1] = memory.readbyte(badgepointer, domain)
+            if gameversion > 20 then
+                msg[#msg + 1] = memory.readbyte(badgepointer + 1, domain)
+            end
+        end
+        if gameversion > 30 and gameversion < 40 then
+            msg[#msg +1] = 0
+        end
+        if gameversion > 40 and gameversion < 50 then
+            badges = bit.band(memory.read_u32_le(badgepointer, domain), 0xFFFFFF) + 0x20
+            badges = bit.band(memory.read_u32_le(badges, domain), 0xFFFFFF) + badgeoffset
+            msg[#msg + 1] = memory.readbyte(badges, domain)
+            if gameversion > 43 then
+                msg[#msg + 1] = memory.readbyte(badges + 0x5, domain)
+            end
+        end
+        if gameversion > 50 then
+            msg[#msg + 1] = memory.readbyte(badgepointer, 'Main RAM')
         end
         comm.socketServerSendBytes(msg)
         

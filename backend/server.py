@@ -1,279 +1,91 @@
-import logging
 import asyncio
-import yaml
-import simpleobsws
+import sys
+import pickle
 import backend.pokedecoder as pokedecoder
 
-# from backend.citra import Citra
+if len(sys.argv) > 1:
+    port = sys.argv[1]
+else:
+    port = 43885
 
-global configsave
-configsave = "backend/config/"
-teams = [[]]
-editions = [[]]
-
-
-def update_config():
-    global spriteconf
-    global bizhawk_config
-    global player_config
-    global remote_config
-    global SPIELERANZAHL
-    global teams
-    global editions
-    with open(f"{configsave}sprites.yml") as file:
-        spriteconf = yaml.safe_load(file)
-    with open(f"{configsave}bh_config.yml") as file:
-        bizhawk_config = yaml.safe_load(file)
-    with open(f"{configsave}player.yml") as file:
-        player_config = yaml.safe_load(file)
-    with open(f"{configsave}remote.yml") as file:
-        remote_config = yaml.safe_load(file)
-    SPIELERANZAHL = player_config["player_count"]
-    if len(teams) < SPIELERANZAHL:
-        teams += [[]] * (SPIELERANZAHL - len(teams))
-        editions += [[]] * (SPIELERANZAHL - len(editions))
-    teams = teams[:SPIELERANZAHL]
-    editions = editions[:SPIELERANZAHL]
+teams = {}
 
 
-update_config()
-
-
-def load_obsws():
-    with open(f"{configsave}obs_config.yml") as file:
-        obsconf = yaml.safe_load(file)
-    global ws
-    if obsconf["host"] not in [None, ""] and obsconf["port"] not in [None, ""]:
-        ws = simpleobsws.WebSocketClient(
-            url="ws://" + obsconf["host"] + ":" + obsconf["port"],
-            password=obsconf["password"],
-            identification_parameters=simpleobsws.IdentificationParameters(
-                ignoreNonFatalRequestChecks=False
-            ),
-        )
-    else:
-        ws = None
-
-
-async def connect_to_obs():
-    await ws.connect()  # type: ignore
-    await ws.wait_until_identified()  # type: ignore
-
-
-async def changeSource(player, slots, team, edition):
-    batch = []
-    if spriteconf["edition_override"] != "":
-        edition = max(edition, spriteconf["edition_override"])
-    for slot in slots:
-        sprite = get_sprite(team[slot], spriteconf["animated"], edition)
-
-        batch.append(
-            simpleobsws.Request(
-                "SetInputSettings",
-                {
-                    "inputName": f"Slot{slot + 6 * (player -1) +1}",
-                    "inputSettings": {"file": sprite},
-                },
-            )
-        )
-    if spriteconf["show_nicknames"]:
-        for slot in slots:
-            batch.append(
-                simpleobsws.Request(
-                    "SetInputSettings",
-                    {
-                        "inputName": f"name{slot + 6 * (player -1) +1}",
-                        "inputSettings": {"text": team[slot].nickname},
-                    },
-                )
-            )
-    if spriteconf["show_items"] and edition > 20:
-        for slot in slots:
-            batch.append(
-                simpleobsws.Request(
-                    "SetInputSettings",
-                    {
-                        "inputName": f"item{slot + 6 * (player -1) +1}",
-                        "inputSettings": {
-                            "file": spriteconf["items_path"]
-                            + str(team[slot].item)
-                            + ".png"
-                        },
-                    },
-                )
-            )
-
-    if batch != []:
-        await ws.call_batch(batch)  # type: ignore
-
-
-luts = yaml.safe_load(open("backend/data/luts.yml"))
-
-edition_lut = luts["edition_lut"]
-
-female_lut = luts["female_lut"]
-
-
-def get_sprite(pokemon, anim, edition):
-
-    shiny = "shiny/" if pokemon.shiny else ""
-    if pokemon.female and pokemon.dexnr in female_lut:
-        female = "female/"
-    else:
-        female = ""
-    if anim and edition in (23, 33, 41, 42, 43, 44, 45, 51, 52, 53, 54):
-        filetype = ".gif"
-        animated = "animated/"
-    else:
-        animated = ""
-        filetype = ".png"
-    path = (
-        spriteconf["common_path"]
-        + spriteconf[edition_lut[edition]]
-        + animated
-        + shiny
-        + female
-    )
-    file = str(pokemon.dexnr) + pokemon.form + filetype
-    return path + file
-
-
-async def hide_nicknames():
-    batch = []
-    for i in range(24):
-        batch.append(
-            simpleobsws.Request(
-                "SetInputSettings",
-                {"inputName": f"name{i + 1}", "inputSettings": {"text": ""}},
-            )
-        )
-    await ws.call_batch(batch)  # type: ignore
-
-
-async def bizhawk_server():
-    # bizhawk_config['host']
-    server = await asyncio.start_server(handle_client, "", bizhawk_config["port"])
+async def main(port=43885):
+    server = await asyncio.start_server(new_connection, '', port)
+    print(f'listening on port {port}')
     async with server:
         await server.serve_forever()
 
 
-update = False
-running = True
+async def new_connection(reader, writer):
+    header = await reader.read(2)
+    if header[0] == 0:  # not BizHawk
+        await handle_munchlax(writer)
+
+    else:  # BizHawk
+        await handle_bizhawk(reader, header[0], header[1])
 
 
-async def handle_client(reader, writer):
-    global update
-    connections = []
-    # loop = asyncio.get_running_loop()
-    # Create a list of remote connections to establish
-    connections = []
-    for i in range(1, SPIELERANZAHL + 1):
-        if player_config[f"obs_{i}"]:
-            ip = remote_config[f"ip_adresse_{i}"]
-            port = int(remote_config[f"port_{i}"])
-            connections.append(asyncio.open_connection(ip, port))
+async def handle_bizhawk(reader, e, p):
+    print('new emulator connected')
 
-    # Wait for the connections to be established concurrently
-    await asyncio.gather(*connections)
-
-    # for i in range(1, SPIELERANZAHL + 1):
-    #     if player_config[f"obs_{i}"]:
-    #         portStr = remote_config[f"port_{i}"]
-    #         port = int(portStr)
-    #         connections.append(
-    #             await loop.create_connection(
-    #                 protocol_factory=asyncio.Protocol,
-    #                 host=remote_config[f"ip_adresse_{i}"],
-    #                 port=port,
-    #             )
-    #         )
-    while running:
-        if update:
-            update = False
-            for i in range(SPIELERANZAHL):
-                if teams[i] != []:
-                    await changeSource(i + 1, range(6), teams[i], editions[i])
-        header = await reader.read(2)
-        player = header[1]
-        edition = header[0]
-        editions[player - 1] = edition
-        logging.debug(f"{player=}{edition=}")
-
+    def get_length():
         if edition < 20:
-            msg = await reader.read(330)
-            team = pokedecoder.team(msg, 1)
+            return 1, 331
         elif edition < 30:
-            msg = await reader.read(360)
-            team = pokedecoder.team(msg, 2)
+            return 2, 362
         elif edition < 40:
-            msg = await reader.read(600)
-            team = pokedecoder.team(msg, 3, edition)
+            return 3, 601
         elif edition < 50:
-            msg = await reader.read(1416)
-            team = pokedecoder.team(msg, 4)
-        elif edition < 60:
-            msg = await reader.read(1320)
-            team = pokedecoder.team(msg, 5)
-
-            for connection in connections:
-                connection.sendall(header + msg)  # type:ignore
-
-        logging.debug(f"{team=}")  # type: ignore
-        if teams[player - 1] == []:
-            teams[player - 1] = team  # type: ignore
-            await changeSource(player, range(6), team, edition)  # type: ignore
-
+            return 4, 1418
         else:
-            diff = []
-            for i in range(6):
-                if teams[player - 1][i] != team[i]:  # type: ignore
-                    diff.append(i)
-            teams[player - 1] = team  # type: ignore
-            await changeSource(player, diff, team, edition)  # type: ignore
-    writer.close()
-    # await ws.disconnect() #type: ignore
+            return 5, 1321
 
+    def update_teams(team):
+        team = pokedecoder.team(team, gen, edition)
+        if player in teams:
+            if teams[player] == team:
+                return
+        teams[player] = team
 
-async def start():
-    global running
-    running = True
-    load_obsws()
-    await connect_to_obs()
-    #    await citra()
-    await bizhawk_server()
+    edition = e
+    player = p
 
-
-# NYI
-async def citra():
-    pointer = 0x8CE1CE8
-    c = Citra()
-    team = []
+    gen, length = get_length()
+    msg = await reader.read(length)
+    update_teams(msg)
     while True:
-        party = b""
-        for i in range(6):
-            pokemon = c.read_memory(pointer + i * 484, 232)
-            battle_stats = c.read_memory(pointer + i * 484 + 112, 28)
-            party += pokemon + battle_stats
-
-        if team == []:
-            print("first")
-            team = pokedecoder.team(party, 6)
-            for p in team:
-                print(p)
-            await changeSource(1, range(6), team, 51)
-
-        else:
-            diff = []
-            new_team = pokedecoder.team(party, 6)
-            for i in range(6):
-                if team[i] != new_team[i]:
-                    diff.append(i)
-            team = new_team
-            if diff != []:
-                print("new")
-                print(team)
-                await changeSource(1, diff, team, 51)
+        try:
+            header = await reader.read(2)
+            edition = header[0]
+            player = header[1]
+            gen, length = get_length()
+            msg = await reader.read(length)
+            update_teams(msg)
+        except Exception:
+            break
 
 
-def main():
-    asyncio.run(start())
+async def handle_munchlax(writer):
+    print('new client connected')
+    old_teams = teams.copy()
+    msg = pickle.dumps(teams)
+    writer.write(int.to_bytes(len(msg), 3, 'big'))
+    writer.write(msg)
+    await writer.drain()
+    while True:
+        try:
+            if old_teams != teams:
+                old_teams = teams.copy()
+                msg = pickle.dumps(teams)
+                writer.write(int.to_bytes(len(msg), 3, 'big'))
+                writer.write(msg)
+                await writer.drain()
+            await asyncio.sleep(1)
+        except Exception:
+            break
+
+
+if __name__ == '__main__':
+    asyncio.run(main(int(port)))

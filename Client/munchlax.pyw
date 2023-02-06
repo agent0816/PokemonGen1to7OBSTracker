@@ -198,21 +198,6 @@ async def indeedee():
             break
 
 
-async def tk_main(root):
-    old_order = order.get()
-    while True:
-        root.update()
-        t = ''
-        for line in log:
-            t += line
-        info.configure(text=str(teams) + '\n' + str(badges) + '\n' + t)
-        await asyncio.sleep(0.05)
-
-        if old_order != order.get():
-            old_order = order.get()
-            await redraw_obs()
-
-
 def on_closing():
     asyncio.get_running_loop().stop()
 
@@ -272,6 +257,7 @@ def openbiz():
 def change_order(*args):
     for team in teams:
         teams[team] = sort(unsorted_teams[team][:6], order.get())
+    asyncio.ensure_future(redraw_obs())
 
 
 proxyserver = None
@@ -302,10 +288,20 @@ async def run_proxy():
             await server.serve_forever()
 
 
+async def tk_main(root):
+    while True:
+        root.update()
+        t = ''
+        for line in log:
+            t += line
+        info.configure(text=str(teams) + '\n' + str(badges) + '\n' + t)
+        await asyncio.sleep(0.05)
+
+
 if __name__ == '__main__':
     root = tk.Tk()
     root.title('Munchlax')
-    root.minsize(400, 340)
+    root.minsize(400, 385)
     root.protocol("WM_DELETE_WINDOW", on_closing)
     if Path('config.yml').exists():
         with open('config.yml') as file:
@@ -429,7 +425,7 @@ if __name__ == '__main__':
     ttk.Checkbutton(spriteframe, text='Show Badges      \u2009', variable=handle_badges).pack()
     ttk.Button(root, text='Save Settings', command=save_config).pack(side='bottom')
     info = ttk.Label(text='INFO')
-    info.pack()
+    # info.pack()
 
     loop = asyncio.get_event_loop()
 

@@ -1,14 +1,17 @@
 import asyncio
-import tkinter as tk
 import pickle
 import simpleobsws
-from tkinter import ttk
-import tkinter.filedialog as fd
 import yaml
 import subprocess
 import os
 from pathlib import Path
+
+import tkinter as tk
+from tkinter import ttk
+import tkinter.filedialog as fd
+
 log = []
+
 ws = None
 teams = {}
 unsorted_teams = {}
@@ -17,19 +20,19 @@ badges = {}
 
 def load_obsws():
     global ws
+
+    async def connect_to_obs():
+        try:
+            await ws.connect()  # type:ignore
+            await ws.wait_until_identified()  # type:ignore
+            await redraw_obs()
+            log.append('connected to OBS\n')
+        except Exception as err:
+            log.append(str(err) + '\n')
+
     if not ws or not ws.is_identified():
         ws = simpleobsws.WebSocketClient(url=f'ws://localhost:{obsport.get()}', password=obspassword.get(), identification_parameters=simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks=False))
         asyncio.ensure_future(connect_to_obs())
-
-
-async def connect_to_obs():
-    try:
-        await ws.connect()
-        await ws.wait_until_identified()
-        await redraw_obs()
-        log.append('connected to OBS\n')
-    except Exception as err:
-        log.append(err + '\n')
 
 
 async def redraw_obs():
@@ -136,7 +139,7 @@ async def change_badges(player):
                     {
                         "inputName": f"badge{i + 6 * (player - 1) + 1}",
                         "inputSettings": {
-                            "file": "C:/Users/Flori/OneDrive/Dokumente/GitHub/sprites/sprites/badges" + '/' + str(i + 1) + ".png"
+                            "file": badges_path.get() + '/' + str(i + 1) + ".png"
                         }
                     }
                 )
@@ -148,7 +151,7 @@ async def change_badges(player):
                     {
                         "inputName": f"badge{i + 6 * (player - 1) + 1}",
                         "inputSettings": {
-                            "file": "C:/Users/Flori/OneDrive/Dokumente/GitHub/sprites/sprites/badges" + '/' + str(i + 1) + 'empty' + ".png"
+                            "file": badges_path.get() + '/' + str(i + 1) + 'empty' + ".png"
                         }
                     }
                 )
@@ -191,7 +194,7 @@ async def indeedee():
                     await changeSource(player, diff, team, edition=33)
                 teams = new_teams.copy()
         except Exception as err:
-            log.append(err + '\n')
+            log.append(str(err) + '\n')
             break
 
 
@@ -227,7 +230,7 @@ def save_config():
     config['emupath'] = emu_path.get()
     config['last_game'] = game.get()
     config['show_badges'] = handle_badges.get()
-
+    config['badges'] = badges_path.get()
     with open('config.yml', 'w') as file:
         yaml.dump(config, file)
 
@@ -254,7 +257,7 @@ def setaddr(*args):
             ip, port = string[1:].split(']:')
             proxy.set(1)
     except Exception as err:
-        log.append(err + '\n')
+        log.append(str(err) + '\n')
 
 
 def openbiz():
@@ -321,6 +324,7 @@ if __name__ == '__main__':
             'emupath': '',
             'last_game': '',
             'show_badges': 0,
+            'badges_path': ''
 
         }
     proxy = tk.IntVar()
@@ -340,6 +344,7 @@ if __name__ == '__main__':
     emu_path = tk.StringVar(value=config['emupath'])
     game = tk.StringVar(value=config['last_game'])
     handle_badges = tk.IntVar(value=config['show_badges'])
+    badges_path = tk.StringVar(value=config['badges_path'])
     selectedplayer = tk.IntVar(value=1)
     selectedplayer.trace_add('write', lambda *x: bizbutton.configure(text=f'Launch Emulator for Player {selectedplayer.get()}'))
 
@@ -392,7 +397,7 @@ if __name__ == '__main__':
     frame.pack(expand=True, fill='both')
     # ttk.Checkbutton(frame, text='Connect BizHawk\ndirectly to Indeedee', variable=proxy).pack(side='left')
     ttk.Label(frame, text='Player: ').pack(side='left')
-    ttk.Combobox(frame, textvariable=selectedplayer, values=[1, 2, 3, 4]).pack(side='left', fill='x', expand=True)
+    ttk.Combobox(frame, textvariable=selectedplayer, values=['1', '2', '3', '4']).pack(side='left', fill='x', expand=True)
     bizbutton = ttk.Button(frame, text='Launch Emulator for Player 1', command=lambda: openbiz())
     bizbutton.pack(side='left')
 
@@ -402,14 +407,19 @@ if __name__ == '__main__':
     frame.pack(expand=True, fill='both')
     ttk.Label(frame, text='Pokemon Sprites: ').pack(side='left')
     ttk.Entry(frame, textvariable=spritespath).pack(side='left', fill='x', expand=True)
-
     ttk.Button(frame, text='Browse', command=lambda var=spritespath: var.set(fd.askdirectory())).pack(side='left')
+
     frame = ttk.Frame(spriteframe)
     frame.pack(expand=True, fill='both')
     ttk.Label(frame, text='Item Sprites:          ').pack(side='left')
     ttk.Entry(frame, textvariable=items_path).pack(side='left', fill='x', expand=True)
-
     ttk.Button(frame, text='Browse', command=lambda var=items_path: var.set(fd.askdirectory())).pack(side='left')
+
+    frame = ttk.Frame(spriteframe)
+    frame.pack(expand=True, fill='both')
+    ttk.Label(frame, text='Badges Sprites:     ').pack(side='left')
+    ttk.Entry(frame, textvariable=badges_path).pack(side='left', fill='x', expand=True)
+    ttk.Button(frame, text='Browse', command=lambda var=badges_path: var.set(fd.askdirectory())).pack(side='left')
 
     ttk.Label(spriteframe, text='Order: ').pack(side='left')
     ttk.Combobox(spriteframe, textvariable=order, state='readonly', values=['DexNr.', 'Team', 'Level', 'Route']).pack(side='left')
@@ -419,7 +429,7 @@ if __name__ == '__main__':
     ttk.Checkbutton(spriteframe, text='Show Badges      \u2009', variable=handle_badges).pack()
     ttk.Button(root, text='Save Settings', command=save_config).pack(side='bottom')
     info = ttk.Label(text='INFO')
-    # info.pack()
+    info.pack()
 
     loop = asyncio.get_event_loop()
 

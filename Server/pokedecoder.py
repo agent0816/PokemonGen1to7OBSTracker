@@ -201,7 +201,7 @@ def pokemon45(data, gen):
         form = kyurem[form]
     if dexnr == 649:
         form = genesect[form]
-    if type(form) == int:
+    if isinstance(form, int):
         form = ''
     if dexnr not in range(650):
         dexnr = 0

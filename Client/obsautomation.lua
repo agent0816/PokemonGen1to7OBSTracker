@@ -178,7 +178,7 @@ while true do
             end
         end
         if gameversion > 30 and gameversion < 40 then
-            print('nothing to see here')
+            msg[#msg +1] = 0
         end
         if gameversion > 40 and gameversion < 50 then
             badges = bit.band(memory.read_u32_le(badgepointer, domain), 0xFFFFFF) + 0x20

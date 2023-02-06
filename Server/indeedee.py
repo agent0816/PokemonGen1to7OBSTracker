@@ -13,7 +13,7 @@ print(f'listening on port {port}')
 teams = {}
 
 
-async def main():
+async def main(port):
     server = await asyncio.start_server(new_connection, '', port)
     async with server:
         await server.serve_forever()
@@ -90,4 +90,4 @@ async def handle_munchlax(writer):
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(main(port))

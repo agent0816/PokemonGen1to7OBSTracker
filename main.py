@@ -23,10 +23,11 @@ if not remote.exists():
 
 
 import frontend.app as FEApp
+import asyncio
 
 def main():
     app = FEApp.TrackerApp()
-    app.run()
+    asyncio.run(app.async_run())
 
 if __name__ == '__main__':
     main()

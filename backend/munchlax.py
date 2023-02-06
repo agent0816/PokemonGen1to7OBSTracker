@@ -13,7 +13,7 @@ unsorted_teams = {}
 badges = {}
 
 
-def load_obsws(host, port, password):
+async def load_obsws(host, port, password):
     global ws
 
     async def connect_to_obs():
@@ -26,8 +26,7 @@ def load_obsws(host, port, password):
 
     if not ws or not ws.is_identified():
         ws = simpleobsws.WebSocketClient(url=f'ws://{host}:{port}', password=password, identification_parameters=simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks=False))
-        asyncio.run(connect_to_obs())
-
+        asyncio.ensure_future(connect_to_obs())
 
 async def redraw_obs():
     if ws and ws.is_identified():

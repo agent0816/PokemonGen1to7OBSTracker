@@ -23,6 +23,7 @@ import backend.munchlax as client
 import tkinter.filedialog as fd
 
 connector = None
+OBSconnector = None
 
 class Screens(ScreenManager):
     def __init__(self, **kwargs):
@@ -189,7 +190,8 @@ class OBSSettings(Screen):
             yaml.dump(obs, file)
 
     def connectOBS(self,*args):
-        client.load_obsws(obs['host'], obs['port'], obs['password'])
+        global OBSconnector
+        OBSconnector = asyncio.ensure_future(client.load_obsws(obs['host'], obs['port'], obs['password']))
 
 class RemoteSettings(Screen):
     def __init__(self, **kwargs):
@@ -298,7 +300,7 @@ class RemoteSettings(Screen):
     def launchserver(self,*args):
         global connector
         if not connector:
-            connector = asyncio.run(server.main(port=rem['server_port']))
+            connector = asyncio.ensure_future(server.main(port=rem['server_port']))
 
     def connect_client(self, *args):
         pass

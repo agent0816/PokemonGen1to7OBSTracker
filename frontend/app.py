@@ -20,6 +20,7 @@ from kivy.uix.screenmanager import FadeTransition
 from kivy.core.window import Window
 import backend.server as server
 import backend.munchlax as client
+import tkinter.filedialog as fd
 
 connector = None
 
@@ -29,10 +30,11 @@ class Screens(ScreenManager):
         self.transition = FadeTransition()
 
 class MainMenu(Screen):
-    def launchbh(self):
-        for i in range(pl['player_count']):
-            if not pl[f'remote_{i+1}']:
-                subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
+    pass
+    # def launchbh(self):
+    #     for i in range(pl['player_count']):
+    #         if not pl[f'remote_{i+1}']:
+    #             subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
 
 
 class SettingsMenu(Screen):   
@@ -132,6 +134,11 @@ class BizhawkSettings(Screen):
     #    self.ids.bizhawk_host.text = bh['host']
         self.ids.bizhawk_port.text = bh['port']
 
+    def launchbh(self):
+        for i in range(pl['player_count']):
+            if not pl[f'remote_{i+1}']:
+                subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
+
     def save_changes(self):
         bh['path'] = self.ids.bizhawk_exe.text
     #    bh['host'] = self.ids.bizhawk_host.text
@@ -179,7 +186,10 @@ class OBSSettings(Screen):
         obs['port'] = self.ids["obs_port"].text
         
         with open(f"{configsave}obs_config.yml", 'w') as file:
-            yaml.dump(obs, file)     
+            yaml.dump(obs, file)
+
+    def connectOBS(self,*args):
+        client.load_obsws(obs['host'], obs['port'], obs['password'])
 
 class RemoteSettings(Screen):
     def __init__(self, **kwargs):
@@ -191,8 +201,8 @@ class RemoteSettings(Screen):
         grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ipv6]{externalIPv6}[/ref]", size_hint=(1,.5),markup=True))
         
         grid.add_widget(Label(text="Hauptspieler?", size_hint=(1,.5)))
-        mainPlayerBox = BoxLayout(orientation='horizontal')
-        yesCheck = CheckBox(pos_hint={"center_y": .5},size_hint=(None, None), size=("20dp","20dp"),on_press=self.change_Screen)
+        mainPlayerBox = BoxLayout(orientation='horizontal', pos_hint={"center_x": .5,"center_y": .5})
+        yesCheck = CheckBox(pos_hint={"center_x": .5,"center_y": .5}, size_hint=(None, None), size=("20dp","20dp"),on_press=self.change_Screen)
         self.ids['main_Yes'] = weakref.proxy(yesCheck)
         mainPlayerBox.add_widget(yesCheck)
         grid.add_widget(mainPlayerBox)
@@ -290,8 +300,9 @@ class RemoteSettings(Screen):
         if not connector:
             connector = asyncio.run(server.main(port=rem['server_port']))
 
-    def connect_client(self,*args):
+    def connect_client(self, *args):
         pass
+
 
 class PlayerSettings(Screen):
     def __init__(self, **kwargs):
@@ -466,6 +477,12 @@ class TrackerApp(App):
         self.save_config(f"{configsave}player.yml", pl)
         self.save_config(f"{configsave}common_config.yml", cc)
         self.save_config(f"{configsave}remote.yml", rem)
+
+    def browse(self, widget, instance, *args):
+        path = fd.askdirectory()
+        if path:
+            widget.text = path
+            instance.save_changes()
 
     def save_config(self, path, setting):
         with open(path, 'w') as file:

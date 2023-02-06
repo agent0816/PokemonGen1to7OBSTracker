@@ -11,9 +11,9 @@ else:
 teams = {}
 
 
-async def main(port=43885):
-    server = await asyncio.start_server(new_connection, '', port)
+async def main(port):
     print(f'listening on port {port}')
+    server = await asyncio.start_server(new_connection, '', port)
     async with server:
         await server.serve_forever()
 
@@ -32,18 +32,19 @@ async def handle_bizhawk(reader, e, p):
 
     def get_length():
         if edition < 20:
-            return 1, 331
+            return 331
         elif edition < 30:
-            return 2, 362
+            return 362
         elif edition < 40:
-            return 3, 601
+            return 601
         elif edition < 50:
-            return 4, 1418
-        else:
-            return 5, 1321
+            return 1418
+        elif edition < 60:
+            return 1321
 
     def update_teams(team):
-        team = pokedecoder.team(team, gen, edition)
+        team = pokedecoder.team(team, edition)
+        print(team)
         if player in teams:
             if teams[player] == team:
                 return
@@ -52,7 +53,7 @@ async def handle_bizhawk(reader, e, p):
     edition = e
     player = p
 
-    gen, length = get_length()
+    length = get_length()
     msg = await reader.read(length)
     update_teams(msg)
     while True:
@@ -60,7 +61,7 @@ async def handle_bizhawk(reader, e, p):
             header = await reader.read(2)
             edition = header[0]
             player = header[1]
-            gen, length = get_length()
+            length = get_length()
             msg = await reader.read(length)
             update_teams(msg)
         except Exception:
@@ -88,4 +89,4 @@ async def handle_munchlax(writer):
 
 
 if __name__ == '__main__':
-    asyncio.run(main(int(port)))
+    asyncio.run(main(port))

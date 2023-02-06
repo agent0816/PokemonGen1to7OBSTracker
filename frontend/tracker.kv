@@ -21,9 +21,6 @@ Screens:
             Button:
                 text: "Einstellungen"
                 on_press: root.manager.current = "SettingsMenu"
-            Button:
-                text: "Starte Emulatoren"
-                on_press: root.launchbh()
 
 <SettingsMenu>:
     name: "SettingsMenu"
@@ -68,21 +65,31 @@ Screens:
         cols: 2
         Label:
             text: 'Speicherort'
-            size_hint: .2, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: common_path
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        GridLayout:
-            cols: 2
+            size_hint: .3, 1
+        BoxLayout:
+            orientation: 'horizontal'
             AnchorLayout:
                 anchor_x: 'left'
-                size_hint: .1, 1
+                size_hint: .7, 1
+                TextInput:
+                    id: common_path
+                    size_hint: 1, None
+                    size: "20dp", "30dp"
+                    multiline: False
+                    write_tab: False
+                    on_text_validate: root.save_changes()
+            Button:
+                text: "Durchsuchen"
+                size_hint: .2, None
+                size: "20dp", "30dp"
+                pos_hint: {"center_x":.5, "center_y": .5}
+                on_press: app.browse(root.ids.common_path, root)
+        GridLayout:
+            cols: 2
+            size_hint: .2, 1
+            AnchorLayout:
+                anchor_x: 'center'
+                size_hint: .1, .5
                 CheckBox:
                     id: animated_check
                     size_hint: None, None
@@ -90,61 +97,66 @@ Screens:
                     on_press: root.save_changes()
             Label:
                 text: 'animierte Sprites'
-                size_hint: .2, 1
+                size_hint: .3, .5
             AnchorLayout:
-                anchor_x: 'left'
-                size_hint: .1, 1
+                anchor_x: 'center'
+                size_hint: .1, .5
                 CheckBox:
                     id: names_check
                     size_hint: None, None
                     size: "20dp", "20dp"
                     on_press: root.save_changes()
             Label:
-                size_hint: 1, 1
+                size_hint: .3, .5
                 text: 'Namen anzeigen'
             AnchorLayout:
-                anchor_x: 'left'
-                size_hint: .1, 1
+                anchor_x: 'center'
+                size_hint: .1, .5
                 CheckBox:
                     id: names_check
                     size_hint: None, None
                     size: "20dp", "20dp"
                     on_press: root.save_changes()
             Label:
-                size_hint: 1, 1
+                size_hint: .3, .5
                 text: 'Items anzeigen'
             AnchorLayout:
-                anchor_x: 'left'
-                size_hint: .1, 1
+                anchor_x: 'center'
+                size_hint: .1, .5
                 CheckBox:
                     id: names_check
                     size_hint: None, None
                     size: "20dp", "20dp"
                     on_press: root.save_changes()
             Label:
-                size_hint: 1, 1
+                size_hint: .3, .5
                 text: 'Orden anzeigen'
-        GridLayout:
-            cols: 2
-            Label:
-                size_hint: 1, 1
-                text: 'Sprites jedes\nSpiels einzeln\nfestlegen?'
+        BoxLayout:
+            orientation: 'vertical'
+            GridLayout:
+                cols: 2
+                AnchorLayout:
+                    anchor_x: 'left'
+                    size_hint: .1, .5
+                    CheckBox:
+                        id: game_sprites_check
+                        size_hint: None, None
+                        size: "20dp", "20dp"
+                        on_press: root.sprite_paths_setting()
+                AnchorLayout:
+                    anchor_x: 'left'
+                    size_hint: 1, 1
+                    Label:
+                        size_hint: .4, .5
+                        text: 'Sprites jedes Spiels einzeln festlegen'
             AnchorLayout:
                 anchor_x: 'left'
-                size_hint: .1, 1
-                CheckBox:
-                    id: game_sprites_check
-                    size_hint: None, None
-                    size: "20dp", "20dp"
-                    on_press: root.sprite_paths_setting()
-        AnchorLayout:
-            anchor_x: 'center'
-            size_hint: .8, 1
-            Button:
-                id: game_sprites
-                text: 'Spritepfade der\neinzelnen Games'
-                size_hint: 1, .5
-                on_press: root.parent.parent.changesettingscreen('games')
+                size_hint: .5, 1
+                Button:
+                    id: game_sprites
+                    text: 'Spritepfade der einzelnen Games'
+                    size_hint: 1, 1
+                    on_press: root.parent.parent.changesettingscreen('games')
         Label:
             text: 'Sortierung'
             size_hint: .2, 1
@@ -337,53 +349,67 @@ Screens:
             on_press: root.parent.parent.changesettingscreen('sprite')
 
 <BizhawkSettings>:
-    GridLayout:
-        cols: 2
-        Label:
-            text: 'Pfad der\nEmuHawk.exe'
-            size_hint: .2, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: bizhawk_exe
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        # Label:
-        #     text: 'IP-Adresse'
-        #     size_hint: .2, 1
-        # AnchorLayout:
-        #     anchor_x: 'left'
-        #     TextInput:
-        #         id: bizhawk_host
-        #         size_hint: 1, None
-        #         size: "20dp", "30dp"
-        #         multiline: False
-        #         write_tab: False
-        #         on_text_validate: root.save_changes()
-        Label:
-            text: 'Port'
-            size_hint: .2, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: bizhawk_port
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
+    BoxLayout:
+        orientation: 'vertical'
+        padding: "20dp", "20dp"
+        GridLayout:
+            cols: 2
+            Label:
+                text: 'Pfad der\nEmuHawk.exe'
+                size_hint: .2, 1
+            BoxLayout:
+                orientation: 'horizontal'
+                AnchorLayout:
+                    anchor_x: 'left'
+                    size_hint: .7, 1
+                    TextInput:
+                        id: bizhawk_exe
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Button:
+                    text: "Durchsuchen"
+                    size_hint: .2, None
+                    size: "20dp", "30dp"
+                    pos_hint: {"center_x":.5, "center_y": .5}
+                    on_press: app.browse(root.ids.common_path, root)
+            Label:
+                text: 'Port'
+                size_hint: .2, 1
+            AnchorLayout:
+                anchor_x: 'left'
+                TextInput:
+                    id: bizhawk_port
+                    size_hint: 1, None
+                    size: "20dp", "30dp"
+                    multiline: False
+                    write_tab: False
+                    on_text_validate: root.save_changes()
+        Button:
+            size_hint: .5, .5
+            pos_hint: {"center_x": .5}
+            text: "Starte Emulatoren"
+            on_press: root.launchbh()
 
 <OBSSettings>:
-    GridLayout:
-        id: obs_settings
-        cols: 2
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 0, "20dp"
+        GridLayout:
+            id: obs_settings
+            cols: 2
+        Button:
+            size_hint: .5, .5
+            pos_hint: {"center_x": .5}
+            text: "OBS verbinden"
+            on_press: root.connectOBS()
 
 <RemoteSettings>:
     BoxLayout:
         orientation: 'vertical'
+        padding: "20dp", "20dp"
         id: remote_settings_box
         GridLayout:
             id: remote_settings

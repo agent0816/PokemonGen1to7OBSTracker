@@ -6,10 +6,6 @@ import subprocess
 import os
 from pathlib import Path
 
-import tkinter as tk
-from tkinter import ttk
-import tkinter.filedialog as fd
-
 
 ws = None
 teams = {}
@@ -17,7 +13,7 @@ unsorted_teams = {}
 badges = {}
 
 
-def load_obsws():
+def load_obsws(host, port, password):
     global ws
 
     async def connect_to_obs():
@@ -29,8 +25,8 @@ def load_obsws():
             pass
 
     if not ws or not ws.is_identified():
-        ws = simpleobsws.WebSocketClient(url=f'ws://localhost:{obsport.get()}', password=obspassword.get(), identification_parameters=simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks=False))
-        asyncio.ensure_future(connect_to_obs())
+        ws = simpleobsws.WebSocketClient(url=f'ws://{host}:{port}', password=password, identification_parameters=simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks=False))
+        asyncio.run(connect_to_obs())
 
 
 async def redraw_obs():
@@ -159,7 +155,7 @@ async def change_badges(player):
     await ws.call_batch(batch)
 
 
-async def indeedee():
+async def connect_client():
     global teams
     global unsorted_teams
     global badges
@@ -193,7 +189,6 @@ async def indeedee():
                     await changeSource(player, diff, team, edition=33)
                 teams = new_teams.copy()
         except Exception as err:
-            log.append(str(err) + '\n')
             break
 
 

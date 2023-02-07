@@ -332,7 +332,7 @@ class RemoteSettings(Screen):
             connector = asyncio.ensure_future(server.main(port=rem['server_port']))
 
     def connect_client(self, *args):
-        pass
+        asyncio.ensure_future(client.connect_client(rem["server_ip_adresse"], rem["client_port"]))
 
 class PlayerSettings(Screen):
     def __init__(self, **kwargs):

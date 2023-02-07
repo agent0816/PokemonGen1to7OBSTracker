@@ -6,17 +6,17 @@ import subprocess
 import os
 from pathlib import Path
 
-
 ws = None
 teams = {}
 unsorted_teams = {}
 badges = {}
-
+conf = {}
 
 async def load_obsws(host, port, password):
     global ws
 
-    async def connect_to_obs():
+    if not ws or not ws.is_identified():
+        ws = simpleobsws.WebSocketClient(url=f'ws://{host}:{port}', password=password, identification_parameters=simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks=False))
         try:
             await ws.connect()  # type:ignore
             await ws.wait_until_identified()  # type:ignore
@@ -24,20 +24,37 @@ async def load_obsws(host, port, password):
         except Exception as err:
             pass
 
-    if not ws or not ws.is_identified():
-        ws = simpleobsws.WebSocketClient(url=f'ws://{host}:{port}', password=password, identification_parameters=simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks=False))
-        asyncio.ensure_future(connect_to_obs())
-
 async def redraw_obs():
     if ws and ws.is_identified():
         for player in teams:
             await changeSource(player, range(6), teams[player], edition=33)
             await change_badges(player)
 
-
 def get_sprite(pokemon, anim, edition):
     shiny = "shiny/" if pokemon.shiny else ""
-    if pokemon.female and pokemon.dexnr in [3, 12, 19, 20, 25, 26, 41, 42, 44, 45, 64, 65, 84, 85, 97, 111, 112, 118, 119, 123, 129, 130, 154, 165, 166, 178, 185, 186, 190, 194, 195, 198, 202, 203, 207, 208, 212, 214, 215, 215, 217, 221, 224, 229, 232, 255, 256, 257, 267, 269, 272, 274, 275, 307, 308, 315, 316, 317, 322, 323, 332, 350, 369, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 407, 415, 417, 418, 419, 424, 443, 444, 445, 449, 450, 453, 454, 456, 457, 459, 460, 461, 464, 465, 473, 521, 592, 593, 668, 678, 876, 902]:
+    subpath = {
+        11: 'red',
+        12: 'red',
+        13: 'yellow',
+        21: 'silver',
+        22: 'gold',
+        23: 'crystal',
+        31: 'ruby',
+        32: 'ruby',
+        33: 'emerald',
+        34: 'firered',
+        35: 'firered',
+        41: 'diamond',
+        42: 'diamond',
+        43: 'platinum',
+        44: 'heartgold',
+        45: 'heartgold',
+        51: 'black',
+        52: 'black',
+        53: 'black',
+        54: 'black',
+    }
+    if pokemon.female and edition > 40 and pokemon.dexnr in [3, 12, 19, 20, 25, 26, 41, 42, 44, 45, 64, 65, 84, 85, 97, 111, 112, 118, 119, 123, 129, 130, 154, 165, 166, 178, 185, 186, 190, 194, 195, 198, 202, 203, 207, 208, 212, 214, 215, 215, 217, 221, 224, 229, 232, 255, 256, 257, 267, 269, 272, 274, 275, 307, 308, 315, 316, 317, 322, 323, 332, 350, 369, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 407, 415, 417, 418, 419, 424, 443, 444, 445, 449, 450, 453, 454, 456, 457, 459, 460, 461, 464, 465, 473, 521, 592, 593, 668, 678, 876, 902]:
         female = "female/"
     else:
         female = ""
@@ -47,8 +64,13 @@ def get_sprite(pokemon, anim, edition):
     else:
         animated = ""
         filetype = ".png"
+    if not conf['single_path_check']:
+        sub = conf[subpath[edition]]
+    else:
+        sub = ''
     path = (
-        spritespath.get() + '/'
+        conf['common_path'] + '/'
+        + sub
         + animated
         + shiny
         + female
@@ -56,13 +78,12 @@ def get_sprite(pokemon, anim, edition):
     file = str(pokemon.dexnr) + pokemon.form + filetype
     return path + file
 
-
 async def changeSource(player, slots, team, edition):
     if not ws or not ws.is_identified():
         return
     batch = []
     for slot in slots:
-        sprite = get_sprite(team[slot], animated.get(), edition)
+        sprite = get_sprite(team[slot], conf['animated'], edition)
 
         batch.append(
             simpleobsws.Request(
@@ -73,7 +94,7 @@ async def changeSource(player, slots, team, edition):
                 },
             )
         )
-    if show_nicknames.get():
+    if conf['show_nicknames']:
         for slot in slots:
             batch.append(
                 simpleobsws.Request(
@@ -84,7 +105,7 @@ async def changeSource(player, slots, team, edition):
                     },
                 )
             )
-    if show_items.get() and edition > 20:
+    if conf['show_items'] and edition > 20:
         for slot in slots:
             batch.append(
                 simpleobsws.Request(
@@ -92,7 +113,7 @@ async def changeSource(player, slots, team, edition):
                     {
                         "inputName": f"item{slot + 6 * (player - 1) + 1}",
                         "inputSettings": {
-                            "file": items_path.get() + '/'
+                            "file": conf['items_path'] + '/'
                             + str(team[slot].item)
                             + ".png"
                         },
@@ -102,7 +123,6 @@ async def changeSource(player, slots, team, edition):
 
     if batch != []:
         await ws.call_batch(batch)
-
 
 def sort(liste, key):
     key = key.lower().replace('.', '')
@@ -115,15 +135,11 @@ def sort(liste, key):
     if key == 'route':
         return sorted(sorted(liste), key=lambda a: a.route if a.dexnr != 0 else 999999)
 
-
 async def change_badges(player):
-    return
-    if not show_badges.get():
+    if not conf['show_badges']:
         return
     if not ws or not ws.is_identified():
-        log.append('not changing badges' + '\n')
         return
-    log.append(f'changing badges {bin(badges[player])}' + '\n')
     batch = []
     for i in range(16):
         if badges[player] & 2**i:
@@ -133,7 +149,7 @@ async def change_badges(player):
                     {
                         "inputName": f"badge{i + 6 * (player - 1) + 1}",
                         "inputSettings": {
-                            "file": badges_path.get() + '/' + str(i + 1) + ".png"
+                            "file": conf['badges_path'] + '/' + str(i + 1) + ".png"
                         }
                     }
                 )
@@ -145,7 +161,7 @@ async def change_badges(player):
                     {
                         "inputName": f"badge{i + 6 * (player - 1) + 1}",
                         "inputSettings": {
-                            "file": badges_path.get() + '/' + str(i + 1) + 'empty' + ".png"
+                            "file": conf['badges_path'] + '/' + str(i + 1) + 'empty' + ".png"
                         }
                     }
                 )
@@ -153,8 +169,18 @@ async def change_badges(player):
 
     await ws.call_batch(batch)
 
+async def pass_bh_to_server(server_address, port):
+    async def bizreader(reader, _):
+        msg = await reader.read(1330)
+        writer.write(msg)
+        await writer.drain()
+    while True:
+        _, writer = await asyncio.open_connection(*server_address)
+        server = await asyncio.start_server(bizreader, '', port)
+        async with server:
+            await server.serve_forever()
 
-async def connect_client():
+async def connect_client(ip, port):
     global teams
     global unsorted_teams
     global badges
@@ -169,7 +195,7 @@ async def connect_client():
             new_teams = unsorted_teams.copy()
             for player in new_teams:
                 team = new_teams[player]
-                new_teams[player] = sort(team[:6], order.get())
+                new_teams[player] = sort(team[:6], conf['order'])
                 if player not in badges or unsorted_teams[player][6] != badges[player]:
                     badges[player] = unsorted_teams[player][6]
                     await change_badges(player)
@@ -187,36 +213,15 @@ async def connect_client():
                             diff.append(i)
                     await changeSource(player, diff, team, edition=33)
                 teams = new_teams.copy()
-        except Exception as err:
+        except Exception:
             break
-
-
-
-iddmain = None
-
-
-def connect_indeedee():
-    global iddmain
-    if iddmain:
-        iddmain.cancel()
-
-    iddmain = asyncio.ensure_future(indeedee())
-
-
 
 def change_order(*args):
     for team in teams:
-        teams[team] = sort(unsorted_teams[team][:6], order.get())
-
-
-
+        teams[team] = sort(unsorted_teams[team][:6], conf['order'])
 
 if __name__ == '__main__':
-
-
-
     loop = asyncio.get_event_loop()
-
     try:
         loop.run_forever()
     except KeyboardInterrupt:

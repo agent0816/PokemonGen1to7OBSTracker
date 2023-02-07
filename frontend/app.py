@@ -12,7 +12,6 @@ from kivy.uix.checkbox import CheckBox
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.textinput import TextInput
 from kivy.config import Config
-Config.read('gui.ini')
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.screenmanager import ScreenManager
@@ -22,6 +21,7 @@ import backend.server as server
 import backend.munchlax as client
 import tkinter.filedialog as fd
 
+Config.read('gui.ini')
 connector = None
 OBSconnector = None
 
@@ -32,11 +32,6 @@ class Screens(ScreenManager):
 
 class MainMenu(Screen):
     pass
-    # def launchbh(self):
-    #     for i in range(pl['player_count']):
-    #         if not pl[f'remote_{i+1}']:
-    #             subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
-
 
 class SettingsMenu(Screen):   
     def changesettingscreen(self, settings):
@@ -70,8 +65,10 @@ class SpriteSettings(Screen):
         super().__init__(**kwargs)
         self.ids.common_path.text = sp['common_path']
         self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'
-        self.ids.game_sprites_check.state = 'down' if sp['single_path_check'] else 'normal'
+        self.ids.game_sprites_check.state = 'down' if not sp['single_path_check'] else 'normal'
         self.ids.names_check.state = 'down' if sp['show_nicknames'] else 'normal'
+        self.ids.items_check.state = 'down' if sp['show_items'] else 'normal'
+        self.ids.badges_check.state = 'down' if sp['show_badges'] else 'normal'
         self.sprite_paths_setting(initializing=True)
         for i in range(4):
             if i == ['route', 'lvl', 'team', 'dexnr'].index(sp['order']):
@@ -84,14 +81,45 @@ class SpriteSettings(Screen):
         else:
             self.ids.game_sprites.opacity = 1
             self.ids.game_sprites.disabled = False
+        
+        if self.ids["items_check"].state == 'normal':
+            self.ids["items_path"].opacity = 0
+            self.ids["items_path"].disabled = True
+            self.ids["items_browse"].opacity = 0
+            self.ids["items_browse"].disabled = True
+        else:
+            self.ids["items_path"].opacity = 1
+            self.ids["items_path"].disabled = False
+            self.ids["items_browse"].opacity = 1
+            self.ids["items_browse"].disabled = False
+
+        if self.ids["badges_check"].state == 'normal':
+            self.ids["badges_path"].opacity = 0
+            self.ids["badges_path"].disabled = True
+            self.ids["badges_browse"].opacity = 0
+            self.ids["badges_browse"].disabled = True
+        else:
+            self.ids["badges_path"].opacity = 1
+            self.ids["badges_path"].disabled = False
+            self.ids["badges_browse"].opacity = 1
+            self.ids["badges_browse"].disabled = False
+        
         if not initializing:
             self.save_changes()
 
     def save_changes(self):
         sp['common_path'] = self.ids.common_path.text
-        sp['single_path_check'] = self.ids.game_sprites_check.state == 'down'
+        sp['single_path_check'] = not self.ids.game_sprites_check.state == 'down'
         sp['animated'] = self.ids.animated_check.state == 'down'
         sp['show_nicknames'] = self.ids.names_check.state == 'down'
+        for i in range(4):
+            if self.ids["sortierung"].children[i].state == "down":
+                sp['order'] = ['route', 'lvl', 'team', 'dexnr'][i]
+        sp['show_items'] = self.ids.items_check.state == 'down'
+        sp['items_path'] = self.ids.items_path.text
+        sp['show_badges'] = self.ids.badges_check.state == 'down'
+        sp['badges_path'] = self.ids.badges_path.text
+        client.conf = sp
         with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)
 
@@ -139,6 +167,7 @@ class BizhawkSettings(Screen):
         for i in range(pl['player_count']):
             if not pl[f'remote_{i+1}']:
                 subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
+            asyncio.ensure_future(client.pass_bh_to_server((rem['server_ip_adresse'], rem['server_port']), bh['port']))
 
     def save_changes(self):
         bh['path'] = self.ids.bizhawk_exe.text
@@ -209,7 +238,7 @@ class RemoteSettings(Screen):
         mainPlayerBox.add_widget(yesCheck)
         grid.add_widget(mainPlayerBox)
 
-        if rem['start_server']:
+        if not rem['start_server']:
             yesCheck.state = "normal"
             self.set_server_info_widgets()
         else:
@@ -232,8 +261,8 @@ class RemoteSettings(Screen):
         serverGrid.add_widget(anchorIPText)
         serverGrid.add_widget(Label(text='Port:', size_hint=(.3,1)))
         anchorPortText = AnchorLayout(anchor_x='left')
-        PortText = TextInput(text=rem[f'server_port'],on_text_validate=self.save_changes,size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
-        self.ids['port_server'] = weakref.proxy(PortText)
+        PortText = TextInput(text=rem[f'client_port'],on_text_validate=self.save_changes,size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
+        self.ids['port_client'] = weakref.proxy(PortText)
         anchorPortText.add_widget(PortText)
         serverGrid.add_widget(anchorPortText)
         grid.add_widget(serverGrid)
@@ -254,8 +283,8 @@ class RemoteSettings(Screen):
         self.ids["client_grid"] = weakref.proxy(serverGrid)
         serverGrid.add_widget(Label(text='Port:', size_hint=(.3,1)))
         anchorPortText = AnchorLayout(anchor_x='left')
-        PortText = TextInput(text=rem[f'client_port'],on_text_validate=self.save_changes,size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
-        self.ids['port_client'] = weakref.proxy(PortText)
+        PortText = TextInput(text=rem[f'server_port'],on_text_validate=self.save_changes,size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
+        self.ids['port_server'] = weakref.proxy(PortText)
         anchorPortText.add_widget(PortText)
         serverGrid.add_widget(anchorPortText)
         grid.add_widget(serverGrid)
@@ -292,7 +321,7 @@ class RemoteSettings(Screen):
             rem['client_port'] = self.ids['port_client'].text
         except KeyError:
             pass
-        rem['start_server'] = not self.ids['main_Yes'].state == "down"
+        rem['start_server'] = self.ids['main_Yes'].state == "down"
 
         with open(f"{configsave}remote.yml", 'w') as file:
             yaml.dump(rem, file)
@@ -304,7 +333,6 @@ class RemoteSettings(Screen):
 
     def connect_client(self, *args):
         pass
-
 
 class PlayerSettings(Screen):
     def __init__(self, **kwargs):
@@ -409,7 +437,7 @@ class TrackerApp(App):
             with open(f"{configsave}bh_config.yml") as file:
                 bh = yaml.safe_load(file)
         else:
-            bh['host'] = "127.45.45.45" #type: ignore
+            bh['host'] = "127.0.0.1" #type: ignore
             bh['path'] = "" #type: ignore
             bh['port'] = "43885" #type: ignore
         global obs
@@ -441,10 +469,13 @@ class TrackerApp(App):
             sp['platinum'] = "" #type: ignore
             sp['red'] = "" #type: ignore
             sp['ruby'] = "" #type: ignore
+            sp['show_badges'] = False #type: ignore
+            sp['show_items'] = False #type: ignore
             sp['show_nicknames'] = False #type: ignore
             sp['silver'] = "" #type: ignore
             sp['single_path_check'] = True #type: ignore
             sp['yellow'] = "" #type: ignore
+        client.conf = sp
         global pl
         pl = {}
         if os.path.exists(f"{configsave}player.yml"):
@@ -455,29 +486,22 @@ class TrackerApp(App):
             for i in range(1,5):
                 pl[f'obs_{i}'] = False #type: ignore
                 pl[f'remote_{i}'] = False #type: ignore
-        global cc
-        cc = {}
-        if os.path.exists(f"{configsave}common_config.yml"):
-            with open(f"{configsave}common_config.yml") as file:
-                cc = yaml.safe_load(file)
-        else:
-            pass
         global rem
         rem = {}
         if os.path.exists(f"{configsave}remote.yml"):
             with(open(f"{configsave}remote.yml")) as file:
                 rem = yaml.safe_load(file)
         else:
-            for i in range(1,5):
-                rem[f'ip_adresse_{i}'] = ''
-                rem[f'port_{i}'] = ''
+            rem["client_port"] = '43886'
+            rem["server_ip_adresse"] = '0.0.0.0'
+            rem["server_port"] = '43885'
+            rem["start_server"] = False
 
     def exit_check(self, *args):
         self.save_config(f"{configsave}bh_config.yml", bh)
         self.save_config(f"{configsave}obs_config.yml", obs)
         self.save_config(f"{configsave}sprites.yml", sp)
         self.save_config(f"{configsave}player.yml", pl)
-        self.save_config(f"{configsave}common_config.yml", cc)
         self.save_config(f"{configsave}remote.yml", rem)
 
     def browse(self, widget, instance, *args):

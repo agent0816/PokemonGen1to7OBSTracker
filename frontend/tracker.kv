@@ -64,7 +64,7 @@ Screens:
     GridLayout:
         cols: 2
         Label:
-            text: 'Speicherort'
+            text: 'Dateipfad Pokemon'
             size_hint: .3, 1
         BoxLayout:
             orientation: 'horizontal'
@@ -113,10 +113,10 @@ Screens:
                 anchor_x: 'center'
                 size_hint: .1, .5
                 CheckBox:
-                    id: names_check
+                    id: items_check
                     size_hint: None, None
                     size: "20dp", "20dp"
-                    on_press: root.save_changes()
+                    on_press: root.sprite_paths_setting()
             Label:
                 size_hint: .3, .5
                 text: 'Items anzeigen'
@@ -124,39 +124,69 @@ Screens:
                 anchor_x: 'center'
                 size_hint: .1, .5
                 CheckBox:
-                    id: names_check
+                    id: badges_check
                     size_hint: None, None
                     size: "20dp", "20dp"
-                    on_press: root.save_changes()
+                    on_press: root.sprite_paths_setting()
             Label:
                 size_hint: .3, .5
                 text: 'Orden anzeigen'
-        BoxLayout:
-            orientation: 'vertical'
-            GridLayout:
-                cols: 2
-                AnchorLayout:
-                    anchor_x: 'left'
-                    size_hint: .1, .5
-                    CheckBox:
-                        id: game_sprites_check
-                        size_hint: None, None
-                        size: "20dp", "20dp"
-                        on_press: root.sprite_paths_setting()
+        GridLayout:
+            cols: 2
+            BoxLayout:
+                orientation: 'vertical'
+                GridLayout:
+                    cols: 2
+                    AnchorLayout:
+                        anchor_x: 'left'
+                        size_hint: .1, .5
+                        CheckBox:
+                            id: game_sprites_check
+                            size_hint: None, None
+                            size: "20dp", "20dp"
+                            on_press: root.sprite_paths_setting()
+                    AnchorLayout:
+                        anchor_x: 'left'
+                        size_hint: 1, 1
+                        Label:
+                            size_hint: 1, .5
+                            text: 'Sprites jedes Spiels einzeln festlegen'
                 AnchorLayout:
                     anchor_x: 'left'
                     size_hint: 1, 1
-                    Label:
-                        size_hint: .4, .5
-                        text: 'Sprites jedes Spiels einzeln festlegen'
-            AnchorLayout:
-                anchor_x: 'left'
-                size_hint: .5, 1
+                    Button:
+                        id: game_sprites
+                        text: 'Spritepfade der einzelnen Games'
+                        size_hint: 1, 1
+                        on_press: root.parent.parent.changesettingscreen('games')
+            BoxLayout:
+                orientation: 'vertical'
                 Button:
-                    id: game_sprites
-                    text: 'Spritepfade der einzelnen Games'
-                    size_hint: 1, 1
-                    on_press: root.parent.parent.changesettingscreen('games')
+                    id: items_browse
+                    text: 'Dateipfad Items'
+                    on_press: app.browse(root.ids.items_path, root)
+                AnchorLayout:
+                    anchor_y: 'center'
+                    TextInput:
+                        id: items_path
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Button:
+                    id: badges_browse
+                    text: 'Dateipfad Orden'
+                    on_press: app.browse(root.ids.badges_path, root)
+                AnchorLayout:
+                    anchor_y: 'center'
+                    TextInput:
+                        id: badges_path
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
         Label:
             text: 'Sortierung'
             size_hint: .2, 1

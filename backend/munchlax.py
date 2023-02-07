@@ -130,7 +130,7 @@ def sort(liste, key):
         return sorted(sorted(liste), key=lambda a: a)
     if key == 'team':
         return liste
-    if key == 'level':
+    if key == 'lvl':
         return sorted(sorted(liste), key=lambda a: - a.lvl if a.dexnr != 0 else 999999)
     if key == 'route':
         return sorted(sorted(liste), key=lambda a: a.route if a.dexnr != 0 else 999999)
@@ -171,14 +171,15 @@ async def change_badges(player):
 
 async def pass_bh_to_server(server_address, port):
     async def bizreader(reader, _):
-        msg = await reader.read(1330)
-        writer.write(msg)
-        await writer.drain()
-    while True:
-        _, writer = await asyncio.open_connection(*server_address)
-        server = await asyncio.start_server(bizreader, '', port)
-        async with server:
-            await server.serve_forever()
+        while True:
+            msg = await reader.read(1330)
+            writer.write(msg)
+            await writer.drain()
+
+    _, writer = await asyncio.open_connection(*server_address)
+    server = await asyncio.start_server(bizreader, '', port)
+    async with server:
+        await server.serve_forever()
 
 async def connect_client(ip, port):
     global teams
@@ -213,7 +214,8 @@ async def connect_client(ip, port):
                             diff.append(i)
                     await changeSource(player, diff, team, edition=33)
                 teams = new_teams.copy()
-        except Exception:
+        except Exception as err:
+            print(err)
             break
 
 def change_order(*args):

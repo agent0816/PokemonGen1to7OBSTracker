@@ -120,6 +120,8 @@ class SpriteSettings(Screen):
         sp['show_badges'] = self.ids.badges_check.state == 'down'
         sp['badges_path'] = self.ids.badges_path.text
         client.conf = sp
+        client.change_order()
+        asyncio.ensure_future(client.redraw_obs())
         with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)
 
@@ -164,10 +166,10 @@ class BizhawkSettings(Screen):
         self.ids.bizhawk_port.text = bh['port']
 
     def launchbh(self):
+        asyncio.ensure_future(client.pass_bh_to_server((rem['server_ip_adresse'], rem['client_port']), bh['port']))
         for i in range(pl['player_count']):
             if not pl[f'remote_{i+1}']:
                 subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
-            asyncio.ensure_future(client.pass_bh_to_server((rem['server_ip_adresse'], rem['server_port']), bh['port']))
 
     def save_changes(self):
         bh['path'] = self.ids.bizhawk_exe.text

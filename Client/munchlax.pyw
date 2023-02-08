@@ -215,7 +215,7 @@ def save_config():
     config['emupath'] = emu_path.get()
     config['last_game'] = game.get()
     config['show_badges'] = handle_badges.get()
-    config['badges'] = badges_path.get()
+    config['badges_path'] = badges_path.get()
     with open('config.yml', 'w') as file:
         yaml.dump(config, file)
 
@@ -237,21 +237,10 @@ def setaddr(*args):
     try:
         if string[0] != '[':
             ip, port = string.split(':')
-            proxy.set(0)
         else:
             ip, port = string[1:].split(']:')
-            proxy.set(1)
     except Exception as err:
         log.append(str(err) + '\n')
-
-
-def openbiz():
-    bip = '127.0.0.1' if proxy.get() else ip
-    bport = int(port) + proxy.get()
-    player = selectedplayer.get()
-    if player in range(1, 256) and not Path(f'Player{player}.lua').exists():
-        Path(f'Player{player}.lua').write_text(f'PLAYER={player}\ngui.drawText(10,10, "Player {player}")\npackage.path = "./obsautomation.lua;"\nconnect = loadfile(\'obsautomation.lua\')\nconnect()')
-    subprocess.Popen([emu_path.get(), f'--lua={os.path.abspath(f"Player{player}.lua")}', f'--socket_ip={bip}', f'--socket_port={bport}', game.get()])
 
 
 def change_order(*args):
@@ -263,38 +252,45 @@ def change_order(*args):
 proxyserver = None
 
 
-def toggle_proxy(*args):
+def openbiz():
     global proxyserver
-    if proxy.get():
+    if not proxyserver:
         proxyserver = asyncio.ensure_future(run_proxy())
-    else:
-        try:
-            if proxyserver:
-                proxyserver.cancel()
-        except AttributeError as err:
-            print(err)
-            pass
+    bport = int(port) + 1
+    players = selectedplayer.get().replace(' ', '').split(',')
+    print(players)
+    for player in players:
+        if int(player) in range(1, 256) and not Path(f'Player{player}.lua').exists():
+            Path(f'Player{player}.lua').write_text(f'PLAYER={player}\ngui.drawText(10,10, "Player {player}")\npackage.path = "./obsautomation.lua;"\nconnect = loadfile(\'obsautomation.lua\')\nconnect()')
+        subprocess.Popen([emu_path.get(), f'--lua={os.path.abspath(f"Player{player}.lua")}', '--socket_ip=127.0.0.1', f'--socket_port={bport}', game.get()])
 
 
 async def run_proxy():
     async def bizreader(reader, _):
-        msg = await reader.read(1322)
-        writer.write(msg)
-        await writer.drain()
-    while True:
-        _, writer = await asyncio.open_connection(ip, port)
-        server = await asyncio.start_server(bizreader, '127.0.0.1', int(port) + 1)
-        async with server:
-            await server.serve_forever()
+        while True:
+            try:
+                msg = await reader.read(1322)
+                writer.write(msg)
+                await writer.drain()
+            except Exception:
+                pass
+
+    _, writer = await asyncio.open_connection(ip, port)
+    server = await asyncio.start_server(bizreader, '127.0.0.1', int(port) + 1)
+    async with server:
+        await server.serve_forever()
 
 
 async def tk_main(root):
     while True:
         root.update()
-        t = ''
+        logstring = ''
         for line in log:
-            t += line
-        info.configure(text=str(teams) + '\n' + str(badges) + '\n' + t)
+            logstring += line
+        t = ''
+        for team in teams:
+            t += str(teams[team]) + f'{badges[team]:b}'.rjust(8, '0') + '\n'
+        info.configure(text=t + '\n' + '\n' + logstring)
         await asyncio.sleep(0.05)
 
 
@@ -323,12 +319,10 @@ if __name__ == '__main__':
             'badges_path': ''
 
         }
-    proxy = tk.IntVar()
-    proxy.trace_add('write', toggle_proxy)
     address = tk.StringVar()
     address.trace_add('write', setaddr)
     address.set(config['indeedeeaddress'])
-    obsport = tk.IntVar(value=config['obsport'])
+    obsport = tk.StringVar(value=config['obsport'])
     obspassword = tk.StringVar(value=config['obspassword'])
     spritespath = tk.StringVar(value=config['spritespath'])
     order = tk.StringVar(value=config['order'])
@@ -341,7 +335,7 @@ if __name__ == '__main__':
     game = tk.StringVar(value=config['last_game'])
     handle_badges = tk.IntVar(value=config['show_badges'])
     badges_path = tk.StringVar(value=config['badges_path'])
-    selectedplayer = tk.IntVar(value=1)
+    selectedplayer = tk.StringVar(value=1)
     selectedplayer.trace_add('write', lambda *x: bizbutton.configure(text=f'Launch Emulator for Player {selectedplayer.get()}'))
 
     tkmain = asyncio.ensure_future(tk_main(root))
@@ -391,7 +385,6 @@ if __name__ == '__main__':
     ttk.Button(frame, text='Browse', command=lambda var=game: var.set(fd.askopenfilename())).pack(side='left')
     frame = ttk.Frame(bizframe)
     frame.pack(expand=True, fill='both')
-    # ttk.Checkbutton(frame, text='Connect BizHawk\ndirectly to Indeedee', variable=proxy).pack(side='left')
     ttk.Label(frame, text='Player: ').pack(side='left')
     ttk.Combobox(frame, textvariable=selectedplayer, values=['1', '2', '3', '4']).pack(side='left', fill='x', expand=True)
     bizbutton = ttk.Button(frame, text='Launch Emulator for Player 1', command=lambda: openbiz())

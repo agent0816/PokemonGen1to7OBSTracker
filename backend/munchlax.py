@@ -187,6 +187,7 @@ async def connect_client(ip, port):
     global unsorted_teams
     global badges
     reader, writer = await asyncio.open_connection(ip, port)
+    print(f"client connected to {ip}:{port}")
     writer.write(b'\x00\x00')
     await writer.drain()
 
@@ -195,6 +196,7 @@ async def connect_client(ip, port):
             length = int.from_bytes(await reader.read(3), 'big')
             unsorted_teams = pickle.loads(await reader.read(length))
             new_teams = unsorted_teams.copy()
+            print(new_teams)
             for player in new_teams:
                 team = new_teams[player]
                 new_teams[player] = sort(team[:6], conf['order'])

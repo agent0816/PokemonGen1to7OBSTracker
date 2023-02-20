@@ -2,4 +2,3 @@ __pycache__/
 backend/config/
 logs/
 testserver.py
-*.ps1

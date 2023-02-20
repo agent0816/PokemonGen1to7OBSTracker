@@ -173,6 +173,7 @@ async def pass_bh_to_server(server_address, port):
     async def bizreader(reader, _):
         while True:
             msg = await reader.read(1330)
+            print(msg)
             writer.write(msg)
             await writer.drain()
 

@@ -1,6 +1,6 @@
 # type: ignore
 import yaml
-from backend.classes.Pokemon import Pokemon
+from backend.classes.Pokemon import Pokemon as Pokemon
 
 species1_lut = yaml.safe_load(open('backend/data/species1.yml'))
 species3_lut = yaml.safe_load(open('backend/data/species3.yml'))

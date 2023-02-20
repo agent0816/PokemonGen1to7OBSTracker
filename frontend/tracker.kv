@@ -83,7 +83,7 @@ Screens:
                 size_hint: .2, None
                 size: "20dp", "30dp"
                 pos_hint: {"center_x":.5, "center_y": .5}
-                on_press: app.browse(root.ids.common_path, root)
+                on_press: app.browse(root.ids.common_path, root, 'directory')
         GridLayout:
             cols: 2
             size_hint: .2, 1
@@ -164,7 +164,7 @@ Screens:
                 Button:
                     id: items_browse
                     text: 'Dateipfad Items'
-                    on_press: app.browse(root.ids.items_path, root)
+                    on_press: app.browse(root.ids.items_path, root, 'directory')
                 AnchorLayout:
                     anchor_y: 'center'
                     TextInput:
@@ -177,7 +177,7 @@ Screens:
                 Button:
                     id: badges_browse
                     text: 'Dateipfad Orden'
-                    on_press: app.browse(root.ids.badges_path, root)
+                    on_press: app.browse(root.ids.badges_path, root, 'directory')
                 AnchorLayout:
                     anchor_y: 'center'
                     TextInput:
@@ -404,7 +404,7 @@ Screens:
                     size_hint: .2, None
                     size: "20dp", "30dp"
                     pos_hint: {"center_x":.5, "center_y": .5}
-                    on_press: app.browse(root.ids.common_path, root)
+                    on_press: app.browse(root.ids.bizhawk_exe, root, 'file')
             Label:
                 text: 'Port'
                 size_hint: .2, 1

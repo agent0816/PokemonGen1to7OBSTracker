@@ -507,7 +507,10 @@ class TrackerApp(App):
         self.save_config(f"{configsave}remote.yml", rem)
 
     def browse(self, widget, instance, *args):
-        path = fd.askdirectory()
+        if args[0] == 'file':
+            path = fd.askopenfilename()
+        else:
+            path = fd.askdirectory()
         if path:
             widget.text = path
             instance.save_changes()

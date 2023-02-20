@@ -20,6 +20,7 @@ async def main(port):
 
 async def new_connection(reader, writer):
     header = await reader.read(2)
+    print(f'new connection, {header=}')
     if header[0] == 0:  # not BizHawk
         await handle_munchlax(writer)
 
@@ -76,15 +77,18 @@ async def handle_munchlax(writer):
     writer.write(msg)
     await writer.drain()
     while True:
+        # print(old_teams==teams)
         try:
             if old_teams != teams:
+                print('teams changed')
                 old_teams = teams.copy()
                 msg = pickle.dumps(teams)
                 writer.write(int.to_bytes(len(msg), 3, 'big'))
                 writer.write(msg)
                 await writer.drain()
             await asyncio.sleep(1)
-        except Exception:
+        except Exception as exc:
+            print(f"handle_munchlax abgebrochen:{exc}")
             break
 
 

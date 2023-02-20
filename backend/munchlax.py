@@ -173,7 +173,6 @@ async def pass_bh_to_server(server_address, port):
     async def bizreader(reader, _):
         while True:
             msg = await reader.read(1330)
-            print(msg)
             writer.write(msg)
             await writer.drain()
 
@@ -194,7 +193,11 @@ async def connect_client(ip, port):
     while True:
         try:
             length = int.from_bytes(await reader.read(3), 'big')
-            unsorted_teams = pickle.loads(await reader.read(length))
+            print(f"{length=}")
+            msg = await reader.read(length)
+            print('received')
+            unsorted_teams = pickle.loads(msg)
+            print(f"{unsorted_teams=}")
             new_teams = unsorted_teams.copy()
             print(new_teams)
             for player in new_teams:
@@ -220,6 +223,7 @@ async def connect_client(ip, port):
         except Exception as err:
             print(err)
             break
+        
 
 def change_order(*args):
     for team in teams:

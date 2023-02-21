@@ -24,6 +24,7 @@ import tkinter.filedialog as fd
 Config.read('gui.ini')
 connector = None
 OBSconnector = None
+clientConnector = None
 
 class Screens(ScreenManager):
     def __init__(self, **kwargs):
@@ -222,7 +223,14 @@ class OBSSettings(Screen):
 
     def connectOBS(self,*args):
         global OBSconnector
-        OBSconnector = asyncio.ensure_future(client.load_obsws(obs['host'], obs['port'], obs['password']))
+        if not OBSconnector:
+            OBSconnector = asyncio.ensure_future(client.load_obsws(obs['host'], obs['port'], obs['password']))
+        if clientConnector:
+            asyncio.gather(clientConnector, OBSconnector)
+
+    def disconnectOBS(self, *args):
+        if OBSconnector:
+            asyncio.ensure_future(client.ws.disconnect())
 
 class RemoteSettings(Screen):
     def __init__(self, **kwargs):
@@ -334,7 +342,11 @@ class RemoteSettings(Screen):
             connector = asyncio.ensure_future(server.main(port=rem['server_port']))
 
     def connect_client(self, *args):
-        asyncio.ensure_future(client.connect_client(rem["server_ip_adresse"], rem["client_port"]))
+        global clientConnector
+        if not clientConnector:
+            clientConnector = asyncio.ensure_future(client.connect_client(rem["server_ip_adresse"], rem["client_port"]))
+        if OBSconnector:
+            asyncio.gather(clientConnector, OBSconnector)
 
 class PlayerSettings(Screen):
     def __init__(self, **kwargs):

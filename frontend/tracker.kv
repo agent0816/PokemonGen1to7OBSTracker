@@ -430,11 +430,20 @@ Screens:
         GridLayout:
             id: obs_settings
             cols: 2
-        Button:
-            size_hint: .5, .5
-            pos_hint: {"center_x": .5}
-            text: "OBS verbinden"
-            on_press: root.connectOBS()
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint: 1, .3
+            padding: "20dp", "0dp"
+            Button:
+                size_hint: 1, 1
+                pos_hint: {"center_y": .5}
+                text: "OBS verbinden"
+                on_press: root.connectOBS()
+            Button:
+                size_hint: 1, 1
+                pos_hint: {"center_y": .5}
+                text: "OBS trennen"
+                on_press: root.disconnectOBS()
 
 <RemoteSettings>:
     BoxLayout:

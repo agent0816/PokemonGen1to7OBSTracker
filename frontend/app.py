@@ -229,8 +229,9 @@ class OBSSettings(Screen):
             asyncio.gather(clientConnector, OBSconnector)
 
     def disconnectOBS(self, *args):
-        if OBSconnector:
+        if OBSconnector: #type: ignore
             asyncio.ensure_future(client.ws.disconnect())
+            OBSconnector = None
 
 class RemoteSettings(Screen):
     def __init__(self, **kwargs):

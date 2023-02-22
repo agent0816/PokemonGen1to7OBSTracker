@@ -20,7 +20,9 @@ from kivy.core.window import Window
 import backend.server as server
 import backend.munchlax as client
 import tkinter.filedialog as fd
+import logging
 
+logger = logging.getLogger(__name__)
 Config.read('gui.ini')
 connector = None
 OBSconnector = None
@@ -229,7 +231,8 @@ class OBSSettings(Screen):
             asyncio.gather(clientConnector, OBSconnector)
 
     def disconnectOBS(self, *args):
-        if OBSconnector: #type: ignore
+        global OBSconnector
+        if OBSconnector:
             asyncio.ensure_future(client.ws.disconnect())
             OBSconnector = None
 

@@ -5,7 +5,9 @@ import yaml
 import subprocess
 import os
 from pathlib import Path
+import logging
 
+logger = logging.getLogger(__name__)
 ws = None
 teams = {}
 unsorted_teams = {}
@@ -186,35 +188,26 @@ async def connect_client(ip, port):
     global unsorted_teams
     global badges
     reader, writer = await asyncio.open_connection(ip, port)
-    print(f"client connected to {ip}:{port}")
+    logger.info(f"client connected to {ip}:{port}")
     writer.write(b'\x00\x00')
     await writer.drain()
 
     while True:
-        print(reader)
         try:
             length = int.from_bytes(await reader.read(3), 'big')
-            print(f"{length=}")
             msg = await reader.read(length)
-            print('received')
             unsorted_teams = pickle.loads(msg)
             new_teams = unsorted_teams.copy()
-            print("----------------------------------------------------------------------------------------")
             for player in new_teams:
-                print(f"{player=}")
                 team = new_teams[player]
-                print(f"{team=}")
                 new_teams[player] = sort(team[:6], conf['order'])
                 if player not in badges or unsorted_teams[player][6] != badges[player]:
                     badges[player] = unsorted_teams[player][6]
-                    print(f"{badges=}")
                     await change_badges(player)
-                    print("change_badges awaited")
             if new_teams != teams:
                 for player in new_teams:
                     if player not in teams:
                         await changeSource(player, range(6), new_teams[player], edition=33)
-                        print("changeSource awaited, wenn player nicht vorhanden")
                         continue
 
                     diff = []
@@ -224,10 +217,9 @@ async def connect_client(ip, port):
                         if team[i] != old_team[i]:
                             diff.append(i)
                     await changeSource(player, diff, team, edition=33)
-                    print("changeSource awaited")
                 teams = new_teams.copy()
         except Exception as err:
-            print(err)
+            logger.error(err)
             break
         
 

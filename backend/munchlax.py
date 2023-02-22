@@ -9,9 +9,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 ws = None
-teams = {}
 unsorted_teams = {}
+teams = {}
 badges = {}
+editions = {}
 conf = {}
 
 async def load_obsws(host, port, password):
@@ -138,6 +139,29 @@ def sort(liste, key):
         return sorted(sorted(liste), key=lambda a: a.route if a.dexnr != 0 else 999999)
 
 async def change_badges(player):
+    badge_lut = {
+        11:'kanto',
+        12:'kanto',
+        13:'kanto',
+        21:'johto',
+        22:'johto',
+        23:'johto',
+        31:'hoenn',
+        32:'hoenn',
+        33:'hoenn',
+        34:'kanto',
+        35:'kanto',
+        41:'sinnoh',
+        42:'sinnoh',
+        43:'sinnoh',
+        44:'johto',
+        45:'johto',
+        51:'unova',
+        52:'unova',
+        53:'unova2',
+        54:'unova2',
+
+    }
     if not conf['show_badges']:
         return
     if not ws or not ws.is_identified():
@@ -149,9 +173,9 @@ async def change_badges(player):
                 simpleobsws.Request(
                     "SetInputSettings",
                     {
-                        "inputName": f"badge{i + 6 * (player - 1) + 1}",
+                        "inputName": f"badge{i + 16 * (player - 1) + 1}",
                         "inputSettings": {
-                            "file": conf['badges_path'] + '/' + str(i + 1) + ".png"
+                            "file": conf['badges_path'] + '/' + badge_lut[editions[player]] + str(i + 1) + ".png"
                         }
                     }
                 )
@@ -203,11 +227,13 @@ async def connect_client(ip, port):
                 new_teams[player] = sort(team[:6], conf['order'])
                 if player not in badges or unsorted_teams[player][6] != badges[player]:
                     badges[player] = unsorted_teams[player][6]
+                if player not in editions or unsorted_teams[player][7] != editions[player]:
+                    editions[player] = unsorted_teams[player][7]
                     await change_badges(player)
             if new_teams != teams:
                 for player in new_teams:
                     if player not in teams:
-                        await changeSource(player, range(6), new_teams[player], edition=33)
+                        await changeSource(player, range(6), new_teams[player], editions[player])
                         continue
 
                     diff = []
@@ -216,7 +242,7 @@ async def connect_client(ip, port):
                     for i in range(6):
                         if team[i] != old_team[i]:
                             diff.append(i)
-                    await changeSource(player, diff, team, edition=33)
+                    await changeSource(player, diff, team, editions[player])
                 teams = new_teams.copy()
         except Exception as err:
             logger.error(err)

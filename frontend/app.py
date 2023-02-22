@@ -67,6 +67,8 @@ class SpriteSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.ids.common_path.text = sp['common_path']
+        self.ids.items_path.text = sp['items_path']
+        self.ids.badges_path.text = sp['badges_path']
         self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'
         self.ids.game_sprites_check.state = 'down' if not sp['single_path_check'] else 'normal'
         self.ids.names_check.state = 'down' if sp['show_nicknames'] else 'normal'
@@ -169,6 +171,8 @@ class BizhawkSettings(Screen):
         self.ids.bizhawk_port.text = bh['port']
 
     def launchbh(self):
+        if rem['start_server']:
+            RemoteSettings.connect_BClient()
         asyncio.ensure_future(client.pass_bh_to_server((rem['server_ip_adresse'], rem['client_port']), bh['port']))
         for i in range(pl['player_count']):
             if not pl[f'remote_{i+1}']:
@@ -344,6 +348,14 @@ class RemoteSettings(Screen):
         global connector
         if not connector:
             connector = asyncio.ensure_future(server.main(port=rem['server_port']))
+
+    @classmethod
+    def connect_BClient(cls, *args):
+        global clientConnector
+        if not clientConnector:
+            clientConnector = asyncio.ensure_future(client.connect_client(rem["server_ip_adresse"], rem["client_port"]))
+        if OBSconnector:
+            asyncio.gather(clientConnector, OBSconnector)
 
     def connect_client(self, *args):
         global clientConnector

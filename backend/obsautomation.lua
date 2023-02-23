@@ -81,19 +81,27 @@ if emu.getsystemid() =='GBC' or emu.getsystemid() == 'GB' then
 elseif emu.getsystemid() == 'GBA' then
     length = 600
     gameversion = memory.read_u24_be(0xa8, 'ROM')
-    if gameversion == 5395778 then pointer = RS 
+    if gameversion == 5395778 then
+        pointer = RS 
         gameversion = 31
-    elseif gameversion == 5456208 then pointer = RS
-    gameversion = 32 
+        badgepointer = 0x2026a54
+    elseif gameversion == 5456208 then
+        pointer = RS
+        gameversion = 32 
+        badgepointer = 0x2026a54
     elseif gameversion == 4541765 then 
         pointer = E
-        gameversion = 33 
+        gameversion = 33
+        badgepointer = 0x03005d8c
     elseif gameversion == 4606290 then 
         pointer = FrLg
         gameversion = 34 
+        badgepointer = 0x3004F58
     elseif gameversion == 4998465 then 
         pointer = FrLg
-        gameversion = 35 end
+        gameversion = 35
+        badgepointer = 0x3004F58
+    end
     domain = 'System Bus'
 
 elseif emu.getsystemid() =='NDS' then
@@ -178,7 +186,20 @@ while true do
             end
         end
         if gameversion > 30 and gameversion < 40 then
-            msg[#msg +1] = 0
+            if gameversion < 33 then 
+                badges = memory.read_u16_le(badgepointer, domain)
+                badges = bit.rshift(badges, 7)
+                msg[#msg + 1] = bit.band(badges, 0xFFFFFFFF)
+            elseif gameversion == 33 then
+                badges = memory.read_u32_le(badgepointer, domain) + 0x137C
+                badges = memory.read_u16_le(badges, domain)
+                badges = bit.rshift(badges, 7)
+                msg[#msg + 1] = bit.band(badges, 0xFFFFFFFF)
+            elseif gameversion > 33 then
+                badges = memory.read_u32_le(badgepointer, domain) + 0xFE4
+                badges = memory.readbyte(badges, domain)
+                msg[#msg + 1] = badges
+            end
         end
         if gameversion > 40 and gameversion < 50 then
             badges = bit.band(memory.read_u32_le(badgepointer, domain), 0xFFFFFF) + 0x20

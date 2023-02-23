@@ -7,6 +7,8 @@ if($python -ne "Python 3.10.10"){
     }
     Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.10.10/python-3.10.10-amd64.exe" -OutFile ".\tmp\python-3.10.10-amd64.exe"
     Start-Process -FilePath ".\tmp\python-3.10.10-amd64.exe" -Wait
+
+    Remove-Item -Path ".\tmp" -Recurse
 }
 
 python -m pip install --upgrade pip
@@ -24,3 +26,4 @@ for($i = 0; $i -lt $installed.Length; $i++){
     }
 }
 
+python .\main.py

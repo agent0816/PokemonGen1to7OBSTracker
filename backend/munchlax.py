@@ -26,6 +26,7 @@ async def load_obsws(host, port, password):
             await ws.connect()  # type:ignore
             await ws.wait_until_identified()  # type:ignore
             await redraw_obs()
+            logger.info("obs connected.")
         except Exception as err:
             pass
 
@@ -247,6 +248,7 @@ async def connect_client(ip, port):
                         if team[i] != old_team[i]:
                             diff.append(i)
                     await changeSource(player, diff, team, editions[player])
+                    await change_badges(player)
                 teams = new_teams.copy()
         except Exception as err:
             logger.error(err)

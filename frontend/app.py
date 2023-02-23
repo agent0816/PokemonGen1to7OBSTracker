@@ -243,6 +243,7 @@ class OBSSettings(Screen):
         if OBSconnector:
             asyncio.ensure_future(client.ws.disconnect())
             OBSconnector = None
+            logger.info("OBS disconnected.")
 
 class RemoteSettings(Screen):
     def __init__(self, **kwargs):

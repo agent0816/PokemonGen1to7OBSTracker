@@ -1,7 +1,7 @@
 from pathlib import Path
 Path('logs').mkdir(parents=True, exist_ok=True)
 import logging
-logging.basicConfig(level=logging.DEBUG, filename='logs/server.log',format='[%(asctime)s] %(levelname)s: %(message)s', filemode='w', encoding='utf-8')
+logging.basicConfig(level=logging.INFO, filename='logs/server.log',format='[%(asctime)s] %(levelname)s: %(message)s', filemode='w', encoding='utf-8')
 
 Path('backend/config').mkdir(parents=True, exist_ok=True)
 sprites = Path('backend/config/sprites.yml')

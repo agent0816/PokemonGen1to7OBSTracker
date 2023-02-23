@@ -175,7 +175,9 @@ class BizhawkSettings(Screen):
     def launchbh(self):
         if rem['start_server']:
             RemoteSettings.connect_BClient()
-        asyncio.ensure_future(client.pass_bh_to_server((rem['server_ip_adresse'], rem['client_port']), bh['port']))
+            asyncio.ensure_future(client.pass_bh_to_server(("127.0.0.1", rem['server_port']), bh['port']))
+        else:
+            asyncio.ensure_future(client.pass_bh_to_server((rem['server_ip_adresse'], rem['client_port']), bh['port']))
         for i in range(pl['player_count']):
             if not pl[f'remote_{i+1}']:
                 subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
@@ -355,7 +357,7 @@ class RemoteSettings(Screen):
     def connect_BClient(cls, *args):
         global clientConnector
         if not clientConnector:
-            clientConnector = asyncio.ensure_future(client.connect_client(rem["server_ip_adresse"], rem["client_port"]))
+            clientConnector = asyncio.ensure_future(client.connect_client("127.0.0.1", rem["server_port"]))
         if OBSconnector:
             asyncio.gather(clientConnector, OBSconnector)
 

@@ -1,6 +1,7 @@
 import asyncio
 import pickle
 import simpleobsws
+import sys
 import yaml
 import subprocess
 import os
@@ -8,6 +9,7 @@ from pathlib import Path
 import logging
 
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler(sys.stdout))
 ws = None
 unsorted_teams = {}
 teams = {}
@@ -185,7 +187,7 @@ async def change_badges(player):
                 simpleobsws.Request(
                     "SetInputSettings",
                     {
-                        "inputName": f"badge{i + 6 * (player - 1) + 1}",
+                        "inputName": f"badge{i + 16 * (player - 1) + 1}",
                         "inputSettings": {
                             "file": conf['badges_path'] + '/' + str(i + 1) + 'empty' + ".png"
                         }

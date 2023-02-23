@@ -5,6 +5,7 @@ import backend.pokedecoder as pokedecoder
 import logging
 
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler(sys.stdout))
 
 if len(sys.argv) > 1:
     port = sys.argv[1]

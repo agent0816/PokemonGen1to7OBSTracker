@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import weakref
 import yaml
@@ -23,6 +24,7 @@ import tkinter.filedialog as fd
 import logging
 
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler(sys.stdout))
 Config.read('gui.ini')
 connector = None
 OBSconnector = None

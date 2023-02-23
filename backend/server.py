@@ -2,6 +2,10 @@ import asyncio
 import sys
 import pickle
 import backend.pokedecoder as pokedecoder
+import logging
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler(sys.stdout))
 
 if len(sys.argv) > 1:
     port = sys.argv[1]
@@ -12,7 +16,7 @@ teams = {}
 
 
 async def main(port):
-    print(f'listening on port {port}')
+    logger.info(f'listening on port {port}')
     server = await asyncio.start_server(new_connection, '', port)
     async with server:
         await server.serve_forever()
@@ -20,7 +24,7 @@ async def main(port):
 
 async def new_connection(reader, writer):
     header = await reader.read(2)
-    print(f'new connection, {header=}')
+    logger.info(f'new connection, {header=}')
     if header[0] == 0:  # not BizHawk
         await handle_munchlax(writer)
 
@@ -29,7 +33,7 @@ async def new_connection(reader, writer):
 
 
 async def handle_bizhawk(reader, e, p):
-    print('new emulator connected')
+    logger.info('new emulator connected')
 
     def get_length():
         if edition < 20:
@@ -45,7 +49,6 @@ async def handle_bizhawk(reader, e, p):
 
     def update_teams(team):
         team = pokedecoder.team(team, edition)
-        print(team)
         if player in teams:
             if teams[player] == team:
                 return
@@ -70,17 +73,15 @@ async def handle_bizhawk(reader, e, p):
 
 
 async def handle_munchlax(writer):
-    print('new client connected')
+    logger.info('new client connected')
     old_teams = teams.copy()
     msg = pickle.dumps(teams)
     writer.write(int.to_bytes(len(msg), 3, 'big'))
     writer.write(msg)
     await writer.drain()
     while True:
-        # print(old_teams==teams)
         try:
             if old_teams != teams:
-                print('teams changed')
                 old_teams = teams.copy()
                 msg = pickle.dumps(teams)
                 writer.write(int.to_bytes(len(msg), 3, 'big'))
@@ -88,7 +89,7 @@ async def handle_munchlax(writer):
                 await writer.drain()
             await asyncio.sleep(1)
         except Exception as exc:
-            print(f"handle_munchlax abgebrochen:{exc}")
+            logger.error(f"handle_munchlax abgebrochen:{exc}")
             break
 
 

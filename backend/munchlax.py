@@ -1,15 +1,20 @@
 import asyncio
 import pickle
 import simpleobsws
+import sys
 import yaml
 import subprocess
 import os
 from pathlib import Path
+import logging
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler(sys.stdout))
 ws = None
-teams = {}
 unsorted_teams = {}
+teams = {}
 badges = {}
+editions = {}
 conf = {}
 
 async def load_obsws(host, port, password):
@@ -136,6 +141,29 @@ def sort(liste, key):
         return sorted(sorted(liste), key=lambda a: a.route if a.dexnr != 0 else 999999)
 
 async def change_badges(player):
+    badge_lut = {
+        11:'kanto',
+        12:'kanto',
+        13:'kanto',
+        21:'johto',
+        22:'johto',
+        23:'johto',
+        31:'hoenn',
+        32:'hoenn',
+        33:'hoenn',
+        34:'kanto',
+        35:'kanto',
+        41:'sinnoh',
+        42:'sinnoh',
+        43:'sinnoh',
+        44:'johto',
+        45:'johto',
+        51:'unova',
+        52:'unova',
+        53:'unova2',
+        54:'unova2',
+
+    }
     if not conf['show_badges']:
         return
     if not ws or not ws.is_identified():
@@ -147,9 +175,9 @@ async def change_badges(player):
                 simpleobsws.Request(
                     "SetInputSettings",
                     {
-                        "inputName": f"badge{i + 6 * (player - 1) + 1}",
+                        "inputName": f"badge{i + 16 * (player - 1) + 1}",
                         "inputSettings": {
-                            "file": conf['badges_path'] + '/' + str(i + 1) + ".png"
+                            "file": conf['badges_path'] + '/' + badge_lut[editions[player]] + str(i + 1) + ".png"
                         }
                     }
                 )
@@ -159,7 +187,7 @@ async def change_badges(player):
                 simpleobsws.Request(
                     "SetInputSettings",
                     {
-                        "inputName": f"badge{i + 6 * (player - 1) + 1}",
+                        "inputName": f"badge{i + 16 * (player - 1) + 1}",
                         "inputSettings": {
                             "file": conf['badges_path'] + '/' + str(i + 1) + 'empty' + ".png"
                         }
@@ -186,35 +214,28 @@ async def connect_client(ip, port):
     global unsorted_teams
     global badges
     reader, writer = await asyncio.open_connection(ip, port)
-    print(f"client connected to {ip}:{port}")
+    logger.info(f"client connected to {ip}:{port}")
     writer.write(b'\x00\x00')
     await writer.drain()
 
     while True:
-        print(reader)
         try:
             length = int.from_bytes(await reader.read(3), 'big')
-            print(f"{length=}")
             msg = await reader.read(length)
-            print('received')
             unsorted_teams = pickle.loads(msg)
             new_teams = unsorted_teams.copy()
-            print("----------------------------------------------------------------------------------------")
             for player in new_teams:
-                print(f"{player=}")
                 team = new_teams[player]
-                print(f"{team=}")
                 new_teams[player] = sort(team[:6], conf['order'])
                 if player not in badges or unsorted_teams[player][6] != badges[player]:
                     badges[player] = unsorted_teams[player][6]
-                    print(f"{badges=}")
+                if player not in editions or unsorted_teams[player][7] != editions[player]:
+                    editions[player] = unsorted_teams[player][7]
                     await change_badges(player)
-                    print("change_badges awaited")
             if new_teams != teams:
                 for player in new_teams:
                     if player not in teams:
-                        await changeSource(player, range(6), new_teams[player], edition=33)
-                        print("changeSource awaited, wenn player nicht vorhanden")
+                        await changeSource(player, range(6), new_teams[player], editions[player])
                         continue
 
                     diff = []
@@ -223,11 +244,10 @@ async def connect_client(ip, port):
                     for i in range(6):
                         if team[i] != old_team[i]:
                             diff.append(i)
-                    await changeSource(player, diff, team, edition=33)
-                    print("changeSource awaited")
+                    await changeSource(player, diff, team, editions[player])
                 teams = new_teams.copy()
         except Exception as err:
-            print(err)
+            logger.error(err)
             break
         
 

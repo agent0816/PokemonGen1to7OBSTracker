@@ -42,6 +42,8 @@ async def new_connection(reader, writer):
 async def handle_bizhawk(reader, e, p):
     logger.info('new emulator connected')
 
+    logger.info(f"handle_bizhawk: {edition=}, {player=}")
+
     def get_length():
         if edition < 20:
             return 331

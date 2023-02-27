@@ -364,6 +364,11 @@ class RemoteSettings(Screen):
 
     def connect_client(self, *args):
         global clientConnector
+        global connector
+        if connector and server.server:
+            logger.info(f"laufender server beendet auf Port {rem['server_port']}")
+            server.server.close()
+            connector = None
         if not clientConnector:
             clientConnector = asyncio.ensure_future(client.connect_client(rem["server_ip_adresse"], rem["client_port"]))
         if OBSconnector:

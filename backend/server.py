@@ -13,10 +13,11 @@ else:
     port = 43885
 
 teams = {}
-
+server = None
 
 async def main(port):
     logger.info(f'listening on port {port}')
+    global server
     server = await asyncio.start_server(new_connection, '', port)
     async with server:
         await server.serve_forever()

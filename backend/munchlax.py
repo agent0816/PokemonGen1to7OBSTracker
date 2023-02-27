@@ -171,7 +171,7 @@ async def change_badges(player):
         return
     batch = []
     for i in range(16):
-        if badges[player] & 2**i:
+        if (i == 0 and badges[player] & 2**i) ^ (i > 0 and badges[player] & 2**i and badges[player] & 2**(i-1)):
             batch.append(
                 simpleobsws.Request(
                     "SetInputSettings",

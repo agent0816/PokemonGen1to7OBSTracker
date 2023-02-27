@@ -75,7 +75,8 @@ async def handle_bizhawk(reader, e, p):
             length = get_length()
             msg = await reader.read(length)
             update_teams(msg)
-        except Exception:
+        except Exception as err:
+            logger.error(f"handle_bizhawk abgebrochen: {err}")
             break
 
 

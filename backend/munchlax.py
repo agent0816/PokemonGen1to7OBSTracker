@@ -36,7 +36,7 @@ async def load_obsws(host, port, password):
 async def redraw_obs():
     if ws and ws.is_identified():
         for player in teams:
-            await changeSource(player, range(6), teams[player], edition=33)
+            await changeSource(player, range(6), teams[player], editions[player])
             await change_badges(player)
 
 def get_sprite(pokemon, anim, edition):

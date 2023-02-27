@@ -91,6 +91,8 @@ async def handle_munchlax(writer):
             if old_teams != teams:
                 old_teams = teams.copy()
                 msg = pickle.dumps(teams)
+                logger.info(teams)
+                logger.info(int.to_bytes(len(msg), 3, 'big'))
                 writer.write(int.to_bytes(len(msg), 3, 'big'))
                 writer.write(msg)
                 await writer.drain()

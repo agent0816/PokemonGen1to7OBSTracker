@@ -29,10 +29,12 @@ async def new_connection(reader, writer):
     header = await reader.read(2)
     logger.info(f'new connection, {header=}')
     if header[0] == 0:  # not BizHawk
-        new_connection = await handle_munchlax(writer)
+        new_connection = writer
+        await handle_munchlax(writer)
 
     else:  # BizHawk
-        new_connection = await handle_bizhawk(reader, header[0], header[1])
+        new_connection = reader
+        await handle_bizhawk(reader, header[0], header[1])
 
     connections.append(new_connection)
     asyncio.gather(*connections)

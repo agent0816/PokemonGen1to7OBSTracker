@@ -29,6 +29,8 @@ Config.read('gui.ini')
 connector = None
 OBSconnector = None
 clientConnector = None
+bizConnector = None
+connectors = []
 
 class Screens(ScreenManager):
     def __init__(self, **kwargs):
@@ -173,11 +175,17 @@ class BizhawkSettings(Screen):
         self.ids.bizhawk_port.text = bh['port']
 
     def launchbh(self):
+        global connector
+        if not connector:
+            return
+        global bizConnector
         if rem['start_server']:
             RemoteSettings.connect_BClient()
-            asyncio.create_task(client.pass_bh_to_server(("127.0.0.1", rem['server_port']), bh['port']))
+            bizConnector = asyncio.create_task(client.pass_bh_to_server(("127.0.0.1", rem['server_port']), bh['port']))
         else:
-            asyncio.create_task(client.pass_bh_to_server((rem['server_ip_adresse'], rem['client_port']), bh['port']))
+            bizConnector = asyncio.create_task(client.pass_bh_to_server((rem['server_ip_adresse'], rem['client_port']), bh['port']))
+        global connectors
+        asyncio.gather(*connectors)
         for i in range(pl['player_count']):
             if not pl[f'remote_{i+1}']:
                 subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
@@ -233,10 +241,11 @@ class OBSSettings(Screen):
 
     def connectOBS(self,*args):
         global OBSconnector
+        global connectors
         if not OBSconnector:
             OBSconnector = asyncio.create_task(client.load_obsws(obs['host'], obs['port'], obs['password']))
-        if clientConnector:
-            asyncio.gather(clientConnector, OBSconnector)
+            connectors.append(OBSconnector)
+        asyncio.gather(*connectors)
 
     def disconnectOBS(self, *args):
         global OBSconnector
@@ -350,20 +359,24 @@ class RemoteSettings(Screen):
 
     def launchserver(self,*args):
         global connector
+        global connectors
         if not connector:
             connector = asyncio.create_task(server.main(port=rem['server_port']))
+        asyncio.gather(*connectors)
 
     @classmethod
     def connect_BClient(cls, *args):
         global clientConnector
+        global connectors
         if not clientConnector:
             clientConnector = asyncio.create_task(client.connect_client("127.0.0.1", rem["server_port"]))
-        if OBSconnector:
-            asyncio.gather(clientConnector, OBSconnector)
+            connectors.append(clientConnector)
+        asyncio.gather(*connectors)
 
     def connect_client(self, *args):
         global clientConnector
         global connector
+        global connectors
         if client.bizServer:
             logger.info(f"lokale bizhawk-Verbindung auf Port {bh['port']} aufghoben")
             client.bizServer.close()
@@ -376,8 +389,8 @@ class RemoteSettings(Screen):
             connector = None
         if not clientConnector:
             clientConnector = asyncio.create_task(client.connect_client(rem["server_ip_adresse"], rem["client_port"]))
-        if OBSconnector:
-            asyncio.gather(clientConnector, OBSconnector)
+            connectors.append(clientConnector)
+        asyncio.gather(*connectors)
 
 class PlayerSettings(Screen):
     def __init__(self, **kwargs):

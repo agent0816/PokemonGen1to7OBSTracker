@@ -14,8 +14,7 @@ else:
 
 teams = {}
 server = None
-munchlax_connections = {}
-bizhawk_connection = {}
+connections = []
 
 async def main(port):
     logger.info(f'listening on port {port}')
@@ -26,14 +25,17 @@ async def main(port):
 
 
 async def new_connection(reader, writer):
+    global connections
     header = await reader.read(2)
     logger.info(f'new connection, {header=}')
     if header[0] == 0:  # not BizHawk
-        await handle_munchlax(writer)
+        new_connection = await handle_munchlax(writer)
 
     else:  # BizHawk
-        await handle_bizhawk(reader, header[0], header[1])
+        new_connection = await handle_bizhawk(reader, header[0], header[1])
 
+    connections.append(new_connection)
+    asyncio.gather(*connections)
 
 async def handle_bizhawk(reader, e, p):
     logger.info('new emulator connected')

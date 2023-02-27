@@ -42,8 +42,6 @@ async def new_connection(reader, writer):
 async def handle_bizhawk(reader, e, p):
     logger.info('new emulator connected')
 
-    logger.info(f"handle_bizhawk: {edition=}, {player=}")
-
     def get_length():
         if edition < 20:
             return 331
@@ -96,8 +94,8 @@ async def handle_munchlax(writer):
             if old_teams != teams:
                 old_teams = teams.copy()
                 msg = pickle.dumps(teams)
-                logger.info(teams)
-                logger.info(int.to_bytes(len(msg), 3, 'big'))
+                logger.debug(teams)
+                logger.debug(int.to_bytes(len(msg), 3, 'big'))
                 writer.write(int.to_bytes(len(msg), 3, 'big'))
                 writer.write(msg)
                 await writer.drain()

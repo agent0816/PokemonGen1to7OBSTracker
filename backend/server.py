@@ -72,6 +72,8 @@ async def handle_bizhawk(reader, e, p):
     while True:
         try:
             header = await reader.read(2)
+            if len(header) < 2:
+                continue
             edition = header[0]
             player = header[1]
             length = get_length()

@@ -205,7 +205,8 @@ async def pass_bh_to_server(server_address, port):
     async def bizreader(reader, _):
         while True:
             try:
-                msg = await reader.read(1330)
+                # msg = await reader.read(1330)
+                msg = await reader.read(1418)
                 writer.write(msg)
                 await writer.drain()
             except Exception as err:

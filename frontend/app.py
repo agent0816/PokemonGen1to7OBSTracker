@@ -128,7 +128,7 @@ class SpriteSettings(Screen):
         sp['badges_path'] = self.ids.badges_path.text
         client.conf = sp
         client.change_order()
-        asyncio.ensure_future(client.redraw_obs())
+        asyncio.create_task(client.redraw_obs())
         with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)
 
@@ -175,9 +175,9 @@ class BizhawkSettings(Screen):
     def launchbh(self):
         if rem['start_server']:
             RemoteSettings.connect_BClient()
-            asyncio.ensure_future(client.pass_bh_to_server(("127.0.0.1", rem['server_port']), bh['port']))
+            asyncio.create_task(client.pass_bh_to_server(("127.0.0.1", rem['server_port']), bh['port']))
         else:
-            asyncio.ensure_future(client.pass_bh_to_server((rem['server_ip_adresse'], rem['client_port']), bh['port']))
+            asyncio.create_task(client.pass_bh_to_server((rem['server_ip_adresse'], rem['client_port']), bh['port']))
         for i in range(pl['player_count']):
             if not pl[f'remote_{i+1}']:
                 subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
@@ -234,14 +234,14 @@ class OBSSettings(Screen):
     def connectOBS(self,*args):
         global OBSconnector
         if not OBSconnector:
-            OBSconnector = asyncio.ensure_future(client.load_obsws(obs['host'], obs['port'], obs['password']))
+            OBSconnector = asyncio.create_task(client.load_obsws(obs['host'], obs['port'], obs['password']))
         if clientConnector:
             asyncio.gather(clientConnector, OBSconnector)
 
     def disconnectOBS(self, *args):
         global OBSconnector
         if OBSconnector:
-            asyncio.ensure_future(client.ws.disconnect())
+            asyncio.create_task(client.ws.disconnect())
             OBSconnector = None
             logger.info("OBS disconnected.")
 
@@ -336,12 +336,11 @@ class RemoteSettings(Screen):
 
     def save_changes(self, *args):
         try:
-            rem['server_ip_adresse'] = self.ids['ip_server'].text
-            rem['server_port'] = self.ids['port_server'].text
-        except KeyError:
-            pass
-        try:
-            rem['client_port'] = self.ids['port_client'].text
+            if rem['start_Server']:
+                rem['server_ip_adresse'] = self.ids['ip_server'].text
+                rem['server_port'] = self.ids['port_server'].text
+            else:
+                rem['client_port'] = self.ids['port_client'].text
         except KeyError:
             pass
         rem['start_server'] = self.ids['main_Yes'].state == "down"
@@ -352,25 +351,31 @@ class RemoteSettings(Screen):
     def launchserver(self,*args):
         global connector
         if not connector:
-            connector = asyncio.ensure_future(server.main(port=rem['server_port']))
+            connector = asyncio.create_task(server.main(port=rem['server_port']))
 
     @classmethod
     def connect_BClient(cls, *args):
         global clientConnector
         if not clientConnector:
-            clientConnector = asyncio.ensure_future(client.connect_client("127.0.0.1", rem["server_port"]))
+            clientConnector = asyncio.create_task(client.connect_client("127.0.0.1", rem["server_port"]))
         if OBSconnector:
             asyncio.gather(clientConnector, OBSconnector)
 
     def connect_client(self, *args):
         global clientConnector
         global connector
+        if client.bizServer:
+            logger.info(f"lokale bizhawk-Verbindung auf Port {bh['port']} aufghoben")
+            client.bizServer.close()
+            client.bizServer = None
+            asyncio.create_task(client.disconnect_all_local_connections())
         if connector and server.server:
             logger.info(f"laufender server beendet auf Port {rem['server_port']}")
             server.server.close()
+            server.server = None
             connector = None
         if not clientConnector:
-            clientConnector = asyncio.ensure_future(client.connect_client(rem["server_ip_adresse"], rem["client_port"]))
+            clientConnector = asyncio.create_task(client.connect_client(rem["server_ip_adresse"], rem["client_port"]))
         if OBSconnector:
             asyncio.gather(clientConnector, OBSconnector)
 

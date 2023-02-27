@@ -14,6 +14,8 @@ else:
 
 teams = {}
 server = None
+munchlax_connections = {}
+bizhawk_connection = {}
 
 async def main(port):
     logger.info(f'listening on port {port}')

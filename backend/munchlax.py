@@ -11,11 +11,14 @@ import logging
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler(sys.stdout))
 ws = None
+bizServer = None
 unsorted_teams = {}
 teams = {}
 badges = {}
 editions = {}
 conf = {}
+
+connections = []
 
 async def load_obsws(host, port, password):
     global ws
@@ -201,21 +204,40 @@ async def change_badges(player):
 async def pass_bh_to_server(server_address, port):
     async def bizreader(reader, _):
         while True:
-            msg = await reader.read(1330)
-            writer.write(msg)
-            await writer.drain()
+            try:
+                msg = await reader.read(1330)
+                writer.write(msg)
+                await writer.drain()
+            except Exception as err:
+                logger.error(f"bizreader: {err}")
+                return
 
+    global bizServer
     _, writer = await asyncio.open_connection(*server_address)
-    server = await asyncio.start_server(bizreader, '', port)
-    async with server:
-        await server.serve_forever()
+    global connections
+    connections.append(writer)
+    bizServer = await asyncio.start_server(bizreader, '', port)
+    async with bizServer:
+        try:
+            await bizServer.serve_forever()
+        except Exception as err:
+            logger.error(f"bizserver: {err}")
+            return
+
+async def disconnect_all_local_connections():
+    global connections
+    for connection in connections:
+        connection.close()
+        await connection.wait_closed()
 
 async def connect_client(ip, port):
     global teams
     global unsorted_teams
     global badges
     global editions
+    global connections
     reader, writer = await asyncio.open_connection(ip, port)
+    connections.append(writer)
     logger.info(f"client connected to {ip}:{port}")
     writer.write(b'\x00\x00')
     await writer.drain()

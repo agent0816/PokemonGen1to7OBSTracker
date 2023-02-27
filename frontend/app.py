@@ -175,9 +175,6 @@ class BizhawkSettings(Screen):
         self.ids.bizhawk_port.text = bh['port']
 
     def launchbh(self):
-        global connector
-        if not connector:
-            return
         global bizConnector
         if rem['start_server']:
             RemoteSettings.connect_BClient()

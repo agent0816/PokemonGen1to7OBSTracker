@@ -268,7 +268,7 @@ async def connect_client(ip, port):
                     team = new_teams[player]
                     old_team = teams[player]
                     for i in range(6):
-                        if team[i] != old_team[i] and team[i].isLegit():
+                        if team[i] != old_team[i] and team[i].isLegit(editions[player]):
                             diff.append(i)
                     await changeSource(player, diff, team, editions[player])
                     await change_badges(player)

@@ -1,3 +1,5 @@
+import yaml
+
 class Pokemon:
     def __init__(self, dexnr: int, shiny: bool = False, female = False, form = '', **kwargs):
         self.dexnr: int = dexnr
@@ -39,7 +41,11 @@ class Pokemon:
             return True
         return self.dexnr < other.dexnr
     
-    def isLegit(self):
-        if self.nickname == '' and self.lvl not in range(101) and self.item not in range(639):
+    def isLegit(self, edition):
+        if edition > 20:
+            item = len(yaml.safe_load(open(f'backend/data/items{edition // 10}.yml')))
+        else:
+            item = 0
+        if self.nickname == '' and self.lvl not in range(101) and self.item not in range(item + 1):
             return False
         return True

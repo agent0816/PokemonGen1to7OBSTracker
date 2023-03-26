@@ -342,12 +342,12 @@ class RemoteSettings(Screen):
 
     def save_changes(self, *args):
         try:
-            if rem['start_Server']:
+            if rem['start_server']:
+                rem['client_port'] = self.ids['port_client'].text
+            else:
                 rem['server_ip_adresse'] = self.ids['ip_server'].text
                 rem['server_port'] = self.ids['port_server'].text
-            else:
-                rem['client_port'] = self.ids['port_client'].text
-        except KeyError:
+        except KeyError as err:
             pass
         rem['start_server'] = self.ids['main_Yes'].state == "down"
 

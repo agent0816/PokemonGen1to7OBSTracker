@@ -4,7 +4,7 @@ class Pokemon:
     def __init__(self, dexnr: int, shiny: bool = False, female = False, form = '', **kwargs):
         self.dexnr: int = dexnr
         self.nickname: str = ''
-        self.nickname: str = kwargs.get('nickname')
+        self.nickname: str = kwargs.get('nickname') #type:ignore
         self.lvl = kwargs.get('lvl')
         self.shiny: bool = shiny
         self.female = female

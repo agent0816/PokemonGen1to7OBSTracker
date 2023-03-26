@@ -38,3 +38,8 @@ class Pokemon:
         if other.dexnr == 'egg':
             return True
         return self.dexnr < other.dexnr
+    
+    def isLegit(self):
+        if self.nickname == '' and self.lvl not in range(101) and self.item not in range(639):
+            return False
+        return True

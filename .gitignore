@@ -3,3 +3,6 @@ backend/config/
 logs/
 testserver.py
 tmp/
+dist/
+build/
+*.spec

@@ -6,3 +6,4 @@ tmp/
 dist/
 build/
 *.spec
+specs/

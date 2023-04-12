@@ -488,69 +488,25 @@ class TrackerApp(App):
         configsave = 'backend/config/'
         global bh
         bh = {}
-        if os.path.exists(f"{configsave}bh_config.yml"):
-            with open(f"{configsave}bh_config.yml") as file:
-                bh = yaml.safe_load(file)
-        else:
-            bh['host'] = "127.0.0.1" #type: ignore
-            bh['path'] = "" #type: ignore
-            bh['port'] = "43885" #type: ignore
+        with open(f"{configsave}bh_config.yml") as file:
+            bh = yaml.safe_load(file)
         global obs
         obs = {}
-        if os.path.exists(f"{configsave}obs_config.yml"):
-            with open(f"{configsave}obs_config.yml") as file:
-                obs = yaml.safe_load(file)
-        else:
-            obs['host'] = "localhost" #type: ignore
-            obs['port'] = "4455" #type: ignore
-            obs['password'] = "" #type: ignore
+        with open(f"{configsave}obs_config.yml") as file:
+            obs = yaml.safe_load(file)
         global sp
         sp = {}
-        if os.path.exists(f"{configsave}sprites.yml"):
-            with open(f"{configsave}sprites.yml") as file:
-                sp = yaml.safe_load(file)
-        else:
-            sp['animated'] = False #type: ignore
-            sp['black'] = "" #type: ignore
-            sp['common_path'] = "" #type: ignore
-            sp['crystal'] = "" #type: ignore
-            sp['diamond'] = "" #type: ignore
-            sp['edition_override'] = "" #type: ignore
-            sp['emerald'] = "" #type: ignore
-            sp['firered'] = "" #type: ignore
-            sp['gold'] = "" #type: ignore
-            sp['heartgold'] = "" #type: ignore
-            sp['order'] = "lvl" #type: ignore
-            sp['platinum'] = "" #type: ignore
-            sp['red'] = "" #type: ignore
-            sp['ruby'] = "" #type: ignore
-            sp['show_badges'] = False #type: ignore
-            sp['show_items'] = False #type: ignore
-            sp['show_nicknames'] = False #type: ignore
-            sp['silver'] = "" #type: ignore
-            sp['single_path_check'] = True #type: ignore
-            sp['yellow'] = "" #type: ignore
+        with open(f"{configsave}sprites.yml") as file:
+            sp = yaml.safe_load(file)
         client.conf = sp
         global pl
         pl = {}
-        if os.path.exists(f"{configsave}player.yml"):
-            with open(f"{configsave}player.yml") as file:
-                pl = yaml.safe_load(file)
-        else:
-            pl['player_count'] = 2 #type: ignore
-            for i in range(1,5):
-                pl[f'obs_{i}'] = False #type: ignore
-                pl[f'remote_{i}'] = False #type: ignore
+        with open(f"{configsave}player.yml") as file:
+            pl = yaml.safe_load(file)
         global rem
         rem = {}
-        if os.path.exists(f"{configsave}remote.yml"):
-            with(open(f"{configsave}remote.yml")) as file:
-                rem = yaml.safe_load(file)
-        else:
-            rem["client_port"] = '43886'
-            rem["server_ip_adresse"] = '0.0.0.0'
-            rem["server_port"] = '43885'
-            rem["start_server"] = False
+        with(open(f"{configsave}remote.yml")) as file:
+            rem = yaml.safe_load(file)
 
     def exit_check(self, *args):
         self.save_config(f"{configsave}bh_config.yml", bh)

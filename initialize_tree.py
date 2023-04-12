@@ -10,14 +10,14 @@ def save_config(path, setting):
     with open(path, 'w') as file:
         yaml.dump(setting, file)
 
-def load_config(path, settings):
+def load_config(path, standard_settings):
     cur_settings = {}
     with(open(path)) as file:
         cur_settings = yaml.safe_load(file)
-    for key, content in settings:
+    for key in standard_settings:
         cur_keys = cur_settings.keys()
         if key not in cur_keys:
-            cur_settings[key] = content
+            cur_settings[key] = standard_settings[key]
     save_config(path, cur_settings)
 
 def init_config_folder():
@@ -100,3 +100,6 @@ def init_config_folder():
         save_config(remote, rem)
     else:
         load_config(remote, rem)
+
+if __name__ == '__main__':
+    init_config_folder()

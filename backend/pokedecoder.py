@@ -1,6 +1,5 @@
-# type: ignore
 import yaml
-from backend.classes.Pokemon import Pokemon as Pokemon
+from backend.classes.Pokemon import Pokemon
 
 species1_lut = yaml.safe_load(open('backend/data/species1.yml'))
 species3_lut = yaml.safe_load(open('backend/data/species3.yml'))
@@ -13,6 +12,7 @@ items2 = yaml.safe_load(open('backend/data/items2.yml'))
 items3 = yaml.safe_load(open('backend/data/items3.yml'))
 items4 = yaml.safe_load(open('backend/data/items4.yml'))
 items5 = yaml.safe_load(open('backend/data/items5.yml'))
+
 
 def pokemon1(data):
     dexnr = data[0]
@@ -52,10 +52,10 @@ def pokemon2(data):
 
 
 def pokemon3(data, edition):
-    growth_lut =   [32, 32, 32, 32, 32, 32, 44, 44, 56, 68, 56, 68, 44, 44, 56, 68, 56, 68, 44, 44, 56, 68, 56, 68]
+    growth_lut = [32, 32, 32, 32, 32, 32, 44, 44, 56, 68, 56, 68, 44, 44, 56, 68, 56, 68, 44, 44, 56, 68, 56, 68]
     # attack_lut = [44, 44, 56, 68, 56, 68, 32, 32, 32, 32, 32, 32, 56, 68, 44, 44, 68, 56, 56, 68, 44, 44, 68, 56]
-    # ev_lut =     [56, 68, 44, 44, 68, 56, 56, 68, 44, 44, 68, 56, 32, 32, 32, 32, 32, 32, 68, 56, 68, 56, 44, 44]
-    misc_lut =     [68, 56, 68, 56, 44, 44, 68, 56, 68, 56, 44, 44, 68, 56, 68, 56, 44, 44, 32, 32, 32, 32, 32, 32]
+    # ev_lut = [56, 68, 44, 44, 68, 56, 56, 68, 44, 44, 68, 56, 32, 32, 32, 32, 32, 32, 68, 56, 68, 56, 44, 44]
+    misc_lut = [68, 56, 68, 56, 44, 44, 68, 56, 68, 56, 44, 44, 68, 56, 68, 56, 44, 44, 32, 32, 32, 32, 32, 32]
     egg = False
     form = ''
     personality = int.from_bytes(data[:4], 'little')
@@ -72,7 +72,7 @@ def pokemon3(data, edition):
         item = items3[item]
     if species in range(252, 440):
         species = species3_lut[species]
-        if type(species) == str:
+        if isinstance(species, str):
             form = species[3:]
             species = int(species[:3])
         if species == 386:
@@ -101,8 +101,9 @@ def pokemon3(data, edition):
 
 
 def decryptpokemon(data, gen):
+    def prng(seed):
+        return (0x41C64E6D * seed + 0x6073) % 0x100000000
     offset_lut = [[0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 3, 1, 2], [0, 2, 3, 1], [0, 3, 2, 1], [1, 0, 2, 3], [1, 0, 3, 2], [2, 0, 1, 3], [3, 0, 1, 2], [2, 0, 3, 1], [3, 0, 2, 1], [1, 2, 0, 3], [1, 3, 0, 2], [2, 1, 0, 3], [3, 1, 0, 2], [2, 3, 0, 1], [3, 2, 0, 1], [1, 2, 3, 0], [1, 3, 2, 0], [2, 1, 3, 0], [3, 1, 2, 0], [2, 3, 1, 0], [3, 2, 1, 0]]
-    prng = lambda seed: (0x41C64E6D * seed + 0x6073) % 0x100000000
     personality_value = int.from_bytes(data[:4], 'little')
     shift_value = ((personality_value & 0x3E000) >> 0xD) % 24
     if gen == '45':
@@ -149,7 +150,7 @@ def pokemon45(data, gen):
     keldeo = {0x00: '', 0x08: '-resolute'}
     genesect = {0x00: '', 0x08: '-douse', 0x10: '-shock', 0x18: '-burn', 0x20: '-chill'}
 
-    charset = gen4charset if gen == 4 else gen5charset
+    charset = gen4charset
     items = items4 if gen == 4 else items5
 
     unshuffled_bytes, decrypted_battle_stats, shiny_value, personality = decryptpokemon(data, '45')
@@ -165,12 +166,16 @@ def pokemon45(data, gen):
         female = personality % 256 < gender_lut[dexnr]
     else:
         female = False
-    nickname = ''
-    for char in unshuffled_bytes[0x40:0x56]:
-        if char == 0xff:
-            break
-        if char in charset:
-            nickname += charset[char]
+    if gen == 4:
+        nickname = ''
+        for char in unshuffled_bytes[0x40:0x56]:
+            if char == 0xff:
+                break
+            if char in charset:
+                nickname += charset[char]
+    else:
+        nickname = unshuffled_bytes[0x38:0x4e].decode('utf-8').split('\u0000\u0000')[0].replace('\u0000', '')
+
     form = unshuffled_bytes[0x38] % 32
     form -= form % 8
     if dexnr == 201:
@@ -215,22 +220,40 @@ def pokemon45(data, gen):
     return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location)
 
 
-def team(data, edition):
+def pokemon67(data):
+    unshuffled_bytes, decrypted_battle_stats, shiny_value, _ = decryptpokemon(data, '67')
+    dexnr = int.from_bytes(unshuffled_bytes[:2], 'little')
+    item = int.from_bytes(unshuffled_bytes[2:4], 'little')
+    female = False
+    personality = int.from_bytes(unshuffled_bytes[0x10:0x14], 'little')
+    if dexnr in gender_lut:
+        female = personality % 256 < gender_lut[dexnr]
+    lvl = int(decrypted_battle_stats[4])
+    met_location = int.from_bytes(unshuffled_bytes[0xD2:0xD4], 'little')
+    nickname = unshuffled_bytes[0x38:0x4e].decode('utf-8').split('\u0000\u0000')[0].replace('\u0000', '')
+    # TODO
+    form = ''
+    return Pokemon(dexnr, shiny_value < 9, female, item=item, form=form, lvl=lvl, nickname=nickname, route=met_location)
+
+
+def team(data, gen, edition=None):
     length = len(data) // 6
     liste = []
-    gen = edition // 10
+
     if gen == 1:
         newdata = b''
         for i in range(6):
             newdata += data[i * 44:i * 44 + 44] + data[i * 11 + 264:11 + i * 11 + 264]
+        data = newdata
         for i in range(6):
-            liste.append(pokemon1(newdata[i * length: (i + 1) * length]))
+            liste.append(pokemon1(data[i * length: (i + 1) * length]))
     elif gen == 2:
         newdata = b''
         for i in range(6):
             newdata += data[i * 48:i * 48 + 48] + data[i * 11 + 288:11 + i * 11 + 288] + data[i + 354:i + 355]
+        data = newdata
         for i in range(6):
-            liste.append(pokemon2(newdata[i * length: (i + 1) * length]))
+            liste.append(pokemon2(data[i * length: (i + 1) * length]))
     elif gen == 3:
         for i in range(6):
             liste.append(pokemon3(data[i * length: (i + 1) * length], edition))
@@ -240,10 +263,8 @@ def team(data, edition):
     elif gen == 5:
         for i in range(6):
             liste.append(pokemon45(data[i * length: (i + 1) * length], 5))
-    if len(data) % 6 == 1:
-        liste.append(data[-1])
     else:
-        liste.append(int.from_bytes(data[-2:], 'little'))
-    liste.append(edition)
+        for i in range(6):
+            liste.append(pokemon67(data[i * length: (i + 1) * length]))
 
     return liste

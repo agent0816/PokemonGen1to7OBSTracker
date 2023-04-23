@@ -1,8 +1,9 @@
 import yaml
+from typing import Literal
 
 class Pokemon:
     def __init__(self, dexnr: int, shiny: bool = False, female = False, form = '', **kwargs):
-        self.dexnr: int = dexnr
+        self.dexnr: int | Literal['egg'] = dexnr
         self.nickname: str = ''
         self.nickname: str = kwargs.get('nickname') #type:ignore
         self.lvl = kwargs.get('lvl')

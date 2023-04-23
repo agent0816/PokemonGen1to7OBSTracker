@@ -47,7 +47,7 @@ def pokemon2(data):
         dexnr = 'egg'
         form = ''
 
-    return Pokemon(dexnr, False, lvl=lvl, form=form, nickname=nickname, item=item)
+    return Pokemon(dexnr, False, lvl=lvl, form=form, nickname=nickname, item=item) # type: ignore
 
 
 def pokemon3(data, edition):
@@ -96,7 +96,7 @@ def pokemon3(data, edition):
             nickname += gen3charset[char]
         if char == 0xFF:
             break
-    return Pokemon(species, not (key % 0x10000 ^ key >> 16) > 8, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location)
+    return Pokemon(species, not (key % 0x10000 ^ key >> 16) > 8, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location) # type: ignore
 
 
 def decryptpokemon(data, gen):
@@ -180,31 +180,31 @@ def pokemon45(data, gen):
     if dexnr == 201:
         form = unown[form]
     if dexnr in [412, 413]:
-        form = burmy[form]
+        form = burmy[form] # type: ignore
     if dexnr in [422, 423]:
-        form = shellos[form]
+        form = shellos[form] # type: ignore
     if dexnr == 479:
-        form = rotom[form]
+        form = rotom[form] # type: ignore
     if dexnr == 487:
-        form = giratina[form]
+        form = giratina[form] # type: ignore
     if dexnr == 492:
-        form = shaymin[form]
+        form = shaymin[form] # type: ignore
     if dexnr == 493:
-        form = arceus[form]
+        form = arceus[form] # type: ignore
     if dexnr == 386:
-        form = deoxys[form]
+        form = deoxys[form] # type: ignore
     if dexnr in [585, 586]:
-        form = deerling[form]
+        form = deerling[form] # type: ignore
     if dexnr == 550:
-        form = basculin[form]
+        form = basculin[form] # type: ignore
     if dexnr in [641, 642, 645]:
-        form = boreos[form]
+        form = boreos[form] # type: ignore
     if dexnr == 647:
-        form = keldeo[form]
+        form = keldeo[form] # type: ignore
     if dexnr == 646:
-        form = kyurem[form]
+        form = kyurem[form] # type: ignore
     if dexnr == 649:
-        form = genesect[form]
+        form = genesect[form] # type: ignore
     if isinstance(form, int):
         form = ''
     if dexnr not in range(650):
@@ -216,7 +216,7 @@ def pokemon45(data, gen):
         else:
             form = ''
         dexnr = 'egg'
-    return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location)
+    return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location) # type: ignore
 
 
 def pokemon67(data):

@@ -235,7 +235,7 @@ def pokemon67(data):
     return Pokemon(dexnr, shiny_value < 9, female, item=item, form=form, lvl=lvl, nickname=nickname, route=met_location)
 
 
-def team(data, gen, edition=None):
+def team(data, gen):
     length = len(data) // 6
     liste = []
 
@@ -255,7 +255,7 @@ def team(data, gen, edition=None):
             liste.append(pokemon2(data[i * length: (i + 1) * length]))
     elif gen == 3:
         for i in range(6):
-            liste.append(pokemon3(data[i * length: (i + 1) * length], edition))
+            liste.append(pokemon3(data[i * length: (i + 1) * length], 3))
     elif gen == 4:
         for i in range(6):
             liste.append(pokemon45(data[i * length: (i + 1) * length], 4))

@@ -7,9 +7,12 @@ import subprocess
 import os
 from pathlib import Path
 import logging
+import traceback
 
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.FileHandler('logs/munchlax.log', 'w'))
 logger.addHandler(logging.StreamHandler(sys.stdout))
+logger.setLevel(logging.DEBUG)
 ws = None
 bizServer = None
 unsorted_teams = {}
@@ -269,12 +272,17 @@ async def connect_client(ip, port):
                     old_team = teams[player]
                     for i in range(6):
                         if team[i] != old_team[i] and team[i].isLegit(editions[player]):
+                            logger.debug(f"{i=},{team[i]=}")
                             diff.append(i)
                     await changeSource(player, diff, team, editions[player])
                     await change_badges(player)
                 teams = new_teams.copy()
+        except asyncio.CancelledError as async_err:
+            logger.error(f"async-Fehler: {async_err}")
+            break
         except Exception as err:
-            logger.error(err)
+            err_type, err_value, err_traceback = sys.exc_info()
+            logger.error(f"connect_client:\n{err_type}\n{err_value}\n{traceback.extract_tb(err_traceback)}")
             break
         
 

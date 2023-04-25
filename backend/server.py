@@ -55,7 +55,7 @@ async def handle_bizhawk(reader, e, p):
             return 1321
 
     def update_teams(team):
-        team = pokedecoder.team(team, edition)
+        team = pokedecoder.team(team, edition // 10)
         if player in teams:
             if teams[player] == team:
                 return

@@ -47,6 +47,6 @@ class Pokemon:
             item = len(yaml.safe_load(open(f'backend/data/items{edition // 10}.yml')))
         else:
             item = 0
-        if self.nickname == '' and self.lvl not in range(101) and self.item not in range(item + 1):
-            return False
-        return True
+        if self.nickname != '' and self.lvl in range(101) and self.item in range(item + 1):
+            return True
+        return False

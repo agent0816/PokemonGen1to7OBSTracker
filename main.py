@@ -2,7 +2,7 @@ from pathlib import Path
 import initialize_tree as init
 init.init_logging_folder()
 import logging
-logging.basicConfig(level=logging.INFO, filename='logs/server.log',format='[%(asctime)s] %(levelname)s: %(message)s', filemode='w', encoding='utf-8')
+logging.basicConfig(level=logging.DEBUG, filename='logs/server.log',format='[%(asctime)s] %(levelname)s: %(message)s', filemode='w', encoding='utf-8')
 import frontend.app as FEApp
 import asyncio
 

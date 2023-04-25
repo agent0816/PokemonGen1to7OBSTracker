@@ -359,7 +359,10 @@ class RemoteSettings(Screen):
         global connectors
         if not connector:
             connector = asyncio.create_task(server.main(port=rem['server_port']))
-        asyncio.gather(*connectors)
+        try:
+            asyncio.gather(*connectors)
+        except asyncio.CancelledError as async_err:
+            logger.error(f"async_Fehler: {async_err}")
 
     @classmethod
     def connect_BClient(cls, *args):
@@ -368,7 +371,10 @@ class RemoteSettings(Screen):
         if not clientConnector:
             clientConnector = asyncio.create_task(client.connect_client("127.0.0.1", rem["server_port"]))
             connectors.append(clientConnector)
-        asyncio.gather(*connectors)
+        try:
+            asyncio.gather(*connectors)
+        except asyncio.CancelledError as async_err:
+            logger.error(f"async_Fehler: {async_err}")
 
     def connect_client(self, *args):
         global clientConnector
@@ -387,7 +393,10 @@ class RemoteSettings(Screen):
         if not clientConnector:
             clientConnector = asyncio.create_task(client.connect_client(rem["server_ip_adresse"], rem["client_port"]))
             connectors.append(clientConnector)
-        asyncio.gather(*connectors)
+        try:
+            asyncio.gather(*connectors)
+        except asyncio.CancelledError as async_err:
+            logger.error(f"async_Fehler: {async_err}")
 
 class PlayerSettings(Screen):
     def __init__(self, **kwargs):

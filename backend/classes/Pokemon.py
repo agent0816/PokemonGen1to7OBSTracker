@@ -44,9 +44,9 @@ class Pokemon:
     
     def isLegit(self, edition):
         if edition > 20:
-            item = len(yaml.safe_load(open(f'backend/data/items{edition // 10}.yml')))
+            items = yaml.safe_load(open(f'backend/data/items{edition // 10}.yml'))
         else:
-            item = 0
-        if self.nickname != '' and self.lvl in range(101) and self.item in range(item + 1):
+            items = {"-1":'null'}
+        if self.nickname != '' and self.lvl in range(101) and self.item in items.keys():
             return True
         return False

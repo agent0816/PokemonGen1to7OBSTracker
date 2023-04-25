@@ -55,7 +55,7 @@ async def handle_bizhawk(reader, e, p):
             return 1321
 
     def update_teams(team):
-        team = pokedecoder.team(team, edition // 10)
+        team = pokedecoder.team(team, edition)
         if player in teams:
             if teams[player] == team:
                 return
@@ -95,7 +95,6 @@ async def handle_munchlax(writer):
                 old_teams = teams.copy()
                 msg = pickle.dumps(teams)
                 logger.debug(teams)
-                logger.debug(int.to_bytes(len(msg), 3, 'big'))
                 writer.write(int.to_bytes(len(msg), 3, 'big'))
                 writer.write(msg)
                 await writer.drain()

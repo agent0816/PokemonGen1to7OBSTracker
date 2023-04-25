@@ -235,9 +235,10 @@ def pokemon67(data):
     return Pokemon(dexnr, shiny_value < 9, female, item=item, form=form, lvl=lvl, nickname=nickname, route=met_location)
 
 
-def team(data, gen):
+def team(data, edition):
     length = len(data) // 6
     liste = []
+    gen = edition // 10
 
     if gen == 1:
         newdata = b''
@@ -265,5 +266,11 @@ def team(data, gen):
     else:
         for i in range(6):
             liste.append(pokemon67(data[i * length: (i + 1) * length]))
+
+    if len(data) % 6 == 1:
+        liste.append(data[-1])
+    else:
+        liste.append(int.from_bytes(data[-2:], 'little'))
+    liste.append(edition)
 
     return liste

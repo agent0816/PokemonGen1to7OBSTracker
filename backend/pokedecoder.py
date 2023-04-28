@@ -75,11 +75,11 @@ def pokemon3(data, edition):
             form = species[3:]
             species = int(species[:3])
         if species == 386:
-            if edition == 'fire red':
+            if edition == 34:
                 form = '-attack'
-            if edition == 'leaf green':
+            if edition == 35:
                 form = '-defense'
-            if edition == 'emerald':
+            if edition == 33:
                 form = '-speed'
     if egg:
         form = ''
@@ -256,7 +256,7 @@ def team(data, edition):
             liste.append(pokemon2(data[i * length: (i + 1) * length]))
     elif gen == 3:
         for i in range(6):
-            liste.append(pokemon3(data[i * length: (i + 1) * length], 3))
+            liste.append(pokemon3(data[i * length: (i + 1) * length], edition))
     elif gen == 4:
         for i in range(6):
             liste.append(pokemon45(data[i * length: (i + 1) * length], 4))

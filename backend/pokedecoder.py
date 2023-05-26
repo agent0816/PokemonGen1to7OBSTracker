@@ -12,6 +12,39 @@ items3 = yaml.safe_load(open('backend/data/items3.yml'))
 items4 = yaml.safe_load(open('backend/data/items4.yml'))
 items5 = yaml.safe_load(open('backend/data/items5.yml'))
 
+def decryptpokemon(data, gen):
+    def prng(seed):
+        return (0x41C64E6D * seed + 0x6073) % 0x100000000
+    offset_lut = [[0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 3, 1, 2], [0, 2, 3, 1], [0, 3, 2, 1], [1, 0, 2, 3], [1, 0, 3, 2], [2, 0, 1, 3], [3, 0, 1, 2], [2, 0, 3, 1], [3, 0, 2, 1], [1, 2, 0, 3], [1, 3, 0, 2], [2, 1, 0, 3], [3, 1, 0, 2], [2, 3, 0, 1], [3, 2, 0, 1], [1, 2, 3, 0], [1, 3, 2, 0], [2, 1, 3, 0], [3, 1, 2, 0], [2, 3, 1, 0], [3, 2, 1, 0]]
+    personality_value = int.from_bytes(data[:4], 'little')
+    shift_value = ((personality_value & 0x3E000) >> 0xD) % 24
+    if gen == '45':
+        cutoff = 136
+        blocksize = 32
+        key = int.from_bytes(data[6:8], 'little')
+    else:
+        cutoff = 232
+        blocksize = 56
+        key = personality_value
+    encrypted_bytes = data[8:cutoff]
+    decrypted_bytes = b''
+    for i in range(len(encrypted_bytes) // 2):
+        key = prng(key)
+        decrypted_bytes += (int.from_bytes(encrypted_bytes[i * 2:i * 2 + 2], 'little') ^ (key >> 16)).to_bytes(2, 'little')
+    unshuffled_bytes = b''
+    for i in range(4):
+        unshuffled_bytes += decrypted_bytes[offset_lut[shift_value][i] * blocksize:offset_lut[shift_value][i] * blocksize + blocksize]
+    tid = int.from_bytes(unshuffled_bytes[4:6], 'little')
+    sid = int.from_bytes(unshuffled_bytes[6:8], 'little')
+    shiny_value = tid ^ sid ^ (personality_value >> 16) ^ (personality_value % 0x10000)
+    encrypted_battle_stats = data[cutoff:]
+    key = personality_value
+    decrypted_battle_stats = b''
+    for i in range(len(encrypted_battle_stats) // 2):
+        key = prng(key)
+        decrypted_battle_stats += (int.from_bytes(encrypted_battle_stats[i * 2:i * 2 + 2], 'little') ^ (key >> 16)).to_bytes(2, 'little')
+    return (unshuffled_bytes, decrypted_battle_stats, shiny_value, personality_value)
+
 
 def pokemon1(data):
     dexnr = data[0]
@@ -97,40 +130,6 @@ def pokemon3(data, edition):
         if char == 0xFF:
             break
     return Pokemon(species, not (key % 0x10000 ^ key >> 16) > 8, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location) # type: ignore
-
-
-def decryptpokemon(data, gen):
-    def prng(seed):
-        return (0x41C64E6D * seed + 0x6073) % 0x100000000
-    offset_lut = [[0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 3, 1, 2], [0, 2, 3, 1], [0, 3, 2, 1], [1, 0, 2, 3], [1, 0, 3, 2], [2, 0, 1, 3], [3, 0, 1, 2], [2, 0, 3, 1], [3, 0, 2, 1], [1, 2, 0, 3], [1, 3, 0, 2], [2, 1, 0, 3], [3, 1, 0, 2], [2, 3, 0, 1], [3, 2, 0, 1], [1, 2, 3, 0], [1, 3, 2, 0], [2, 1, 3, 0], [3, 1, 2, 0], [2, 3, 1, 0], [3, 2, 1, 0]]
-    personality_value = int.from_bytes(data[:4], 'little')
-    shift_value = ((personality_value & 0x3E000) >> 0xD) % 24
-    if gen == '45':
-        cutoff = 136
-        blocksize = 32
-        key = int.from_bytes(data[6:8], 'little')
-    else:
-        cutoff = 232
-        blocksize = 56
-        key = personality_value
-    encrypted_bytes = data[8:cutoff]
-    decrypted_bytes = b''
-    for i in range(len(encrypted_bytes) // 2):
-        key = prng(key)
-        decrypted_bytes += (int.from_bytes(encrypted_bytes[i * 2:i * 2 + 2], 'little') ^ (key >> 16)).to_bytes(2, 'little')
-    unshuffled_bytes = b''
-    for i in range(4):
-        unshuffled_bytes += decrypted_bytes[offset_lut[shift_value][i] * blocksize:offset_lut[shift_value][i] * blocksize + blocksize]
-    tid = int.from_bytes(unshuffled_bytes[4:6], 'little')
-    sid = int.from_bytes(unshuffled_bytes[6:8], 'little')
-    shiny_value = tid ^ sid ^ (personality_value >> 16) ^ (personality_value % 0x10000)
-    encrypted_battle_stats = data[cutoff:]
-    key = personality_value
-    decrypted_battle_stats = b''
-    for i in range(len(encrypted_battle_stats) // 2):
-        key = prng(key)
-        decrypted_battle_stats += (int.from_bytes(encrypted_battle_stats[i * 2:i * 2 + 2], 'little') ^ (key >> 16)).to_bytes(2, 'little')
-    return (unshuffled_bytes, decrypted_battle_stats, shiny_value, personality_value)
 
 
 def pokemon45(data, gen):

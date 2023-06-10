@@ -162,56 +162,76 @@ end
 local msg = ''
 local lastTime = os.time()
 local currTime = 0
+local lastTeam = {}
+local fluctcount = 0
+
+local function areTablesEqual(t1, t2)
+    for i = 1, #t1 do
+        if t1[i] ~= t2[i] then
+            return false
+        end
+    end
+
+  return true
+end
 
 while true do
-    currTime = os.time()
-    if lastTime + INTERVAL <= currTime then
-        lastTime = currTime
-        msg = {gameversion, PLAYER, unpack(memory.read_bytes_as_array(pointer, length, domain))}
-        if gameversion < 30 then
-            for i=0,65 do
-                msg[#msg + 1] = memory.readbyte(namepointer + i, domain)
-            end
-            if gameversion > 20 then
-                for i=0,5 do
-                    msg[#msg + 1] = memory.readbyte(eggpointer + i, domain)
-                end
-            end
-        end
+    team = memory.read_bytes_as_array(pointer, length, domain)
+    if areTablesEqual(team, lastTeam) then
+        fluctcount = fluctcount + 1
+    else
+        fluctcount = 0
+        lastTeam = team
+    end
 
-        if gameversion < 30 then
-            msg[#msg + 1] = memory.readbyte(badgepointer, domain)
-            if gameversion > 20 then
-                msg[#msg + 1] = memory.readbyte(badgepointer + 1, domain)
+    msg = {gameversion, PLAYER, unpack(team)}
+    if gameversion < 30 then
+        for i=0,65 do
+            msg[#msg + 1] = memory.readbyte(namepointer + i, domain)
+        end
+        if gameversion > 20 then
+            for i=0,5 do
+                msg[#msg + 1] = memory.readbyte(eggpointer + i, domain)
             end
         end
-        if gameversion > 30 and gameversion < 40 then
-            if gameversion < 33 then 
-                badges = memory.read_u16_le(badgepointer, domain)
-                badges = bit.rshift(badges, 7)
-                msg[#msg + 1] = bit.band(badges, 0xFFFFFFFF)
-            elseif gameversion == 33 then
-                badges = memory.read_u32_le(badgepointer, domain) + 0x137C
-                badges = memory.read_u16_le(badges, domain)
-                badges = bit.rshift(badges, 7)
-                msg[#msg + 1] = bit.band(badges, 0xFFFFFFFF)
-            elseif gameversion > 33 then
-                badges = memory.read_u32_le(badgepointer, domain) + 0xFE4
-                badges = memory.readbyte(badges, domain)
-                msg[#msg + 1] = badges
-            end
+    end
+    -- Orden
+    if gameversion < 30 then
+        msg[#msg + 1] = memory.readbyte(badgepointer, domain)
+        if gameversion > 20 then
+            msg[#msg + 1] = memory.readbyte(badgepointer + 1, domain)
         end
-        if gameversion > 40 and gameversion < 50 then
-            badges = bit.band(memory.read_u32_le(badgepointer, domain), 0xFFFFFF) + 0x20
-            badges = bit.band(memory.read_u32_le(badges, domain), 0xFFFFFF) + badgeoffset
-            msg[#msg + 1] = memory.readbyte(badges, domain)
-            if gameversion > 43 then
-                msg[#msg + 1] = memory.readbyte(badges + 0x5, domain)
-            end
+    end
+    if gameversion > 30 and gameversion < 40 then
+        if gameversion < 33 then 
+            badges = memory.read_u16_le(badgepointer, domain)
+            badges = bit.rshift(badges, 7)
+            msg[#msg + 1] = bit.band(badges, 0xFFFFFFFF)
+        elseif gameversion == 33 then
+            badges = memory.read_u32_le(badgepointer, domain) + 0x137C
+            badges = memory.read_u16_le(badges, domain)
+            badges = bit.rshift(badges, 7)
+            msg[#msg + 1] = bit.band(badges, 0xFFFFFFFF)
+        elseif gameversion > 33 then
+            badges = memory.read_u32_le(badgepointer, domain) + 0xFE4
+            badges = memory.readbyte(badges, domain)
+            msg[#msg + 1] = badges
         end
-        if gameversion > 50 then
-            msg[#msg + 1] = memory.readbyte(badgepointer, 'Main RAM')
+    end
+    if gameversion > 40 and gameversion < 50 then
+        badges = bit.band(memory.read_u32_le(badgepointer, domain), 0xFFFFFF) + 0x20
+        badges = bit.band(memory.read_u32_le(badges, domain), 0xFFFFFF) + badgeoffset
+        msg[#msg + 1] = memory.readbyte(badges, domain)
+        if gameversion > 43 then
+            msg[#msg + 1] = memory.readbyte(badges + 0x5, domain)
         end
+    end
+    if gameversion > 50 then
+        msg[#msg + 1] = memory.readbyte(badgepointer, 'Main RAM')
+    end
+    currTime = os.time()
+    if lastTime + INTERVAL <= currTime and fluctcount > 3 then
+        lastTime = currTime
         comm.socketServerSendBytes(msg)
         
     end

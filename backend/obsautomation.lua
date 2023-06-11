@@ -184,7 +184,7 @@ while true do
         lastTeam = team
     end
 
-    msg = {gameversion, PLAYER, unpack(team)}
+    msg = {gameversion, PLAYER, table.unpack(team)}
     if gameversion < 30 then
         for i=0,65 do
             msg[#msg + 1] = memory.readbyte(namepointer + i, domain)
@@ -206,12 +206,12 @@ while true do
         if gameversion < 33 then 
             badges = memory.read_u16_le(badgepointer, domain)
             badges = bit.rshift(badges, 7)
-            msg[#msg + 1] = bit.band(badges, 0xFFFFFFFF)
+            msg[#msg + 1] = badges & 0xFFFFFFFF
         elseif gameversion == 33 then
             badges = memory.read_u32_le(badgepointer, domain) + 0x137C
             badges = memory.read_u16_le(badges, domain)
             badges = bit.rshift(badges, 7)
-            msg[#msg + 1] = bit.band(badges, 0xFFFFFFFF)
+            msg[#msg + 1] = badges & 0xFFFFFFFF
         elseif gameversion > 33 then
             badges = memory.read_u32_le(badgepointer, domain) + 0xFE4
             badges = memory.readbyte(badges, domain)
@@ -219,8 +219,8 @@ while true do
         end
     end
     if gameversion > 40 and gameversion < 50 then
-        badges = bit.band(memory.read_u32_le(badgepointer, domain), 0xFFFFFF) + 0x20
-        badges = bit.band(memory.read_u32_le(badges, domain), 0xFFFFFF) + badgeoffset
+        badges = (memory.read_u32_le(badgepointer, domain) & 0xFFFFFF) + 0x20
+        badges = (memory.read_u32_le(badges, domain) & 0xFFFFFF) + badgeoffset
         msg[#msg + 1] = memory.readbyte(badges, domain)
         if gameversion > 43 then
             msg[#msg + 1] = memory.readbyte(badges + 0x5, domain)

@@ -51,7 +51,7 @@ end
 function logging.log(level, message)
     if levels[level] >= levels[current_level] then
         with_file(log_file_path, "a", function(file)
-            file:write(os.date(timestamp_format) .. " [" .. level .. "]: " .. message .. "\n")
+            file:write("[" .. os.date(timestamp_format) .. "] " .. level .. ": " .. message .. "\n")
         end)
     end
 end

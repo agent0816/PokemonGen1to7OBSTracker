@@ -341,6 +341,7 @@ class RemoteSettings(Screen):
         Clipboard.copy(result)
 
     def save_changes(self, *args):
+        rem['start_server'] = self.ids['main_Yes'].state == "down"
         try:
             if rem['start_server']:
                 rem['client_port'] = self.ids['port_client'].text
@@ -349,7 +350,6 @@ class RemoteSettings(Screen):
                 rem['server_port'] = self.ids['port_server'].text
         except KeyError as err:
             pass
-        rem['start_server'] = self.ids['main_Yes'].state == "down"
 
         with open(f"{configsave}remote.yml", 'w') as file:
             yaml.dump(rem, file)

@@ -6,18 +6,17 @@ import yaml
 import asyncio
 from kivy.app import App
 from kivy.core.clipboard import Clipboard
-from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.gridlayout import GridLayout
-from kivy.uix.textinput import TextInput
 from kivy.config import Config
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.screenmanager import FadeTransition
 from kivy.core.window import Window
+import frontend.UIFactory as UI
 import backend.server as server
 import backend.munchlax as client
 import tkinter.filedialog as fd
@@ -92,29 +91,29 @@ class SpriteSettings(Screen):
             self.ids.game_sprites.disabled = False
         
         if self.ids["items_check"].state == 'normal':
-            self.ids["items_path"].opacity = 0
-            self.ids["items_path"].disabled = True
-            self.ids["items_browse"].opacity = 0
-            self.ids["items_browse"].disabled = True
+            self.hide_widget("items_path")
+            self.hide_widget("items_browse")
         else:
-            self.ids["items_path"].opacity = 1
-            self.ids["items_path"].disabled = False
-            self.ids["items_browse"].opacity = 1
-            self.ids["items_browse"].disabled = False
+            self.show_widget("items_path")
+            self.show_widget("items_browse")
 
         if self.ids["badges_check"].state == 'normal':
-            self.ids["badges_path"].opacity = 0
-            self.ids["badges_path"].disabled = True
-            self.ids["badges_browse"].opacity = 0
-            self.ids["badges_browse"].disabled = True
+            self.hide_widget("badges_path")
+            self.hide_widget("badges_browse")
         else:
-            self.ids["badges_path"].opacity = 1
-            self.ids["badges_path"].disabled = False
-            self.ids["badges_browse"].opacity = 1
-            self.ids["badges_browse"].disabled = False
+            self.show_widget("badges_path")
+            self.show_widget("badges_browse")
         
         if not initializing:
             self.save_changes()
+
+    def show_widget(self, widgetname):
+        self.ids[widgetname].opacity = 1
+        self.ids[widgetname].disabled = False
+
+    def hide_widget(self, widgetname):
+        self.ids[widgetname].opacity = 0
+        self.ids[widgetname].disabled = True
 
     def save_changes(self):
         sp['common_path'] = self.ids.common_path.text
@@ -200,29 +199,9 @@ class OBSSettings(Screen):
         super().__init__(**kwargs)
         grid: GridLayout = self.ids["obs_settings"]
 
-        grid.add_widget(Label(text='Passwort\nWebsocket', size_hint=(.2,1)))
-        anchorPasswort=AnchorLayout(anchor_x='left')
-        grid.add_widget(anchorPasswort)
-        passwortInput = TextInput(size_hint=(1,None), size=("20dp","40dp"), password=True, multiline=False, write_tab=False)
-        passwortInput.bind(on_text_validate=self.save_changes) #type: ignore
-        self.ids["obs_password"] = weakref.proxy(passwortInput)
-        anchorPasswort.add_widget(passwortInput)
-
-        grid.add_widget(Label(text='IP-Adresse\nWebsocket', size_hint=(.2,1)))
-        anchorHost=AnchorLayout(anchor_x='left')
-        grid.add_widget(anchorHost)
-        hostInput = TextInput(size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
-        hostInput.bind(on_text_validate=self.save_changes) #type: ignore
-        self.ids["obs_host"] = weakref.proxy(hostInput)
-        anchorHost.add_widget(hostInput)
-
-        grid.add_widget(Label(text='Port des\nWebsocket',size_hint=(.2,1)))
-        anchorPort=AnchorLayout(anchor_x='left')
-        grid.add_widget(anchorPort)
-        portInput = TextInput(size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
-        portInput.bind(on_text_validate=self.save_changes) #type: ignore
-        self.ids["obs_port"] = weakref.proxy(portInput)
-        anchorPort.add_widget(portInput)
+        UI.create_label_and_Textbox(grid, self.ids, "obs_password", label_text = 'Passwort\nWebsocket', text_validate_function=self.save_changes, password=True)
+        UI.create_label_and_Textbox(grid, self.ids, "obs_host", label_text = 'IP-Adresse\nWebsocket', text_validate_function=self.save_changes)
+        UI.create_label_and_Textbox(grid, self.ids, "obs_port", label_text = 'Port des\nWebsocket', text_validate_function=self.save_changes)
 
         self.ids["obs_password"].text = obs['password']
         self.ids["obs_host"].text = obs['host']
@@ -282,18 +261,13 @@ class RemoteSettings(Screen):
         grid.add_widget(connectionLabel)
         serverGrid = GridLayout(cols=2)
         self.ids["server_grid"] = weakref.proxy(serverGrid)
-        serverGrid.add_widget(Label(text='IP-Adresse:', size_hint=(.3,1)))
-        anchorIPText = AnchorLayout(anchor_x='left')
-        IPText = TextInput(text=rem[f'server_ip_adresse'],on_text_validate=self.save_changes,size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
-        self.ids['ip_server'] = weakref.proxy(IPText)
-        anchorIPText.add_widget(IPText)
-        serverGrid.add_widget(anchorIPText)
-        serverGrid.add_widget(Label(text='Port:', size_hint=(.3,1)))
-        anchorPortText = AnchorLayout(anchor_x='left')
-        PortText = TextInput(text=rem[f'client_port'],on_text_validate=self.save_changes,size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
-        self.ids['port_client'] = weakref.proxy(PortText)
-        anchorPortText.add_widget(PortText)
-        serverGrid.add_widget(anchorPortText)
+
+        UI.create_label_and_Textbox(serverGrid, self.ids, "ip_server", label_text='IP-Adresse:', label_size_hint=(.3,1), text_validate_function=self.save_changes)
+        self.ids["ip_server"].text = rem[f'server_ip_adresse']
+
+        UI.create_label_and_Textbox(serverGrid, self.ids, "port_client", label_text='Port:', label_size_hint=(.3,1), text_validate_function=self.save_changes)
+        self.ids["port_client"].text = rem[f'client_port']
+
         grid.add_widget(serverGrid)
 
         connectClient = Button(text="Verbinde Client", size_hint=(.5,.2), pos_hint={"center_x": .5}, on_press=self.connect_client)
@@ -310,12 +284,10 @@ class RemoteSettings(Screen):
         grid = self.ids["remote_settings"]
         serverGrid = GridLayout(cols=2)
         self.ids["client_grid"] = weakref.proxy(serverGrid)
-        serverGrid.add_widget(Label(text='Port:', size_hint=(.3,1)))
-        anchorPortText = AnchorLayout(anchor_x='left')
-        PortText = TextInput(text=rem[f'server_port'],on_text_validate=self.save_changes,size_hint=(1,None), size=("20dp","40dp"), multiline=False, write_tab=False)
-        self.ids['port_server'] = weakref.proxy(PortText)
-        anchorPortText.add_widget(PortText)
-        serverGrid.add_widget(anchorPortText)
+
+        UI.create_label_and_Textbox(serverGrid, self.ids, "port_server", label_size_hint=(.3,1), label_text='Port:', text_validate_function=self.save_changes)
+        self.ids['port_server'].text = rem[f'server_port']
+
         grid.add_widget(serverGrid)
 
         startServer = Button(text="Start Server", on_press=self.launchserver)
@@ -454,21 +426,16 @@ class PlayerSettings(Screen):
             idRemoteLabel = f"remote_label_{i}"
             idOBS = f"obs_player_{i}"
             idOBSLabel = f"obs_label_{i}"
-            checkRemote = CheckBox(on_press=self.toggle_obs,active=pl[f"remote_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
-            checkRemoteLabel = Label(text="remote", pos_hint={"center_y": .5}, size_hint=[None, None], size=["60dp", "20dp"])
-            checkOBS = CheckBox(on_press=self.save_changes,active=pl[f"obs_{i}"], disabled=not pl[f"remote_{i}"], pos_hint={"center_y": .5}, size_hint=[None, None], size=["20dp", "20dp"])
-            checkOBSLabel = Label(text="OBS", pos_hint={"center_y": .5}, size_hint=[None, None], size=["40dp", "20dp"])
 
-            self.ids[idBox].add_widget(checkRemote)
-            self.ids[idRemote] = weakref.proxy(checkRemote)
-            self.ids[idBox].add_widget(checkRemoteLabel)
-            self.ids[idRemoteLabel] = weakref.proxy(checkRemoteLabel)
-            self.ids[idBox].add_widget(checkOBS)
-            self.ids[idOBS] = weakref.proxy(checkOBS)
-            checkRemote.ids[idOBS] = weakref.proxy(checkOBS)
-            self.ids[idBox].add_widget(checkOBSLabel)
-            self.ids[idOBSLabel] = weakref.proxy(checkOBSLabel)
-            checkRemote.ids[idOBSLabel] = weakref.proxy(checkOBSLabel)
+            UI.create_label_and_checkboxes(box, self.ids, 
+                                            checkbox_id_name=idRemote,checkbox_on_press=self.toggle_obs, checkbox_active=pl[f"remote_{i}"],
+                                            label_id_name=idRemoteLabel, label_text="remote")
+
+            UI.create_label_and_checkboxes(box, self.ids, 
+                                            checkbox_id_name=idOBS,checkbox_on_press=self.toggle_obs, checkbox_active=pl[f"obs_{i}"], checkbox_disabled=not pl[f"remote_{i}"],
+                                            label_id_name=idOBSLabel, label_text="OBS", label_size=["40dp", "20dp"])
+            self.ids[idRemote].ids[idOBS] = self.ids[idOBS]
+            self.ids[idRemoteLabel].ids[idOBSLabel] = self.ids[idOBSLabel]
 
     def toggle_obs(self, widgets):
         for obs in widgets.ids:

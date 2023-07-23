@@ -6,12 +6,14 @@ import yaml
 import asyncio
 from kivy.app import App
 from kivy.core.clipboard import Clipboard
+from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.gridlayout import GridLayout
 from kivy.config import Config
 from kivy.uix.label import Label
+from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.screenmanager import Screen
 from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.screenmanager import FadeTransition
@@ -45,11 +47,65 @@ class Screens(ScreenManager):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
+        self.add_widget(MainMenu())
+        self.add_widget(SettingsMenu())
+        self.current = "MainMenu"
 
 class MainMenu(Screen):
-    pass
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.name = "MainMenu"
+        frame = BoxLayout(orientation='vertical')
+        control_frame = BoxLayout(orientation='horizontal')
 
-class SettingsMenu(Screen):   
+        logo_settings = BoxLayout(orientation='vertical', size_hint=(.3,1))
+        logo = Label(text='Logo')
+        logo_settings.add_widget(logo)
+
+        settings = Button(text='Einstellungen', on_press=self.switch_to_settings)
+        logo_settings.add_widget(settings)
+        control_frame.add_widget(logo_settings)
+
+        connections = BoxLayout(orientation='vertical', size_hint=(.7,1))
+        server_client = Button(text='Server/Client')
+        connections.add_widget(server_client)
+        obs_connect = Button(text='OBS verbinden etc.')
+        connections.add_widget(obs_connect)
+        emulator = Button(text='Emulatorstarten etc.')
+        connections.add_widget(emulator)
+
+        control_frame.add_widget(connections)
+
+        showing_frame = BoxLayout(orientation='horizontal')
+        sort_layout = BoxLayout(orientation='vertical', spacing="20dp", padding=("5dp",0))
+        sorts = ("DexNr.", "Team", "Level", "Route")
+        for name in sorts:
+            toggler = ToggleButton(text=name, group="sort", allow_no_selection=False)
+            sort_layout.add_widget(toggler)
+        showing_frame.add_widget(sort_layout)
+
+        checkmarks = (("Orden anzeigen", "badge_check"),("Namen anzeigen", "name_check"),("Items anziegen", "items_check"),("animierte Sprites", "animated_check"))
+        show_layout = GridLayout(cols=2)
+        for checkmark in checkmarks:
+            anchor = AnchorLayout(anchor_x='left')
+            checkbox = CheckBox(size_hint=(None, None), size=("20dp","20dp"))
+            self.ids[checkmark[1]] = weakref.proxy(checkbox)
+
+            anchor.add_widget(checkbox)
+            show_layout.add_widget(anchor)
+
+            label = Label(text=checkmark[0])
+            show_layout.add_widget(label)
+
+        showing_frame.add_widget(show_layout)
+        frame.add_widget(control_frame)
+        frame.add_widget(showing_frame)
+        self.add_widget(frame)
+
+    def switch_to_settings(self, instance):
+        self.manager.current = "SettingsMenu"
+
+class SettingsMenu(Screen):
     def changesettingscreen(self, settings):
         if len(self.children[0].children) > 1:
             curScreen = self.children[0].children[0]

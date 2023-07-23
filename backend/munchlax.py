@@ -10,9 +10,18 @@ import logging
 import traceback
 
 logger = logging.getLogger(__name__)
-logger.addHandler(logging.FileHandler('logs/munchlax.log', 'w'))
-logger.addHandler(logging.StreamHandler(sys.stdout))
+logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+
+file_handler = logging.FileHandler('logs/munchlax.log', 'w')
+file_handler.setFormatter(logging_formatter)
+logger.addHandler(file_handler)
+
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setFormatter(logging_formatter)
+logger.addHandler(stream_handler)
+
 logger.setLevel(logging.DEBUG)
+
 ws = None
 bizServer = None
 unsorted_teams = {}
@@ -251,10 +260,11 @@ async def connect_client(ip, port):
             length = int.from_bytes(await reader.read(3), 'big')
             msg = await reader.read(length)
             unsorted_teams = pickle.loads(msg)
-            logger.info(unsorted_teams)
+            # logger.info(unsorted_teams)
             new_teams = unsorted_teams.copy()
             for player in new_teams:
                 team = new_teams[player]
+                logger.info(team)
                 new_teams[player] = sort(team[:6], conf['order'])
                 if player not in badges or unsorted_teams[player][6] != badges[player]:
                     badges[player] = unsorted_teams[player][6]

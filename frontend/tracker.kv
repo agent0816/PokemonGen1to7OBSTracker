@@ -225,158 +225,167 @@ Screens:
                 allow_no_selection: False
 
 <SpritesGames>:
-    GridLayout:
-        cols: 2
-        Label:
-            text: "rot/blau"
-            size_hint: .4, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: gen1_red
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: "gelb"
-            size_hint: .4, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: gen1_yellow
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: "silber"
-            size_hint: .4, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: gen2_silver
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: "gold"
-            size_hint: .4, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: gen2_gold
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: "kristall"
-            size_hint: .4, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: gen2_crystal
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: "rubin/saphir"
-            size_hint: .4, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: gen3_ruby
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: "smaragd"
-            size_hint: .4, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: gen3_emerald
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: "feuerrot/blattgrün"
-            size_hint: .4, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: gen3_firered
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: "diamant/perl"
-            size_hint: .4, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: gen4_diamond
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: "platin"
-            size_hint: .4, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: gen4_platinum
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: "herzgold/seelensilber"
-            size_hint: .4, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: gen4_heartgold
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            text: "schwarz/weiß (s2/w2)"
-            size_hint: .4, 1
-        AnchorLayout:
-            anchor_x: 'left'
-            TextInput:
-                id: gen5_black
-                size_hint: 1, None
-                size: "20dp", "30dp"
-                multiline: False
-                write_tab: False
-                on_text_validate: root.save_changes()
-        Label:
-            size_hint: .4, 1
-        Button:
-            text: "Zurück"
-            size_hint: .75, 1
-            on_press: root.parent.parent.changesettingscreen('sprite')
+    BoxLayout:
+        orientation: 'vertical'
+        ScrollView:
+            GridLayout:
+                cols: 2
+                size_hint_y: None
+                height: self.minimum_height
+                Label:
+                    text: "rot/blau"
+                    size_hint: .4, None
+                    size: "20dp", "30dp"
+                AnchorLayout:
+                    anchor_x: 'left'
+                    TextInput:
+                        id: gen1_red
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Label:
+                    text: "gelb"
+                    size_hint: .4, 1
+                AnchorLayout:
+                    anchor_x: 'left'
+                    TextInput:
+                        id: gen1_yellow
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Label:
+                    text: "silber"
+                    size_hint: .4, 1
+                AnchorLayout:
+                    anchor_x: 'left'
+                    TextInput:
+                        id: gen2_silver
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Label:
+                    text: "gold"
+                    size_hint: .4, 1
+                AnchorLayout:
+                    anchor_x: 'left'
+                    TextInput:
+                        id: gen2_gold
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Label:
+                    text: "kristall"
+                    size_hint: .4, 1
+                AnchorLayout:
+                    anchor_x: 'left'
+                    TextInput:
+                        id: gen2_crystal
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Label:
+                    text: "rubin/saphir"
+                    size_hint: .4, 1
+                AnchorLayout:
+                    anchor_x: 'left'
+                    TextInput:
+                        id: gen3_ruby
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Label:
+                    text: "smaragd"
+                    size_hint: .4, 1
+                AnchorLayout:
+                    anchor_x: 'left'
+                    TextInput:
+                        id: gen3_emerald
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Label:
+                    text: "feuerrot/blattgrün"
+                    size_hint: .4, 1
+                AnchorLayout:
+                    anchor_x: 'left'
+                    TextInput:
+                        id: gen3_firered
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Label:
+                    text: "diamant/perl"
+                    size_hint: .4, 1
+                AnchorLayout:
+                    anchor_x: 'left'
+                    TextInput:
+                        id: gen4_diamond
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Label:
+                    text: "platin"
+                    size_hint: .4, 1
+                AnchorLayout:
+                    anchor_x: 'left'
+                    TextInput:
+                        id: gen4_platinum
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Label:
+                    text: "herzgold/seelensilber"
+                    size_hint: .4, 1
+                AnchorLayout:
+                    anchor_x: 'left'
+                    TextInput:
+                        id: gen4_heartgold
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+                Label:
+                    text: "schwarz/weiß (s2/w2)"
+                    size_hint: .4, 1
+                AnchorLayout:
+                    anchor_x: 'left'
+                    TextInput:
+                        id: gen5_black
+                        size_hint: 1, None
+                        size: "20dp", "30dp"
+                        multiline: False
+                        write_tab: False
+                        on_text_validate: root.save_changes()
+        GridLayout:
+            cols: 2
+            size_hint: 1, .1
+            Label:
+                size_hint: .4, 1
+            Button:
+                text: "Zurück"
+                size_hint: .75, 1
+                on_press: root.parent.parent.changesettingscreen('sprite')
 
 <BizhawkSettings>:
     BoxLayout:

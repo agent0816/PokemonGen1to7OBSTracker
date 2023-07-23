@@ -23,7 +23,17 @@ import tkinter.filedialog as fd
 import logging
 
 logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler(sys.stdout))
+logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+
+file_handler = logging.FileHandler('logs/frontend.log', 'w')
+file_handler.setFormatter(logging_formatter)
+logger.addHandler(file_handler)
+
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setFormatter(logging_formatter)
+logger.addHandler(stream_handler)
+
+
 Config.read('gui.ini')
 connector = None
 OBSconnector = None

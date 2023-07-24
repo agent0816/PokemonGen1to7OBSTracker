@@ -78,34 +78,96 @@ class MainMenu(Screen):
 
         showing_frame = BoxLayout(orientation='horizontal')
         sort_layout = BoxLayout(orientation='vertical', spacing="20dp", padding=("5dp",0))
-        sorts = ("DexNr.", "Team", "Level", "Route")
-        for name in sorts:
-            toggler = ToggleButton(text=name, group="sort", allow_no_selection=False)
+
+        ueberschrift_sortierung = Label(text="Sortierung",halign='left', size_hint_x=None, width=sort_layout.width)
+        sort_layout.add_widget(ueberschrift_sortierung)
+
+        sorts = (("DexNr.","dexnr"), ("Team", "team"), ("Level","lvl"), ("Route","route"))
+        for text, id in sorts:
+            toggler = ToggleButton(text=text, group="sort", allow_no_selection=False, on_press=self.save_changes)
+            self.ids[id] = weakref.proxy(toggler)
             sort_layout.add_widget(toggler)
+        
         showing_frame.add_widget(sort_layout)
 
-        checkmarks = (("Orden anzeigen", "badge_check"),("Namen anzeigen", "name_check"),("Items anziegen", "items_check"),("animierte Sprites", "animated_check"))
+        checkmarks = (("Orden anzeigen", "badges_check"),("Namen anzeigen", "names_check"),("Items anziegen", "items_check"),("animierte Sprites", "animated_check"))
         show_layout = GridLayout(cols=2)
-        for checkmark in checkmarks:
-            anchor = AnchorLayout(anchor_x='left')
-            checkbox = CheckBox(size_hint=(None, None), size=("20dp","20dp"))
-            self.ids[checkmark[1]] = weakref.proxy(checkbox)
+        for text, id in checkmarks:
+            anchor = AnchorLayout(anchor_x='right', size_hint_x=0.5)
+            checkbox = CheckBox(size_hint=(None, None), size=("20dp","20dp"), on_press=self.save_changes)
+            self.ids[id] = weakref.proxy(checkbox)
 
             anchor.add_widget(checkbox)
             show_layout.add_widget(anchor)
 
-            label = Label(text=checkmark[0])
+            label = Label(text=text)
             show_layout.add_widget(label)
 
         showing_frame.add_widget(show_layout)
         frame.add_widget(control_frame)
         frame.add_widget(showing_frame)
         self.add_widget(frame)
+        
+        global sp
+        self.init_config(sp)
+
+    def init_config(self, sp):
+        self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'
+        self.ids.names_check.state = 'down' if sp['show_nicknames'] else 'normal'
+        self.ids.items_check.state = 'down' if sp['show_items'] else 'normal'
+        self.ids.badges_check.state = 'down' if sp['show_badges'] else 'normal'
+        self.ids[sp['order']].state = 'down'
+
+    def save_changes(self, instance):
+        sorts = {"DexNr.":"dexnr", "Team": "team", "Level":"lvl", "Route":"route"}
+        for button in ToggleButton.get_widgets("sort"):
+            if button.state == 'down':
+                sp['order'] = sorts[button.text]
+
+        sp['animated'] = self.ids.animated_check.state == 'down'
+        sp['show_nicknames'] = self.ids.names_check.state == 'down'
+        sp['show_items'] = self.ids.items_check.state == 'down'
+        sp['show_badges'] = self.ids.badges_check.state == 'down'
+        client.conf = sp
+        client.change_order()
+        asyncio.create_task(client.redraw_obs())
+        with open(f"{configsave}sprites.yml", 'w') as file:
+            yaml.dump(sp, file)
 
     def switch_to_settings(self, instance):
         self.manager.current = "SettingsMenu"
 
 class SettingsMenu(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.name = "SettingsMenu"
+
+        layout = GridLayout(cols=2)
+        box = BoxLayout(orientation="vertical", size_hint=(0.15, 1), pos_hint={"top": 0})
+        
+        logo = Label(text='Logo')
+        box.add_widget(logo)
+        
+        main_menu_button = Button(text="Hauptmenü", on_press=lambda instance: setattr(self.manager, 'current', "MainMenu"))
+        box.add_widget(main_menu_button)
+
+        settings_buttons = [
+            ("Sprite\nPfade", 'sprite'),
+            ("Bizhawk", 'bizhawk'),
+            ("OBS", 'obs'),
+            ("Remote", 'remote'),
+            ("Spieler", 'player')
+        ]
+
+        for text, screen_name in settings_buttons:
+            button = ToggleButton(group="settings", text=text, allow_no_selection=False, on_press=lambda instance: self.changesettingscreen(screen_name))
+            box.add_widget(button)
+
+        layout.add_widget(box)
+        layout.add_widget(Screen())
+
+        self.add_widget(layout)
+
     def changesettingscreen(self, settings):
         if len(self.children[0].children) > 1:
             curScreen = self.children[0].children[0]
@@ -138,8 +200,8 @@ class SpriteSettings(Screen):
         self.ids.common_path.text = sp['common_path']
         self.ids.items_path.text = sp['items_path']
         self.ids.badges_path.text = sp['badges_path']
-        self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'
         self.ids.game_sprites_check.state = 'down' if not sp['single_path_check'] else 'normal'
+        self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'
         self.ids.names_check.state = 'down' if sp['show_nicknames'] else 'normal'
         self.ids.items_check.state = 'down' if sp['show_items'] else 'normal'
         self.ids.badges_check.state = 'down' if sp['show_badges'] else 'normal'
@@ -184,15 +246,15 @@ class SpriteSettings(Screen):
     def save_changes(self):
         sp['common_path'] = self.ids.common_path.text
         sp['single_path_check'] = not self.ids.game_sprites_check.state == 'down'
-        sp['animated'] = self.ids.animated_check.state == 'down'
-        sp['show_nicknames'] = self.ids.names_check.state == 'down'
-        for i in range(4):
-            if self.ids["sortierung"].children[i].state == "down":
-                sp['order'] = ['route', 'lvl', 'team', 'dexnr'][i]
-        sp['show_items'] = self.ids.items_check.state == 'down'
         sp['items_path'] = self.ids.items_path.text
-        sp['show_badges'] = self.ids.badges_check.state == 'down'
         sp['badges_path'] = self.ids.badges_path.text
+        # for i in range(4):
+        #     if self.ids["sortierung"].children[i].state == "down":
+        #         sp['order'] = ['route', 'lvl', 'team', 'dexnr'][i]
+        # sp['animated'] = self.ids.animated_check.state == 'down'
+        # sp['show_nicknames'] = self.ids.names_check.state == 'down'
+        # sp['show_items'] = self.ids.items_check.state == 'down'
+        # sp['show_badges'] = self.ids.badges_check.state == 'down'
         client.conf = sp
         client.change_order()
         asyncio.create_task(client.redraw_obs())
@@ -521,7 +583,7 @@ class TrackerApp(App):
         Config.set('graphics', 'height', "400")
         Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
-    def on_start(self):
+    def build(self):
         global externalIPv4
         externalIPv4 = os.popen('curl -s -4 -m 1 ifconfig.co/').readline().split('\n')[0]
         global externalIPv6
@@ -550,7 +612,9 @@ class TrackerApp(App):
         with(open(f"{configsave}remote.yml")) as file:
             rem = yaml.safe_load(file)
 
-    def exit_check(self, *args):
+        return Screens()
+
+    def exit_check(self, *args, **kwargs):
         self.save_config(f"{configsave}bh_config.yml", bh)
         self.save_config(f"{configsave}obs_config.yml", obs)
         self.save_config(f"{configsave}sprites.yml", sp)

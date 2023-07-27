@@ -14,6 +14,7 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.config import Config
 from kivy.uix.label import Label
 from kivy.uix.togglebutton import ToggleButton
+from kivy.uix.textinput import TextInput
 from kivy.uix.screenmanager import Screen
 from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.screenmanager import FadeTransition
@@ -160,7 +161,8 @@ class SettingsMenu(Screen):
         ]
 
         for text, screen_name in settings_buttons:
-            button = ToggleButton(group="settings", text=text, allow_no_selection=False, on_press=lambda instance: self.changesettingscreen(screen_name))
+            button = ToggleButton(group="settings", text=text, allow_no_selection=False, on_press=self.callback_screen_change(screen_name))
+            print(screen_name)
             box.add_widget(button)
 
         layout.add_widget(box)
@@ -168,93 +170,93 @@ class SettingsMenu(Screen):
 
         self.add_widget(layout)
 
-    def changesettingscreen(self, settings):
+    def callback_screen_change(self, screen_name):
+        def callback(instance):
+            self.changesettingscreen(screen_name)
+        return callback
+    
+    def changesettingscreen(self, setting):
         if len(self.children[0].children) > 1:
             curScreen = self.children[0].children[0]
             if type(curScreen) is not Screen:
                 type(curScreen).save_changes(curScreen)
             self.children[0].remove_widget(self.children[0].children[0])
 
-        widget = self.checkSettingScreen(settings)
+        widget = self.checkSettingScreen(setting)
 
         self.children[0].add_widget(widget)
 
-    def checkSettingScreen(self, settings):
-        if settings == 'sprite':
+    def checkSettingScreen(self, setting):
+        if setting == 'sprite':
             widget = SpriteSettings()
-        elif settings == 'games':
+        elif setting == 'games':
             widget = SpritesGames()
-        elif settings == 'bizhawk':
+        elif setting == 'bizhawk':
             widget = BizhawkSettings()
-        elif settings == 'obs':
+        elif setting == 'obs':
             widget = OBSSettings()
-        elif settings == 'remote':
+        elif setting == 'remote':
             widget = RemoteSettings()
-        elif settings == 'player':
+        elif setting == 'player':
             widget = PlayerSettings()
         return widget # type: ignore
 
 class SpriteSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        paths = [('Dateipfad Pokemon','common_path'),('Dateipfad Items', 'items_path'),('Dateipfad Orden', 'badges_path')]
+        outerlayout = BoxLayout(orientation='vertical')
+        for text, path in paths:
+            grid1 = GridLayout(cols=2)
+            grid1.add_widget(Label(text=text, size_hint=(.3, 1)))
+            box1 = BoxLayout(orientation='horizontal')
+            anchor1 = AnchorLayout(anchor_x='left', size_hint=(.7, 1))
+            text_input = TextInput(size_hint=(1, None), size=("20dp", "30dp"), multiline=False, write_tab=False, on_text_validate=lambda instance: self.save_changes())
+            anchor1.add_widget(text_input)
+            box1.add_widget(anchor1)
+            button1 = Button(text='Durchsuchen', size_hint=(.2, None), size=("20dp", "30dp"), pos_hint={"center_x":.5, "center_y": .5}, on_press=lambda instance: App.get_running_app().browse(self.ids['common_path'], self, 'directory'))
+            box1.add_widget(button1)
+            grid1.add_widget(box1)
+            outerlayout.add_widget(grid1)
+
+        # Add to ids
+            self.ids[path] = weakref.proxy(text_input)
+
+        # Second GridLayout
+        grid2 = GridLayout(cols=2)
+        box2 = BoxLayout(orientation='vertical')
+        grid3 = GridLayout(cols=2)
+        anchor2 = AnchorLayout(anchor_x='left', size_hint=(.1, .5))
+        checkbox = CheckBox(size_hint=(None, None), size=("20dp", "20dp"), on_press=lambda instance: self.save_changes())
+        anchor2.add_widget(checkbox)
+        grid3.add_widget(anchor2)
+        anchor3 = AnchorLayout(anchor_x='left', size_hint=(1, 1))
+        anchor3.add_widget(Label(size_hint=(1, .5), text='Sprites jedes Spiels einzeln festlegen'))
+        grid3.add_widget(anchor3)
+        box2.add_widget(grid3)
+        anchor4 = AnchorLayout(anchor_x='left', size_hint=(1, 1))
+        button2 = Button(text='Spritepfade der einzelnen Games', size_hint=(1, 1), on_press=lambda instance: self.parent.parent.changesettingscreen('games'))
+        anchor4.add_widget(button2)
+        box2.add_widget(anchor4)
+        grid2.add_widget(box2)
+        outerlayout.add_widget(grid2)
+
+        # Add to ids
+        self.ids['game_sprites_check'] = weakref.proxy(checkbox)
+        self.ids['game_sprites'] = weakref.proxy(button2)
+        
+        self.add_widget(outerlayout)
+
         self.ids.common_path.text = sp['common_path']
         self.ids.items_path.text = sp['items_path']
         self.ids.badges_path.text = sp['badges_path']
         self.ids.game_sprites_check.state = 'down' if not sp['single_path_check'] else 'normal'
-        self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'
-        self.ids.names_check.state = 'down' if sp['show_nicknames'] else 'normal'
-        self.ids.items_check.state = 'down' if sp['show_items'] else 'normal'
-        self.ids.badges_check.state = 'down' if sp['show_badges'] else 'normal'
-        self.sprite_paths_setting(initializing=True)
-        for i in range(4):
-            if i == ['route', 'lvl', 'team', 'dexnr'].index(sp['order']):
-                self.ids.sortierung.children[i].state = 'down'
-
-    def sprite_paths_setting(self, initializing=False):
-        if self.ids.game_sprites_check.state == 'normal':
-            self.ids.game_sprites.opacity = 0
-            self.ids.game_sprites.disabled = True
-        else:
-            self.ids.game_sprites.opacity = 1
-            self.ids.game_sprites.disabled = False
-        
-        if self.ids["items_check"].state == 'normal':
-            self.hide_widget("items_path")
-            self.hide_widget("items_browse")
-        else:
-            self.show_widget("items_path")
-            self.show_widget("items_browse")
-
-        if self.ids["badges_check"].state == 'normal':
-            self.hide_widget("badges_path")
-            self.hide_widget("badges_browse")
-        else:
-            self.show_widget("badges_path")
-            self.show_widget("badges_browse")
-        
-        if not initializing:
-            self.save_changes()
-
-    def show_widget(self, widgetname):
-        self.ids[widgetname].opacity = 1
-        self.ids[widgetname].disabled = False
-
-    def hide_widget(self, widgetname):
-        self.ids[widgetname].opacity = 0
-        self.ids[widgetname].disabled = True
 
     def save_changes(self):
         sp['common_path'] = self.ids.common_path.text
         sp['single_path_check'] = not self.ids.game_sprites_check.state == 'down'
         sp['items_path'] = self.ids.items_path.text
         sp['badges_path'] = self.ids.badges_path.text
-        # for i in range(4):
-        #     if self.ids["sortierung"].children[i].state == "down":
-        #         sp['order'] = ['route', 'lvl', 'team', 'dexnr'][i]
-        # sp['animated'] = self.ids.animated_check.state == 'down'
-        # sp['show_nicknames'] = self.ids.names_check.state == 'down'
-        # sp['show_items'] = self.ids.items_check.state == 'down'
-        # sp['show_badges'] = self.ids.badges_check.state == 'down'
         client.conf = sp
         client.change_order()
         asyncio.create_task(client.redraw_obs())

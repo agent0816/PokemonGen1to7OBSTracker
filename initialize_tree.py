@@ -26,6 +26,7 @@ def init_config_folder():
         config.mkdir(parents=True, exist_ok=True)
     sprites = Path('backend/config/sprites.yml')
     sp = {
+        "alphasapphire":'',
         "animated":False,
         "badges_path":'',
         "black":'',
@@ -47,6 +48,9 @@ def init_config_folder():
         "show_nicknames":False,
         "silver":'',
         "single_path_check":False,
+        "sun":'',
+        "usun":'',
+        "x":'',
         "yellow":''
     }
     if not sprites.exists():

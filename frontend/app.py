@@ -13,7 +13,6 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.screenmanager import FadeTransition
-from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
@@ -173,7 +172,6 @@ class SettingsMenu(Screen):
 
         for text, screen_name in settings_buttons:
             button = Button(text=text)
-            # button = ToggleButton(group="settings", text=text, allow_no_selection=False, on_press=self.callback_screen_change(screen_name))
             button_box.add_widget(button)
 
         layout.add_widget(button_box)
@@ -181,37 +179,6 @@ class SettingsMenu(Screen):
 
         box.add_widget(layout)
         self.add_widget(box)
-
-    def callback_screen_change(self, screen_name):
-        def callback(instance):
-            self.changesettingscreen(screen_name)
-        return callback
-    
-    def changesettingscreen(self, setting):
-        if len(self.children[0].children) > 1:
-            curScreen = self.children[0].children[0]
-            if type(curScreen) is not Screen:
-                type(curScreen).save_changes(curScreen)
-            self.children[0].remove_widget(self.children[0].children[0])
-
-        widget = self.checkSettingScreen(setting)
-
-        self.children[0].add_widget(widget)
-
-    def checkSettingScreen(self, setting):
-        if setting == 'sprite':
-            widget = SpriteSettings()
-        elif setting == 'games':
-            widget = SpritesGames()
-        elif setting == 'bizhawk':
-            widget = BizhawkSettings()
-        elif setting == 'obs':
-            widget = OBSSettings()
-        elif setting == 'remote':
-            widget = RemoteSettings()
-        elif setting == 'player':
-            widget = PlayerSettings()
-        return widget # type: ignore
 
 class ScrollSettings(ScrollView):
     def __init__(self, **kwargs):
@@ -226,6 +193,10 @@ class ScrollSettings(ScrollView):
             'Sonne und Mond':'gen7_sun','Ultra Sonne und\nUltra Mond':'gen7_usun'
         }
         
+        box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
+        box.bind(minimum_height=box.setter('height')) # type: ignore
+
+
         sprite_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
         sprite_box.bind(minimum_height=sprite_box.setter('height')) # type: ignore
         self.ids["sprite"] = weakref.proxy(sprite_box)
@@ -270,7 +241,21 @@ class ScrollSettings(ScrollView):
                                 text_id_name="badges_path", text_validate_function=None,
                                 browse_function=self.browse)
 
-        self.add_widget(sprite_box)
+        box.add_widget(sprite_box)
+
+        bizhawk_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
+        bizhawk_box.bind(minimum_height=bizhawk_box.setter('height')) # type: ignore
+
+        UI.create_text_and_browse_button(bizhawk_box,self.ids,
+                                box_id_name='bizhawk_path_box',
+                                label_text='Pfad der\nEmuHawk.exe',
+                                text_id_name="bizhawk_exe", text_validate_function=None,
+                                browse_function=self.browse, browse_modus='file')
+
+        box.add_widget(bizhawk_box)
+
+        self.add_widget(box)
+
         self.load_config()
     
     def set_game_sprites(self, sprite_box):
@@ -375,101 +360,6 @@ class ScrollSettings(ScrollView):
             sp['alphasapphire'] = self.ids.gen6_alphasapphire.text
             sp['sun'] = self.ids.gen7_sun.text
             sp['usun'] = self.ids.gen7_usun.text
-
-        with open(f"{configsave}sprites.yml", 'w') as file:
-            yaml.dump(sp, file)
-
-class SpriteSettings(Screen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        paths = [('Dateipfad Pokemon','common_path'),('Dateipfad Items', 'items_path'),('Dateipfad Orden', 'badges_path')]
-        outerlayout = BoxLayout(orientation='vertical')
-        for text, path in paths:
-            grid1 = GridLayout(cols=2)
-            grid1.add_widget(Label(text=text, size_hint=(.3, 1)))
-            box1 = BoxLayout(orientation='horizontal')
-            anchor1 = AnchorLayout(anchor_x='left', size_hint=(.7, 1))
-            text_input = TextInput(size_hint=(1, None), size=("20dp", "30dp"), multiline=False, write_tab=False, on_text_validate=lambda instance: self.save_changes())
-            anchor1.add_widget(text_input)
-            box1.add_widget(anchor1)
-            button1 = Button(text='Durchsuchen', size_hint=(.2, None), size=("20dp", "30dp"), pos_hint={"center_x":.5, "center_y": .5}, on_press=lambda instance: App.get_running_app().browse(self.ids['common_path'], self, 'directory'))
-            box1.add_widget(button1)
-            grid1.add_widget(box1)
-            outerlayout.add_widget(grid1)
-
-        # Add to ids
-            self.ids[path] = weakref.proxy(text_input)
-
-        # Second GridLayout
-        grid2 = GridLayout(cols=2)
-        box2 = BoxLayout(orientation='vertical')
-        grid3 = GridLayout(cols=2)
-        anchor2 = AnchorLayout(anchor_x='left', size_hint=(.1, .5))
-        checkbox = CheckBox(size_hint=(None, None), size=("20dp", "20dp"), on_press=lambda instance: self.save_changes())
-        anchor2.add_widget(checkbox)
-        grid3.add_widget(anchor2)
-        anchor3 = AnchorLayout(anchor_x='left', size_hint=(1, 1))
-        anchor3.add_widget(Label(size_hint=(1, .5), text='Sprites jedes Spiels einzeln festlegen'))
-        grid3.add_widget(anchor3)
-        box2.add_widget(grid3)
-        anchor4 = AnchorLayout(anchor_x='left', size_hint=(1, 1))
-        button2 = Button(text='Spritepfade der einzelnen Games', size_hint=(1, 1), on_press=lambda instance: self.parent.parent.changesettingscreen('games'))
-        anchor4.add_widget(button2)
-        box2.add_widget(anchor4)
-        grid2.add_widget(box2)
-        outerlayout.add_widget(grid2)
-
-        # Add to ids
-        self.ids['game_sprites_check'] = weakref.proxy(checkbox)
-        self.ids['game_sprites'] = weakref.proxy(button2)
-        
-        self.add_widget(outerlayout)
-
-        self.ids.common_path.text = sp['common_path']
-        self.ids.items_path.text = sp['items_path']
-        self.ids.badges_path.text = sp['badges_path']
-        self.ids.game_sprites_check.state = 'down' if not sp['single_path_check'] else 'normal'
-
-    def save_changes(self):
-        sp['common_path'] = self.ids.common_path.text
-        sp['single_path_check'] = not self.ids.game_sprites_check.state == 'down'
-        sp['items_path'] = self.ids.items_path.text
-        sp['badges_path'] = self.ids.badges_path.text
-        client.conf = sp
-        client.change_order()
-        asyncio.create_task(client.redraw_obs())
-        with open(f"{configsave}sprites.yml", 'w') as file:
-            yaml.dump(sp, file)
-
-class SpritesGames(Screen):
-    def __init__(self,**kwargs):
-        super().__init__(**kwargs)
-        self.ids.gen1_red.text = sp['red']
-        self.ids.gen1_yellow.text = sp['yellow']
-        self.ids.gen2_silver.text = sp['silver']
-        self.ids.gen2_gold.text = sp['gold']
-        self.ids.gen2_crystal.text = sp['crystal']
-        self.ids.gen3_ruby.text = sp['ruby']
-        self.ids.gen3_emerald.text = sp['emerald']
-        self.ids.gen3_firered.text = sp['firered']
-        self.ids.gen4_diamond.text = sp['diamond']
-        self.ids.gen4_platinum.text = sp['platinum']
-        self.ids.gen4_heartgold.text = sp['heartgold']
-        self.ids.gen5_black.text = sp['black']
-
-    def save_changes(self):
-        sp['red'] = self.ids.gen1_red.text
-        sp['yellow'] = self.ids.gen1_yellow.text
-        sp['silver'] = self.ids.gen2_silver.text
-        sp['gold'] = self.ids.gen2_gold.text
-        sp['crystal'] = self.ids.gen2_crystal.text
-        sp['ruby'] = self.ids.gen3_ruby.text
-        sp['emerald'] = self.ids.gen3_emerald.text
-        sp['firered'] = self.ids.gen3_firered.text
-        sp['diamond'] = self.ids.gen4_diamond.text
-        sp['platinum'] = self.ids.gen4_platinum.text
-        sp['heartgold'] = self.ids.gen4_heartgold.text
-        sp['black'] = self.ids.gen5_black.text
 
         with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)

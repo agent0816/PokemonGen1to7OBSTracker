@@ -315,7 +315,12 @@ class ScrollSettings(ScrollView):
         else:
             path = fd.askdirectory()
         if path:
-            widget.text = path
+            if self.ids["games_ausklappen"].state == 'down':
+                games = [self.ids[id] for text, id in self.games.items()]
+            else:
+                games=[]
+            stripped_path = path.replace(sp['common_path'], "", 1) if widget in games else path
+            widget.text = stripped_path
             self.save_changes()
     
     def load_config(self):

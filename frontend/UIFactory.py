@@ -6,19 +6,24 @@ from kivy.uix.checkbox import CheckBox
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 
-def create_label_and_Textbox(rootwidget, ids, id_name, 
+def create_label_and_Textbox(rootwidget, ids, 
+                            box_size=(0,"30dp"),box_padding=("5dp",0),box_spacing="5dp", box_size_hint_y=None,
                             label_text='label_text', label_size_hint=(.2,1), 
-                            multiline=False, password=False, text_size=("20dp","40dp"), text_size_hint=(1,None),
-                            text_validate_function=None):
+                            multiline=False, password=False, text_size_hint=(.8,1),
+                            text_box_id=None, text_validate_function=None,
+                            is_port=False):
     
-    rootwidget.add_widget(Label(text=label_text, size_hint=label_size_hint))
-    anchor=AnchorLayout(anchor_x='left')
-    rootwidget.add_widget(anchor)
-    textInput = TextInput(size_hint=text_size_hint, size=text_size, password=password, multiline=multiline, write_tab=False)
+    box = BoxLayout(orientation='horizontal', size_hint_y=box_size_hint_y, size=box_size, padding=box_padding, spacing=box_spacing)
+    box.add_widget(Label(text=label_text, size_hint=label_size_hint))
+    textInput = TextInput(size_hint=text_size_hint, password=password, multiline=multiline, write_tab=False)
     if text_validate_function is not None:
         textInput.bind(on_text_validate=text_validate_function) #type: ignore
-    ids[id_name] = weakref.proxy(textInput)
-    anchor.add_widget(textInput)
+    if text_box_id is not None:
+        ids[text_box_id] = weakref.proxy(textInput)
+    box.add_widget(textInput)
+    if is_port:
+        box.add_widget(Label(size_hint_x=.7))
+    rootwidget.add_widget(box)
 
 def create_label_and_checkboxes(rootwidget, ids, 
                                 checkbox_id_name=None, checkbox_on_press=None, checkbox_active=True, checkbox_pos_hint={"center_y": .5},

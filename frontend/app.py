@@ -113,6 +113,66 @@ class MainMenu(Screen):
         global sp
         self.init_config(sp)
 
+    def connectOBS(self,*args):
+        global OBSconnector
+        global connectors
+        if not OBSconnector:
+            OBSconnector = asyncio.create_task(client.load_obsws(obs['host'], obs['port'], obs['password']))
+            connectors.append(OBSconnector)
+        asyncio.gather(*connectors)
+
+    def disconnectOBS(self, *args):
+        global OBSconnector
+        if OBSconnector:
+            asyncio.create_task(client.ws.disconnect())
+            OBSconnector = None
+            logger.info("OBS disconnected.")
+
+    def launchbh(self):
+        global bizConnector
+        if rem['start_server']:
+            self.connect_client()
+            bizConnector = asyncio.create_task(client.pass_bh_to_server(("127.0.0.1", rem['server_port']), bh['port']))
+        else:
+            bizConnector = asyncio.create_task(client.pass_bh_to_server((rem['server_ip_adresse'], rem['client_port']), bh['port']))
+        global connectors
+        asyncio.gather(*connectors)
+        for i in range(pl['player_count']):
+            if not pl[f'remote_{i+1}']:
+                subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
+
+    def connect_client(self, *args):
+        global clientConnector
+        global connector
+        global connectors
+        if client.bizServer:
+            logger.info(f"lokale bizhawk-Verbindung auf Port {bh['port']} aufghoben")
+            client.bizServer.close()
+            client.bizServer = None
+            asyncio.create_task(client.disconnect_all_local_connections())
+        if connector and server.server:
+            logger.info(f"laufender server beendet auf Port {rem['server_port']}")
+            server.server.close()
+            server.server = None
+            connector = None
+        if not clientConnector:
+            clientConnector = asyncio.create_task(client.connect_client(rem["server_ip_adresse"], rem["client_port"]))
+            connectors.append(clientConnector)
+        try:
+            asyncio.gather(*connectors)
+        except asyncio.CancelledError as async_err:
+            logger.error(f"async_Fehler: {async_err}")
+
+    def launchserver(self,*args):
+        global connector
+        global connectors
+        if not connector:
+            connector = asyncio.create_task(server.main(port=rem['server_port']))
+        try:
+            asyncio.gather(*connectors)
+        except asyncio.CancelledError as async_err:
+            logger.error(f"async_Fehler: {async_err}")
+
     def init_config(self, sp):
         self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'
         self.ids.names_check.state = 'down' if sp['show_nicknames'] else 'normal'
@@ -201,8 +261,8 @@ class ScrollSettings(ScrollView):
         sprite_box.bind(minimum_height=sprite_box.setter('height')) # type: ignore
         self.ids["sprite"] = weakref.proxy(sprite_box)
 
-        ueberschrift = Label(text="Sprites", size_hint=(1, None), size=(0,"20dp"), font_size="20sp")
-        sprite_box.add_widget(ueberschrift)
+        ueberschrift_sprites = Label(text="Sprites", size_hint=(1, None), size=(0,"20dp"), font_size="20sp")
+        sprite_box.add_widget(ueberschrift_sprites)
 
         UI.create_text_and_browse_button(sprite_box,self.ids,
                                 box_id_name='common_path_box',
@@ -246,14 +306,48 @@ class ScrollSettings(ScrollView):
         bizhawk_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
         bizhawk_box.bind(minimum_height=bizhawk_box.setter('height')) # type: ignore
 
-        UI.create_text_and_browse_button(bizhawk_box,self.ids,
+        ueberschrift_bizhawk = Label(text="Bizhawk", size_hint=(1, None), size=(0,"20dp"), font_size="20sp")
+        bizhawk_box.add_widget(ueberschrift_bizhawk)
+
+        UI.create_text_and_browse_button(bizhawk_box, self.ids,
                                 box_id_name='bizhawk_path_box',
                                 label_text='Pfad der\nEmuHawk.exe',
                                 text_id_name="bizhawk_exe", text_validate_function=None,
                                 browse_function=self.browse, browse_modus='file')
+        
+        UI.create_label_and_Textbox(bizhawk_box, self.ids, 
+                            label_text='Port',text_size_hint=(.1,1), is_port=True,
+                            text_box_id='bizhawk_port',text_validate_function=self.save_changes)
 
         box.add_widget(bizhawk_box)
 
+        obs_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
+        obs_box.bind(minimum_height=obs_box.setter('height')) # type: ignore
+        self.ids["obs"] = weakref.proxy(obs_box)
+
+        ueberschrift_obs = Label(text="OBS Websocket", size_hint=(1, None), size=(0,"20dp"), font_size="20sp")
+        obs_box.add_widget(ueberschrift_obs)
+
+        UI.create_label_and_Textbox(obs_box, self.ids, 
+                            label_text='IP-Adresse', 
+                            text_box_id='obs_host',text_validate_function=self.save_changes)
+        
+        UI.create_label_and_Textbox(obs_box, self.ids, 
+                            label_text='Port', text_size_hint=(.1,1), is_port=True,
+                            text_box_id='obs_port',text_validate_function=self.save_changes)
+        
+        UI.create_label_and_Textbox(obs_box, self.ids, 
+                            label_text='Passwort', password=True,
+                            text_box_id='obs_password',text_validate_function=self.save_changes)
+
+        box.add_widget(obs_box)
+
+        remote_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
+        remote_box.bind(minimum_height=remote_box.setter('height')) # type: ignore
+        self.ids["obs"] = weakref.proxy(remote_box)
+        
+        box.add_widget(remote_box)
+        
         self.add_widget(box)
 
         self.load_config()
@@ -315,6 +409,13 @@ class ScrollSettings(ScrollView):
         self.ids.game_sprites_check.state = 'down' if not sp['single_path_check'] else 'normal'
         self.ausklapp_button_zeigen_oder_verstecken(self.ids.game_sprites_check)
 
+        self.ids.bizhawk_exe.text = bh['path']
+        self.ids.bizhawk_port.text = bh['port']
+
+        self.ids["obs_password"].text = obs['password']
+        self.ids["obs_host"].text = obs['host']
+        self.ids["obs_port"].text = obs['port']
+
     def load_game_sprites_config(self):
         self.ids.gen1_red.text = sp['red']
         self.ids.gen1_yellow.text = sp['yellow']
@@ -364,6 +465,41 @@ class ScrollSettings(ScrollView):
         with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)
 
+        bh['path'] = self.ids.bizhawk_exe.text
+        bh['port'] = self.ids.bizhawk_port.text
+        
+        with open(f"{configsave}bh_config.yml", 'w') as file:
+            yaml.dump(bh, file)
+
+        obs['password'] = self.ids["obs_password"].text
+        obs['host'] = self.ids["obs_host"].text
+        obs['port'] = self.ids["obs_port"].text
+        
+        with open(f"{configsave}obs_config.yml", 'w') as file:
+            yaml.dump(obs, file)
+
+        rem['start_server'] = self.ids['main_Yes'].state == "down"
+        rem['client_port'] = self.ids['port_client'].text
+
+        rem['server_ip_adresse'] = self.ids['ip_server'].text
+        rem['server_port'] = self.ids['port_server'].text
+
+        with open(f"{configsave}remote.yml", 'w') as file:
+            yaml.dump(rem, file)
+
+        for i in range(1, pl['player_count'] + 1):
+            try:
+                pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
+            except KeyError:
+                pl[f"remote_{i}"] = False
+            try:
+                pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
+            except KeyError:
+                pl[f"obs_{i}"] = False
+
+        with open(f"{configsave}player.yml", 'w') as file:
+            yaml.dump(pl, file)
+
 class BizhawkSettings(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -397,9 +533,9 @@ class OBSSettings(Screen):
         super().__init__(**kwargs)
         grid: GridLayout = self.ids["obs_settings"]
 
-        UI.create_label_and_Textbox(grid, self.ids, "obs_password", label_text = 'Passwort\nWebsocket', text_validate_function=self.save_changes, password=True)
-        UI.create_label_and_Textbox(grid, self.ids, "obs_host", label_text = 'IP-Adresse\nWebsocket', text_validate_function=self.save_changes)
-        UI.create_label_and_Textbox(grid, self.ids, "obs_port", label_text = 'Port des\nWebsocket', text_validate_function=self.save_changes)
+        UI.create_label_and_Textbox(grid, self.ids, text_box_id="obs_password", label_text = 'Passwort\nWebsocket', text_validate_function=self.save_changes, password=True)
+        UI.create_label_and_Textbox(grid, self.ids, text_box_id="obs_host", label_text = 'IP-Adresse\nWebsocket', text_validate_function=self.save_changes)
+        UI.create_label_and_Textbox(grid, self.ids, text_box_id="obs_port", label_text = 'Port des\nWebsocket', text_validate_function=self.save_changes)
 
         self.ids["obs_password"].text = obs['password']
         self.ids["obs_host"].text = obs['host']
@@ -460,10 +596,10 @@ class RemoteSettings(Screen):
         serverGrid = GridLayout(cols=2)
         self.ids["server_grid"] = weakref.proxy(serverGrid)
 
-        UI.create_label_and_Textbox(serverGrid, self.ids, "ip_server", label_text='IP-Adresse:', label_size_hint=(.3,1), text_validate_function=self.save_changes)
+        UI.create_label_and_Textbox(serverGrid, self.ids, text_box_id="ip_server", label_text='IP-Adresse:', label_size_hint=(.3,1), text_validate_function=self.save_changes)
         self.ids["ip_server"].text = rem[f'server_ip_adresse']
 
-        UI.create_label_and_Textbox(serverGrid, self.ids, "port_client", label_text='Port:', label_size_hint=(.3,1), text_validate_function=self.save_changes)
+        UI.create_label_and_Textbox(serverGrid, self.ids, text_box_id="port_client", label_text='Port:', label_size_hint=(.3,1), text_validate_function=self.save_changes)
         self.ids["port_client"].text = rem[f'client_port']
 
         grid.add_widget(serverGrid)
@@ -483,7 +619,7 @@ class RemoteSettings(Screen):
         serverGrid = GridLayout(cols=2)
         self.ids["client_grid"] = weakref.proxy(serverGrid)
 
-        UI.create_label_and_Textbox(serverGrid, self.ids, "port_server", label_size_hint=(.3,1), label_text='Port:', text_validate_function=self.save_changes)
+        UI.create_label_and_Textbox(serverGrid, self.ids, text_box_id="port_server", label_size_hint=(.3,1), label_text='Port:', text_validate_function=self.save_changes)
         self.ids['port_server'].text = rem[f'server_port']
 
         grid.add_widget(serverGrid)

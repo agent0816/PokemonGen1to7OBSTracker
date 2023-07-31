@@ -344,7 +344,38 @@ class ScrollSettings(ScrollView):
 
         remote_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
         remote_box.bind(minimum_height=remote_box.setter('height')) # type: ignore
-        self.ids["obs"] = weakref.proxy(remote_box)
+        self.ids["remote"] = weakref.proxy(remote_box)
+
+        ueberschrift_remote = Label(text="Remote Einstellungen", size_hint=(1, None), size=(0,"20dp"), font_size="20sp")
+        remote_box.add_widget(ueberschrift_remote)
+
+        ueberschrift_server = Label(text="Server Einstellungen", size_hint=(.4, None), size=(0,"20dp"), font_size="17sp")
+        remote_box.add_widget(ueberschrift_server)
+
+        UI.create_label_and_Textbox(remote_box, self.ids, 
+                            label_text='Host-Port', text_size_hint=(.1,1), is_port=True,
+                            text_box_id='port_client',text_validate_function=self.save_changes)
+        
+        ueberschrift_client = Label(text="Client Einstellungen", size_hint=(.4, None), size=(0,"20dp"), font_size="17sp")
+        remote_box.add_widget(ueberschrift_client)
+
+        UI.create_label_and_Textbox(remote_box, self.ids, 
+                            label_text='IP-Adresse', 
+                            text_box_id='ip_server',text_validate_function=self.save_changes)
+        
+        UI.create_label_and_Textbox(remote_box, self.ids, 
+                            label_text='Port', text_size_hint=(.1,1), is_port=True,
+                            text_box_id='port_server',text_validate_function=self.save_changes)
+        
+        grid=GridLayout(cols=2,size_hint_y=None, spacing="20dp")
+        grid.bind(minimum_height=grid.setter('height')) #type: ignore
+        
+        grid.add_widget(Label(text="Deine öffentliche\nIpv4-Adresse", size_hint=(.5,None), size=(0,"30dp")))
+        grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ip]{externalIPv4}[/ref]", size_hint=(.5,None), size=(0,"30dp"), markup=True))
+        grid.add_widget(Label(text="Deine öffentliche\nIpv6-Adresse", size_hint=(.5,None), size=(0,"30dp")))
+        grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ipv6]{externalIPv6}[/ref]", size=(0,"30dp"), size_hint=(.5,None),markup=True))
+        
+        remote_box.add_widget(grid)
         
         box.add_widget(remote_box)
         
@@ -376,9 +407,10 @@ class ScrollSettings(ScrollView):
             sprite_box.remove_widget(games)
         self.save_changes(instance)
 
-    def ausklapp_button_zeigen_oder_verstecken(self, instance):
+    def ausklapp_button_zeigen_oder_verstecken(self, instance, initializing=False):
         ausklappbutton = self.ids["games_ausklappen"]
-        self.save_changes(instance)
+        if not initializing:
+            self.save_changes(instance)
         if instance.state == 'down':
             ausklappbutton.disabled = False
             ausklappbutton.opacity = 1
@@ -387,6 +419,10 @@ class ScrollSettings(ScrollView):
             ausklappbutton.opacity = 0
             if ausklappbutton.state == "down":
                 self.game_sprites_ausklappen(ausklappbutton, self.ids["sprite"])
+
+    def clipboard(self,*args):
+        result = (args[0].text).split(']')[1].split('[')[0]
+        Clipboard.copy(result)
 
     def browse(self, widget, modus):
         if modus == 'file':
@@ -407,7 +443,7 @@ class ScrollSettings(ScrollView):
         self.ids.items_path.text = sp['items_path']
         self.ids.badges_path.text = sp['badges_path']
         self.ids.game_sprites_check.state = 'down' if not sp['single_path_check'] else 'normal'
-        self.ausklapp_button_zeigen_oder_verstecken(self.ids.game_sprites_check)
+        self.ausklapp_button_zeigen_oder_verstecken(self.ids.game_sprites_check, initializing=True)
 
         self.ids.bizhawk_exe.text = bh['path']
         self.ids.bizhawk_port.text = bh['port']
@@ -415,6 +451,10 @@ class ScrollSettings(ScrollView):
         self.ids["obs_password"].text = obs['password']
         self.ids["obs_host"].text = obs['host']
         self.ids["obs_port"].text = obs['port']
+
+        self.ids["ip_server"].text = rem[f'server_ip_adresse']
+        self.ids["port_client"].text = rem[f'client_port']
+        self.ids['port_server'].text = rem[f'server_port']
 
     def load_game_sprites_config(self):
         self.ids.gen1_red.text = sp['red']
@@ -478,7 +518,7 @@ class ScrollSettings(ScrollView):
         with open(f"{configsave}obs_config.yml", 'w') as file:
             yaml.dump(obs, file)
 
-        rem['start_server'] = self.ids['main_Yes'].state == "down"
+        # rem['start_server'] = self.ids['main_Yes'].state == "down"
         rem['client_port'] = self.ids['port_client'].text
 
         rem['server_ip_adresse'] = self.ids['ip_server'].text
@@ -487,18 +527,18 @@ class ScrollSettings(ScrollView):
         with open(f"{configsave}remote.yml", 'w') as file:
             yaml.dump(rem, file)
 
-        for i in range(1, pl['player_count'] + 1):
-            try:
-                pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
-            except KeyError:
-                pl[f"remote_{i}"] = False
-            try:
-                pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
-            except KeyError:
-                pl[f"obs_{i}"] = False
+        # for i in range(1, pl['player_count'] + 1):
+        #     try:
+        #         pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
+        #     except KeyError:
+        #         pl[f"remote_{i}"] = False
+        #     try:
+        #         pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
+        #     except KeyError:
+        #         pl[f"obs_{i}"] = False
 
-        with open(f"{configsave}player.yml", 'w') as file:
-            yaml.dump(pl, file)
+        # with open(f"{configsave}player.yml", 'w') as file:
+        #     yaml.dump(pl, file)
 
 class BizhawkSettings(Screen):
     def __init__(self, **kwargs):
@@ -598,9 +638,9 @@ class RemoteSettings(Screen):
 
         UI.create_label_and_Textbox(serverGrid, self.ids, text_box_id="ip_server", label_text='IP-Adresse:', label_size_hint=(.3,1), text_validate_function=self.save_changes)
         self.ids["ip_server"].text = rem[f'server_ip_adresse']
+        self.ids["port_client"].text = rem[f'client_port']
 
         UI.create_label_and_Textbox(serverGrid, self.ids, text_box_id="port_client", label_text='Port:', label_size_hint=(.3,1), text_validate_function=self.save_changes)
-        self.ids["port_client"].text = rem[f'client_port']
 
         grid.add_widget(serverGrid)
 

@@ -4,6 +4,7 @@ import subprocess
 import weakref
 import yaml
 import asyncio
+import requests
 from kivy.app import App
 from kivy.core.clipboard import Clipboard
 from kivy.core.window import Window
@@ -831,7 +832,10 @@ class TrackerApp(App):
 
     def build(self):
         global externalIPv4
-        externalIPv4 = os.popen('curl -s -4 -m 1 ifconfig.co/').readline().split('\n')[0]
+        try:
+            externalIPv4 = requests.get('https://ifconfig.me/ip', timeout=1)
+        except requests.exceptions.Timeout:
+            externalIPv4 = ''
         global externalIPv6
         externalIPv6 = os.popen('curl -s -6 -m 1 ifconfig.co/').readline().split('\n')[0]
         global configsave

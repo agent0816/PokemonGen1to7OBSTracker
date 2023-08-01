@@ -275,9 +275,6 @@ class ScrollSettings(ScrollView):
         float_box.bind(minimum_height=float_box.setter('height')) # type: ignore
 
         game_sprites_bool_box = BoxLayout(orientation='horizontal', size_hint_y=None, size=(0,"30dp"))
-        game_sprites_ausklappen = ToggleButton(text=">",size_hint_x=.1, on_press=lambda instance: self.game_sprites_ausklappen(instance, float_box))
-        self.ids["games_ausklappen"] = weakref.proxy(game_sprites_ausklappen)
-        game_sprites_bool_box.add_widget(game_sprites_ausklappen)
 
         game_sprites_label_einzeln = Label(text="Sprites jedes Spiels einzeln festlegen:", size_hint_x=.7)
         game_sprites_bool_box.add_widget(game_sprites_label_einzeln)
@@ -285,6 +282,10 @@ class ScrollSettings(ScrollView):
         game_sprites_checkbox = CheckBox(size_hint_x=.2, on_press=lambda instance: self.ausklapp_button_zeigen_oder_verstecken(instance))
         self.ids["game_sprites_check"] = weakref.proxy(game_sprites_checkbox)
         game_sprites_bool_box.add_widget(game_sprites_checkbox)
+
+        game_sprites_ausklappen = ToggleButton(text=">",size_hint_x=.1, on_press=lambda instance: self.game_sprites_ausklappen(instance, float_box))
+        self.ids["games_ausklappen"] = weakref.proxy(game_sprites_ausklappen)
+        game_sprites_bool_box.add_widget(game_sprites_ausklappen)
 
         sprite_box.add_widget(game_sprites_bool_box)
 
@@ -377,8 +378,39 @@ class ScrollSettings(ScrollView):
         grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ipv6]{externalIPv6}[/ref]", size=(0,"30dp"), size_hint=(.5,None),markup=True))
         
         remote_box.add_widget(grid)
-        
         box.add_widget(remote_box)
+
+        player_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="30dp")
+        player_box.bind(minimum_height=player_box.setter('height')) # type: ignore
+
+        ueberschrift_player = Label(text="Spieler", size_hint=(1, None), size=(0,"20dp"), font_size="20sp")
+        player_box.add_widget(ueberschrift_player)
+
+        player_count_box = BoxLayout(orientation='horizontal', size=(0, "30dp"), spacing="20dp")
+        player_count_box.bind(minimum_height=player_count_box.setter('height')) # type: ignore
+
+        player_count_label = Label(text="Spieleranzahl", size_hint=(.2,None), size=(0,"30dp"))
+        player_count_box.add_widget(player_count_label)
+
+        checkboxes_box = BoxLayout(size_hint_x=.7, size_hint_y=None, size=(0,"30dp"))
+        for i in range(1, 5):
+            checkbox = CheckBox(group='player_count', pos_hint={"center_y": .5}, size_hint=(None, None), size=("20dp", "20dp"))
+            checkbox.bind(on_press=lambda instance, player_count=i: self.change_player_count(player_count, player_box)) # type: ignore
+            self.ids[f"player_count_{i}"] = weakref.proxy(checkbox)
+            checkboxes_box.add_widget(checkbox)
+
+            label = Label(text=str(i), pos_hint={"center_y": .5}, size_hint=(None, None), size=("20dp", "20dp"))
+            checkboxes_box.add_widget(label)
+
+        player_count_box.add_widget(checkboxes_box)
+
+        player_settings_ausklappen = ToggleButton(text=">",size_hint_x=.1, size_hint_y=None, size=(0,"30dp"), on_press=lambda instance: self.player_ausklappen(instance, player_box))
+        self.ids["player_settings_ausklappen"] = weakref.proxy(player_settings_ausklappen)
+        player_count_box.add_widget(player_settings_ausklappen)
+
+        player_box.add_widget(player_count_box)
+
+        box.add_widget(player_box)
         
         self.add_widget(box)
 
@@ -406,7 +438,6 @@ class ScrollSettings(ScrollView):
             instance.text = ">"
             games = self.ids["game_sprites"]
             sprite_box.remove_widget(games)
-        self.save_changes(instance)
 
     def ausklapp_button_zeigen_oder_verstecken(self, instance, initializing=False):
         ausklappbutton = self.ids["games_ausklappen"]
@@ -420,9 +451,78 @@ class ScrollSettings(ScrollView):
             ausklappbutton.opacity = 0
             if ausklappbutton.state == "down":
                 self.game_sprites_ausklappen(ausklappbutton, self.ids["sprite"])
+    
+    def change_player_count(self, player_count, player_box):
+        pl["player_count"] = player_count
+        if self.ids["player_settings_ausklappen"].state =='down':
+            player_box.remove_widget(self.ids["player_settings"])
+            self.add_player_checkBoxes(player_box)
+            # self.pressCheckBoxes()
+        
+        with open(f"{configsave}player.yml", 'w') as file:
+            yaml.dump(pl, file)
+    
+    def player_ausklappen(self, instance, player_box):
+        if instance.state == "down":
+            instance.text = "^"
+            self.add_player_checkBoxes(player_box)
+            # self.pressCheckBoxes()
+        else:
+            instance.text = ">"
+            player = self.ids["player_settings"]
+            player_box.remove_widget(player)
+    
+    def add_player_checkBoxes(self, player_box, begin=1):
+        player_settings_box = GridLayout(cols=2, size_hint_y=None, spacing="20dp")
+        player_settings_box.bind(minimum_height=player_settings_box.setter('height')) # type: ignore
+        self.ids["player_settings"] = weakref.proxy(player_settings_box)
+        for i in range(begin, pl['player_count'] + 1):
+            idLabel = f"label_spieler_{i}"
+            label = Label(text=f"Spieler {i}")
+            player_settings_box.add_widget(label)
+            self.ids[idLabel] = weakref.proxy(label)
 
-    def clipboard(self,*args):
-        result = (args[0].text).split(']')[1].split('[')[0]
+            idBox = f"box_spieler_{i}"
+            box = BoxLayout(orientation="horizontal")
+            player_settings_box.add_widget(box)
+            self.ids[idBox] = weakref.proxy(box)
+
+            idRemote = f"remote_player_{i}"
+            idRemoteLabel = f"remote_label_{i}"
+            idOBS = f"obs_player_{i}"
+            idOBSLabel = f"obs_label_{i}"
+
+            UI.create_label_and_checkboxes(box, self.ids, 
+                                            checkbox_id_name=idRemote,checkbox_on_press=self.toggle_obs, checkbox_active=pl[f"remote_{i}"],
+                                            label_id_name=idRemoteLabel, label_text="remote")
+
+            UI.create_label_and_checkboxes(box, self.ids, 
+                                            checkbox_id_name=idOBS,checkbox_on_press=self.toggle_obs, checkbox_active=pl[f"obs_{i}"], checkbox_disabled=not pl[f"remote_{i}"],
+                                            label_id_name=idOBSLabel, label_text="OBS", label_size=["40dp", "20dp"])
+            self.ids[idRemote].ids[idOBS] = self.ids[idOBS]
+            self.ids[idRemoteLabel].ids[idOBSLabel] = self.ids[idOBSLabel]
+        
+        player_box.add_widget(player_settings_box)
+        self.pressCheckBoxes()
+
+    def pressCheckBoxes(self):
+        for i in range(1, pl['player_count'] + 1):
+            if pl[f"remote_{i}"]:
+                self.ids[f"remote_player_{i}"].state = "down"
+            if pl[f"obs_{i}"]:
+                self.ids[f"obs_player_{i}"].state = "down"
+    
+    def toggle_obs(self, widgets):
+        for obs in widgets.ids:
+            ObsCheckBox = widgets.ids[obs]
+            ObsCheckBox.disabled = widgets.state != 'down'
+            if 'state' in dir(ObsCheckBox):
+                ObsCheckBox.state = 'normal'
+        self.pressCheckBoxes()
+        self.save_changes()
+    
+    def clipboard(self, instance):
+        result = (instance.text).split(']')[1].split('[')[0]
         Clipboard.copy(result)
 
     def browse(self, widget, modus):
@@ -456,6 +556,8 @@ class ScrollSettings(ScrollView):
         self.ids["ip_server"].text = rem[f'server_ip_adresse']
         self.ids["port_client"].text = rem[f'client_port']
         self.ids['port_server'].text = rem[f'server_port']
+
+        self.ids[f"player_count_{pl['player_count']}"].state = "down"
 
     def load_game_sprites_config(self):
         self.ids.gen1_red.text = sp['red']
@@ -528,18 +630,15 @@ class ScrollSettings(ScrollView):
         with open(f"{configsave}remote.yml", 'w') as file:
             yaml.dump(rem, file)
 
-        # for i in range(1, pl['player_count'] + 1):
-        #     try:
-        #         pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
-        #     except KeyError:
-        #         pl[f"remote_{i}"] = False
-        #     try:
-        #         pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
-        #     except KeyError:
-        #         pl[f"obs_{i}"] = False
+        if self.ids["player_settings_ausklappen"].state == 'down':
+            for i in range(1, pl['player_count'] + 1):
+                pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
+                pl[f"remote_{i}"] = False
+                pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
+                pl[f"obs_{i}"] = False
 
-        # with open(f"{configsave}player.yml", 'w') as file:
-        #     yaml.dump(pl, file)
+        with open(f"{configsave}player.yml", 'w') as file:
+            yaml.dump(pl, file)
 
 class BizhawkSettings(Screen):
     def __init__(self, **kwargs):
@@ -833,11 +932,14 @@ class TrackerApp(App):
     def build(self):
         global externalIPv4
         try:
-            externalIPv4 = requests.get('https://ifconfig.me/ip', timeout=1)
+            externalIPv4 = requests.get('https://ifconfig.me/ip', timeout=1).text
         except requests.exceptions.Timeout:
             externalIPv4 = ''
         global externalIPv6
-        externalIPv6 = os.popen('curl -s -6 -m 1 ifconfig.co/').readline().split('\n')[0]
+        command = "(Get-NetIPAddress -AddressFamily IPv6 | Where-Object -Property PrefixOrigin -eq \'Dhcp\').IPAddress"
+        process = subprocess.Popen(["powershell.exe",command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        stdout, stderr = process.communicate()
+        externalIPv6 = stdout.decode()
         global configsave
         configsave = 'backend/config/'
         global bh

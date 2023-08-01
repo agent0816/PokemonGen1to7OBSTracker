@@ -1,15 +1,8 @@
-import requests
+import subprocess
 
-headers = {
-    'Accept': 'application/json',
-}
+command = "(Get-NetIPAddress -AddressFamily IPv6 | Where-Object -Property PrefixOrigin -eq \'Dhcp\').IPAddress"
+process = subprocess.Popen(["powershell.exe",command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+stdout, stderr = process.communicate()
 
-response = requests.get('http://ifconfig.co/', headers=headers)
-responsev4 = requests.get('https://ifconfig.me/ip')
+print(stdout.decode())
 
-# Der Text der Antwort
-print(responsev4.text)
-
-# Um die JSON-Daten der Antwort zu bekommen
-data = response.json()
-print(data['ip'])

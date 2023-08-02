@@ -548,9 +548,7 @@ class ScrollSettings(ScrollView):
         btn = Button(text='OK',size_hint=(.5,.4),pos_hint={'center_x':.5})
         box.add_widget(btn)
 
-        popup = Popup(title='Kopiervorgang erfolgreich',
-                      content=box,
-                      size_hint=(None, None), size=(400, 150))
+        popup = Popup(title='Kopiervorgang erfolgreich', content=box, size_hint=(None, None), size=(400, 150))
 
         # Bind the on_press event of the button to the dismiss function of the popup
         btn.bind(on_press=popup.dismiss) # type: ignore

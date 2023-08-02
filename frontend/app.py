@@ -13,9 +13,10 @@ from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
-from kivy.uix.screenmanager import FadeTransition
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
+from kivy.uix.popup import Popup
+from kivy.uix.screenmanager import FadeTransition
 from kivy.uix.screenmanager import Screen
 from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.scrollview import ScrollView
@@ -233,6 +234,7 @@ class SettingsMenu(Screen):
 
         for text, screen_name in settings_buttons:
             button = Button(text=text)
+            button.bind(on_press=lambda instance, jump_id=screen_name: self.jump_to(scrollview, jump_id)) #type: ignore
             button_box.add_widget(button)
 
         layout.add_widget(button_box)
@@ -240,6 +242,19 @@ class SettingsMenu(Screen):
 
         box.add_widget(layout)
         self.add_widget(box)
+
+    def jump_to(self, scrollview, jump_id):
+        scroll_max_height = scrollview.children[0].height
+        new_scrollheight = scrollview.ids[jump_id].y
+        
+        if jump_id == "sprite":
+            scrolling = 1
+        elif jump_id == "player":
+            scrolling = 0
+        else:
+            scrolling = new_scrollheight / scroll_max_height
+
+        scrollview.scroll_y = scrolling
 
 class ScrollSettings(ScrollView):
     def __init__(self, **kwargs):
@@ -254,9 +269,9 @@ class ScrollSettings(ScrollView):
             'Sonne und Mond':'gen7_sun','Ultra Sonne und\nUltra Mond':'gen7_usun'
         }
         
-        box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
+        box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp", padding=[0, "30dp"])
         box.bind(minimum_height=box.setter('height')) # type: ignore
-
+        self.ids["settings_box"] = weakref.proxy(box)
 
         sprite_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
         sprite_box.bind(minimum_height=sprite_box.setter('height')) # type: ignore
@@ -307,6 +322,7 @@ class ScrollSettings(ScrollView):
 
         bizhawk_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
         bizhawk_box.bind(minimum_height=bizhawk_box.setter('height')) # type: ignore
+        self.ids["bizhawk"] = weakref.proxy(bizhawk_box)
 
         ueberschrift_bizhawk = Label(text="Bizhawk", size_hint=(1, None), size=(0,"20dp"), font_size="20sp")
         bizhawk_box.add_widget(ueberschrift_bizhawk)
@@ -382,6 +398,7 @@ class ScrollSettings(ScrollView):
 
         player_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="30dp")
         player_box.bind(minimum_height=player_box.setter('height')) # type: ignore
+        self.ids["player"] = weakref.proxy(player_box)
 
         ueberschrift_player = Label(text="Spieler", size_hint=(1, None), size=(0,"20dp"), font_size="20sp")
         player_box.add_widget(ueberschrift_player)
@@ -473,19 +490,19 @@ class ScrollSettings(ScrollView):
             player_box.remove_widget(player)
     
     def add_player_checkBoxes(self, player_box, begin=1):
-        player_settings_box = GridLayout(cols=2, size_hint_y=None, spacing="20dp")
+        player_settings_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
         player_settings_box.bind(minimum_height=player_settings_box.setter('height')) # type: ignore
         self.ids["player_settings"] = weakref.proxy(player_settings_box)
         for i in range(begin, pl['player_count'] + 1):
+            idBox = f"box_spieler_{i}"
+            box = BoxLayout(orientation="horizontal",size_hint_y=None, size=(0,"30dp"))
+            self.ids[idBox] = weakref.proxy(box)
+
             idLabel = f"label_spieler_{i}"
-            label = Label(text=f"Spieler {i}")
-            player_settings_box.add_widget(label)
+            label = Label(text=f"Spieler {i}", size_hint=(.4,1))
             self.ids[idLabel] = weakref.proxy(label)
 
-            idBox = f"box_spieler_{i}"
-            box = BoxLayout(orientation="horizontal")
-            player_settings_box.add_widget(box)
-            self.ids[idBox] = weakref.proxy(box)
+            box.add_widget(label)
 
             idRemote = f"remote_player_{i}"
             idRemoteLabel = f"remote_label_{i}"
@@ -494,6 +511,7 @@ class ScrollSettings(ScrollView):
 
             UI.create_label_and_checkboxes(box, self.ids, 
                                             checkbox_id_name=idRemote,checkbox_on_press=self.toggle_obs, checkbox_active=pl[f"remote_{i}"],
+                                            checkbox_pos_hint={'center_x':.5, 'center_y':.5},
                                             label_id_name=idRemoteLabel, label_text="remote")
 
             UI.create_label_and_checkboxes(box, self.ids, 
@@ -501,6 +519,8 @@ class ScrollSettings(ScrollView):
                                             label_id_name=idOBSLabel, label_text="OBS", label_size=["40dp", "20dp"])
             self.ids[idRemote].ids[idOBS] = self.ids[idOBS]
             self.ids[idRemoteLabel].ids[idOBSLabel] = self.ids[idOBSLabel]
+
+            player_settings_box.add_widget(box)
         
         player_box.add_widget(player_settings_box)
         self.pressCheckBoxes()
@@ -518,12 +538,23 @@ class ScrollSettings(ScrollView):
             ObsCheckBox.disabled = widgets.state != 'down'
             if 'state' in dir(ObsCheckBox):
                 ObsCheckBox.state = 'normal'
-        self.pressCheckBoxes()
         self.save_changes()
     
-    def clipboard(self, instance):
+    def clipboard(self, instance, *args):
         result = (instance.text).split(']')[1].split('[')[0]
         Clipboard.copy(result)
+        box = BoxLayout(orientation='vertical')
+        box.add_widget(Label(text=result))
+        btn = Button(text='OK',size_hint=(.5,.4),pos_hint={'center_x':.5})
+        box.add_widget(btn)
+
+        popup = Popup(title='Kopiervorgang erfolgreich',
+                      content=box,
+                      size_hint=(None, None), size=(400, 150))
+
+        # Bind the on_press event of the button to the dismiss function of the popup
+        btn.bind(on_press=popup.dismiss) # type: ignore
+        popup.open()
 
     def browse(self, widget, modus):
         if modus == 'file':
@@ -633,9 +664,7 @@ class ScrollSettings(ScrollView):
         if self.ids["player_settings_ausklappen"].state == 'down':
             for i in range(1, pl['player_count'] + 1):
                 pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
-                pl[f"remote_{i}"] = False
                 pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
-                pl[f"obs_{i}"] = False
 
         with open(f"{configsave}player.yml", 'w') as file:
             yaml.dump(pl, file)

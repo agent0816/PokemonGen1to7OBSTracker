@@ -31,14 +31,18 @@ def create_label_and_checkboxes(rootwidget, ids,
                                 label_id_name=None,label_text='label_text', label_pos_hint={"center_y": .5}, 
                                 label_size_hint=[None, None], label_size=["60dp", "20dp"]):
     
+    box = BoxLayout(orientation='horizontal', size_hint_x=.3)
+
     checkBox = CheckBox(on_press=checkbox_on_press,active=checkbox_active, pos_hint=checkbox_pos_hint, size_hint=checkbox_size_hint, size=checkbox_size, disabled=checkbox_disabled)
     checkboxLabel = Label(text=label_text, pos_hint=label_pos_hint, size_hint=label_size_hint, size=label_size)
-    rootwidget.add_widget(checkBox)
+    box.add_widget(checkBox)
     if checkbox_id_name is not None:
         ids[checkbox_id_name] = weakref.proxy(checkBox)
-    rootwidget.add_widget(checkboxLabel)
+    box.add_widget(checkboxLabel)
     if label_id_name is not None:
         ids[label_id_name] = weakref.proxy(checkboxLabel)
+
+    rootwidget.add_widget(box)
 
 def create_text_and_browse_button(rootwidget,ids,
                                 box_id_name=None, box_size=(0,"30dp"),box_padding=("5dp",0),box_spacing="5dp", box_size_hint_y=None,

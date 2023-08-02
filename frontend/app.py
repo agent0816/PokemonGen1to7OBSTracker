@@ -3,9 +3,11 @@ import sys
 import subprocess
 import weakref
 import yaml
+import time
 import asyncio
 import requests
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 from kivy.core.window import Window
 from kivy.config import Config
@@ -71,11 +73,36 @@ class MainMenu(Screen):
         control_frame.add_widget(logo_settings)
 
         connections = BoxLayout(orientation='vertical', size_hint=(.7,1))
-        server_client = Button(text='Server/Client')
-        connections.add_widget(server_client)
-        obs_connect = Button(text='OBS verbinden etc.')
+        
+        server_client_box = BoxLayout(orientation='horizontal')
+
+        server_client_button = Button(text='Server/Client', on_press=self.launchserver)
+        self.ids["server_client_button"] = weakref.proxy(server_client_button)
+
+        server_status_box = BoxLayout(orientation='vertical')
+        status_label = Label(text="Status Server")
+
+        server_status_box.add_widget(status_label)
+
+        server_or_client_box = BoxLayout(orientation= 'horizontal')
+
+        server_or_client_label = Label(text="Server?")
+        server_or_client_box.add_widget(server_or_client_label)
+
+        server_or_client_check = CheckBox(on_press=lambda instance: self.toggle_server_client(instance, server_client_button))
+        self.ids["start_server"] = weakref.proxy(server_or_client_check)
+        server_or_client_box.add_widget(server_or_client_check)
+
+        server_status_box.add_widget(server_or_client_box)
+
+        server_client_box.add_widget(server_client_button)
+        server_client_box.add_widget(server_status_box)
+        connections.add_widget(server_client_box)
+        
+        obs_connect = Button(text="OBS verbinden", on_press=self.toggle_obs)
         connections.add_widget(obs_connect)
-        emulator = Button(text='Emulatorstarten etc.')
+        
+        emulator = Button(text='Bizhawk starten', on_press=self.launchbh)
         connections.add_widget(emulator)
 
         control_frame.add_widget(connections)
@@ -113,8 +140,17 @@ class MainMenu(Screen):
         self.add_widget(frame)
         
         global sp
-        self.init_config(sp)
+        global rem
+        self.init_config(sp, rem)
 
+    def toggle_obs(self, instance):
+        if instance.text == "OBS verbinden":
+            self.connectOBS()
+            instance.text = "OBS trennen"
+        elif instance.text == "OBS trennen":
+            self.disconnectOBS()
+            instance.text = "OBS verbinden"
+    
     def connectOBS(self,*args):
         global OBSconnector
         global connectors
@@ -130,8 +166,9 @@ class MainMenu(Screen):
             OBSconnector = None
             logger.info("OBS disconnected.")
 
-    def launchbh(self):
+    def launchbh(self, instance):
         global bizConnector
+        instance.disabled = True
         if rem['start_server']:
             self.connect_client()
             bizConnector = asyncio.create_task(client.pass_bh_to_server(("127.0.0.1", rem['server_port']), bh['port']))
@@ -143,6 +180,22 @@ class MainMenu(Screen):
             if not pl[f'remote_{i+1}']:
                 subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
 
+        def enable_button(button):
+            button.disabled = False
+        Clock.schedule_once(lambda dt: enable_button(instance), 5)
+
+    def toggle_server_client(self, instance, button, initializing=False):
+        if instance.state == "down":
+            button.text = "Server starten"
+            button.unbind(on_press=self.connect_client)
+            button.bind(on_press=self.launchserver)
+        else:
+            button.text = "Client starten"
+            button.unbind(on_press=self.launchserver)
+            button.bind(on_press=self.connect_client)
+        if not initializing:
+            self.save_changes(instance)
+    
     def connect_client(self, *args):
         global clientConnector
         global connector
@@ -175,12 +228,14 @@ class MainMenu(Screen):
         except asyncio.CancelledError as async_err:
             logger.error(f"async_Fehler: {async_err}")
 
-    def init_config(self, sp):
+    def init_config(self, sp, rem):
         self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'
         self.ids.names_check.state = 'down' if sp['show_nicknames'] else 'normal'
         self.ids.items_check.state = 'down' if sp['show_items'] else 'normal'
         self.ids.badges_check.state = 'down' if sp['show_badges'] else 'normal'
         self.ids[sp['order']].state = 'down'
+        self.ids['start_server'].state = "down" if rem['start_server'] else 'normal'
+        self.toggle_server_client(self.ids['start_server'], self.ids['server_client_button'], initializing = True)
 
     def save_changes(self, instance):
         sorts = {"DexNr.":"dexnr", "Team": "team", "Level":"lvl", "Route":"route"}
@@ -197,6 +252,10 @@ class MainMenu(Screen):
         asyncio.create_task(client.redraw_obs())
         with open(f"{configsave}sprites.yml", 'w') as file:
             yaml.dump(sp, file)
+
+        rem['start_server'] = self.ids['start_server'].state == "down"
+        with open(f"{configsave}player.yml", 'w') as file:
+            yaml.dump(pl, file)
 
     def switch_to_settings(self, instance):
         self.manager.current = "SettingsMenu"
@@ -650,7 +709,6 @@ class ScrollSettings(ScrollView):
         with open(f"{configsave}obs_config.yml", 'w') as file:
             yaml.dump(obs, file)
 
-        # rem['start_server'] = self.ids['main_Yes'].state == "down"
         rem['client_port'] = self.ids['port_client'].text
 
         rem['server_ip_adresse'] = self.ids['ip_server'].text
@@ -664,6 +722,7 @@ class ScrollSettings(ScrollView):
                 pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
                 pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
 
+        # rem['start_server'] = self.ids['main_Yes'].state == "down"
         with open(f"{configsave}player.yml", 'w') as file:
             yaml.dump(pl, file)
 

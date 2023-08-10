@@ -24,11 +24,16 @@ logger.setLevel(logging.DEBUG)
 
 ws = None
 bizServer = None
+bizClient_is_connected = 'disconnected'
+client_is_connected = 'disconnected'
 unsorted_teams = {}
 teams = {}
 badges = {}
 editions = {}
 conf = {}
+
+RETRY_LIMIT = 3  # Limit the number of reconnection attempts
+RETRY_DELAY = 1  # Delay in seconds between reconnection attempts
 
 connections = []
 
@@ -186,7 +191,7 @@ async def change_badges(player):
         return
     batch = []
     for i in range(16):
-        if (i == 0 and badges[player] & 2**i) ^ (i > 0 and badges[player] & 2**i and badges[player] & 2**(i-1)):
+        if (i == 0 and badges[player] & 2**i):
             batch.append(
                 simpleobsws.Request(
                     "SetInputSettings",
@@ -213,18 +218,44 @@ async def change_badges(player):
 
     await ws.call_batch(batch)
 
+async def disconnect_all_local_connections():
+    global connections
+    for connection in connections:
+        connection.close()
+        await connection.wait_closed()
+
 async def pass_bh_to_server(server_address, port):
     async def bizreader(reader, _):
-        while True:
+        global bizClient_is_connected
+        retry_count = 0
+        while retry_count < RETRY_LIMIT:
             try:
                 # msg = await reader.read(1330)
                 msg = await reader.read(1418)
                 writer.write(msg)
+                bizClient_is_connected = 'connected'
+                retry_count = 0
                 await writer.drain()
+            except (ConnectionRefusedError, ConnectionResetError, TimeoutError) as e:
+                bizClient_is_connected = 'reconnecting'
+                retry_count += 1
+                exc = f"bizreader network error: {e}. Attempt {retry_count}/{RETRY_LIMIT}"
+                logger.error(exc)
+                if retry_count < RETRY_LIMIT:
+                    await asyncio.sleep(RETRY_DELAY)
+                else:
+                    bizClient_is_connected = 'disconnected'
+                    raise type(e)(exc)
             except Exception as err:
-                logger.error(f"bizreader: {err}")
-                return
+                exc = f"bizreader: {err}"
+                logger.error(exc)
+                if retry_count < RETRY_LIMIT:
+                    await asyncio.sleep(RETRY_DELAY)
+                else:
+                    raise Exception(exc)
+        
 
+    global bizClient_is_connected
     global bizServer
     _, writer = await asyncio.open_connection(*server_address)
     global connections
@@ -235,65 +266,88 @@ async def pass_bh_to_server(server_address, port):
             await bizServer.serve_forever()
         except Exception as err:
             logger.error(f"bizserver: {err}")
+            connections.remove(writer)
             return
 
-async def disconnect_all_local_connections():
-    global connections
-    for connection in connections:
-        connection.close()
-        await connection.wait_closed()
-
 async def connect_client(ip, port):
+    global connections
+    global client_is_connected
+    reader, writer = await asyncio.open_connection(ip, port)
+    connections.append(writer)
+    logger.info(f"client connected to {ip}:{port}")
+    client_is_connected = 'connected'
+    writer.write(b'\x00\x00')
+    await writer.drain()
+
+    retry_count = 0
+    while retry_count < RETRY_LIMIT:
+        try:
+            if not client_is_connected:
+                reader, writer = await asyncio.open_connection(ip, port)
+                connections.append(writer)
+                logger.info(f"client reconnected to {ip}:{port}")
+                client_is_connected = 'connected'
+                retry_count = 0
+                writer.write(b'\x00\x00')
+                await writer.drain()
+            await alter_teams(reader)
+        except (ConnectionRefusedError, ConnectionResetError, TimeoutError) as e:
+                client_is_connected = 'reconnecting'
+                connections.remove(writer)
+                retry_count += 1
+                exc = f"Client network error: {e}. Attempt {retry_count}/{RETRY_LIMIT}"
+                logger.error(exc)
+                if retry_count < RETRY_LIMIT:
+                    await asyncio.sleep(RETRY_DELAY)
+                else:
+                    break
+        except asyncio.CancelledError as async_err:
+            logger.error(f"async-Fehler: {async_err}")
+            connections.remove(writer)
+            break
+        except Exception as err:
+            err_type, err_value, err_traceback = sys.exc_info()
+            logger.error(f"\nconnect_client:\n{err_type}\n{err_value}\n{traceback.extract_tb(err_traceback)}")
+            connections.remove(writer)
+            break
+    
+    client_is_connected = 'disconnected'
+
+async def alter_teams(reader):
     global teams
     global unsorted_teams
     global badges
     global editions
-    global connections
-    reader, writer = await asyncio.open_connection(ip, port)
-    connections.append(writer)
-    logger.info(f"client connected to {ip}:{port}")
-    writer.write(b'\x00\x00')
-    await writer.drain()
+    length = int.from_bytes(await reader.read(3), 'big')
+    msg = await reader.read(length)
+    unsorted_teams = pickle.loads(msg)
+    # logger.info(unsorted_teams)
+    new_teams = unsorted_teams.copy()
+    for player in new_teams:
+        team = new_teams[player]
+        logger.info(team)
+        new_teams[player] = sort(team[:6], conf['order'])
+        if player not in badges or unsorted_teams[player][6] != badges[player]:
+            badges[player] = unsorted_teams[player][6]
+        if player not in editions or unsorted_teams[player][7] != editions[player]:
+            editions[player] = unsorted_teams[player][7]
+            await change_badges(player)
+    if new_teams != teams:
+        for player in new_teams:
+            if player not in teams:
+                await changeSource(player, range(6), new_teams[player], editions[player])
+                continue
 
-    while True:
-        try:
-            length = int.from_bytes(await reader.read(3), 'big')
-            msg = await reader.read(length)
-            unsorted_teams = pickle.loads(msg)
-            # logger.info(unsorted_teams)
-            new_teams = unsorted_teams.copy()
-            for player in new_teams:
-                team = new_teams[player]
-                logger.info(team)
-                new_teams[player] = sort(team[:6], conf['order'])
-                if player not in badges or unsorted_teams[player][6] != badges[player]:
-                    badges[player] = unsorted_teams[player][6]
-                if player not in editions or unsorted_teams[player][7] != editions[player]:
-                    editions[player] = unsorted_teams[player][7]
-                    await change_badges(player)
-            if new_teams != teams:
-                for player in new_teams:
-                    if player not in teams:
-                        await changeSource(player, range(6), new_teams[player], editions[player])
-                        continue
-
-                    diff = []
-                    team = new_teams[player]
-                    old_team = teams[player]
-                    for i in range(6):
-                        if team[i] != old_team[i] and team[i].isLegit(editions[player]):
-                            logger.debug(f"{i=},{team[i]=}")
-                            diff.append(i)
-                    await changeSource(player, diff, team, editions[player])
-                    await change_badges(player)
-                teams = new_teams.copy()
-        except asyncio.CancelledError as async_err:
-            logger.error(f"async-Fehler: {async_err}")
-            break
-        except Exception as err:
-            err_type, err_value, err_traceback = sys.exc_info()
-            logger.error(f"connect_client:\n{err_type}\n{err_value}\n{traceback.extract_tb(err_traceback)}")
-            break
+            diff = []
+            team = new_teams[player]
+            old_team = teams[player]
+            for i in range(6):
+                if team[i] != old_team[i]:
+                    logger.debug(f"{i=},{team[i]=}")
+                    diff.append(i)
+            await changeSource(player, diff, team, editions[player])
+            await change_badges(player)
+        teams = new_teams.copy()
         
 
 def change_order(*args):

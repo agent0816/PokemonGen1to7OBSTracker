@@ -11,6 +11,7 @@ from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 from kivy.core.window import Window
 from kivy.config import Config
+from kivy.properties import OptionProperty
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -56,6 +57,23 @@ class Screens(ScreenManager):
         self.add_widget(MainMenu())
         self.add_widget(SettingsMenu())
         self.current = "MainMenu"
+
+class ConnectionStatusLabel(Label):
+    reconnect_status = OptionProperty('disconnected', options=['connected', 'reconnecting', 'disconnected'])
+
+    def on_reconnect_status(self, instance, value):
+        if value == 'connected':
+            self.text = "Connected"
+            self.color = (0, 1, 0, 1)  # Green
+        elif value == 'reconnecting':
+            self.text = "Reconnecting..."
+            self.color = (1, 1, 0, 1)  # Yellow
+        else:
+            self.text = "Disconnected"
+            self.color = (1, 0, 0, 1)  # Red
+
+    def poll_backend_status(self, dt, connection_status):
+        self.reconnect_status = connection_status
 
 class MainMenu(Screen):
     def __init__(self, **kwargs):

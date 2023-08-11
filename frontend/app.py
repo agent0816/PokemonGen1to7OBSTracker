@@ -128,7 +128,7 @@ class MainMenu(Screen):
         showing_frame = BoxLayout(orientation='horizontal')
         sort_layout = BoxLayout(orientation='vertical', spacing="20dp", padding=("5dp",0))
 
-        ueberschrift_sortierung = Label(text="Sortierung",halign='left', size_hint_x=None, width=sort_layout.width)
+        ueberschrift_sortierung = Label(text="Sortierung",halign='left', size_hint_x=None, width=sort_layout.width, font_size="20sp")
         sort_layout.add_widget(ueberschrift_sortierung)
 
         sorts = (("DexNr.","dexnr"), ("Team", "team"), ("Level","lvl"), ("Route","route"))
@@ -141,6 +141,7 @@ class MainMenu(Screen):
 
         checkmarks = (("Orden anzeigen", "badges_check"),("Namen anzeigen", "names_check"),("Items anziegen", "items_check"),("animierte Sprites", "animated_check"))
         show_layout = GridLayout(cols=2)
+
         for text, id in checkmarks:
             anchor = AnchorLayout(anchor_x='right', size_hint_x=0.5)
             checkbox = CheckBox(size_hint=(None, None), size=("20dp","20dp"), on_press=self.save_changes)
@@ -188,7 +189,7 @@ class MainMenu(Screen):
         global bizConnector
         instance.disabled = True
         if rem['start_server']:
-            self.connect_client()
+            self.connect_bh_client()
             bizConnector = asyncio.create_task(client.pass_bh_to_server(("127.0.0.1", rem['server_port']), bh['port']))
         else:
             bizConnector = asyncio.create_task(client.pass_bh_to_server((rem['server_ip_adresse'], rem['client_port']), bh['port']))
@@ -235,6 +236,9 @@ class MainMenu(Screen):
             asyncio.gather(*connectors)
         except asyncio.CancelledError as async_err:
             logger.error(f"async_Fehler: {async_err}")
+
+    def connect_bh_client(self):
+        pass
 
     def launchserver(self,*args):
         global connector

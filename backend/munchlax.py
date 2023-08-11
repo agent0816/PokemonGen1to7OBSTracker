@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import logging
 import traceback
+from websockets.exceptions import WebSocketException
 
 logger = logging.getLogger(__name__)
 logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
@@ -26,6 +27,7 @@ ws = None
 bizServer = None
 bizClient_is_connected = 'disconnected'
 client_is_connected = 'disconnected'
+obs_is_connected = 'disconnected'
 unsorted_teams = {}
 teams = {}
 badges = {}
@@ -39,6 +41,7 @@ connections = []
 
 async def load_obsws(host, port, password):
     global ws
+    global obs_is_connected
 
     if not ws or not ws.is_identified():
         ws = simpleobsws.WebSocketClient(url=f'ws://{host}:{port}', password=password, identification_parameters=simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks=False))
@@ -47,8 +50,13 @@ async def load_obsws(host, port, password):
             await ws.wait_until_identified()  # type:ignore
             await redraw_obs()
             logger.info("obs connected.")
+            obs_is_connected = 'connected'
+        except WebSocketException as wserr:
+            logger.error(f"wserr: {type(wserr)} {wserr}")
+            obs_is_connected = 'disconnected'
         except Exception as err:
-            pass
+            logger.error(f"err: {type(err)} {err}")
+            obs_is_connected = 'disconnected'
 
 async def redraw_obs():
     if ws and ws.is_identified():
@@ -105,7 +113,9 @@ def get_sprite(pokemon, anim, edition):
     return path + file
 
 async def changeSource(player, slots, team, edition):
+    global obs_is_connected
     if not ws or not ws.is_identified():
+        obs_is_connected = 'disconnected'
         return
     batch = []
     for slot in slots:
@@ -162,6 +172,7 @@ def sort(liste, key):
         return sorted(sorted(liste), key=lambda a: a.route if a.dexnr != 0 else 999999)
 
 async def change_badges(player):
+    global obs_is_connected
     badge_lut = {
         11:'kanto',
         12:'kanto',
@@ -188,6 +199,7 @@ async def change_badges(player):
     if not conf['show_badges']:
         return
     if not ws or not ws.is_identified():
+        obs_is_connected = 'disconnected'
         return
     batch = []
     for i in range(16):
@@ -220,9 +232,14 @@ async def change_badges(player):
 
 async def disconnect_all_local_connections():
     global connections
+    global bizClient_is_connected
+    global client_is_connected
     for connection in connections:
         connection.close()
         await connection.wait_closed()
+        connections.remove(connection)
+    bizClient_is_connected = 'disconnected'
+    client_is_connected = 'disconnected'
 
 async def pass_bh_to_server(server_address, port):
     async def bizreader(reader, _):
@@ -348,7 +365,6 @@ async def alter_teams(reader):
             await changeSource(player, diff, team, editions[player])
             await change_badges(player)
         teams = new_teams.copy()
-        
 
 def change_order(*args):
     for team in teams:

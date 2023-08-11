@@ -246,4 +246,5 @@ local status, error = pcall(main)
 
 if not status then
     print(error)
+    logging.error(error)
 end

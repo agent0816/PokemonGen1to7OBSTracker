@@ -16,11 +16,6 @@ stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
-if len(sys.argv) > 1:
-    port = sys.argv[1]
-else:
-    port = 43885
-
 teams = {}
 server = None
 connections = []
@@ -114,4 +109,8 @@ async def handle_munchlax(writer):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        port = sys.argv[1]
+    else:
+        port = 43885
     asyncio.run(main(port))

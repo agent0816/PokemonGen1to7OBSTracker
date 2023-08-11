@@ -234,10 +234,17 @@ async def disconnect_all_local_connections():
     global connections
     global bizClient_is_connected
     global client_is_connected
-    for connection in connections:
+    for connection in connections.copy():
+        logger.debug(connection.get_extra_info('peername'))
+        logger.debug(connection.get_extra_info('sockname'))
         connection.close()
-        await connection.wait_closed()
+        
+        try:
+            await asyncio.wait_for(connection.wait_closed(),5)
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout waiting for connection {connection.get_extra_info('sockname')} to close.")
         connections.remove(connection)
+    logger.debug(connections)
     bizClient_is_connected = 'disconnected'
     client_is_connected = 'disconnected'
 

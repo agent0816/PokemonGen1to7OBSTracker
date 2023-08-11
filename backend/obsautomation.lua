@@ -238,6 +238,10 @@ function main()
             comm.socketServerSendBytes(msg)
 
         end
+        if not comm.socketServerIsConnected() then
+            logging.info("Socket nicht verbunden")
+            print("Socket nicht verbunden")
+        end
         emu.frameadvance()
     end
 end

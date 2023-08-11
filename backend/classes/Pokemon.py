@@ -18,7 +18,7 @@ class Pokemon:
             self.item = kwargs.get('item')
 
     def __repr__(self):
-        return f'<{self.dexnr}, {self.nickname}, lvl.{self.lvl}, item:{self.item}>'
+        return f'<{self.dexnr}, {self.nickname}, lvl={self.lvl}, item={self.item}>'
 
     def __eq__(self, other) -> bool:
         if self.dexnr != other.dexnr:

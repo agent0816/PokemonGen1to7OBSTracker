@@ -2,10 +2,6 @@ import asyncio
 import pickle
 import simpleobsws
 import sys
-import yaml
-import subprocess
-import os
-from pathlib import Path
 import logging
 import traceback
 from websockets.exceptions import WebSocketException

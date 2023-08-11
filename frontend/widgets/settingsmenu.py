@@ -29,8 +29,9 @@ stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
 class SettingsMenu(Screen):
-    def __init__(self, **kwargs):
+    def __init__(self, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, **kwargs):
         super().__init__(**kwargs)
+
         self.name = "SettingsMenu"
 
         box = BoxLayout(orientation="vertical")
@@ -49,7 +50,7 @@ class SettingsMenu(Screen):
         layout = GridLayout(cols=2, size_hint_y=.85)
 
         button_box = BoxLayout(orientation="vertical", size_hint=(0.15, 1), pos_hint={"top": 0})
-        scrollview = ScrollSettings()
+        scrollview = ScrollSettings(externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
 
         settings_buttons = [
             ("Sprite\nPfade", 'sprite'),
@@ -84,8 +85,18 @@ class SettingsMenu(Screen):
         scrollview.scroll_y = scrolling
 
 class ScrollSettings(ScrollView):
-    def __init__(self, **kwargs):
+    def __init__(self,externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, **kwargs):
         super().__init__(**kwargs)
+        
+        self.externalIPv4 = externalIPv4
+        self.externalIPv6 = externalIPv6
+        self.configsave = configsave
+        self.sp = sp
+        self.rem = rem
+        self.obs = obs
+        self.bh = bh
+        self.pl = pl
+        
         self.games={
             'Rot und Blau':'gen1_red','Gelb':'gen1_yellow',
             'Silber':'gen2_silver','Gold':'gen2_gold','Kristall':'gen2_crystal',
@@ -216,9 +227,9 @@ class ScrollSettings(ScrollView):
         grid.bind(minimum_height=grid.setter('height')) #type: ignore
         
         grid.add_widget(Label(text="Deine öffentliche\nIpv4-Adresse", size_hint=(.5,None), size=(0,"30dp")))
-        grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ip]{externalIPv4}[/ref]", size_hint=(.5,None), size=(0,"30dp"), markup=True))
+        grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ip]{self.externalIPv4}[/ref]", size_hint=(.5,None), size=(0,"30dp"), markup=True))
         grid.add_widget(Label(text="Deine öffentliche\nIpv6-Adresse", size_hint=(.5,None), size=(0,"30dp")))
-        grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ipv6]{externalIPv6}[/ref]", size=(0,"30dp"), size_hint=(.5,None),markup=True))
+        grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ipv6]{self.externalIPv6}[/ref]", size=(0,"30dp"), size_hint=(.5,None),markup=True))
         
         remote_box.add_widget(grid)
         box.add_widget(remote_box)
@@ -297,14 +308,14 @@ class ScrollSettings(ScrollView):
                 self.game_sprites_ausklappen(ausklappbutton, self.ids["sprite"])
     
     def change_player_count(self, player_count, player_box):
-        pl["player_count"] = player_count
+        self.pl["player_count"] = player_count
         if self.ids["player_settings_ausklappen"].state =='down':
             player_box.remove_widget(self.ids["player_settings"])
             self.add_player_checkBoxes(player_box)
             # self.pressCheckBoxes()
         
-        with open(f"{configsave}player.yml", 'w') as file:
-            yaml.dump(pl, file)
+        with open(f"{self.configsave}player.yml", 'w') as file:
+            yaml.dump(self.pl, file)
     
     def player_ausklappen(self, instance, player_box):
         if instance.state == "down":
@@ -320,7 +331,7 @@ class ScrollSettings(ScrollView):
         player_settings_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
         player_settings_box.bind(minimum_height=player_settings_box.setter('height')) # type: ignore
         self.ids["player_settings"] = weakref.proxy(player_settings_box)
-        for i in range(begin, pl['player_count'] + 1):
+        for i in range(begin, self.pl['player_count'] + 1):
             idBox = f"box_spieler_{i}"
             box = BoxLayout(orientation="horizontal",size_hint_y=None, size=(0,"30dp"))
             self.ids[idBox] = weakref.proxy(box)
@@ -337,12 +348,12 @@ class ScrollSettings(ScrollView):
             idOBSLabel = f"obs_label_{i}"
 
             UI.create_label_and_checkboxes(box, self.ids, 
-                                            checkbox_id_name=idRemote,checkbox_on_press=self.toggle_obs, checkbox_active=pl[f"remote_{i}"],
+                                            checkbox_id_name=idRemote,checkbox_on_press=self.toggle_obs, checkbox_active=self.pl[f"remote_{i}"],
                                             checkbox_pos_hint={'center_x':.5, 'center_y':.5},
                                             label_id_name=idRemoteLabel, label_text="remote")
 
             UI.create_label_and_checkboxes(box, self.ids, 
-                                            checkbox_id_name=idOBS,checkbox_on_press=self.toggle_obs, checkbox_active=pl[f"obs_{i}"], checkbox_disabled=not pl[f"remote_{i}"],
+                                            checkbox_id_name=idOBS,checkbox_on_press=self.toggle_obs, checkbox_active=self.pl[f"obs_{i}"], checkbox_disabled=not self.pl[f"remote_{i}"],
                                             label_id_name=idOBSLabel, label_text="OBS", label_size=["40dp", "20dp"])
             self.ids[idRemote].ids[idOBS] = self.ids[idOBS]
             self.ids[idRemoteLabel].ids[idOBSLabel] = self.ids[idOBSLabel]
@@ -353,10 +364,10 @@ class ScrollSettings(ScrollView):
         self.pressCheckBoxes()
 
     def pressCheckBoxes(self):
-        for i in range(1, pl['player_count'] + 1):
-            if pl[f"remote_{i}"]:
+        for i in range(1, self.pl['player_count'] + 1):
+            if self.pl[f"remote_{i}"]:
                 self.ids[f"remote_player_{i}"].state = "down"
-            if pl[f"obs_{i}"]:
+            if self.pl[f"obs_{i}"]:
                 self.ids[f"obs_player_{i}"].state = "down"
     
     def toggle_obs(self, widgets):
@@ -391,105 +402,105 @@ class ScrollSettings(ScrollView):
                 games = [self.ids[id] for text, id in self.games.items()]
             else:
                 games=[]
-            stripped_path = path.replace(sp['common_path'], "", 1) if widget in games else path
+            stripped_path = path.replace(self.sp['common_path'], "", 1) if widget in games else path
             widget.text = stripped_path
             self.save_changes()
     
     def load_config(self):
-        self.ids.common_path.text = sp['common_path']
-        self.ids.items_path.text = sp['items_path']
-        self.ids.badges_path.text = sp['badges_path']
-        self.ids.game_sprites_check.state = 'down' if not sp['single_path_check'] else 'normal'
+        self.ids.common_path.text = self.sp['common_path']
+        self.ids.items_path.text = self.sp['items_path']
+        self.ids.badges_path.text = self.sp['badges_path']
+        self.ids.game_sprites_check.state = 'down' if not self.sp['single_path_check'] else 'normal'
         self.ausklapp_button_zeigen_oder_verstecken(self.ids.game_sprites_check, initializing=True)
 
-        self.ids.bizhawk_exe.text = bh['path']
-        self.ids.bizhawk_port.text = bh['port']
+        self.ids.bizhawk_exe.text = self.bh['path']
+        self.ids.bizhawk_port.text = self.bh['port']
 
-        self.ids["obs_password"].text = obs['password']
-        self.ids["obs_host"].text = obs['host']
-        self.ids["obs_port"].text = obs['port']
+        self.ids["obs_password"].text = self.obs['password']
+        self.ids["obs_host"].text = self.obs['host']
+        self.ids["obs_port"].text = self.obs['port']
 
-        self.ids["ip_server"].text = rem[f'server_ip_adresse']
-        self.ids["port_client"].text = rem[f'client_port']
-        self.ids['port_server'].text = rem[f'server_port']
+        self.ids["ip_server"].text = self.rem[f'server_ip_adresse']
+        self.ids["port_client"].text = self.rem[f'client_port']
+        self.ids['port_server'].text = self.rem[f'server_port']
 
-        self.ids[f"player_count_{pl['player_count']}"].state = "down"
+        self.ids[f"player_count_{self.pl['player_count']}"].state = "down"
 
     def load_game_sprites_config(self):
-        self.ids.gen1_red.text = sp['red']
-        self.ids.gen1_yellow.text = sp['yellow']
-        self.ids.gen2_silver.text = sp['silver']
-        self.ids.gen2_gold.text = sp['gold']
-        self.ids.gen2_crystal.text = sp['crystal']
-        self.ids.gen3_ruby.text = sp['ruby']
-        self.ids.gen3_emerald.text = sp['emerald']
-        self.ids.gen3_firered.text = sp['firered']
-        self.ids.gen4_diamond.text = sp['diamond']
-        self.ids.gen4_platinum.text = sp['platinum']
-        self.ids.gen4_heartgold.text = sp['heartgold']
-        self.ids.gen5_black.text = sp['black']
-        self.ids.gen6_x.text = sp['x']
-        self.ids.gen6_alphasapphire.text = sp['alphasapphire']
-        self.ids.gen7_sun.text = sp['sun']
-        self.ids.gen7_usun.text = sp['usun']
+        self.ids.gen1_red.text = self.sp['red']
+        self.ids.gen1_yellow.text = self.sp['yellow']
+        self.ids.gen2_silver.text = self.sp['silver']
+        self.ids.gen2_gold.text = self.sp['gold']
+        self.ids.gen2_crystal.text = self.sp['crystal']
+        self.ids.gen3_ruby.text = self.sp['ruby']
+        self.ids.gen3_emerald.text = self.sp['emerald']
+        self.ids.gen3_firered.text = self.sp['firered']
+        self.ids.gen4_diamond.text = self.sp['diamond']
+        self.ids.gen4_platinum.text = self.sp['platinum']
+        self.ids.gen4_heartgold.text = self.sp['heartgold']
+        self.ids.gen5_black.text = self.sp['black']
+        self.ids.gen6_x.text = self.sp['x']
+        self.ids.gen6_alphasapphire.text = self.sp['alphasapphire']
+        self.ids.gen7_sun.text = self.sp['sun']
+        self.ids.gen7_usun.text = self.sp['usun']
 
     def save_changes(self, *args):
-        sp['common_path'] = self.ids.common_path.text
-        sp['single_path_check'] = not self.ids.game_sprites_check.state == 'down'
-        sp['items_path'] = self.ids.items_path.text
-        sp['badges_path'] = self.ids.badges_path.text
-        client.conf = sp
+        self.sp['common_path'] = self.ids.common_path.text
+        self.sp['single_path_check'] = not self.ids.game_sprites_check.state == 'down'
+        self.sp['items_path'] = self.ids.items_path.text
+        self.sp['badges_path'] = self.ids.badges_path.text
+        client.conf = self.sp
         asyncio.create_task(client.redraw_obs())
-        with open(f"{configsave}sprites.yml", 'w') as file:
-            yaml.dump(sp, file)
+        with open(f"{self.configsave}sprites.yml", 'w') as file:
+            yaml.dump(self.sp, file)
 
         if self.ids["games_ausklappen"].state == 'down':
-            sp['red'] = self.ids.gen1_red.text
-            sp['yellow'] = self.ids.gen1_yellow.text
-            sp['silver'] = self.ids.gen2_silver.text
-            sp['gold'] = self.ids.gen2_gold.text
-            sp['crystal'] = self.ids.gen2_crystal.text
-            sp['ruby'] = self.ids.gen3_ruby.text
-            sp['emerald'] = self.ids.gen3_emerald.text
-            sp['firered'] = self.ids.gen3_firered.text
-            sp['diamond'] = self.ids.gen4_diamond.text
-            sp['platinum'] = self.ids.gen4_platinum.text
-            sp['heartgold'] = self.ids.gen4_heartgold.text
-            sp['black'] = self.ids.gen5_black.text
-            sp['x'] = self.ids.gen6_x.text
-            sp['alphasapphire'] = self.ids.gen6_alphasapphire.text
-            sp['sun'] = self.ids.gen7_sun.text
-            sp['usun'] = self.ids.gen7_usun.text
+            self.sp['red'] = self.ids.gen1_red.text
+            self.sp['yellow'] = self.ids.gen1_yellow.text
+            self.sp['silver'] = self.ids.gen2_silver.text
+            self.sp['gold'] = self.ids.gen2_gold.text
+            self.sp['crystal'] = self.ids.gen2_crystal.text
+            self.sp['ruby'] = self.ids.gen3_ruby.text
+            self.sp['emerald'] = self.ids.gen3_emerald.text
+            self.sp['firered'] = self.ids.gen3_firered.text
+            self.sp['diamond'] = self.ids.gen4_diamond.text
+            self.sp['platinum'] = self.ids.gen4_platinum.text
+            self.sp['heartgold'] = self.ids.gen4_heartgold.text
+            self.sp['black'] = self.ids.gen5_black.text
+            self.sp['x'] = self.ids.gen6_x.text
+            self.sp['alphasapphire'] = self.ids.gen6_alphasapphire.text
+            self.sp['sun'] = self.ids.gen7_sun.text
+            self.sp['usun'] = self.ids.gen7_usun.text
 
-        with open(f"{configsave}sprites.yml", 'w') as file:
-            yaml.dump(sp, file)
+        with open(f"{self.configsave}sprites.yml", 'w') as file:
+            yaml.dump(self.sp, file)
 
-        bh['path'] = self.ids.bizhawk_exe.text
-        bh['port'] = self.ids.bizhawk_port.text
+        self.bh['path'] = self.ids.bizhawk_exe.text
+        self.bh['port'] = self.ids.bizhawk_port.text
         
-        with open(f"{configsave}bh_config.yml", 'w') as file:
-            yaml.dump(bh, file)
+        with open(f"{self.configsave}bh_config.yml", 'w') as file:
+            yaml.dump(self.bh, file)
 
-        obs['password'] = self.ids["obs_password"].text
-        obs['host'] = self.ids["obs_host"].text
-        obs['port'] = self.ids["obs_port"].text
+        self.obs['password'] = self.ids["obs_password"].text
+        self.obs['host'] = self.ids["obs_host"].text
+        self.obs['port'] = self.ids["obs_port"].text
         
-        with open(f"{configsave}obs_config.yml", 'w') as file:
-            yaml.dump(obs, file)
+        with open(f"{self.configsave}obs_config.yml", 'w') as file:
+            yaml.dump(self.obs, file)
 
-        rem['client_port'] = self.ids['port_client'].text
+        self.rem['client_port'] = self.ids['port_client'].text
 
-        rem['server_ip_adresse'] = self.ids['ip_server'].text
-        rem['server_port'] = self.ids['port_server'].text
+        self.rem['server_ip_adresse'] = self.ids['ip_server'].text
+        self.rem['server_port'] = self.ids['port_server'].text
 
-        with open(f"{configsave}remote.yml", 'w') as file:
-            yaml.dump(rem, file)
+        with open(f"{self.configsave}remote.yml", 'w') as file:
+            yaml.dump(self.rem, file)
 
         if self.ids["player_settings_ausklappen"].state == 'down':
-            for i in range(1, pl['player_count'] + 1):
-                pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
-                pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
+            for i in range(1, self.pl['player_count'] + 1):
+                self.pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
+                self.pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
 
         # rem['start_server'] = self.ids['main_Yes'].state == "down"
-        with open(f"{configsave}player.yml", 'w') as file:
-            yaml.dump(pl, file)
+        with open(f"{self.configsave}player.yml", 'w') as file:
+            yaml.dump(self.pl, file)

@@ -35,8 +35,8 @@ class Screens(ScreenManager):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
-        self.add_widget(MainMenu())
-        self.add_widget(SettingsMenu())
+        self.add_widget(MainMenu(connector, OBSconnector, clientConnector, bizConnector, connectors, configsave, sp, rem, obs, bh, pl))
+        self.add_widget(SettingsMenu(externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl))
         self.current = "MainMenu"
 
 class TrackerApp(App):  

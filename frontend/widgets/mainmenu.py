@@ -47,7 +47,19 @@ class ConnectionStatusLabel(Label):
         self.reconnect_status = connection_status
 
 class MainMenu(Screen):
-    def __init__(self, **kwargs):
+    def __init__(self, connector, OBSconnector, clientConnector, bizConnector, connectors, configsave, sp, rem, obs, bh, pl, **kwargs):
+        self.connector = connector
+        self.OBSconnector = OBSconnector
+        self.clientConnector = clientConnector
+        self.bizConnector = bizConnector
+        self.connectors = connectors
+        self.configsave = configsave
+        self.sp = sp
+        self.rem = rem
+        self.obs = obs
+        self.bh = bh
+        self.pl = pl
+
         super().__init__(**kwargs)
         self.name = "MainMenu"
         frame = BoxLayout(orientation='vertical')
@@ -129,9 +141,7 @@ class MainMenu(Screen):
         frame.add_widget(showing_frame)
         self.add_widget(frame)
         
-        global sp
-        global rem
-        self.init_config(sp, rem)
+        self.init_config(self.sp, self.rem)
 
     def toggle_obs(self, instance):
         if instance.text == "OBS verbinden":
@@ -142,33 +152,28 @@ class MainMenu(Screen):
             instance.text = "OBS verbinden"
     
     def connectOBS(self,*args):
-        global OBSconnector
-        global connectors
-        if not OBSconnector:
-            OBSconnector = asyncio.create_task(client.load_obsws(obs['host'], obs['port'], obs['password']))
-            connectors.append(OBSconnector)
-        asyncio.gather(*connectors)
+        if not self.OBSconnector:
+            self.OBSconnector = asyncio.create_task(client.load_obsws(self.obs['host'], self.obs['port'], self.obs['password']))
+            self.connectors.append(self.OBSconnector)
+        asyncio.gather(*self.connectors)
 
     def disconnectOBS(self, *args):
-        global OBSconnector
-        if OBSconnector:
+        if self.OBSconnector:
             asyncio.create_task(client.ws.disconnect())
-            OBSconnector = None
+            self.OBSconnector = None
             logger.info("OBS disconnected.")
 
     def launchbh(self, instance):
-        global bizConnector
         instance.disabled = True
-        if rem['start_server']:
+        if self.rem['start_server']:
             self.connect_bh_client()
-            bizConnector = asyncio.create_task(client.pass_bh_to_server(("127.0.0.1", rem['server_port']), bh['port']))
+            self.bizConnector = asyncio.create_task(client.pass_bh_to_server(("127.0.0.1", self.rem['server_port']), self.bh['port']))
         else:
-            bizConnector = asyncio.create_task(client.pass_bh_to_server((rem['server_ip_adresse'], rem['client_port']), bh['port']))
-        global connectors
-        asyncio.gather(*connectors)
-        for i in range(pl['player_count']):
-            if not pl[f'remote_{i+1}']:
-                subprocess.Popen([bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={bh["host"]}', f'--socket_port={bh["port"]}'])
+            self.bizConnector = asyncio.create_task(client.pass_bh_to_server((self.rem['server_ip_adresse'], self.rem['client_port']), self.bh['port']))
+        asyncio.gather(*self.connectors)
+        for i in range(self.pl['player_count']):
+            if not self.pl[f'remote_{i+1}']:
+                subprocess.Popen([self.bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={self.bh["host"]}', f'--socket_port={self.bh["port"]}'])
 
         def enable_button(button):
             button.disabled = False
@@ -187,45 +192,38 @@ class MainMenu(Screen):
             self.save_changes(instance)
     
     def connect_client(self, *args):
-        global clientConnector
-        global connector
-        global connectors
         if client.bizServer:
-            logger.info(f"lokale bizhawk-Verbindung auf Port {bh['port']} aufghoben")
+            logger.info(f"lokale bizhawk-Verbindung auf Port {self.bh['port']} aufghoben")
             client.bizServer.close()
             client.bizServer = None
             asyncio.create_task(client.disconnect_all_local_connections())
-        if connector and server.server:
-            logger.info(f"laufender server beendet auf Port {rem['server_port']}")
+        if self.connector and server.server:
+            logger.info(f"laufender server beendet auf Port {self.rem['server_port']}")
             server.server.close()
             server.server = None
-            connector = None
-        if not clientConnector:
-            clientConnector = asyncio.create_task(client.connect_client(rem["server_ip_adresse"], rem["client_port"]))
-            connectors.append(clientConnector)
+            self.connector = None
+        if not self.clientConnector:
+            self.clientConnector = asyncio.create_task(client.connect_client(self.rem["server_ip_adresse"], self.rem["client_port"]))
+            self.connectors.append(self.clientConnector)
         try:
-            asyncio.gather(*connectors)
+            asyncio.gather(*self.connectors)
         except asyncio.CancelledError as async_err:
             logger.error(f"async_Fehler: {async_err}")
 
     def connect_bh_client(self):
-        global clientConnector
-        global connectors
-        if not clientConnector:
-            clientConnector = asyncio.create_task(client.connect_client("127.0.0.1", rem["server_port"]))
-            connectors.append(clientConnector)
+        if not self.clientConnector:
+            self.clientConnector = asyncio.create_task(client.connect_client("127.0.0.1", self.rem["server_port"]))
+            self.connectors.append(self.clientConnector)
         try:
-            asyncio.gather(*connectors)
+            asyncio.gather(*self.connectors)
         except asyncio.CancelledError as async_err:
             logger.error(f"async_Fehler: {async_err}")
 
     def launchserver(self,*args):
-        global connector
-        global connectors
-        if not connector:
-            connector = asyncio.create_task(server.main(port=rem['server_port']))
+        if not self.connector:
+            self.connector = asyncio.create_task(server.main(port=self.rem['server_port']))
         try:
-            asyncio.gather(*connectors)
+            asyncio.gather(*self.connectors)
         except asyncio.CancelledError as async_err:
             logger.error(f"async_Fehler: {async_err}")
 
@@ -242,21 +240,21 @@ class MainMenu(Screen):
         sorts = {"DexNr.":"dexnr", "Team": "team", "Level":"lvl", "Route":"route"}
         for button in ToggleButton.get_widgets("sort"):
             if button.state == 'down':
-                sp['order'] = sorts[button.text]
+                self.sp['order'] = sorts[button.text]
 
-        sp['animated'] = self.ids.animated_check.state == 'down'
-        sp['show_nicknames'] = self.ids.names_check.state == 'down'
-        sp['show_items'] = self.ids.items_check.state == 'down'
-        sp['show_badges'] = self.ids.badges_check.state == 'down'
-        client.conf = sp
+        self.sp['animated'] = self.ids.animated_check.state == 'down'
+        self.sp['show_nicknames'] = self.ids.names_check.state == 'down'
+        self.sp['show_items'] = self.ids.items_check.state == 'down'
+        self.sp['show_badges'] = self.ids.badges_check.state == 'down'
+        client.conf = self.sp
         client.change_order()
         asyncio.create_task(client.redraw_obs())
-        with open(f"{configsave}sprites.yml", 'w') as file:
-            yaml.dump(sp, file)
+        with open(f"{self.configsave}sprites.yml", 'w') as file:
+            yaml.dump(self.sp, file)
 
-        rem['start_server'] = self.ids['start_server'].state == "down"
-        with open(f"{configsave}player.yml", 'w') as file:
-            yaml.dump(pl, file)
+        self.rem['start_server'] = self.ids['start_server'].state == "down"
+        with open(f"{self.configsave}player.yml", 'w') as file:
+            yaml.dump(self.pl, file)
 
     def switch_to_settings(self, instance):
         self.manager.current = "SettingsMenu"

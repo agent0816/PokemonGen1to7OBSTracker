@@ -7,13 +7,13 @@ import pickle
 from backend.obs import OBS
 
 class Munchlax:
-    def __init__(self, host, port):
+    def __init__(self, host, port, conf):
         self.client_id = self.generate_hashed_id()
         self.teams = {}
         self.unsorted_teams = {}
         self.badges = {}
         self.editions = {}
-        self.conf = {}
+        self.conf = conf
         self.host = host
         self.port = port
         self.is_connected = False
@@ -34,8 +34,6 @@ class Munchlax:
         stream_handler.setFormatter(logging_formatter)
         logger.addHandler(stream_handler)
 
-        logger.setLevel(logging.DEBUG)
-        
         return logger
 
     async def alter_teams(self):

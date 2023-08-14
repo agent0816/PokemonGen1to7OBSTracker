@@ -9,7 +9,10 @@ from kivy.core.window import Window
 from kivy.config import Config
 from kivy.uix.screenmanager import FadeTransition
 from kivy.uix.screenmanager import ScreenManager
-import backend.munchlax as client
+from backend.arceus import Arceus
+from backend.bizhawk import Bizhawk
+from backend.munchlax import Munchlax
+from backend.obs import OBS
 import logging
 
 logger = logging.getLogger(__name__)
@@ -30,11 +33,11 @@ Config.read("gui.ini")
 class Screens(ScreenManager):
     def __init__(
         self,
-        connector,
-        OBSconnector,
-        clientConnector,
-        bizConnector,
-        connectors,
+        arceus,
+        bizhawk,
+        bizhawk_instances,
+        munchlax,
+        obs_websocket,
         externalIPv4,
         externalIPv6,
         configsave,
@@ -48,19 +51,7 @@ class Screens(ScreenManager):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
         self.add_widget(
-            MainMenu(
-                connector,
-                OBSconnector,
-                clientConnector,
-                bizConnector,
-                connectors,
-                configsave,
-                sp,
-                rem,
-                obs,
-                bh,
-                pl,
-            )
+            MainMenu( arceus, bizhawk, bizhawk_instances, munchlax, obs_websocket, configsave, sp, rem, obs, bh, pl)
         )
         self.add_widget(
             SettingsMenu(externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
@@ -76,11 +67,6 @@ class TrackerApp(App):
         Config.set("graphics", "width", "600")
         Config.set("graphics", "height", "400")
         Config.set("input", "mouse", "mouse,multitouch_on_demand")
-        self.connector = None
-        self.OBSconnector = None
-        self.clientConnector = None
-        self.bizConnector = None
-        self.connectors = []
 
     def build(self):
         try:
@@ -106,7 +92,6 @@ class TrackerApp(App):
         self.sp = {}
         with open(f"{self.configsave}sprites.yml") as file:
             self.sp = yaml.safe_load(file)
-        client.conf = self.sp
         self.pl = {}
         with open(f"{self.configsave}player.yml") as file:
             self.pl = yaml.safe_load(file)
@@ -114,12 +99,26 @@ class TrackerApp(App):
         with open(f"{self.configsave}remote.yml") as file:
             self.rem = yaml.safe_load(file)
 
+        self.arceus = Arceus("", self.rem["client_port"])
+        self.bizhawk = Bizhawk(self.bh["host"], self.bh["port"])
+        self.bizhawk_instances = []
+        self.munchlax = Munchlax(
+            self.rem["server_ip_adresse"], self.rem["server_port"], self.sp
+        )
+        self.obs_websocket = OBS(
+            self.obs["host"],
+            self.obs["port"],
+            self.obs["password"],
+            self.munchlax,
+            self.sp,
+        )
+
         arguments = [
-            self.connector,
-            self.OBSconnector,
-            self.clientConnector,
-            self.bizConnector,
-            self.connectors,
+            self.arceus,
+            self.bizhawk,
+            self.bizhawk_instances,
+            self.munchlax,
+            self.obs_websocket,
             self.externalIPv4,
             self.externalIPv6,
             self.configsave,

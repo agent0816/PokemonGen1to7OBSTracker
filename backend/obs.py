@@ -4,12 +4,14 @@ import sys
 from websockets.exceptions import WebSocketException
 
 class OBS():
-    def __init__(self, munchlax):
+    def __init__(self, host, port, password, munchlax, conf):
         self.ws = None
         self.is_connected = False
+        self.host = host
+        self.port = port
+        self.password = password
         self.munchlax = munchlax
-        self.conf = {}
-        self.munchlax.obs = self
+        self.conf = conf
 
         self.logger = self.init_logging()
 
@@ -26,25 +28,30 @@ class OBS():
         stream_handler.setFormatter(logging_formatter)
         logger.addHandler(stream_handler)
 
-        logger.setLevel(logging.DEBUG)
-        
         return logger
 
-    async def load_obsws(self, host, port, password):
+    async def load_obsws(self):
         if not self.ws or not self.ws.is_identified():
-            self.ws = simpleobsws.WebSocketClient(url=f'ws://{host}:{port}', password=password, identification_parameters=simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks=False))
+            self.ws = simpleobsws.WebSocketClient(url=f'ws://{self.host}:{self.port}', password=self.password, identification_parameters=simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks=False))
             try:
                 await self.ws.connect()  # type:ignore
                 await self.ws.wait_until_identified()  # type:ignore
                 await self.redraw_obs()
                 self.logger.info("obs connected.")
                 self.is_connected = True
+                if not self.munchlax.obs:
+                    self.munchlax.obs = self
             except WebSocketException as wserr:
                 self.logger.error(f"wserr: {type(wserr)} {wserr}")
                 self.is_connected = False
             except Exception as err:
                 self.logger.error(f"err: {type(err)} {err}")
                 self.is_connected = False
+
+    async def disconnect(self):
+        if self.ws:
+            await self.ws.disconnect()
+            self.is_connected = False
 
     async def redraw_obs(self):
         if self.ws and self.ws.is_identified():

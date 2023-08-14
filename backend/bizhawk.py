@@ -26,8 +26,6 @@ class Bizhawk:
         stream_handler.setFormatter(logging_formatter)
         logger.addHandler(stream_handler)
 
-        logger.setLevel(logging.DEBUG)
-        
         return logger
     
     async def handle_bizhawk(self, reader, writer):
@@ -61,8 +59,6 @@ class Bizhawk:
         edition = int((await reader.read(edition_length)).decode())
         player = int(client_id.decode()[7:])
 
-        self.logger.info(player)
-
         length = get_length()
         msg = await reader.read(length)
         update_teams(msg)
@@ -76,7 +72,6 @@ class Bizhawk:
                 length = get_length()
                 msg = await reader.read(length)
                 update_teams(msg)
-                self.logger.info(msg)
             except Exception as err:
                 self.logger.error(f"handle_bizhawk abgebrochen: {err}")
                 break

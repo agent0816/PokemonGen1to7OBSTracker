@@ -32,8 +32,6 @@ class Arceus:
         stream_handler.setFormatter(logging_formatter)
         logger.addHandler(stream_handler)
 
-        logger.setLevel(logging.DEBUG)
-        
         return logger
     
     async def handle_munchlax(self, reader, writer):
@@ -117,6 +115,7 @@ class Arceus:
         self.server = await asyncio.start_server(
             self.handle_munchlax, self.host, self.port)
         
+        self.logger.info(f"Arceus auf Port {self.port} gestartet")
         asyncio.create_task(self.check_heartbeats())
 
         async with self.server:

@@ -182,7 +182,6 @@ function main()
     end
 
     while true do
-        logging.info("started reading RAM from bizhawk")
         team = memory.read_bytes_as_array(pointer, length, domain)
         if areTablesEqual(team, lastTeam) then
             fluctcount = fluctcount + 1

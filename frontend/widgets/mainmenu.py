@@ -14,8 +14,6 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.togglebutton import ToggleButton
-import backend.server as server
-import backend.munchlax as client
 import logging
 
 logger = logging.getLogger(__name__)
@@ -47,18 +45,19 @@ class ConnectionStatusLabel(Label):
         self.reconnect_status = connection_status
 
 class MainMenu(Screen):
-    def __init__(self, connector, OBSconnector, clientConnector, bizConnector, connectors, configsave, sp, rem, obs, bh, pl, **kwargs):
-        self.connector = connector
-        self.OBSconnector = OBSconnector
-        self.clientConnector = clientConnector
-        self.bizConnector = bizConnector
-        self.connectors = connectors
+    def __init__(self, arceus, bizhawk, bizhawk_instances, munchlax, obs_websocket, configsave, sp, rem, obs, bh, pl, **kwargs):
+        self.arceus = arceus
+        self.bizhawk = bizhawk
+        self.bizhawk_instances = bizhawk_instances
+        self.munchlax = munchlax
+        self.obs_websocket = obs_websocket
         self.configsave = configsave
         self.sp = sp
         self.rem = rem
         self.obs = obs
         self.bh = bh
         self.pl = pl
+        self.connectors = set()
 
         super().__init__(**kwargs)
         self.name = "MainMenu"
@@ -152,28 +151,29 @@ class MainMenu(Screen):
             instance.text = "OBS verbinden"
     
     def connectOBS(self,*args):
-        if not self.OBSconnector:
-            self.OBSconnector = asyncio.create_task(client.load_obsws(self.obs['host'], self.obs['port'], self.obs['password']))
-            self.connectors.append(self.OBSconnector)
-        asyncio.gather(*self.connectors)
+        if not self.obs_websocket.is_connected:
+            task = asyncio.create_task(self.obs_websocket.load_obsws())
+            self.connectors.add(task)
+            asyncio.gather(*self.connectors)
+            logger.info("OBS connected.")
 
     def disconnectOBS(self, *args):
-        if self.OBSconnector:
-            asyncio.create_task(client.ws.disconnect())
-            self.OBSconnector = None
+        if self.obs_websocket.is_connected:
+            task = asyncio.create_task(self.obs_websocket.disconnect())
+            self.connectors.add(task)
+            asyncio.gather(*self.connectors)
             logger.info("OBS disconnected.")
 
     def launchbh(self, instance):
         instance.disabled = True
-        if self.rem['start_server']:
-            self.connect_bh_client()
-            self.bizConnector = asyncio.create_task(client.pass_bh_to_server(("127.0.0.1", self.rem['server_port']), self.bh['port']))
-        else:
-            self.bizConnector = asyncio.create_task(client.pass_bh_to_server((self.rem['server_ip_adresse'], self.rem['client_port']), self.bh['port']))
-        asyncio.gather(*self.connectors)
+        if not self.bizhawk.server:
+            task = asyncio.create_task(self.bizhawk.start(self.munchlax))
+            self.connectors.add(task)
+            asyncio.gather(*self.connectors)
         for i in range(self.pl['player_count']):
             if not self.pl[f'remote_{i+1}']:
-                subprocess.Popen([self.bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={self.bh["host"]}', f'--socket_port={self.bh["port"]}'])
+                process = subprocess.Popen([self.bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={self.bh["host"]}', f'--socket_port={self.bh["port"]}'])
+                self.bizhawk_instances.append(process)
 
         def enable_button(button):
             button.disabled = False
@@ -192,40 +192,19 @@ class MainMenu(Screen):
             self.save_changes(instance)
     
     def connect_client(self, *args):
-        if client.bizServer:
-            logger.info(f"lokale bizhawk-Verbindung auf Port {self.bh['port']} aufghoben")
-            client.bizServer.close()
-            client.bizServer = None
-            asyncio.create_task(client.disconnect_all_local_connections())
-        if self.connector and server.server:
-            logger.info(f"laufender server beendet auf Port {self.rem['server_port']}")
-            server.server.close()
-            server.server = None
-            self.connector = None
-        if not self.clientConnector:
-            self.clientConnector = asyncio.create_task(client.connect_client(self.rem["server_ip_adresse"], self.rem["client_port"]))
-            self.connectors.append(self.clientConnector)
-        try:
+        logger.info("connect_client")
+        if not self.munchlax.is_connected:
+            task = asyncio.create_task(self.munchlax.connect())
+            self.connectors.add(task)
             asyncio.gather(*self.connectors)
-        except asyncio.CancelledError as async_err:
-            logger.error(f"async_Fehler: {async_err}")
-
-    def connect_bh_client(self):
-        if not self.clientConnector:
-            self.clientConnector = asyncio.create_task(client.connect_client("127.0.0.1", self.rem["server_port"]))
-            self.connectors.append(self.clientConnector)
-        try:
-            asyncio.gather(*self.connectors)
-        except asyncio.CancelledError as async_err:
-            logger.error(f"async_Fehler: {async_err}")
+            logger.info(self.munchlax.is_connected)
 
     def launchserver(self,*args):
-        if not self.connector:
-            self.connector = asyncio.create_task(server.main(port=self.rem['server_port']))
-        try:
+        if not self.arceus.server:
+            task = asyncio.create_task(self.arceus.start())
+            self.connectors.add(task)
             asyncio.gather(*self.connectors)
-        except asyncio.CancelledError as async_err:
-            logger.error(f"async_Fehler: {async_err}")
+        self.connect_client()
 
     def init_config(self, sp, rem):
         self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'
@@ -246,9 +225,9 @@ class MainMenu(Screen):
         self.sp['show_nicknames'] = self.ids.names_check.state == 'down'
         self.sp['show_items'] = self.ids.items_check.state == 'down'
         self.sp['show_badges'] = self.ids.badges_check.state == 'down'
-        client.conf = self.sp
-        client.change_order()
-        asyncio.create_task(client.redraw_obs())
+        # self.conf = self.sp
+        self.munchlax.change_order()
+        asyncio.create_task(self.obs_websocket.redraw_obs())
         with open(f"{self.configsave}sprites.yml", 'w') as file:
             yaml.dump(self.sp, file)
 

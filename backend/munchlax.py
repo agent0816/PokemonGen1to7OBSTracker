@@ -4,11 +4,11 @@ import hashlib
 import logging
 import sys
 import pickle
+from backend.obs import OBS
 
 class Munchlax:
     def __init__(self, host, port):
         self.client_id = self.generate_hashed_id()
-        self.emulator_teams = {}
         self.teams = {}
         self.unsorted_teams = {}
         self.badges = {}
@@ -17,6 +17,7 @@ class Munchlax:
         self.host = host
         self.port = port
         self.is_connected = False
+        self.obs = None
 
         self.logger = self.init_logging()
 
@@ -53,11 +54,13 @@ class Munchlax:
                 self.badges[player] = unsorted_teams[player][6]
             if player not in self.editions or unsorted_teams[player][7] != self.editions[player]:
                 self.editions[player] = unsorted_teams[player][7]
-                await change_badges(player)
+                if self.obs:
+                    await self.obs.change_badges(player) #type: ignore
         if new_teams != self.teams:
             for player in new_teams:
                 if player not in self.teams:
-                    await changeSource(player, range(6), new_teams[player], editions[player])
+                    if self.obs:
+                        await self.obs.changeSource(player, range(6), new_teams[player], self.editions[player]) #type: ignore
                     continue
 
                 diff = []
@@ -67,9 +70,10 @@ class Munchlax:
                     if team[i] != old_team[i]:
                         self.logger.debug(f"{i=},{team[i]=}")
                         diff.append(i)
-                await changeSource(player, diff, team, self.editions[player])
-                await change_badges(player)
-            teams = new_teams.copy()
+                if self.obs:
+                    await self.obs.changeSource(player, diff, team, self.editions[player]) #type: ignore
+                    await self.obs.change_badges(player) #type: ignore
+            self.teams = new_teams.copy()
 
     def sort(self, liste, key):
         key = key.lower().replace('.', '')

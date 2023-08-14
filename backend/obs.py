@@ -9,6 +9,7 @@ class OBS():
         self.is_connected = False
         self.munchlax = munchlax
         self.conf = {}
+        self.munchlax.obs = self
 
         self.logger = self.init_logging()
 

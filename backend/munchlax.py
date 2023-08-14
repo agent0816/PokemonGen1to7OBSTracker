@@ -1,39 +1,137 @@
 import asyncio
+import os
+import hashlib
+import logging
+import sys
+import pickle
 
 class Munchlax:
-    def __init__(self, client_id, host, port):
-        self.client_id = client_id
+    def __init__(self, host, port):
+        self.client_id = self.generate_hashed_id()
+        self.emulator_teams = {}
+        self.teams = {}
+        self.unsorted_teams = {}
+        self.badges = {}
+        self.editions = {}
+        self.conf = {}
         self.host = host
         self.port = port
+        self.is_connected = False
 
-    async def send_heartbeat(self, writer):
+        self.logger = self.init_logging()
+
+    def init_logging(self):
+        logger = logging.getLogger(__name__)
+
+        logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+
+        file_handler = logging.FileHandler('./logs/munchlax.log', 'w')
+        file_handler.setFormatter(logging_formatter)
+        logger.addHandler(file_handler)
+
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(logging_formatter)
+        logger.addHandler(stream_handler)
+
+        logger.setLevel(logging.DEBUG)
+        
+        return logger
+
+    async def alter_teams(self):
+        reader = self.reader
+
+        length = int.from_bytes(await reader.read(4), 'big')
+        msg = await reader.read(length)
+        unsorted_teams = pickle.loads(msg)
+        # logger.info(unsorted_teams)
+        new_teams = unsorted_teams.copy()
+        for player in new_teams:
+            team = new_teams[player]
+            self.logger.info(team)
+            new_teams[player] = self.sort(team[:6], self.conf['order'])
+            if player not in self.badges or unsorted_teams[player][6] != self.badges[player]:
+                self.badges[player] = unsorted_teams[player][6]
+            if player not in self.editions or unsorted_teams[player][7] != self.editions[player]:
+                self.editions[player] = unsorted_teams[player][7]
+                await change_badges(player)
+        if new_teams != self.teams:
+            for player in new_teams:
+                if player not in self.teams:
+                    await changeSource(player, range(6), new_teams[player], editions[player])
+                    continue
+
+                diff = []
+                team = new_teams[player]
+                old_team = self.teams[player]
+                for i in range(6):
+                    if team[i] != old_team[i]:
+                        self.logger.debug(f"{i=},{team[i]=}")
+                        diff.append(i)
+                await changeSource(player, diff, team, self.editions[player])
+                await change_badges(player)
+            teams = new_teams.copy()
+
+    def sort(self, liste, key):
+        key = key.lower().replace('.', '')
+        if key == 'dexnr':
+            return sorted(sorted(liste), key=lambda a: a)
+        if key == 'team':
+            return liste
+        if key == 'lvl':
+            return sorted(sorted(liste), key=lambda a: - a.lvl if a.dexnr != 0 else 999999)
+        if key == 'route':
+            return sorted(sorted(liste), key=lambda a: a.route if a.dexnr != 0 else 999999)
+
+    def change_order(self, *args):
+        for team in self.teams:
+            self.teams[team] = self.sort(self.unsorted_teams[team][:6], self.conf['order'])
+
+    async def send_heartbeat(self):
         while True:
-            await asyncio.sleep(5)
-            writer.write(b'heartbeat')
-            await writer.drain()
+            try:
+                await asyncio.sleep(5)
+                await self.send_message('heartbeat')
+            except Exception as err:
+                self.logger.error(f"{err}")
+                self.is_connected = False
+                break
 
-    async def start(self):
+    async def connect(self):
         self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
-        self.writer.write(self.client_id.encode())
-        await self.writer.drain()
+        self.logger.info(f"Munchlax {self.client_id} bei Arceus({self.host},{self.port}) registriert")
+        
+        await self.send_message(self.client_id)
+        self.is_connected = True
 
-        asyncio.create_task(self.send_heartbeat(self.writer))
-
-        try:
-            while True:
-                message = input("Enter message to send or 'exit' to disconnect: ")
-                if message == 'exit':
-                    await self.disconnect()
-                    break
-                self.writer.write(message.encode())
-                await self.writer.drain()
-        except KeyboardInterrupt:
-            print("Client disconnecting...")
+        asyncio.create_task(self.send_heartbeat())
 
     async def disconnect(self):
+        await self.send_message(f"disconnect {self.client_id}")
+        
         self.writer.close()
         await self.writer.wait_closed()
-        print(f"Client {self.client_id} has been disconnected.")
+        self.logger.info(f"Client {self.client_id} has been disconnected.")
+        self.is_connected = False
 
-class Bizhawk_Client():
-    pass
+    async def send_message(self, message: str):
+        serialized_message = pickle.dumps(message)
+        length = len(serialized_message).to_bytes(4, 'big')
+        self.writer.write(length)
+        await self.writer.drain()
+        self.writer.write(serialized_message)
+        await self.writer.drain()
+
+    async def receive_message(self):
+        reader = self.reader
+        message_length = int.from_bytes(await reader.read(4), 'big')
+        message = await reader.read(message_length)
+
+        return pickle.loads(message)
+    
+    def generate_hashed_id(self):
+        random_id = os.urandom(16)
+        
+        hashed = hashlib.sha256(random_id).hexdigest()
+
+        client_id = hashed
+        return client_id

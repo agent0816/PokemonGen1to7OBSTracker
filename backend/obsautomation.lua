@@ -6,8 +6,8 @@ end
 
 gui.clearGraphics()
 
-logging.info(comm.socketServerGetIp())
-logging.info(comm.socketServerGetPort())
+comm.socketServerSend("player" .. string.format("%03d", PLAYER))
+logging.info("registered " .. "player" .. string.format("%03d", PLAYER) .. " for Munchlax")
 
 function main()
     -- wie viele Sekunden zwischen den Updates
@@ -162,6 +162,9 @@ function main()
         end
     end
 
+    comm.socketServerSend(tostring(gameversion))
+    logging.info("registered game " .. tostring(gameversion) .. " for Munchlax")
+
     local msg = ''
     local lastTime = os.time()
     local currTime = 0
@@ -179,6 +182,7 @@ function main()
     end
 
     while true do
+        logging.info("started reading RAM from bizhawk")
         team = memory.read_bytes_as_array(pointer, length, domain)
         if areTablesEqual(team, lastTeam) then
             fluctcount = fluctcount + 1
@@ -237,10 +241,6 @@ function main()
             lastTime = currTime
             comm.socketServerSendBytes(msg)
 
-        end
-        if not comm.socketServerIsConnected() then
-            logging.info("Socket nicht verbunden")
-            print("Socket nicht verbunden")
         end
         emu.frameadvance()
     end

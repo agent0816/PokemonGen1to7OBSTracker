@@ -56,8 +56,8 @@ class Munchlax:
                         self.badges[player] = self.unsorted_teams[player][6]
                     if player not in self.editions or self.unsorted_teams[player][7] != self.editions[player]:
                         self.editions[player] = self.unsorted_teams[player][7]
-                        if self.obs:
-                            await self.obs.change_badges(player) #type: ignore
+                    if self.obs:
+                        await self.obs.change_badges(player) #type: ignore
                 if new_teams != self.sorted_teams:
                     for player in new_teams:
                         if player not in self.sorted_teams:

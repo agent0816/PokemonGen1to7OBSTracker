@@ -137,7 +137,7 @@ class OBS():
             return
         batch = []
         for i in range(16):
-            if (i == 0 and self.munchlax.badges[player] & 2**i):
+            if (self.munchlax.badges[player] & 2**i):
                 batch.append(
                     simpleobsws.Request(
                         "SetInputSettings",
@@ -203,11 +203,11 @@ class OBS():
         else:
             sub = ''
         path = (
-            self.conf['common_path'] + '/'
+            self.conf['common_path']# + '/'
             + sub
             + animated
             + shiny
-            + female
+            + female + '/'
         )
         file = str(pokemon.dexnr) + pokemon.form + filetype
         return path + file

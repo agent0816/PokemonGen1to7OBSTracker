@@ -144,7 +144,7 @@ class TrackerApp(App):
 
         for bizhawk in self.bizhawk_instances:
             bizhawk.terminate()
-        asyncio.create_task(asyncio.wait([self.bizhawk.stop(), self.obs_websocket.disconnect(), self.munchlax.disconnect(), self.arceus.stop()]))
+        asyncio.create_task(asyncio.wait([self.bizhawk.stop(), self.obs_websocket.disconnect(), self.munchlax.disconnect(), self.arceus.stop()], timeout=3))
 
     def save_config(self, path, setting):
         with open(path, "w") as file:

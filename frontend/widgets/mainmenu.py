@@ -12,6 +12,7 @@ from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
+from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen
 from kivy.uix.togglebutton import ToggleButton
 import logging
@@ -43,6 +44,35 @@ class ConnectionStatusLabel(Label):
 
     def poll_backend_status(self, dt, connection_status):
         self.reconnect_status = connection_status
+
+class BizhawkSavePopup(Popup):
+    def __init__(self, bizhawk_instances, bizhawk_button, **kwargs):
+        super().__init__(**kwargs)
+        self.bizhawk_instances = bizhawk_instances
+        self.bizhawk_button = bizhawk_button
+        
+        self.title = 'Speichern nicht vergessen!'
+        self.size_hint = (0.8, 0.4)
+
+
+        layout = BoxLayout(orientation='vertical')
+        layout.add_widget(Label(text='Hast du gespeichert??'))
+
+        btn_layout = BoxLayout(size_hint_y=None, height="50dp", spacing="5dp")
+        btn_yes = Button(text='Ja', on_press=self.on_yes)
+        btn_no = Button(text='Nein', on_press=self.dismiss)
+        
+        btn_layout.add_widget(btn_yes)
+        btn_layout.add_widget(btn_no)
+        layout.add_widget(btn_layout)
+
+        self.content = layout
+
+    def on_yes(self, instance):
+        for bizhawk in self.bizhawk_instances:
+            bizhawk.terminate()
+        self.bizhawk_button.text = "Bizhawk starten"
+        self.dismiss()
 
 class MainMenu(Screen):
     def __init__(self, arceus, bizhawk, bizhawk_instances, munchlax, obs_websocket, configsave, sp, rem, obs, bh, pl, **kwargs):
@@ -164,13 +194,18 @@ class MainMenu(Screen):
 
     def launchbh(self, instance):
         instance.disabled = True
-        if not self.bizhawk.server:
-            task = asyncio.create_task(self.bizhawk.start(self.munchlax))
-            self.connectors.add(task)
-        for i in range(self.pl['player_count']):
-            if not self.pl[f'remote_{i+1}']:
-                process = subprocess.Popen([self.bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={self.bh["host"]}', f'--socket_port={self.bh["port"]}'])
-                self.bizhawk_instances.append(process)
+        if instance.text == "Bizhawk starten":
+            if not self.bizhawk.server:
+                task = asyncio.create_task(self.bizhawk.start(self.munchlax))
+                self.connectors.add(task)
+            for i in range(self.pl['player_count']):
+                if not self.pl[f'remote_{i+1}']:
+                    process = subprocess.Popen([self.bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={self.bh["host"]}', f'--socket_port={self.bh["port"]}'])
+                    self.bizhawk_instances.append(process)
+            instance.text = "Bizhawk beenden"
+        elif instance.text == "Bizhawk beenden":
+            popup = BizhawkSavePopup(self.bizhawk_instances, instance)
+            popup.open()
 
         def enable_button(button):
             button.disabled = False

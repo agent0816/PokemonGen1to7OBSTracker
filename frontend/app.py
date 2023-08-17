@@ -8,6 +8,10 @@ from frontend.widgets.settingsmenu import SettingsMenu
 from kivy.app import App
 from kivy.core.window import Window
 from kivy.config import Config
+from kivy.uix.button import Button
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
+from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import FadeTransition
 from kivy.uix.screenmanager import ScreenManager
 from backend.arceus import Arceus
@@ -29,7 +33,6 @@ logger.addHandler(stream_handler)
 
 
 Config.read("gui.ini")
-
 
 class Screens(ScreenManager):
     def __init__(
@@ -59,6 +62,29 @@ class Screens(ScreenManager):
         )
         self.current = "MainMenu"
 
+class UpdatePopup(Popup):
+    def __init__(self, **kwargs):
+        super(UpdatePopup, self).__init__(**kwargs)
+        self.title = 'Update verfügbar!'
+        self.size_hint = (0.8, 0.4)
+
+        layout = BoxLayout(orientation='vertical')
+        layout.add_widget(Label(text='Eine neue Version der Anwendung ist verfügbar. Jetzt aktualisieren?'))
+
+        btn_layout = BoxLayout(size_hint_y=None, height="50dp", spacing="5dp")
+        btn_yes = Button(text='Ja', on_press=self.on_yes)
+        btn_no = Button(text='Nein', on_press=self.dismiss)
+        
+        btn_layout.add_widget(btn_yes)
+        btn_layout.add_widget(btn_no)
+        layout.add_widget(btn_layout)
+
+        self.content = layout
+
+    def on_yes(self, instance):
+        # Hier können Sie den Update-Prozess starten
+        print("Update gestartet...")
+        self.dismiss()
 
 class TrackerApp(App):
     def __init__(self, **kwargs):

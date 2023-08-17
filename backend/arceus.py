@@ -35,33 +35,39 @@ class Arceus:
         return logger
     
     async def handle_munchlax(self, reader, writer):
-        
+
         client_id = await self.receive_message(reader)
         self.munchlaxes[client_id] = writer
         self.munchlax_status[client_id] = 'connected'
         self.heartbeat_counts[client_id] = 0
-        self.logger.info(f"Client {client_id.decode()} connected and registered.")
+        self.logger.info(client_id)
+        self.logger.info(f"Client {client_id} connected and registered.")
+
+        self.logger.info(self.munchlaxes)
 
         asyncio.create_task(self.update_all_clients(writer))
 
         while True:
             try:
                 data = await self.receive_message(reader)
-                if not data or data.startswith("disconnect"):
+                self.logger.info(data)
+                if type(data) == str and data.startswith("disconnect"): # or not data:
                     break
                 if data == 'heartbeat':
                     self.munchlax_heartbeats[client_id] = time.time()
                 else:
-                    for player, team in data.items():
-                        if self.teams[player] != team:
+                    for player, team in data.items(): #type: ignore
+                        if player not in self.teams or self.teams[player] != team:
                             self.teams[player] = team
             except ConnectionResetError:
                 pass
             except Exception as exc:
                 self.logger.error(f"handle_munchlax abgebrochen:{exc}")
+                self.logger.error(f"{sys.exc_info()}")
+                self.logger.error(f"{sys.last_traceback}")
                 break
-            finally:
-                await self.disconnect_client(client_id)
+        
+        await self.disconnect_client(client_id)
 
     async def update_all_clients(self, writer):
         old_teams = self.teams.copy()
@@ -81,7 +87,7 @@ class Arceus:
         writer = self.munchlaxes[client_id]
         writer.close()
         await writer.wait_closed()
-        self.logger.info(f"Client {client_id.decode()} disconnected.")
+        self.logger.info(f"Client {client_id} disconnected.")
         del self.munchlaxes[client_id]
         del self.munchlax_status[client_id]
         del self.heartbeat_counts[client_id]

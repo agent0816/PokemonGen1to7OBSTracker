@@ -51,10 +51,10 @@ class Screens(ScreenManager):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
         self.add_widget(
-            MainMenu( arceus, bizhawk, bizhawk_instances, munchlax, obs_websocket, configsave, sp, rem, obs, bh, pl)
+            MainMenu(arceus, bizhawk, bizhawk_instances, munchlax, obs_websocket, configsave, sp, rem, obs, bh, pl)
         )
         self.add_widget(
-            SettingsMenu(externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
+            SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
         )
         self.current = "MainMenu"
 
@@ -70,7 +70,7 @@ class TrackerApp(App):
 
     def build(self):
         try:
-            self.externalIPv4 = requests.get("https://ifconfig.me/ip", timeout=1).text
+            self.externalIPv4 = requests.get("https://ipinfo.io/ip", timeout=1).text
         except requests.exceptions.Timeout:
             self.externalIPv4 = ""
         command = "(Get-NetIPAddress -AddressFamily IPv6 | Where-Object -Property PrefixOrigin -eq 'Dhcp').IPAddress"
@@ -102,8 +102,11 @@ class TrackerApp(App):
         self.arceus = Arceus("", self.rem["client_port"])
         self.bizhawk = Bizhawk(self.bh["host"], self.bh["port"])
         self.bizhawk_instances = []
+        
+        ip_to_connect = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
+        port_to_connect = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
         self.munchlax = Munchlax(
-            self.rem["server_ip_adresse"], self.rem["server_port"], self.sp
+            ip_to_connect, port_to_connect, self.sp
         )
         self.obs_websocket = OBS(
             self.obs["host"],

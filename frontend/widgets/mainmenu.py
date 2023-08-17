@@ -192,7 +192,6 @@ class MainMenu(Screen):
             self.save_changes(instance)
     
     def connect_client(self, *args):
-        logger.info("connect_client")
         if not self.munchlax.is_connected:
             task = asyncio.create_task(self.munchlax.connect())
             self.connectors.add(task)
@@ -232,8 +231,21 @@ class MainMenu(Screen):
             yaml.dump(self.sp, file)
 
         self.rem['start_server'] = self.ids['start_server'].state == "down"
-        with open(f"{self.configsave}player.yml", 'w') as file:
-            yaml.dump(self.pl, file)
+
+        if self.munchlax.is_connected:
+            asyncio.create_task(self.munchlax.disconnect())
+
+        if not self.rem["start_server"]:
+            asyncio.create_task(self.arceus.stop())
+        
+        ip_to_connect = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
+        port_to_connect = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
+        
+        self.munchlax.host = ip_to_connect
+        self.munchlax.port = port_to_connect
+
+        with open(f"{self.configsave}remote.yml", 'w') as file:
+            yaml.dump(self.rem, file)
 
     def switch_to_settings(self, instance):
         self.manager.current = "SettingsMenu"

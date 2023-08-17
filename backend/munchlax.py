@@ -9,7 +9,8 @@ from backend.obs import OBS
 class Munchlax:
     def __init__(self, host, port, conf):
         self.client_id = self.generate_hashed_id()
-        self.teams = {}
+        self.bizhawk_teams = {}
+        self.sorted_teams = {}
         self.unsorted_teams = {}
         self.badges = {}
         self.editions = {}
@@ -41,29 +42,30 @@ class Munchlax:
 
         length = int.from_bytes(await reader.read(4), 'big')
         msg = await reader.read(length)
-        unsorted_teams = pickle.loads(msg)
-        # logger.info(unsorted_teams)
-        new_teams = unsorted_teams.copy()
+        self.unsorted_teams = pickle.loads(msg)
+        self.logger.info("alter_teams")
+        self.logger.info(self.unsorted_teams)
+        new_teams = self.unsorted_teams.copy()
         for player in new_teams:
             team = new_teams[player]
             self.logger.info(team)
             new_teams[player] = self.sort(team[:6], self.conf['order'])
-            if player not in self.badges or unsorted_teams[player][6] != self.badges[player]:
-                self.badges[player] = unsorted_teams[player][6]
-            if player not in self.editions or unsorted_teams[player][7] != self.editions[player]:
-                self.editions[player] = unsorted_teams[player][7]
+            if player not in self.badges or self.unsorted_teams[player][6] != self.badges[player]:
+                self.badges[player] = self.unsorted_teams[player][6]
+            if player not in self.editions or self.unsorted_teams[player][7] != self.editions[player]:
+                self.editions[player] = self.unsorted_teams[player][7]
                 if self.obs:
                     await self.obs.change_badges(player) #type: ignore
-        if new_teams != self.teams:
+        if new_teams != self.sorted_teams:
             for player in new_teams:
-                if player not in self.teams:
-                    if self.obs:
+                if player not in self.sorted_teams:
+                    if self.obs: 
                         await self.obs.changeSource(player, range(6), new_teams[player], self.editions[player]) #type: ignore
                     continue
 
                 diff = []
                 team = new_teams[player]
-                old_team = self.teams[player]
+                old_team = self.sorted_teams[player]
                 for i in range(6):
                     if team[i] != old_team[i]:
                         self.logger.debug(f"{i=},{team[i]=}")
@@ -71,7 +73,7 @@ class Munchlax:
                 if self.obs:
                     await self.obs.changeSource(player, diff, team, self.editions[player]) #type: ignore
                     await self.obs.change_badges(player) #type: ignore
-            self.teams = new_teams.copy()
+            self.sorted_teams = new_teams.copy()
 
     def sort(self, liste, key):
         key = key.lower().replace('.', '')
@@ -85,8 +87,8 @@ class Munchlax:
             return sorted(sorted(liste), key=lambda a: a.route if a.dexnr != 0 else 999999)
 
     def change_order(self, *args):
-        for team in self.teams:
-            self.teams[team] = self.sort(self.unsorted_teams[team][:6], self.conf['order'])
+        for team in self.sorted_teams:
+            self.sorted_teams[team] = self.sort(self.unsorted_teams[team][:6], self.conf['order'])
 
     async def send_heartbeat(self):
         while True:
@@ -95,9 +97,19 @@ class Munchlax:
                 await self.send_message('heartbeat')
             except Exception as err:
                 self.logger.error(f"{err}")
+                self.logger.error(sys.exc_info())
                 self.is_connected = False
                 break
 
+    async def send_teams(self):
+        while True:
+            if self.sorted_teams == {}:
+                self.sorted_teams = self.bizhawk_teams.copy()
+                self.change_order()
+            if self.bizhawk_teams != {}:
+                await self.send_message(self.bizhawk_teams)
+            await asyncio.sleep(1)
+    
     async def connect(self):
         self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
         self.logger.info(f"Munchlax {self.client_id} bei Arceus({self.host},{self.port}) registriert")
@@ -106,6 +118,8 @@ class Munchlax:
         self.is_connected = True
 
         asyncio.create_task(self.send_heartbeat())
+        asyncio.create_task(self.send_teams())
+        asyncio.create_task(self.alter_teams())
 
     async def disconnect(self):
         await self.send_message(f"disconnect {self.client_id}")
@@ -115,7 +129,7 @@ class Munchlax:
         self.logger.info(f"Client {self.client_id} has been disconnected.")
         self.is_connected = False
 
-    async def send_message(self, message: str):
+    async def send_message(self, message):
         serialized_message = pickle.dumps(message)
         length = len(serialized_message).to_bytes(4, 'big')
         self.writer.write(length)

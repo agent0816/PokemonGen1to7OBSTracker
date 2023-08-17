@@ -29,7 +29,7 @@ stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
 class SettingsMenu(Screen):
-    def __init__(self, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, **kwargs):
+    def __init__(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, **kwargs):
         super().__init__(**kwargs)
 
         self.name = "SettingsMenu"
@@ -50,7 +50,7 @@ class SettingsMenu(Screen):
         layout = GridLayout(cols=2, size_hint_y=.85)
 
         button_box = BoxLayout(orientation="vertical", size_hint=(0.15, 1), pos_hint={"top": 0})
-        scrollview = ScrollSettings(externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
+        scrollview = ScrollSettings(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
 
         settings_buttons = [
             ("Sprite\nPfade", 'sprite'),
@@ -85,9 +85,13 @@ class SettingsMenu(Screen):
         scrollview.scroll_y = scrolling
 
 class ScrollSettings(ScrollView):
-    def __init__(self,externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, **kwargs):
+    def __init__(self,arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, **kwargs):
         super().__init__(**kwargs)
         
+        self.arceus = arceus
+        self.bizhawk = bizhawk
+        self.munchlax = munchlax
+        self.obs_websocket = obs_websocket
         self.externalIPv4 = externalIPv4
         self.externalIPv6 = externalIPv6
         self.configsave = configsave
@@ -312,7 +316,6 @@ class ScrollSettings(ScrollView):
         if self.ids["player_settings_ausklappen"].state =='down':
             player_box.remove_widget(self.ids["player_settings"])
             self.add_player_checkBoxes(player_box)
-            # self.pressCheckBoxes()
         
         with open(f"{self.configsave}player.yml", 'w') as file:
             yaml.dump(self.pl, file)
@@ -321,7 +324,6 @@ class ScrollSettings(ScrollView):
         if instance.state == "down":
             instance.text = "^"
             self.add_player_checkBoxes(player_box)
-            # self.pressCheckBoxes()
         else:
             instance.text = ">"
             player = self.ids["player_settings"]
@@ -449,10 +451,8 @@ class ScrollSettings(ScrollView):
         self.sp['single_path_check'] = not self.ids.game_sprites_check.state == 'down'
         self.sp['items_path'] = self.ids.items_path.text
         self.sp['badges_path'] = self.ids.badges_path.text
-        client.conf = self.sp
-        asyncio.create_task(client.redraw_obs())
-        with open(f"{self.configsave}sprites.yml", 'w') as file:
-            yaml.dump(self.sp, file)
+        # self.munchlax.conf = self.sp
+        asyncio.create_task(self.obs_websocket.redraw_obs())
 
         if self.ids["games_ausklappen"].state == 'down':
             self.sp['red'] = self.ids.gen1_red.text
@@ -501,6 +501,5 @@ class ScrollSettings(ScrollView):
                 self.pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
                 self.pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
 
-        # rem['start_server'] = self.ids['main_Yes'].state == "down"
         with open(f"{self.configsave}player.yml", 'w') as file:
             yaml.dump(self.pl, file)

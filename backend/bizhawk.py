@@ -49,11 +49,12 @@ class Bizhawk:
 
         def update_teams(team):
             team = pokedecoder.team(team, edition)
-            teams = self.munchlax.teams
+            teams = self.munchlax.bizhawk_teams
             if player in teams:
                 if teams[player] == team:
                     return
             teams[player] = team
+            self.munchlax.unsorted_teams[player] = team
 
         edition_length = int((await reader.read(2)).decode())
         edition = int((await reader.read(edition_length)).decode())
@@ -74,6 +75,7 @@ class Bizhawk:
                 update_teams(msg)
             except Exception as err:
                 self.logger.error(f"handle_bizhawk abgebrochen: {err}")
+                self.logger.error(sys.exc_info())
                 break
 
     async def start(self, munchlax):

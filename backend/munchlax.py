@@ -106,7 +106,7 @@ class Munchlax:
                 self.logger.warning(f"Heartbeat failed: {err}")
                 break
         
-        await self.disconnect()
+        await self.disconnect() #type: ignore
 
     async def send_teams(self):
         while True:
@@ -121,7 +121,7 @@ class Munchlax:
                     break
             await asyncio.sleep(1)
         
-        await self.disconnect()
+        await self.disconnect() # type:ignore
     
     async def connect(self):
         self.logger.info(f"trying to connect munchlax to ({self.host}, {self.port})")
@@ -137,6 +137,9 @@ class Munchlax:
 
     async def disconnect(self):
         if self.is_connected:
+            self.alter_teams_task.cancel()
+            self.heartbeat_task.cancel()
+            self.send_teams_task.cancel()
             try:
                 await self.send_message(f"disconnect {self.client_id}")
             except Exception as err:

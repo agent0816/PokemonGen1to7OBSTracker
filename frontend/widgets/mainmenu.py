@@ -191,17 +191,30 @@ class MainMenu(Screen):
         if not initializing:
             self.save_changes(instance)
     
-    def connect_client(self, *args):
-        if not self.munchlax.is_connected:
-            task = asyncio.create_task(self.munchlax.connect())
-            self.connectors.add(task)
-            logger.info(self.munchlax.is_connected)
+    def connect_client(self,instance, *args):
+        if instance.text.endswith("starten"):
+            if not self.munchlax.is_connected:
+                task = asyncio.create_task(self.munchlax.connect())
+                self.connectors.add(task)
+            if instance.text == "Client staren":
+                instance.text = "Client beenden"
+        elif instance.text == "Client beenden":
+            if self.munchlax.is_connected:
+                asyncio.create_task(self.munchlax.disconnect())
+            instance.text = "Client starten"
 
-    def launchserver(self,*args):
-        if not self.arceus.server:
-            task = asyncio.create_task(self.arceus.start())
-            self.connectors.add(task)
-        self.connect_client()
+    def launchserver(self, instance,*args):
+        if instance.text == "Server starten":
+            if not self.arceus.server:
+                asyncio.create_task(self.arceus.start())
+            self.connect_client(instance)
+            instance.text = "Server beenden"
+        elif instance.text == "Server beenden":
+            if self.arceus.server:
+                asyncio.create_task(self.munchlax.disconnect())
+                asyncio.create_task(self.arceus.stop())
+            instance.text = "Server starten"
+
 
     def init_config(self, sp, rem):
         self.ids.animated_check.state = 'down' if sp['animated'] else 'normal'

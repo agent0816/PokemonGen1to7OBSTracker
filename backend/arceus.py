@@ -86,6 +86,7 @@ class Arceus:
             self.logger.info(f"Client {client_id} disconnected.")
             del self.munchlaxes[client_id]
             del self.munchlax_status[client_id]
+            del self.munchlax_heartbeats[client_id]
             del self.heartbeat_counts[client_id]
 
     async def send_message(self, writer, message):

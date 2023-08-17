@@ -55,8 +55,8 @@ class OBS():
 
     async def redraw_obs(self):
         if self.ws and self.ws.is_identified():
-            for player in self.munchlax.teams:
-                await self.changeSource(player, range(6), self.munchlax.teams[player], self.munchlax.editions[player])
+            for player in self.munchlax.sorted_teams:
+                await self.changeSource(player, range(6), self.munchlax.sorted_teams[player], self.munchlax.editions[player])
                 await self.change_badges(player)
 
     async def changeSource(self, player, slots, team, edition):

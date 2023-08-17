@@ -91,5 +91,6 @@ class Bizhawk:
         if self.server:
             self.server.close()
             await self.server.wait_closed()
+            self.server = None
             self.logger.info("Bizhawk has been stopped.")
 

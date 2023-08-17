@@ -154,14 +154,12 @@ class MainMenu(Screen):
         if not self.obs_websocket.is_connected:
             task = asyncio.create_task(self.obs_websocket.load_obsws())
             self.connectors.add(task)
-            asyncio.gather(*self.connectors)
             logger.info("OBS connected.")
 
     def disconnectOBS(self, *args):
         if self.obs_websocket.is_connected:
             task = asyncio.create_task(self.obs_websocket.disconnect())
             self.connectors.add(task)
-            asyncio.gather(*self.connectors)
             logger.info("OBS disconnected.")
 
     def launchbh(self, instance):
@@ -169,7 +167,6 @@ class MainMenu(Screen):
         if not self.bizhawk.server:
             task = asyncio.create_task(self.bizhawk.start(self.munchlax))
             self.connectors.add(task)
-            asyncio.gather(*self.connectors)
         for i in range(self.pl['player_count']):
             if not self.pl[f'remote_{i+1}']:
                 process = subprocess.Popen([self.bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={self.bh["host"]}', f'--socket_port={self.bh["port"]}'])
@@ -188,6 +185,9 @@ class MainMenu(Screen):
             button.text = "Client starten"
             button.unbind(on_press=self.launchserver)
             button.bind(on_press=self.connect_client)
+            if self.rem["start_server"]:
+                asyncio.create_task(self.munchlax.disconnect())
+                asyncio.create_task(self.arceus.stop())
         if not initializing:
             self.save_changes(instance)
     
@@ -195,14 +195,12 @@ class MainMenu(Screen):
         if not self.munchlax.is_connected:
             task = asyncio.create_task(self.munchlax.connect())
             self.connectors.add(task)
-            asyncio.gather(*self.connectors)
             logger.info(self.munchlax.is_connected)
 
     def launchserver(self,*args):
         if not self.arceus.server:
             task = asyncio.create_task(self.arceus.start())
             self.connectors.add(task)
-            asyncio.gather(*self.connectors)
         self.connect_client()
 
     def init_config(self, sp, rem):
@@ -231,12 +229,6 @@ class MainMenu(Screen):
             yaml.dump(self.sp, file)
 
         self.rem['start_server'] = self.ids['start_server'].state == "down"
-
-        if self.munchlax.is_connected:
-            asyncio.create_task(self.munchlax.disconnect())
-
-        if not self.rem["start_server"]:
-            asyncio.create_task(self.arceus.stop())
         
         ip_to_connect = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
         port_to_connect = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
@@ -247,5 +239,11 @@ class MainMenu(Screen):
         with open(f"{self.configsave}remote.yml", 'w') as file:
             yaml.dump(self.rem, file)
 
+    def start_or_end_arceus(self, instance):
+        if instance.state == 'down':
+            if not self.rem["start_server"]:
+                asyncio.create_task(self.munchlax.disconnect())
+                asyncio.create_task(self.arceus.stop())
+    
     def switch_to_settings(self, instance):
         self.manager.current = "SettingsMenu"

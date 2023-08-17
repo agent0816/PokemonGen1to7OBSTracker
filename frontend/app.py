@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import subprocess
 import yaml
@@ -140,6 +141,10 @@ class TrackerApp(App):
         self.save_config(f"{self.configsave}sprites.yml", self.sp)
         self.save_config(f"{self.configsave}player.yml", self.pl)
         self.save_config(f"{self.configsave}remote.yml", self.rem)
+
+        for bizhawk in self.bizhawk_instances:
+            bizhawk.terminate()
+        asyncio.create_task(asyncio.wait([self.bizhawk.stop(), self.obs_websocket.disconnect(), self.munchlax.disconnect(), self.arceus.stop()]))
 
     def save_config(self, path, setting):
         with open(path, "w") as file:

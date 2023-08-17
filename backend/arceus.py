@@ -1,10 +1,10 @@
 import asyncio
 import sys
 import pickle
-# import backend.pokedecoder as pokedecoder
 import logging
 import time
 import pickle
+import traceback
 
 class Arceus:
     def __init__(self, host, port):
@@ -40,17 +40,13 @@ class Arceus:
         self.munchlaxes[client_id] = writer
         self.munchlax_status[client_id] = 'connected'
         self.heartbeat_counts[client_id] = 0
-        self.logger.info(client_id)
         self.logger.info(f"Client {client_id} connected and registered.")
-
-        self.logger.info(self.munchlaxes)
 
         asyncio.create_task(self.update_all_clients(writer))
 
         while True:
             try:
                 data = await self.receive_message(reader)
-                self.logger.info(data)
                 if type(data) == str and data.startswith("disconnect"): # or not data:
                     break
                 if data == 'heartbeat':
@@ -62,9 +58,8 @@ class Arceus:
             except ConnectionResetError:
                 pass
             except Exception as exc:
-                self.logger.error(f"handle_munchlax abgebrochen:{exc}")
-                self.logger.error(f"{sys.exc_info()}")
-                self.logger.error(f"{sys.last_traceback}")
+                self.logger.error(f"handle_munchlax abgebrochen:{type(exc)},{exc}")
+                self.logger.error(f"{traceback.format_exc()}")
                 break
         
         await self.disconnect_client(client_id)
@@ -84,13 +79,14 @@ class Arceus:
                 break
     
     async def disconnect_client(self, client_id):
-        writer = self.munchlaxes[client_id]
-        writer.close()
-        await writer.wait_closed()
-        self.logger.info(f"Client {client_id} disconnected.")
-        del self.munchlaxes[client_id]
-        del self.munchlax_status[client_id]
-        del self.heartbeat_counts[client_id]
+        if client_id in self.munchlaxes:
+            writer = self.munchlaxes[client_id]
+            writer.close()
+            await writer.wait_closed()
+            self.logger.info(f"Client {client_id} disconnected.")
+            del self.munchlaxes[client_id]
+            del self.munchlax_status[client_id]
+            del self.heartbeat_counts[client_id]
 
     async def send_message(self, writer, message):
         serialized_message = pickle.dumps(message)
@@ -115,6 +111,8 @@ class Arceus:
                     self.heartbeat_counts[client_id] += 1
                     if self.heartbeat_counts[client_id] > 3:
                         await self.disconnect_client(client_id)
+                else:
+                    self.heartbeat_counts[client_id] = 0
             await asyncio.sleep(5)
     
     async def start(self):
@@ -122,13 +120,15 @@ class Arceus:
             self.handle_munchlax, self.host, self.port)
         
         self.logger.info(f"Arceus auf Port {self.port} gestartet")
-        asyncio.create_task(self.check_heartbeats())
+        self.heartbeattask = asyncio.create_task(self.check_heartbeats())
 
         async with self.server:
             await self.server.serve_forever()
 
     async def stop(self):
         if self.server:
+            self.heartbeattask.cancel()
             self.server.close()
             await self.server.wait_closed()
+            self.server = None
             self.logger.info("Arceus has been stopped.")

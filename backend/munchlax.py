@@ -4,7 +4,6 @@ import hashlib
 import logging
 import sys
 import pickle
-from backend.obs import OBS
 
 class Munchlax:
     def __init__(self, host, port, conf):

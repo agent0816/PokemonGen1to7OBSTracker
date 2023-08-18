@@ -5,7 +5,6 @@ import weakref
 import yaml
 import asyncio
 from kivy.clock import Clock
-from kivy.properties import OptionProperty
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -15,6 +14,8 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen
 from kivy.uix.togglebutton import ToggleButton
+from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
+from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 import logging
 
 logger = logging.getLogger(__name__)
@@ -27,23 +28,6 @@ logger.addHandler(file_handler)
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
-
-class ConnectionStatusLabel(Label):
-    reconnect_status = OptionProperty('disconnected', options=['connected', 'reconnecting', 'disconnected'])
-
-    def on_reconnect_status(self, instance, value):
-        if value == 'connected':
-            self.text = "Connected"
-            self.color = (0, 1, 0, 1)  # Green
-        elif value == 'reconnecting':
-            self.text = "Reconnecting..."
-            self.color = (1, 1, 0, 1)  # Yellow
-        else:
-            self.text = "Disconnected"
-            self.color = (1, 0, 0, 1)  # Red
-
-    def poll_backend_status(self, dt, connection_status):
-        self.reconnect_status = connection_status
 
 class BizhawkSavePopup(Popup):
     def __init__(self, bizhawk_instances, bizhawk_button, **kwargs):
@@ -102,38 +86,53 @@ class MainMenu(Screen):
         logo_settings.add_widget(settings)
         control_frame.add_widget(logo_settings)
 
-        connections = BoxLayout(orientation='vertical', size_hint=(.7,1))
-        
-        server_client_box = BoxLayout(orientation='horizontal')
+        connections = BoxLayout(orientation='horizontal')
+
+        buttons_box = BoxLayout(orientation='vertical')
 
         server_client_button = Button(text='Server/Client', on_press=self.launchserver)
         self.ids["server_client_button"] = weakref.proxy(server_client_button)
+        buttons_box.add_widget(server_client_button)
+
+        obs_connect = Button(text="OBS verbinden", on_press=self.toggle_obs)
+        buttons_box.add_widget(obs_connect)
+        
+        emulator = Button(text='Bizhawk starten', on_press=self.launchbh)
+        buttons_box.add_widget(emulator)
+
+        connections.add_widget(buttons_box)
+
+        status_box = BoxLayout(orientation='vertical')
 
         server_status_box = BoxLayout(orientation='vertical')
         status_label = Label(text="Status Server")
 
         server_status_box.add_widget(status_label)
 
-        server_or_client_box = BoxLayout(orientation= 'horizontal')
+        server_box = BoxLayout(orientation='horizontal')
 
         server_or_client_label = Label(text="Server?")
-        server_or_client_box.add_widget(server_or_client_label)
+        server_box.add_widget(server_or_client_label)
 
         server_or_client_check = CheckBox(on_press=lambda instance: self.toggle_server_client(instance, server_client_button))
         self.ids["start_server"] = weakref.proxy(server_or_client_check)
-        server_or_client_box.add_widget(server_or_client_check)
 
-        server_status_box.add_widget(server_or_client_box)
+        server_box.add_widget(server_or_client_check)
+        
+        server_connection_status = ObjectConnectionStatusCircle(self.arceus)
+        server_box.add_widget(server_connection_status)
 
-        server_client_box.add_widget(server_client_button)
-        server_client_box.add_widget(server_status_box)
-        connections.add_widget(server_client_box)
-        
-        obs_connect = Button(text="OBS verbinden", on_press=self.toggle_obs)
-        connections.add_widget(obs_connect)
-        
-        emulator = Button(text='Bizhawk starten', on_press=self.launchbh)
-        connections.add_widget(emulator)
+        server_status_box.add_widget(server_box)
+
+        status_box.add_widget(server_status_box)
+
+        # OBS
+
+        # verbundene Munchlaxes
+
+        # lokale Bizhawks und Bizhawk-server
+
+        connections.add_widget(status_box)
 
         control_frame.add_widget(connections)
 

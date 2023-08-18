@@ -38,7 +38,7 @@ class OBS():
                 await self.ws.wait_until_identified()  # type:ignore
                 await self.redraw_obs()
                 self.logger.info("obs connected.")
-                self.is_connected = True
+                self.is_connected = 'connected'
                 if not self.munchlax.obs:
                     self.munchlax.obs = self
             except WebSocketException as wserr:

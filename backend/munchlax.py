@@ -129,7 +129,7 @@ class Munchlax:
         self.logger.info(f"Munchlax {self.client_id} bei Arceus({self.host},{self.port}) registriert")
         
         await self.send_message(self.client_id)
-        self.is_connected = True
+        self.is_connected = 'connected'
 
         self.heartbeat_task = asyncio.create_task(self.send_heartbeat())
         self.send_teams_task = asyncio.create_task(self.send_teams())

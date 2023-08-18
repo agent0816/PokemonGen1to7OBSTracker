@@ -16,6 +16,7 @@ class Arceus:
         self.heartbeat_counts = {}
         self.teams = {}
         self.server = None
+        self.is_connected = False
 
         self.logger = self.init_logging()
 
@@ -122,6 +123,7 @@ class Arceus:
         
         self.logger.info(f"Arceus auf Port {self.port} gestartet")
         self.heartbeattask = asyncio.create_task(self.check_heartbeats())
+        self.is_connected = 'connected'
 
         async with self.server:
             await self.server.serve_forever()
@@ -132,4 +134,5 @@ class Arceus:
             self.server.close()
             await self.server.wait_closed()
             self.server = None
+            self.is_connected = False
             self.logger.info("Arceus has been stopped.")

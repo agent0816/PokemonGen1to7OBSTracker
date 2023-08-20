@@ -142,7 +142,7 @@ class MainMenu(Screen):
 
         munchlax_status_box = BoxLayout(orientation='horizontal')
         self.ids["munchlax_status_box"] = weakref.proxy(munchlax_status_box)
-        UI.create_connection_status_with_labels(munchlax_status_box, ObjectConnectionStatusCircle, self.munchlax.client_id[:3], self.munchlax, ids=self.ids, id=self.munchlax.client_id)
+        UI.create_connection_status_with_labels(munchlax_status_box, ObjectConnectionStatusCircle, self.munchlax.client_id[:3], self.munchlax, ids=munchlax_status_box.ids, id=self.munchlax.client_id)
 
         Clock.schedule_interval(lambda instance:self.change_munchlax_status(munchlax_status_box), 1)
 
@@ -194,7 +194,7 @@ class MainMenu(Screen):
     def change_munchlax_status(self, box):
         for client_id in self.arceus.munchlax_status:
             if client_id not in self.ids:
-                UI.create_connection_status_with_labels(box, ValueConnectionStatusCircle, client_id[:3], client_id, self.arceus.munchlax_status, ids=self.ids, id=client_id)
+                UI.create_connection_status_with_labels(box, ValueConnectionStatusCircle, client_id[:3], client_id, self.arceus.munchlax_status, ids=box.ids, id=client_id)
     
     def toggle_obs(self, instance):
         if instance.text == "OBS verbinden":
@@ -259,12 +259,18 @@ class MainMenu(Screen):
             self.save_changes(instance)
     
     def clear_clients(self, instance):
-        widget = self.ids["munchlax_status_box"]
+        box = self.ids["munchlax_status_box"]
         id_list = [id for id in self.arceus.munchlaxes]
-        id_list.append(self.munchlax.client_id)
+        if not self.munchlax.is_connected:
+            id_list.append(self.munchlax.client_id)
 
-        for id in id_list:
-            widget.remove_widget(self.ids[id])
+        widgets_zu_entfernen = []
+        for id in box.ids:
+            if id not in id_list:
+                widgets_zu_entfernen.append(box.ids[id])
+
+        for widget in widgets_zu_entfernen:
+            box.remove_widget(widget)
     
     def connect_client(self,instance, *args):
         if instance.text.endswith("starten"):

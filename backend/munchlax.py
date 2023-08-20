@@ -137,15 +137,15 @@ class Munchlax:
 
     async def disconnect(self):
         if self.is_connected:
-            self.alter_teams_task.cancel()
-            self.heartbeat_task.cancel()
-            self.send_teams_task.cancel()
             try:
                 await self.send_message(f"disconnect {self.client_id}")
             except Exception as err:
                 self.logger.warning(f"Disconnect Nachricht versenden failed: {err}")
             
             self.is_connected = 'disconnected'
+            self.alter_teams_task.cancel()
+            self.heartbeat_task.cancel()
+            self.send_teams_task.cancel()
             self.writer.close()
             await self.writer.wait_closed()
             self.logger.info(f"Client {self.client_id} hat sich disconnectet.")

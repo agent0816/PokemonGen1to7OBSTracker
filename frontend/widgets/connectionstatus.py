@@ -48,7 +48,6 @@ class ObjectConnectionStatusCircle(ConnectionStatusCircle):
 
     def poll_backend_status(self, dt):
         self.is_connected = self.backend_obj.is_connected
-        print(self.backend_obj, self.is_connected)
 
 class ValueConnectionStatusCircle(ConnectionStatusCircle):
     def __init__(self,value, **kwargs):

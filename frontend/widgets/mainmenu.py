@@ -192,9 +192,12 @@ class MainMenu(Screen):
         self.init_config(self.sp, self.rem)
 
     def change_munchlax_status(self, box):
-        for client_id in self.arceus.munchlax_status:
-            if client_id not in self.ids:
-                UI.create_connection_status_with_labels(box, ValueConnectionStatusCircle, client_id[:3], client_id, self.arceus.munchlax_status, ids=self.ids, id=client_id)
+        if self.rem["start_server"]:
+            for client_id in self.arceus.munchlax_status:
+                if client_id not in self.ids:
+                    UI.create_connection_status_with_labels(box, ValueConnectionStatusCircle, client_id[:3], client_id, self.arceus.munchlax_status, ids=self.ids, id=client_id)
+        else:
+            self.connect_client(self.ids["server_client_button"])
     
     def toggle_obs(self, instance):
         if instance.text == "OBS verbinden":
@@ -261,19 +264,21 @@ class MainMenu(Screen):
     def clear_clients(self, instance):
         box = self.ids["munchlax_status_box"]
         id_list = [id for id in self.arceus.munchlaxes]
-        print(id_list)
         if not self.munchlax.is_connected:
             id_list.append(self.munchlax.client_id)
 
         widgets_zu_entfernen = []
-        print(box.ids)
+        ids_to_remove = []
         for id in box.ids:
-            print(id)
             if id not in id_list:
                 widgets_zu_entfernen.append(box.ids[id])
+                ids_to_remove.append(id)
 
         for widget in widgets_zu_entfernen:
             box.remove_widget(widget)
+
+        for id in ids_to_remove:
+            del box.ids[id]
     
     def connect_client(self,instance, *args):
         if instance.text.endswith("starten"):

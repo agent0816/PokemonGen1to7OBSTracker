@@ -12,7 +12,7 @@ class Bizhawk(EventDispatcher):
         self.host = host
         self.port = port
         self.bizhawks = {}
-        self.bizhawks_status = DictProperty()
+        self.bizhawks_status = {}
         self.server = None
         self.is_connected = False
 

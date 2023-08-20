@@ -14,8 +14,7 @@ class Arceus(EventDispatcher):
         self.host = host
         self.port = port
         self.munchlaxes = {}
-        self.status_dict = {}
-        self.munchlax_status = DictProperty()
+        self.munchlax_status = {}
         self.munchlax_heartbeats = {}
         self.heartbeat_counts = {}
         self.teams = {}
@@ -45,8 +44,7 @@ class Arceus(EventDispatcher):
         client_id = await self.receive_message(reader)
         self.logger.warning(client_id)
         self.munchlaxes[client_id] = writer
-        self.status_dict[client_id] = 'connected'
-        self.munchlax_status.set(self, self.status_dict)
+        self.munchlax_status[client_id] = 'connected'
         self.logger.warning("nach Veränderung des Dictionaries")
         self.heartbeat_counts[client_id] = 0
         self.logger.info(f"Client {client_id} connected and registered.")
@@ -94,8 +92,7 @@ class Arceus(EventDispatcher):
             await writer.wait_closed()
             self.logger.info(f"Client {client_id} disconnected.")
             del self.munchlaxes[client_id]
-            del self.status_dict[client_id]
-            self.munchlax_status.set(self, self.status_dict)
+            del self.munchlax_status[client_id]
             del self.munchlax_heartbeats[client_id]
             del self.heartbeat_counts[client_id]
 

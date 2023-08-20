@@ -145,10 +145,10 @@ class Munchlax:
             except Exception as err:
                 self.logger.warning(f"Disconnect Nachricht versenden failed: {err}")
             
+            self.is_connected = 'disconnected'
             self.writer.close()
             await self.writer.wait_closed()
             self.logger.info(f"Client {self.client_id} hat sich disconnectet.")
-            self.is_connected = False
 
     async def send_message(self, message):
         serialized_message = pickle.dumps(message)

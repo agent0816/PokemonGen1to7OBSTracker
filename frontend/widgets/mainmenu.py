@@ -191,8 +191,9 @@ class MainMenu(Screen):
 
     def change_munchlax_status(self, box):
         logger.warning("change_munchlax_status")
-        for client_id, status in self.arceus.munchlax_status.items():
+        for client_id, status in self.arceus.status_client.items():
             UI.create_connection_status_with_labels(box, ValueConnectionStatusCircle, status, client_id[:3])
+        self.arceus.munchlax_status.set(self.arceus, self.arceus.status_dict)
     
     def toggle_obs(self, instance):
         if instance.text == "OBS verbinden":

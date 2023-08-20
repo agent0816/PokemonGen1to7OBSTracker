@@ -250,8 +250,8 @@ class MainMenu(Screen):
             button.unbind(on_press=self.launchserver)
             button.bind(on_press=self.connect_client)
             self.ids["arceus_status"].opacity = 0
-
-            self.ids["buttons_box"].remove_widget(self.ids["status_clearing"])
+            if not initializing:
+                self.ids["buttons_box"].remove_widget(self.ids["status_clearing"])
             if self.rem["start_server"]:
                 asyncio.create_task(self.munchlax.disconnect())
                 asyncio.create_task(self.arceus.stop())

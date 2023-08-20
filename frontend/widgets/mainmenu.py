@@ -16,6 +16,7 @@ from kivy.uix.screenmanager import Screen
 from kivy.uix.togglebutton import ToggleButton
 from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
+import frontend.UIFactory as UI
 import logging
 
 logger = logging.getLogger(__name__)
@@ -119,16 +120,33 @@ class MainMenu(Screen):
 
         server_box.add_widget(server_or_client_check)
         
-        server_connection_status = ObjectConnectionStatusCircle(self.arceus)
-        server_box.add_widget(server_connection_status)
+        UI.create_connection_status(server_box, ObjectConnectionStatusCircle, self.arceus)
 
         server_status_box.add_widget(server_box)
 
         status_box.add_widget(server_status_box)
 
-        # OBS
+        obs_box = BoxLayout(orientation='horizontal')
+
+        obs_box.add_widget(Label(text='OBS status:'))
+        UI.create_connection_status(obs_box, ObjectConnectionStatusCircle, self.obs_websocket)
+
+        status_box.add_widget(obs_box)
 
         # verbundene Munchlaxes
+
+        munchlax_box = BoxLayout(orientation = 'vertical')
+        munchlax_box_label = Label(text = 'Client Status')
+        munchlax_box.add_widget(munchlax_box_label)
+
+        munchlax_status_box = BoxLayout(orientation='horizontal')
+        UI.create_connection_status_with_labels(munchlax_status_box, ObjectConnectionStatusCircle, self.munchlax, self.munchlax.client_id[:3])
+
+        self.arceus.bind(on_munchlax_status=lambda instance, value: self.change_munchlax_status(munchlax_status_box))
+
+        munchlax_box.add_widget(munchlax_status_box)
+
+        status_box.add_widget(munchlax_box)
 
         # lokale Bizhawks und Bizhawk-server
 
@@ -171,6 +189,10 @@ class MainMenu(Screen):
         
         self.init_config(self.sp, self.rem)
 
+    def change_munchlax_status(self, box):
+        for client_id, status in self.arceus.munchlax_status.items():
+            UI.create_connection_status_with_labels(box, ValueConnectionStatusCircle, status, client_id[:3])
+    
     def toggle_obs(self, instance):
         if instance.text == "OBS verbinden":
             self.connectOBS()

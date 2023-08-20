@@ -3,13 +3,16 @@ import sys
 import asyncio
 from backend.munchlax import Munchlax
 import backend.pokedecoder as pokedecoder
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
 
-class Bizhawk:
+class Bizhawk(EventDispatcher):
     def __init__(self, host, port):
+        super().__init__()
         self.host = host
         self.port = port
         self.bizhawks = {}
-        self.bizhawks_status = {}
+        self.bizhawks_status = DictProperty()
         self.server = None
         self.is_connected = False
 

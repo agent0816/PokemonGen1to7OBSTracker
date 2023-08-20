@@ -73,3 +73,18 @@ def create_text_and_browse_button(rootwidget,ids,
     if browse_id_name is not None:
         ids[browse_id_name] = weakref.proxy(browse)
     box.add_widget(browse)
+
+def create_connection_status(box, connectionStatusCircle, value):
+    connection_status = connectionStatusCircle(value, size_hint = (None, None), size=(20,20))
+    connection_status_anchor = AnchorLayout()
+
+    connection_status_anchor.add_widget(connection_status)
+    box.add_widget(connection_status_anchor)
+
+def create_connection_status_with_labels(box, connectionStatusCircle, value, labeltext):
+    box_with_label = BoxLayout(orientation='vertical')
+
+    create_connection_status(box_with_label, connectionStatusCircle, value)
+
+    box_with_label.add_widget(Label(text = labeltext))
+    box.add_widget(box_with_label)

@@ -5,13 +5,16 @@ import logging
 import time
 import pickle
 import traceback
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
 
-class Arceus:
+class Arceus(EventDispatcher):
     def __init__(self, host, port):
+        super().__init__()
         self.host = host
         self.port = port
         self.munchlaxes = {}
-        self.munchlax_status = {}
+        self.munchlax_status = DictProperty()
         self.munchlax_heartbeats = {}
         self.heartbeat_counts = {}
         self.teams = {}

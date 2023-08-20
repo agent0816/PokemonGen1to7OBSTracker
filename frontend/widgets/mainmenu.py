@@ -266,6 +266,7 @@ class MainMenu(Screen):
             id_list.append(self.munchlax.client_id)
 
         widgets_zu_entfernen = []
+        print(box.ids)
         for id in box.ids:
             print(id)
             if id not in id_list:

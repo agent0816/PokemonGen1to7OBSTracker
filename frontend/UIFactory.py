@@ -91,7 +91,7 @@ def create_connection_status_with_labels(box, connectionStatusCircle, labeltext,
     
     if ids and id:
         ids[id] = weakref.proxy(box_with_label)
-        box_with_label.ids[id] = weakref.proxy(box_with_label)
+        box.ids[id] = weakref.proxy(box_with_label)
 
     box_with_label.add_widget(Label(text = labeltext))
     box.add_widget(box_with_label)

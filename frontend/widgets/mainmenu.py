@@ -264,7 +264,7 @@ class MainMenu(Screen):
         id_list.append(self.munchlax.client_id)
 
         for id in id_list:
-            widget.remove(self.ids[id])
+            widget.remove_widget(self.ids[id])
     
     def connect_client(self,instance, *args):
         if instance.text.endswith("starten"):

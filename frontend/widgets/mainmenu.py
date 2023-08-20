@@ -190,6 +190,7 @@ class MainMenu(Screen):
         self.init_config(self.sp, self.rem)
 
     def change_munchlax_status(self, box):
+        box.clear_widgets()
         for client_id, status in self.arceus.munchlax_status.items():
             if client_id not in self.ids:
                 UI.create_connection_status_with_labels(box, ValueConnectionStatusCircle, status, client_id[:3], ids=self.ids, id=client_id)

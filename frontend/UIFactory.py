@@ -80,6 +80,7 @@ def create_connection_status(box, connectionStatusCircle, *value, ids=None, id =
     
     if ids and id:
         ids[id] = weakref.proxy(connection_status)
+        box.ids[id] = weakref.proxy(connection_status)
 
     connection_status_anchor.add_widget(connection_status)
     box.add_widget(connection_status_anchor)

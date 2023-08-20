@@ -58,4 +58,7 @@ class ValueConnectionStatusCircle(ConnectionStatusCircle):
 
     def poll_backend_status(self, dt):
         # Aktualisiert `is_connected` basierend auf dem Status des Backends
-        self.is_connected = self.backend_dict[self.client_id]
+        try:
+            self.is_connected = self.backend_dict[self.client_id]
+        except KeyError:
+            self.is_connected = False

@@ -192,7 +192,7 @@ class MainMenu(Screen):
     def change_munchlax_status(self, box):
         for client_id, status in self.arceus.munchlax_status.items():
             for child in box.children:
-                if isinstance(child, Label) and not child.text == client_id:
+                if isinstance(child, Label) and not child.text == client_id[:3]:
                     UI.create_connection_status_with_labels(box, ValueConnectionStatusCircle, status, client_id[:3])
     
     def toggle_obs(self, instance):

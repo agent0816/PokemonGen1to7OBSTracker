@@ -142,7 +142,7 @@ class Munchlax:
             except Exception as err:
                 self.logger.warning(f"Disconnect Nachricht versenden failed: {err}")
             
-            self.is_connected = 'disconnected'
+            self.is_connected = False
             self.alter_teams_task.cancel()
             self.heartbeat_task.cancel()
             self.send_teams_task.cancel()

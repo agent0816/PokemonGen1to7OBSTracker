@@ -93,6 +93,7 @@ class MainMenu(Screen):
         self.ids["buttons_box"] = weakref.proxy(buttons_box)
 
         server_client_button = Button(text='Server/Client', on_press=self.launchserver)
+        self.ids["server_client_button"] = weakref.proxy(server_client_button)
         buttons_box.add_widget(server_client_button)
 
         obs_connect = Button(text="OBS verbinden", on_press=self.toggle_obs)

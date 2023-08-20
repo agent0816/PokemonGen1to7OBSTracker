@@ -50,13 +50,12 @@ class ObjectConnectionStatusCircle(ConnectionStatusCircle):
         self.is_connected = self.backend_obj.is_connected
 
 class ValueConnectionStatusCircle(ConnectionStatusCircle):
-    def __init__(self,value, **kwargs):
+    def __init__(self,client_id,backend_dict, **kwargs):
         super(ValueConnectionStatusCircle, self).__init__(**kwargs)
-        self.is_connected = value
+        self.backend_dict = backend_dict
+        self.client_id = client_id
         self.start_polling()
 
     def poll_backend_status(self, dt):
         # Aktualisiert `is_connected` basierend auf dem Status des Backends
-        print(self, self.is_connected)
-        self.is_connected = self.is_connected == 'connected'
-        print(self, self.is_connected)
+        self.is_connected = self.backend_dict[self.client_id]

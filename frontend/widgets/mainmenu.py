@@ -140,7 +140,7 @@ class MainMenu(Screen):
         munchlax_box.add_widget(munchlax_box_label)
 
         munchlax_status_box = BoxLayout(orientation='horizontal')
-        UI.create_connection_status_with_labels(munchlax_status_box, ObjectConnectionStatusCircle, self.munchlax, self.munchlax.client_id[:3], ids=self.ids, id=self.munchlax.client_id)
+        UI.create_connection_status_with_labels(munchlax_status_box, ObjectConnectionStatusCircle, self.munchlax.client_id[:3], self.munchlax, ids=self.ids, id=self.munchlax.client_id)
 
         Clock.schedule_interval(lambda instance:self.change_munchlax_status(munchlax_status_box), 1)
 
@@ -190,9 +190,9 @@ class MainMenu(Screen):
         self.init_config(self.sp, self.rem)
 
     def change_munchlax_status(self, box):
-        for client_id, status in self.arceus.munchlax_status.items():
+        for client_id in self.arceus.munchlax_status:
             if client_id not in self.ids:
-                UI.create_connection_status_with_labels(box, ValueConnectionStatusCircle, status, client_id[:3], ids=self.ids, id=client_id)
+                UI.create_connection_status_with_labels(box, ValueConnectionStatusCircle, client_id[:3], [client_id, self.arceus.munchlax_status], ids=self.ids, id=client_id)
     
     def toggle_obs(self, instance):
         if instance.text == "OBS verbinden":

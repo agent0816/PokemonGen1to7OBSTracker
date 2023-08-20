@@ -252,7 +252,7 @@ class MainMenu(Screen):
             if not self.munchlax.is_connected:
                 task = asyncio.create_task(self.munchlax.connect())
                 self.connectors.add(task)
-            if instance.text == "Client staren":
+            if instance.text == "Client starten":
                 instance.text = "Client beenden"
         elif instance.text == "Client beenden":
             if self.munchlax.is_connected:

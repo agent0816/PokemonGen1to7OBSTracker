@@ -261,11 +261,13 @@ class MainMenu(Screen):
     def clear_clients(self, instance):
         box = self.ids["munchlax_status_box"]
         id_list = [id for id in self.arceus.munchlaxes]
+        print(id_list)
         if not self.munchlax.is_connected:
             id_list.append(self.munchlax.client_id)
 
         widgets_zu_entfernen = []
         for id in box.ids:
+            print(id)
             if id not in id_list:
                 widgets_zu_entfernen.append(box.ids[id])
 

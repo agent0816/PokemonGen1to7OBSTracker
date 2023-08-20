@@ -64,6 +64,9 @@ class Arceus(EventDispatcher):
                             self.teams[player] = team
             except ConnectionResetError:
                 pass
+            except pickle.UnpicklingError as exc:
+                self.logger.error(f"Fehler beim Entpacken der Daten: {type(exc)},{exc}")
+                self.logger.error(f"{traceback.format_exc()}")
             except Exception as exc:
                 self.logger.error(f"handle_munchlax abgebrochen:{type(exc)},{exc}")
                 self.logger.error(f"{traceback.format_exc()}")

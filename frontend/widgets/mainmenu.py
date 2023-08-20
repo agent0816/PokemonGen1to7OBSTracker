@@ -90,9 +90,9 @@ class MainMenu(Screen):
         connections = BoxLayout(orientation='horizontal')
 
         buttons_box = BoxLayout(orientation='vertical')
+        self.ids["buttons_box"] = weakref.proxy(buttons_box)
 
         server_client_button = Button(text='Server/Client', on_press=self.launchserver)
-        self.ids["server_client_button"] = weakref.proxy(server_client_button)
         buttons_box.add_widget(server_client_button)
 
         obs_connect = Button(text="OBS verbinden", on_press=self.toggle_obs)
@@ -120,7 +120,7 @@ class MainMenu(Screen):
 
         server_box.add_widget(server_or_client_check)
         
-        UI.create_connection_status(server_box, ObjectConnectionStatusCircle, self.arceus)
+        UI.create_connection_status(server_box, ObjectConnectionStatusCircle, self.arceus, ids = self.ids, id="arceus_status")
 
         server_status_box.add_widget(server_box)
 
@@ -140,6 +140,7 @@ class MainMenu(Screen):
         munchlax_box.add_widget(munchlax_box_label)
 
         munchlax_status_box = BoxLayout(orientation='horizontal')
+        self.ids["munchlax_status_box"] = weakref.proxy(munchlax_status_box)
         UI.create_connection_status_with_labels(munchlax_status_box, ObjectConnectionStatusCircle, self.munchlax.client_id[:3], self.munchlax, ids=self.ids, id=self.munchlax.client_id)
 
         Clock.schedule_interval(lambda instance:self.change_munchlax_status(munchlax_status_box), 1)
@@ -238,15 +239,31 @@ class MainMenu(Screen):
             button.text = "Server starten"
             button.unbind(on_press=self.connect_client)
             button.bind(on_press=self.launchserver)
+            self.ids["arceus_status"].opacity = 1
+
+            status_clearing = Button(text='Clients bereinigen', on_press=self.clear_clients)
+            self.ids["status_clearing"] = weakref.proxy(status_clearing)
+            self.ids["buttons_box"].add_widget(status_clearing)
         else:
             button.text = "Client starten"
             button.unbind(on_press=self.launchserver)
             button.bind(on_press=self.connect_client)
+            self.ids["arceus_status"].opacity = 0
+
+            self.ids["buttons_box"].remove_widget(self.ids["status_clearing"])
             if self.rem["start_server"]:
                 asyncio.create_task(self.munchlax.disconnect())
                 asyncio.create_task(self.arceus.stop())
         if not initializing:
             self.save_changes(instance)
+    
+    def clear_clients(self, instance):
+        widget = self.ids["munchlax_status_box"]
+        id_list = [id for id in self.arceus.munchlaxes]
+        id_list.append(self.munchlax.client_id)
+
+        for id in id_list:
+            widget.remove(self.ids[id])
     
     def connect_client(self,instance, *args):
         if instance.text.endswith("starten"):

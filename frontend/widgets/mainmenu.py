@@ -140,7 +140,7 @@ class MainMenu(Screen):
         munchlax_box.add_widget(munchlax_box_label)
 
         munchlax_status_box = BoxLayout(orientation='horizontal')
-        UI.create_connection_status_with_labels(munchlax_status_box, ObjectConnectionStatusCircle, self.munchlax, self.munchlax.client_id[:3])
+        UI.create_connection_status_with_labels(munchlax_status_box, ObjectConnectionStatusCircle, self.munchlax, self.munchlax.client_id[:3], ids=self.ids, id=self.munchlax.client_id)
 
         Clock.schedule_interval(lambda instance:self.change_munchlax_status(munchlax_status_box), 1)
 

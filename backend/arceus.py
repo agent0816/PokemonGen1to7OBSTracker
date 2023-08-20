@@ -42,7 +42,10 @@ class Arceus(EventDispatcher):
 
         client_id = await self.receive_message(reader)
         self.munchlaxes[client_id] = writer
-        self.munchlax_status[client_id] = 'connected'
+        temp_dict = {}
+        temp_dict[client_id] = 'connected'
+        self.munchlax_status.set(self, temp_dict)
+        self.logger.warning("nach Veränderung des Dictionaries")
         self.heartbeat_counts[client_id] = 0
         self.logger.info(f"Client {client_id} connected and registered.")
 

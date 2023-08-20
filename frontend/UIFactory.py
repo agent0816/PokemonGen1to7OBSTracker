@@ -80,7 +80,6 @@ def create_connection_status(box, connectionStatusCircle, *value, ids=None, id =
     
     if ids and id:
         ids[id] = weakref.proxy(connection_status)
-        box.ids[id] = weakref.proxy(connection_status)
 
     connection_status_anchor.add_widget(connection_status)
     box.add_widget(connection_status_anchor)
@@ -88,7 +87,11 @@ def create_connection_status(box, connectionStatusCircle, *value, ids=None, id =
 def create_connection_status_with_labels(box, connectionStatusCircle, labeltext, *value, ids=None, id = None):
     box_with_label = BoxLayout(orientation='vertical')
 
-    create_connection_status(box_with_label, connectionStatusCircle, *value, ids=ids, id = id)
+    create_connection_status(box_with_label, connectionStatusCircle, *value)
+    
+    if ids and id:
+        ids[id] = weakref.proxy(box_with_label)
+        box_with_label.ids[id] = weakref.proxy(box_with_label)
 
     box_with_label.add_widget(Label(text = labeltext))
     box.add_widget(box_with_label)

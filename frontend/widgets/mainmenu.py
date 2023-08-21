@@ -31,10 +31,11 @@ stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
 class BizhawkSavePopup(Popup):
-    def __init__(self, bizhawk_instances, bizhawk_button, **kwargs):
+    def __init__(self, bizhawk_instances, bizhawk_button, bizhawk, **kwargs):
         super().__init__(**kwargs)
         self.bizhawk_instances = bizhawk_instances
         self.bizhawk_button = bizhawk_button
+        self.bizhawk = bizhawk
         
         self.title = 'Speichern nicht vergessen!'
         self.size_hint = (0.8, 0.4)
@@ -54,8 +55,8 @@ class BizhawkSavePopup(Popup):
         self.content = layout
 
     def on_yes(self, instance):
-        for bizhawk in self.bizhawk_instances:
-            bizhawk.terminate()
+        asyncio.create_task(self.bizhawk.stop_and_terminate(self.bizhawk_instances))
+
         self.bizhawk_button.text = "Bizhawk starten"
         self.dismiss()
 
@@ -152,6 +153,19 @@ class MainMenu(Screen):
 
         # lokale Bizhawks und Bizhawk-server
 
+        bizhawk_box = BoxLayout(orientation='vertical')
+
+        bizhawk_box.add_widget(Label(text='Bizhawk Status'))
+        bizhawk_status_box = BoxLayout(orientation='horizontal')
+
+        UI.create_connection_status_with_labels(bizhawk_status_box, ObjectConnectionStatusCircle, "Server" , self.bizhawk)
+
+        Clock.schedule_interval(lambda instance:self.change_bizhawk_status(bizhawk_status_box), 1)
+        
+        bizhawk_box.add_widget(bizhawk_status_box)
+
+        status_box.add_widget(bizhawk_box)
+
         connections.add_widget(status_box)
 
         control_frame.add_widget(connections)
@@ -200,6 +214,11 @@ class MainMenu(Screen):
             if self.munchlax.is_connected and self.ids["server_client_button"].text != "Client beenden":
                 self.ids["server_client_button"].text = "Client beenden"
     
+    def change_bizhawk_status(self, box):
+        for client_id in self.bizhawk.bizhawks_status:
+                if client_id not in self.ids:
+                    UI.create_connection_status_with_labels(box, ValueConnectionStatusCircle, client_id, client_id, self.bizhawk.bizhawks_status, ids=self.ids, id=client_id)
+
     def toggle_obs(self, instance):
         if instance.text == "OBS verbinden":
             self.connectOBS()
@@ -232,7 +251,7 @@ class MainMenu(Screen):
                     self.bizhawk_instances.append(process)
             instance.text = "Bizhawk beenden"
         elif instance.text == "Bizhawk beenden":
-            popup = BizhawkSavePopup(self.bizhawk_instances, instance)
+            popup = BizhawkSavePopup(self.bizhawk_instances, instance, self.bizhawk)
             popup.open()
 
         def enable_button(button):

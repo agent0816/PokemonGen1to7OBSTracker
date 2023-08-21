@@ -39,12 +39,9 @@ class Arceus:
     
     async def handle_munchlax(self, reader, writer):
 
-        self.logger.warning("handle_munchlax")
         client_id = await self.receive_message(reader)
-        self.logger.warning(client_id)
         self.munchlaxes[client_id] = writer
         self.munchlax_status[client_id] = 'connected'
-        self.logger.warning("nach Veränderung des Dictionaries")
         self.heartbeat_counts[client_id] = 0
         self.logger.info(f"Client {client_id} connected and registered.")
 

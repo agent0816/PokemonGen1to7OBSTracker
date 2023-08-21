@@ -158,12 +158,13 @@ class Munchlax:
                 self.logger.info(f"Client {self.client_id} hat sich disconnectet.")
 
     async def send_message(self, message):
-        serialized_message = pickle.dumps(message)
-        length = len(serialized_message).to_bytes(4, 'big')
-        self.writer.write(length)
-        await self.writer.drain()
-        self.writer.write(serialized_message)
-        await self.writer.drain()
+        async with self.writer_lock:
+            serialized_message = pickle.dumps(message)
+            length = len(serialized_message).to_bytes(4, 'big')
+            self.writer.write(length)
+            await self.writer.drain()
+            self.writer.write(serialized_message)
+            await self.writer.drain()
 
     async def receive_message(self):
         reader = self.reader

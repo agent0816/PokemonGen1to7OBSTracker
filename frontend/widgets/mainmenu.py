@@ -197,7 +197,8 @@ class MainMenu(Screen):
                 if client_id not in self.ids:
                     UI.create_connection_status_with_labels(box, ValueConnectionStatusCircle, client_id[:3], client_id, self.arceus.munchlax_status, ids=self.ids, id=client_id)
         else:
-            self.connect_client(self.ids["server_client_button"])
+            if self.munchlax.is_connected and self.ids["server_client_button"].text != "Client beenden":
+                self.ids["server_client_button"].text = "Client beenden"
     
     def toggle_obs(self, instance):
         if instance.text == "OBS verbinden":

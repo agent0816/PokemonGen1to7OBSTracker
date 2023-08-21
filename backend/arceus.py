@@ -5,10 +5,8 @@ import logging
 import time
 import pickle
 import traceback
-from kivy.event import EventDispatcher
-from kivy.properties import DictProperty
 
-class Arceus(EventDispatcher):
+class Arceus:
     def __init__(self, host, port):
         super().__init__()
         self.host = host
@@ -20,6 +18,7 @@ class Arceus(EventDispatcher):
         self.teams = {}
         self.server = None
         self.is_connected = False
+        self.disconnect_lock = asyncio.Lock()
 
         self.logger = self.init_logging()
 
@@ -89,15 +88,16 @@ class Arceus(EventDispatcher):
                 break
     
     async def disconnect_client(self, client_id):
-        if client_id in self.munchlaxes:
-            writer = self.munchlaxes[client_id]
-            writer.close()
-            await writer.wait_closed()
-            self.logger.info(f"Client {client_id} disconnected.")
-            del self.munchlaxes[client_id]
-            del self.munchlax_status[client_id]
-            del self.munchlax_heartbeats[client_id]
-            del self.heartbeat_counts[client_id]
+        async with self.disconnect_lock:
+            if client_id in self.munchlaxes:
+                writer = self.munchlaxes[client_id]
+                writer.close()
+                await writer.wait_closed()
+                self.logger.info(f"Client {client_id} disconnected.")
+                del self.munchlaxes[client_id]
+                del self.munchlax_status[client_id]
+                del self.munchlax_heartbeats[client_id]
+                del self.heartbeat_counts[client_id]
 
     async def send_message(self, writer, message):
         serialized_message = pickle.dumps(message)

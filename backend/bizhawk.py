@@ -3,10 +3,8 @@ import sys
 import asyncio
 from backend.munchlax import Munchlax
 import backend.pokedecoder as pokedecoder
-from kivy.event import EventDispatcher
-from kivy.properties import DictProperty
 
-class Bizhawk(EventDispatcher):
+class Bizhawk:
     def __init__(self, host, port):
         super().__init__()
         self.host = host

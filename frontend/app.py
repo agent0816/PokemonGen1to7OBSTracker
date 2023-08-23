@@ -14,10 +14,10 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import FadeTransition
 from kivy.uix.screenmanager import ScreenManager
-from backend.arceus import Arceus
-from backend.bizhawk import Bizhawk
-from backend.munchlax import Munchlax
-from backend.obs import OBS
+from backend.classes.arceus import Arceus
+from backend.classes.bizhawk import Bizhawk
+from backend.classes.munchlax import Munchlax
+from backend.classes.obs import OBS
 import logging
 
 logger = logging.getLogger(__name__)

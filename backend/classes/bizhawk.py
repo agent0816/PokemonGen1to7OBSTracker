@@ -1,7 +1,7 @@
 import logging
 import sys
 import asyncio
-from backend.munchlax import Munchlax
+from backend.classes.munchlax import Munchlax
 import backend.pokedecoder as pokedecoder
 
 class Bizhawk:

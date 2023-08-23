@@ -13,7 +13,6 @@ from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.togglebutton import ToggleButton
 import frontend.UIFactory as UI
-import backend.munchlax as client
 import tkinter.filedialog as fd
 import logging
 

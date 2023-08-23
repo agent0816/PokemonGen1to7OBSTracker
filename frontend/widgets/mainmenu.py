@@ -247,7 +247,7 @@ class MainMenu(Screen):
                 self.connectors.add(task)
             for i in range(self.pl['player_count']):
                 if not self.pl[f'remote_{i+1}']:
-                    process = subprocess.Popen([self.bh['path'], f'--lua={os.path.abspath(f"./backend/Player{i+1}.lua")}', f'--socket_ip={self.bh["host"]}', f'--socket_port={self.bh["port"]}'])
+                    process = subprocess.Popen([self.bh['path'], f'--lua={os.path.abspath(f"./backend/lua/Player{i+1}.lua")}', f'--socket_ip={self.bh["host"]}', f'--socket_port={self.bh["port"]}'])
                     self.bizhawk_instances.append(process)
             instance.text = "Bizhawk beenden"
         elif instance.text == "Bizhawk beenden":

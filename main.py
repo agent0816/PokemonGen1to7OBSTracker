@@ -1,4 +1,3 @@
-from pathlib import Path
 import initialize_tree as init
 init.init_logging_folder()
 import logging

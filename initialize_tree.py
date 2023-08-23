@@ -87,7 +87,7 @@ def init_config_folder():
     bh = {
         "host":'127.0.0.1',
         "path":'',
-        "port":43885
+        "port":'43885'
     }
     if not biz.exists():
         save_config(biz, bh)
@@ -95,9 +95,9 @@ def init_config_folder():
         load_config(biz, bh)
     remote = Path('backend/config/remote.yml')
     rem = {
-        "client_port":43886,
+        "client_port":'43886',
         "server_ip_adresse":'',
-        "server_port":43886,
+        "server_port":'43886',
         "start_server":False
     }
     if not remote.exists():

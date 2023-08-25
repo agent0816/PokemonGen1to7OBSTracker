@@ -8,3 +8,6 @@ build/
 *.spec
 specs/
 *.png
+pyu-data/
+client_config.py
+.pyupdater/

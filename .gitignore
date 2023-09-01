@@ -11,3 +11,4 @@ specs/
 pyu-data/
 client_config.py
 .pyupdater/
+keypack.pyu

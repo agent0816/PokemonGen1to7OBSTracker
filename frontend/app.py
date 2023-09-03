@@ -32,7 +32,7 @@ logger.addHandler(stream_handler)
 Config.read("gui.ini")
 
 APP_NAME = 'PokemonOBSTracker'
-APP_VERSION = '0.0'
+APP_VERSION = '0.1'
 
 class Screens(ScreenManager):
     def __init__(

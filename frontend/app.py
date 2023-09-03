@@ -6,18 +6,12 @@ import requests
 import logging
 from frontend.widgets.mainmenu import MainMenu
 from frontend.widgets.settingsmenu import SettingsMenu
+from frontend.widgets.updatemenu import Update
 from kivy.app import App
 from kivy.core.window import Window
 from kivy.config import Config
-from kivy.uix.button import Button
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.label import Label
-from kivy.uix.popup import Popup
-from kivy.uix.progressbar import ProgressBar
 from kivy.uix.screenmanager import FadeTransition
 from kivy.uix.screenmanager import ScreenManager
-from pyupdater.client import Client
-from client_config import ClientConfig
 from backend.classes.arceus import Arceus
 from backend.classes.bizhawk import Bizhawk
 from backend.classes.munchlax import Munchlax
@@ -38,7 +32,7 @@ logger.addHandler(stream_handler)
 Config.read("gui.ini")
 
 APP_NAME = 'PokemonOBSTracker'
-APP_VERSION = '0.1'
+APP_VERSION = '0.0'
 
 class Screens(ScreenManager):
     def __init__(
@@ -60,37 +54,16 @@ class Screens(ScreenManager):
     ):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
+        update_menu = Update(APP_NAME, APP_VERSION)
+        self.add_widget(update_menu)
         self.add_widget(
             MainMenu(arceus, bizhawk, bizhawk_instances, munchlax, obs_websocket, configsave, sp, rem, obs, bh, pl)
         )
         self.add_widget(
             SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
         )
-        self.current = "MainMenu"
-
-class UpdatePopup(Popup):
-    def __init__(self, **kwargs):
-        super(UpdatePopup, self).__init__(**kwargs)
-        self.title = 'Update verfügbar!'
-        self.size_hint = (0.8, 0.4)
-
-        layout = BoxLayout(orientation='vertical')
-        layout.add_widget(Label(text='Eine neue Version der Anwendung ist verfügbar. Jetzt aktualisieren?'))
-
-        btn_layout = BoxLayout(size_hint_y=None, height="50dp", spacing="5dp")
-        btn_yes = Button(text='Ja', on_press=self.on_yes)
-        btn_no = Button(text='Nein', on_press=self.dismiss)
-        
-        btn_layout.add_widget(btn_yes)
-        btn_layout.add_widget(btn_no)
-        layout.add_widget(btn_layout)
-
-        self.content = layout
-
-    def on_yes(self, instance):
-        # Hier können Sie den Update-Prozess starten
-        print("Update gestartet...")
-        self.dismiss()
+        self.current = "Update"
+        update_menu.check_for_update()
 
 class TrackerApp(App):
     def __init__(self, **kwargs):
@@ -101,9 +74,7 @@ class TrackerApp(App):
         Config.set("graphics", "height", "400")
         Config.set("input", "mouse", "mouse,multitouch_on_demand")
 
-    def build(self):
-        self.check_for_update()
-        
+    def build(self):        
         try:
             self.externalIPv4 = requests.get("https://ipinfo.io/ip", timeout=1).text
         except requests.exceptions.Timeout:
@@ -168,53 +139,6 @@ class TrackerApp(App):
         ]
 
         return Screens(*arguments)
-
-    def check_for_update(self):
-        client = Client(ClientConfig(), refresh=True)
-        logger.info(client)
-        client.add_progress_hook(self.print_status_info)
-        app_update = client.update_check(APP_NAME, APP_VERSION)
-        logger.info(app_update)
-        if app_update:
-            self.show_update_popup(app_update)
-
-    def show_update_popup(self, app_update):
-        box = BoxLayout(orientation='vertical')
-        box.add_widget(Label(text='Update verfügbar!'))
-
-        self.progress_bar = ProgressBar(max=100)
-        box.add_widget(self.progress_bar)
-
-        btn_layout = BoxLayout()
-        download_btn = Button(text='Download')
-        download_btn.bind(on_press=lambda x: self.download_update(app_update)) # type: ignore
-        btn_layout.add_widget(download_btn)
-
-        cancel_btn = Button(text='Abbrechen')
-        cancel_btn.bind(on_press=lambda x: x.parent.parent.dismiss()) # type: ignore
-        btn_layout.add_widget(cancel_btn)
-
-        box.add_widget(btn_layout)
-
-        self.popup = Popup(title='Update verfügbar!', content=box,
-                           size_hint=(None, None), size=(400, 300))
-        self.popup.open()
-
-    def download_update(self, app_update):
-        app_update.download()
-        if app_update.is_downloaded():
-            app_update.extract_restart()
-
-    def print_status_info(self, info):
-        total = info.get(u'total')
-        downloaded = info.get(u'downloaded')
-        status = info.get(u'status')
-        print(downloaded, total, status)
-        
-        # Aktualisieren des ProgressBar-Werts
-        if total:
-            percentage = (downloaded / total) * 100
-            self.progress_bar.value = percentage
 
     def exit_check(self, *args, **kwargs):
         self.save_config(f"{self.configsave}bh_config.yml", self.bh)

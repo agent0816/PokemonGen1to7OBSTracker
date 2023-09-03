@@ -487,10 +487,10 @@ class ScrollSettings(ScrollView):
         self.obs['host'] = self.ids["obs_host"].text
         self.obs['port'] = self.ids["obs_port"].text
 
-        if not self.obs.ws:
-            self.obs.password = self.obs['password']
-            self.obs.host = self.obs['host']
-            self.obs.port = self.obs['port']
+        if not self.obs_websocket.ws:
+            self.obs_websocket.password = self.obs['password']
+            self.obs_websocket.host = self.obs['host']
+            self.obs_websocket.port = self.obs['port']
         
         with open(f"{self.configsave}obs_config.yml", 'w') as file:
             yaml.dump(self.obs, file)

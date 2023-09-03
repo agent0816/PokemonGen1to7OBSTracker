@@ -150,12 +150,17 @@ class Munchlax:
                     self.logger.warning(f"Disconnect Nachricht versenden failed: {err}")
                 
                 self.is_connected = False
+
                 self.alter_teams_task.cancel()
                 self.heartbeat_task.cancel()
                 self.send_teams_task.cancel()
+
                 self.writer.close()
                 await self.writer.wait_closed()
                 self.logger.info(f"Client {self.client_id} hat sich disconnectet.")
+
+                self.host = '127.0.0.1' if self.conf["start_server"] else self.conf["server_ip_adresse"]
+                self.port = self.conf["client_port"] if self.conf["start_server"] else self.conf["server_port"]
 
     async def send_message(self, message):
         serialized_message = pickle.dumps(message)

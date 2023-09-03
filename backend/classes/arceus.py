@@ -7,7 +7,7 @@ import pickle
 import traceback
 
 class Arceus:
-    def __init__(self, host, port):
+    def __init__(self, host, port, rem):
         super().__init__()
         self.host = host
         self.port = port
@@ -19,6 +19,7 @@ class Arceus:
         self.server = None
         self.is_connected = False
         self.disconnect_lock = asyncio.Lock()
+        self.rem = rem
 
         self.logger = self.init_logging()
 
@@ -142,3 +143,4 @@ class Arceus:
             self.server = None
             self.is_connected = False
             self.logger.info("Arceus has been stopped.")
+            self.port = self.rem['client_port']

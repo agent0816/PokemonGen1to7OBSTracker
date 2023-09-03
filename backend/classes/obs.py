@@ -4,7 +4,7 @@ import sys
 from websockets.exceptions import WebSocketException
 
 class OBS():
-    def __init__(self, host, port, password, munchlax, conf):
+    def __init__(self, host, port, password, munchlax, conf, obs):
         self.ws = None
         self.is_connected = False
         self.host = host
@@ -12,11 +12,13 @@ class OBS():
         self.password = password
         self.munchlax = munchlax
         self.conf = conf
+        self.obs = obs
 
         self.logger = self.init_logging()
 
     def init_logging(self):
         logger = logging.getLogger(__name__)
+        logger.setLevel(logging.INFO)
 
         logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
 
@@ -52,6 +54,9 @@ class OBS():
         if self.ws:
             await self.ws.disconnect()
             self.is_connected = False
+            self.password = self.obs['password']
+            self.host = self.obs['host']
+            self.port = self.obs['port']
 
     async def redraw_obs(self):
         if self.ws and self.ws.is_identified():

@@ -5,7 +5,7 @@ from backend.classes.munchlax import Munchlax
 import backend.pokedecoder as pokedecoder
 
 class Bizhawk:
-    def __init__(self, host, port):
+    def __init__(self, host, port, bh):
         super().__init__()
         self.host = host
         self.port = port
@@ -14,6 +14,7 @@ class Bizhawk:
         self.server = None
         self.is_connected = False
         self.disconnect_lock = asyncio.Lock()
+        self.bh = bh
 
         self.logger = self.init_logging()
 
@@ -93,16 +94,6 @@ class Bizhawk:
         if client_id in self.bizhawks:
             self.bizhawks[client_id] = None
             self.bizhawks_status[client_id] = False
-        
-        # async with self.disconnect_lock:
-        #     if client_id in self.bizhawks:
-        #         print(client_id)
-        #         writer = self.bizhawks[client_id]
-        #         writer.close()
-        #         await writer.wait_closed()
-        #         self.logger.info(f"Bizhawk {client_id} disconnected.")
-        #         self.bizhawks[client_id] = False
-        #         self.bizhawks_status[client_id] = False
     
     async def start(self, munchlax):
         self.server = await asyncio.start_server(
@@ -118,8 +109,11 @@ class Bizhawk:
         if self.server:
             self.server.close()
             await self.server.wait_closed()
+            
             self.server = None
             self.is_connected = False
+            
+            self.port = self.bh['port']
             self.logger.info("Bizhawk has been stopped.")
 
     async def stop_and_terminate(self, bizhawk_instances):

@@ -476,6 +476,9 @@ class ScrollSettings(ScrollView):
 
         self.bh['path'] = self.ids.bizhawk_exe.text
         self.bh['port'] = self.ids.bizhawk_port.text
+
+        if not self.bizhawk.server:
+            self.bizhawk.port = self.bh['port']
         
         with open(f"{self.configsave}bh_config.yml", 'w') as file:
             yaml.dump(self.bh, file)
@@ -483,6 +486,11 @@ class ScrollSettings(ScrollView):
         self.obs['password'] = self.ids["obs_password"].text
         self.obs['host'] = self.ids["obs_host"].text
         self.obs['port'] = self.ids["obs_port"].text
+
+        if not self.obs.ws:
+            self.obs.password = self.obs['password']
+            self.obs.host = self.obs['host']
+            self.obs.port = self.obs['port']
         
         with open(f"{self.configsave}obs_config.yml", 'w') as file:
             yaml.dump(self.obs, file)
@@ -491,6 +499,13 @@ class ScrollSettings(ScrollView):
 
         self.rem['server_ip_adresse'] = self.ids['ip_server'].text
         self.rem['server_port'] = self.ids['port_server'].text
+
+        if not self.arceus.server:
+            self.arceus.port = self.rem['client_port']
+
+        if not self.munchlax.is_connected:
+            self.munchlax.host = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
+            self.munchlax.port = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
 
         with open(f"{self.configsave}remote.yml", 'w') as file:
             yaml.dump(self.rem, file)

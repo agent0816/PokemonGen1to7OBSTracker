@@ -239,8 +239,9 @@ function main()
         if lastTime + INTERVAL <= currTime and fluctcount > 3 then
             lastTime = currTime
             comm.socketServerSendBytes(msg)
-
+            
         end
+        client.saveram()
         emu.frameadvance()
     end
 end

@@ -9,7 +9,6 @@ from frontend.widgets.settingsmenu import SettingsMenu
 from frontend.widgets.updatemenu import Update
 from kivy.app import App
 from kivy.core.window import Window
-from kivy.config import Config
 from kivy.uix.screenmanager import FadeTransition
 from kivy.uix.screenmanager import ScreenManager
 from backend.classes.arceus import Arceus
@@ -27,9 +26,6 @@ logger.addHandler(file_handler)
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
-
-
-Config.read("gui.ini")
 
 APP_NAME = 'PokemonOBSTracker'
 APP_VERSION = '0.3'
@@ -62,17 +58,13 @@ class Screens(ScreenManager):
         self.add_widget(
             SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
         )
-        self.current = "Update"
-        update_menu.check_for_update()
+        self.current = "MainMenu"
+        # update_menu.check_for_update()
 
 class TrackerApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         Window.bind(on_request_close=self.exit_check)
-        Config.set("graphics", "resizable", 1)
-        Config.set("graphics", "width", "600")
-        Config.set("graphics", "height", "400")
-        Config.set("input", "mouse", "mouse,multitouch_on_demand")
 
     def build(self):        
         try:

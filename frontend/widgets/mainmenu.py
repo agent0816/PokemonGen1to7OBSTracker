@@ -5,17 +5,22 @@ import weakref
 import yaml
 import asyncio
 from kivy.clock import Clock
+from kivy.graphics import Color
+from kivy.graphics import Rectangle
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.gridlayout import GridLayout
+from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen
+from kivy.uix.scrollview import ScrollView
 from kivy.uix.togglebutton import ToggleButton
 from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
+from backend.classes.Pokemon import Pokemon
 import frontend.UIFactory as UI
 import logging
 
@@ -77,7 +82,26 @@ class MainMenu(Screen):
 
         super().__init__(**kwargs)
         self.name = "MainMenu"
-        frame = BoxLayout(orientation='vertical')
+        
+        frame = BoxLayout(orientation='horizontal')
+        click_frame = BoxLayout(orientation='vertical')
+        
+        control_frame = self.create_control_frame()
+        showing_frame = self.create_showing_frame()
+        
+        click_frame.add_widget(control_frame)
+        click_frame.add_widget(showing_frame)
+
+        frame.add_widget(click_frame)
+
+        pokemon_frame = self.create_pokemon_frame()
+
+        frame.add_widget(pokemon_frame)
+        self.add_widget(frame)
+        
+        self.init_config(self.sp, self.rem)
+
+    def create_control_frame(self):
         control_frame = BoxLayout(orientation='horizontal')
 
         logo_settings = BoxLayout(orientation='vertical', size_hint=(.3,1))
@@ -170,6 +194,9 @@ class MainMenu(Screen):
 
         control_frame.add_widget(connections)
 
+        return control_frame
+    
+    def create_showing_frame(self):
         showing_frame = BoxLayout(orientation='horizontal')
         sort_layout = BoxLayout(orientation='vertical', spacing="20dp", padding=("5dp",0))
 
@@ -199,12 +226,28 @@ class MainMenu(Screen):
             show_layout.add_widget(label)
 
         showing_frame.add_widget(show_layout)
-        frame.add_widget(control_frame)
-        frame.add_widget(showing_frame)
-        self.add_widget(frame)
-        
-        self.init_config(self.sp, self.rem)
 
+        return showing_frame
+    
+    def create_pokemon_frame(self):
+        pokemon_frame = ScrollView(do_scroll_y=False, do_scroll_x=True)
+        
+        box = BoxLayout(orientation='horizontal',size_hint_x=None, spacing="20dp", padding=(0, "20dp"))
+        box.bind(minimum_width=box.setter('width')) # type: ignore
+
+        color_lut = {1:"1a4d9a7f", 2:"9a671a7f", 3:"9a9a1a7f", 4:"1a9a1a7f"}
+        items2 = yaml.safe_load(open('backend/data/items2.yml'))
+        team = [Pokemon(6, False, lvl=5, nickname="Stephan", item="master-ball") for i in range(6)]
+
+        print(team)
+
+        for player in range(1, self.pl['player_count'] + 1):
+            trainer = TrainerBox(player, self.munchlax, self.obs_websocket, color_lut[player], orientation='vertical', size_hint=(None, 1), size=("130dp",0))
+            box.add_widget(trainer)
+        
+        pokemon_frame.add_widget(box)
+        return pokemon_frame
+    
     def change_munchlax_status(self, box):
         if self.rem["start_server"]:
             for client_id in self.arceus.munchlax_status:
@@ -369,3 +412,65 @@ class MainMenu(Screen):
     
     def switch_to_settings(self, instance):
         self.manager.current = "SettingsMenu"
+
+class TrainerBox(BoxLayout):
+    def __init__(self, player_id, munchlax, obs_websocket, color, **kwargs):
+        super().__init__(**kwargs)
+
+        self.player_id = player_id
+        self.munchlax = munchlax
+        self.obs_websocket = obs_websocket
+        self.pokemon_boxes = []
+
+        decimal_color = (int(color[0:2], 16) / 255, int(color[2:4], 16) / 255, int(color[4:6], 16) / 255, int(color[6:8], 16) / 255)
+
+        with self.canvas.before:
+            Color(*decimal_color)
+            self.rect = Rectangle(size=self.size, pos=self.pos)
+        
+        self.bind(size=self._update_rect, pos=self._update_rect)
+
+        self.add_widget(Label(text=f"Spieler {self.player_id}"))
+
+        for pokemon in range(6):
+            pokemon_box = self.create_pokemon_box()
+            self.pokemon_boxes.append(pokemon_box)
+
+            self.add_widget(pokemon_box)
+
+    def _update_rect(self, instance, value):
+        self.rect.pos = instance.pos
+        self.rect.size = instance.size
+    
+    def create_pokemon_box(self):
+        pokemon_box = BoxLayout(orientation='vertical')
+
+        sprite_box = BoxLayout(orientation='horizontal')
+
+        item_and_lvl_box = BoxLayout(orientation='vertical')
+
+        level = Label(text="lvl. 5")
+        pokemon_box.ids["Level"] = weakref.proxy(level)
+        item_and_lvl_box.add_widget(level)
+
+        item_text = Label(text="kein Item")
+        pokemon_box.ids["Item_Name"] = weakref.proxy(item_text)
+        item_and_lvl_box.add_widget(item_text)
+
+        item_image = Image(source="../sprites/sprites/items/ability-capsule.png")
+        pokemon_box.ids["Item_Image"] = weakref.proxy(item_image)
+        item_and_lvl_box.add_widget(item_image)
+
+        sprite_box.add_widget(item_and_lvl_box)
+        sprite = Image(source="../sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/6.png")
+        pokemon_box.ids["Sprite"] = weakref.proxy(sprite)
+
+        sprite_box.add_widget(sprite)
+
+        pokemon_box.add_widget(sprite_box)
+
+        nickname = Label(text="Pokemon")
+        pokemon_box.ids["Nickname"] = weakref.proxy(nickname)
+        pokemon_box.add_widget(nickname)
+        
+        return pokemon_box

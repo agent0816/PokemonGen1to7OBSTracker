@@ -21,6 +21,7 @@ from kivy.uix.togglebutton import ToggleButton
 from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 from backend.classes.Pokemon import Pokemon
+from backend.classes.obs import OBS
 import frontend.UIFactory as UI
 import logging
 
@@ -71,7 +72,7 @@ class MainMenu(Screen):
         self.bizhawk = bizhawk
         self.bizhawk_instances = bizhawk_instances
         self.munchlax = munchlax
-        self.obs_websocket = obs_websocket
+        self.obs_websocket: OBS = obs_websocket
         self.configsave = configsave
         self.sp = sp
         self.rem = rem
@@ -419,16 +420,16 @@ class TrainerBox(BoxLayout):
 
         self.player_id = player_id
         self.munchlax = munchlax
-        self.obs_websocket = obs_websocket
+        self.obs_websocket: OBS = obs_websocket
         self.pokemon_boxes = []
 
         decimal_color = (int(color[0:2], 16) / 255, int(color[2:4], 16) / 255, int(color[4:6], 16) / 255, int(color[6:8], 16) / 255)
 
-        with self.canvas.before:
+        with self.canvas.before: #type: ignore
             Color(*decimal_color)
             self.rect = Rectangle(size=self.size, pos=self.pos)
         
-        self.bind(size=self._update_rect, pos=self._update_rect)
+        self.bind(size=self._update_rect, pos=self._update_rect) # type: ignore
 
         self.add_widget(Label(text=f"Spieler {self.player_id}"))
 

@@ -12,6 +12,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.togglebutton import ToggleButton
+from backend.classes.obs import OBS
 import frontend.UIFactory as UI
 import tkinter.filedialog as fd
 import logging
@@ -90,7 +91,7 @@ class ScrollSettings(ScrollView):
         self.arceus = arceus
         self.bizhawk = bizhawk
         self.munchlax = munchlax
-        self.obs_websocket = obs_websocket
+        self.obs_websocket: OBS = obs_websocket
         self.externalIPv4 = externalIPv4
         self.externalIPv6 = externalIPv6
         self.configsave = configsave
@@ -252,7 +253,7 @@ class ScrollSettings(ScrollView):
 
         checkboxes_box = BoxLayout(size_hint_x=.7, size_hint_y=None, size=(0,"30dp"))
         for i in range(1, 5):
-            checkbox = CheckBox(group='player_count', pos_hint={"center_y": .5}, size_hint=(None, None), size=("20dp", "20dp"))
+            checkbox = CheckBox(group='player_count', pos_hint={"center_y": .5}, size_hint=(None, None), size=("20dp", "20dp"), allow_no_selection=False)
             checkbox.bind(on_press=lambda instance, player_count=i: self.change_player_count(player_count, player_box)) # type: ignore
             self.ids[f"player_count_{i}"] = weakref.proxy(checkbox)
             checkboxes_box.add_widget(checkbox)

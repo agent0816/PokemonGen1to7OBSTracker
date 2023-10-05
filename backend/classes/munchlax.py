@@ -80,6 +80,8 @@ class Munchlax:
 
             except Exception as err:
                 self.logger.error(f"alter_teams abgebrochen: {err}")
+                self.logger.error(sys.exc_info())
+                
                 break
 
         await self.disconnect()

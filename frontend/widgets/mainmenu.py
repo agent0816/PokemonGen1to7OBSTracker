@@ -416,9 +416,9 @@ class TrainerBox(BoxLayout):
         super().__init__(**kwargs)
 
         self.player_id = player_id
-        self.munchlax = munchlax
-        self.obs_websocket = obs_websocket
-        self.pokemon_boxes = []
+        self.munchlax: Munchlax = munchlax
+        self.obs_websocket: OBS = obs_websocket
+        self.pokemon_boxes = {}
 
         decimal_color = (int(color[0:2], 16) / 255, int(color[2:4], 16) / 255, int(color[4:6], 16) / 255, int(color[6:8], 16) / 255)
 

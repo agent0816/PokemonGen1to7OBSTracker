@@ -4,6 +4,7 @@ import hashlib
 import logging
 import sys
 import pickle
+from backend.classes.obs import OBS
 
 class Munchlax:
     def __init__(self, host, port, conf):
@@ -17,7 +18,7 @@ class Munchlax:
         self.host = host
         self.port = port
         self.is_connected = False
-        self.obs = None
+        self.obs: OBS | None = None
         self.writer_lock = asyncio.Lock()
         self.disconnect_lock = asyncio.Lock()
 
@@ -80,6 +81,7 @@ class Munchlax:
 
             except Exception as err:
                 self.logger.error(f"alter_teams abgebrochen: {err}")
+                self.logger.error(sys.exc_info())
                 break
 
         await self.disconnect()

@@ -20,7 +20,6 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.togglebutton import ToggleButton
 from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
-from backend.classes.Pokemon import Pokemon
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
 import frontend.UIFactory as UI

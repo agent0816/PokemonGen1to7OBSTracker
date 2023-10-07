@@ -21,6 +21,8 @@ from kivy.uix.togglebutton import ToggleButton
 from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 from backend.classes.Pokemon import Pokemon
+from backend.classes.munchlax import Munchlax
+from backend.classes.obs import OBS
 import frontend.UIFactory as UI
 import logging
 
@@ -211,7 +213,7 @@ class MainMenu(Screen):
         
         showing_frame.add_widget(sort_layout)
 
-        checkmarks = (("Orden anzeigen", "badges_check"),("Namen anzeigen", "names_check"),("Items anziegen", "items_check"),("animierte Sprites", "animated_check"))
+        checkmarks = (("Orden anzeigen", "badges_check"),("Namen anzeigen", "names_check"),("Items anzeigen", "items_check"),("animierte Sprites", "animated_check"))
         show_layout = GridLayout(cols=2)
 
         for text, id in checkmarks:
@@ -236,13 +238,9 @@ class MainMenu(Screen):
         box.bind(minimum_width=box.setter('width')) # type: ignore
 
         color_lut = {1:"1a4d9a7f", 2:"9a671a7f", 3:"9a9a1a7f", 4:"1a9a1a7f"}
-        items2 = yaml.safe_load(open('backend/data/items2.yml'))
-        team = [Pokemon(6, False, lvl=5, nickname="Stephan", item="master-ball") for i in range(6)]
-
-        print(team)
 
         for player in range(1, self.pl['player_count'] + 1):
-            trainer = TrainerBox(player, self.munchlax, self.obs_websocket, color_lut[player], orientation='vertical', size_hint=(None, 1), size=("130dp",0))
+            trainer = TrainerBox(player, self.munchlax, self.obs_websocket, color_lut[player], orientation='vertical', size_hint=(None, 1), size=("140dp",0))
             box.add_widget(trainer)
         
         pokemon_frame.add_widget(box)
@@ -418,9 +416,9 @@ class TrainerBox(BoxLayout):
         super().__init__(**kwargs)
 
         self.player_id = player_id
-        self.munchlax = munchlax
-        self.obs_websocket = obs_websocket
-        self.pokemon_boxes = []
+        self.munchlax: Munchlax = munchlax
+        self.obs_websocket: OBS = obs_websocket
+        self.pokemon_boxes = {}
 
         decimal_color = (int(color[0:2], 16) / 255, int(color[2:4], 16) / 255, int(color[4:6], 16) / 255, int(color[6:8], 16) / 255)
 
@@ -430,13 +428,15 @@ class TrainerBox(BoxLayout):
         
         self.bind(size=self._update_rect, pos=self._update_rect)
 
-        self.add_widget(Label(text=f"Spieler {self.player_id}"))
+        self.add_widget(Label(text=f"Spieler {self.player_id}", size_hint=(1,0.3)))
 
         for pokemon in range(6):
             pokemon_box = self.create_pokemon_box()
-            self.pokemon_boxes.append(pokemon_box)
+            self.pokemon_boxes[f"slot{pokemon}"] = pokemon_box
 
             self.add_widget(pokemon_box)
+
+        Clock.schedule_interval(self.team_aktualisieren(), 1)
 
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos
@@ -449,28 +449,46 @@ class TrainerBox(BoxLayout):
 
         item_and_lvl_box = BoxLayout(orientation='vertical')
 
-        level = Label(text="lvl. 5")
+        level = Label(text="lvl. 0")
         pokemon_box.ids["Level"] = weakref.proxy(level)
         item_and_lvl_box.add_widget(level)
 
-        item_text = Label(text="kein Item")
-        pokemon_box.ids["Item_Name"] = weakref.proxy(item_text)
-        item_and_lvl_box.add_widget(item_text)
-
-        item_image = Image(source="../sprites/sprites/items/ability-capsule.png")
+        item_image = Image(source="../sprites/sprites/items/0.png", fit_mode="contain")
         pokemon_box.ids["Item_Image"] = weakref.proxy(item_image)
         item_and_lvl_box.add_widget(item_image)
 
         sprite_box.add_widget(item_and_lvl_box)
-        sprite = Image(source="../sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/6.png")
+        sprite = Image(source="../sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/0.png", fit_mode="contain")
         pokemon_box.ids["Sprite"] = weakref.proxy(sprite)
 
         sprite_box.add_widget(sprite)
 
         pokemon_box.add_widget(sprite_box)
 
-        nickname = Label(text="Pokemon")
+        item_text = Label(text="-", size_hint=(1,0.25))
+        pokemon_box.ids["Item_Name"] = weakref.proxy(item_text)
+        pokemon_box.add_widget(item_text)
+
+        nickname = Label(text="nickname", size_hint=(1,0.25))
         pokemon_box.ids["Nickname"] = weakref.proxy(nickname)
         pokemon_box.add_widget(nickname)
         
         return pokemon_box
+    
+    def team_aktualisieren(self):
+
+        if self.player_id not in self.munchlax.sorted_teams:
+            return
+
+        team = self.munchlax.sorted_teams[self.player_id]
+        # items4 = yaml.safe_load(open('backend/data/items4.yml'))
+        # team = [Pokemon(i+24, female=True, lvl=i+30, item=items4[i+22], nickname=f"nickname {i}") for i in range(1,7)]
+
+        for slot, pokemon in enumerate(team):
+            slot_box = self.pokemon_boxes[f"slot{slot}"]
+
+            slot_box.ids["Level"].text = f"lvl {pokemon.lvl}"
+            slot_box.ids["Nickname"].text = pokemon.nickname
+            slot_box.ids["Sprite"].source = self.obs_websocket.get_sprite(pokemon, self.obs_websocket.conf['animated'], 54)# self.munchlax.editions[self.player_id])
+            slot_box.ids["Item_Name"].text = "-" if pokemon.item == 0 else f"{pokemon.item}"
+            slot_box.ids["Item_Image"].source = f"{self.obs_websocket.conf['items_path']}/{pokemon.item}.png"

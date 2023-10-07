@@ -66,7 +66,7 @@ class OBS():
 
     async def changeSource(self, player, slots, team, edition):
         if not self.ws or not self.ws.is_identified():
-            self.is_connected = 'disconnected'
+            self.is_connected = False
             return
         batch = []
         for slot in slots:
@@ -133,12 +133,11 @@ class OBS():
             52:'unova',
             53:'unova2',
             54:'unova2',
-
         }
         if not self.conf['show_badges']:
             return
         if not self.ws or not self.ws.is_identified():
-            self.is_connected = 'disconnected'
+            self.is_connected = False
             return
         batch = []
         for i in range(16):

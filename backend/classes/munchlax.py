@@ -57,12 +57,12 @@ class Munchlax:
                         self.badges[player] = self.unsorted_teams[player][6]
                     if player not in self.editions or self.unsorted_teams[player][7] != self.editions[player]:
                         self.editions[player] = self.unsorted_teams[player][7]
-                    if self.obs:
+                    if self.obs.is_connected:
                         await self.obs.change_badges(player) #type: ignore
                 if new_teams != self.sorted_teams:
                     for player in new_teams:
                         if player not in self.sorted_teams:
-                            if self.obs: 
+                            if self.obs.is_connected: 
                                 await self.obs.changeSource(player, range(6), new_teams[player], self.editions[player]) #type: ignore
                             continue
 
@@ -73,7 +73,7 @@ class Munchlax:
                             if team[i] != old_team[i]:
                                 self.logger.debug(f"{i=},{team[i]=}")
                                 diff.append(i)
-                        if self.obs:
+                        if self.obs.is_connected:
                             await self.obs.changeSource(player, diff, team, self.editions[player]) #type: ignore
                             await self.obs.change_badges(player) #type: ignore
                     self.sorted_teams = new_teams.copy()

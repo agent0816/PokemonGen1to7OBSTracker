@@ -207,11 +207,11 @@ class OBS():
         else:
             sub = ''
         path = (
-            self.conf['common_path']# + '/'
-            + sub
+            self.conf['common_path']
+            + sub + '/'
             + animated
             + shiny
-            + female + '/'
+            + female # + '/'
         )
         file = str(pokemon.dexnr) + pokemon.form + filetype
         return path + file

@@ -104,7 +104,7 @@ class TrackerApp(App):
         ip_to_connect = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
         port_to_connect = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
         self.munchlax = Munchlax(
-            ip_to_connect, port_to_connect, self.rem
+            ip_to_connect, port_to_connect, self.rem, self.sp
         )
         self.obs_websocket = OBS(
             self.obs["host"],

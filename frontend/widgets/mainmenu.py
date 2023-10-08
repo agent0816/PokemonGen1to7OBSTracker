@@ -435,7 +435,7 @@ class TrainerBox(BoxLayout):
 
             self.add_widget(pokemon_box)
 
-        Clock.schedule_interval(self.team_aktualisieren(), 1)
+        Clock.schedule_interval(self.team_aktualisieren, 1)
 
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos
@@ -452,12 +452,12 @@ class TrainerBox(BoxLayout):
         pokemon_box.ids["Level"] = weakref.proxy(level)
         item_and_lvl_box.add_widget(level)
 
-        item_image = Image(source="../sprites/sprites/items/0.png", fit_mode="contain")
+        item_image = Image(source=f"{self.obs_websocket.conf['items_path']}/0.png", fit_mode="contain")
         pokemon_box.ids["Item_Image"] = weakref.proxy(item_image)
         item_and_lvl_box.add_widget(item_image)
 
         sprite_box.add_widget(item_and_lvl_box)
-        sprite = Image(source="../sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/0.png", fit_mode="contain")
+        sprite = Image(source=f"{self.obs_websocket.conf['common_path']}/{self.obs_websocket.conf['red']}/0.png", fit_mode="contain")
         pokemon_box.ids["Sprite"] = weakref.proxy(sprite)
 
         sprite_box.add_widget(sprite)
@@ -474,9 +474,9 @@ class TrainerBox(BoxLayout):
         
         return pokemon_box
     
-    def team_aktualisieren(self):
+    def team_aktualisieren(self, instance):
 
-        if self.player_id not in self.munchlax.sorted_teams:
+        if self.player_id not in self.munchlax.sorted_teams or self.player_id not in self.munchlax.editions:
             return
 
         team = self.munchlax.sorted_teams[self.player_id]
@@ -488,6 +488,6 @@ class TrainerBox(BoxLayout):
 
             slot_box.ids["Level"].text = f"lvl {pokemon.lvl}"
             slot_box.ids["Nickname"].text = pokemon.nickname
-            slot_box.ids["Sprite"].source = self.obs_websocket.get_sprite(pokemon, self.obs_websocket.conf['animated'], 54)# self.munchlax.editions[self.player_id])
+            slot_box.ids["Sprite"].source = self.obs_websocket.get_sprite(pokemon, self.obs_websocket.conf['animated'], self.munchlax.editions[self.player_id])
             slot_box.ids["Item_Name"].text = "-" if pokemon.item == 0 else f"{pokemon.item}"
             slot_box.ids["Item_Image"].source = f"{self.obs_websocket.conf['items_path']}/{pokemon.item}.png"

@@ -160,7 +160,7 @@ class OBS():
                         {
                             "inputName": f"badge{i + 16 * (player - 1) + 1}",
                             "inputSettings": {
-                                "file": self.conf['badges_path'] + '/' + str(i + 1) + 'empty' + ".png"
+                                "file": self.conf['badges_path'] + '/' + badge_lut[self.munchlax.editions[player]] + str(i + 1) + 'empty' + ".png"
                             }
                         }
                     )

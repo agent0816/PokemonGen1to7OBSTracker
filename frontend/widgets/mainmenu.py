@@ -671,8 +671,8 @@ class TrainerBox(BoxLayout):
         badges = self.munchlax.badges[self.player_id]
         badge_string = f"{self.obs_websocket.conf['badges_path']}"
 
-        for badge in range(1,9):
+        for badge in range(8):
             if badges & 2**badge:
-                self.badges[badge].source = f"{badge_string}/{self.badge_lut[self.munchlax.editions[self.player_id]]}{badge}.png"
+                self.badges[badge+1].source = f"{badge_string}/{self.badge_lut[self.munchlax.editions[self.player_id]]}{badge+1}.png"
             else:
-                self.badges[badge].source = f"{badge_string}/{self.badge_lut[self.munchlax.editions[self.player_id]]}{badge}empty.png"
+                self.badges[badge+1].source = f"{badge_string}/{self.badge_lut[self.munchlax.editions[self.player_id]]}{badge+1}empty.png"

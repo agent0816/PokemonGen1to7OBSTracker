@@ -9,7 +9,6 @@ from frontend.widgets.settingsmenu import SettingsMenu
 from frontend.widgets.updatemenu import Update
 from kivy.app import App
 from kivy.core.window import Window
-from kivy.config import Config
 from kivy.uix.screenmanager import FadeTransition
 from kivy.uix.screenmanager import ScreenManager
 from backend.classes.arceus import Arceus
@@ -27,9 +26,6 @@ logger.addHandler(file_handler)
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
-
-
-Config.read("gui.ini")
 
 APP_NAME = 'PokemonOBSTracker'
 APP_VERSION = '0.3'
@@ -69,10 +65,6 @@ class TrackerApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         Window.bind(on_request_close=self.exit_check)
-        Config.set("graphics", "resizable", 1)
-        Config.set("graphics", "width", "600")
-        Config.set("graphics", "height", "400")
-        Config.set("input", "mouse", "mouse,multitouch_on_demand")
 
     def build(self):        
         try:
@@ -84,7 +76,6 @@ class TrackerApp(App):
             ["powershell.exe", command],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            shell=True,
         )
         stdout, stderr = process.communicate()
         self.externalIPv6 = stdout.decode()
@@ -112,7 +103,7 @@ class TrackerApp(App):
         ip_to_connect = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
         port_to_connect = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
         self.munchlax = Munchlax(
-            ip_to_connect, port_to_connect, self.rem
+            ip_to_connect, port_to_connect, self.rem, self.sp
         )
         self.obs_websocket = OBS(
             self.obs["host"],

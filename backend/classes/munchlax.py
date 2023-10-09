@@ -4,20 +4,22 @@ import hashlib
 import logging
 import sys
 import pickle
+from backend.classes.obs import OBS
 
 class Munchlax:
-    def __init__(self, host, port, conf):
+    def __init__(self, host, port, rem, sp):
         self.client_id = self.generate_hashed_id()
         self.bizhawk_teams = {}
         self.sorted_teams = {}
         self.unsorted_teams = {}
         self.badges = {}
         self.editions = {}
-        self.conf = conf
+        self.rem = rem
+        self.sp = sp
         self.host = host
         self.port = port
         self.is_connected = False
-        self.obs = None
+        self.obs: OBS | None = None
         self.writer_lock = asyncio.Lock()
         self.disconnect_lock = asyncio.Lock()
 
@@ -52,17 +54,17 @@ class Munchlax:
                 for player in new_teams:
                     team = new_teams[player]
                     self.logger.info(team)
-                    new_teams[player] = self.sort(team[:6], self.conf['order'])
+                    new_teams[player] = self.sort(team[:6], self.sp['order'])
                     if player not in self.badges or self.unsorted_teams[player][6] != self.badges[player]:
                         self.badges[player] = self.unsorted_teams[player][6]
                     if player not in self.editions or self.unsorted_teams[player][7] != self.editions[player]:
                         self.editions[player] = self.unsorted_teams[player][7]
-                    if self.obs:
+                    if self.obs and self.obs.is_connected:
                         await self.obs.change_badges(player) #type: ignore
                 if new_teams != self.sorted_teams:
                     for player in new_teams:
                         if player not in self.sorted_teams:
-                            if self.obs: 
+                            if self.obs and  self.obs.is_connected: 
                                 await self.obs.changeSource(player, range(6), new_teams[player], self.editions[player]) #type: ignore
                             continue
 
@@ -73,7 +75,7 @@ class Munchlax:
                             if team[i] != old_team[i]:
                                 self.logger.debug(f"{i=},{team[i]=}")
                                 diff.append(i)
-                        if self.obs:
+                        if self.obs and self.obs.is_connected:
                             await self.obs.changeSource(player, diff, team, self.editions[player]) #type: ignore
                             await self.obs.change_badges(player) #type: ignore
                     self.sorted_teams = new_teams.copy()
@@ -81,7 +83,6 @@ class Munchlax:
             except Exception as err:
                 self.logger.error(f"alter_teams abgebrochen: {err}")
                 self.logger.error(sys.exc_info())
-                
                 break
 
         await self.disconnect()
@@ -99,7 +100,7 @@ class Munchlax:
 
     def change_order(self, *args):
         for team in self.sorted_teams:
-            self.sorted_teams[team] = self.sort(self.unsorted_teams[team][:6], self.conf['order'])
+            self.sorted_teams[team] = self.sort(self.unsorted_teams[team][:6], self.sp['order'])
 
     async def send_heartbeat(self):
         while True:
@@ -161,8 +162,8 @@ class Munchlax:
                 await self.writer.wait_closed()
                 self.logger.info(f"Client {self.client_id} hat sich disconnectet.")
 
-                self.host = '127.0.0.1' if self.conf["start_server"] else self.conf["server_ip_adresse"]
-                self.port = self.conf["client_port"] if self.conf["start_server"] else self.conf["server_port"]
+                self.host = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
+                self.port = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
 
     async def send_message(self, message):
         serialized_message = pickle.dumps(message)

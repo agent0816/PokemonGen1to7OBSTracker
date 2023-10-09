@@ -66,7 +66,7 @@ class OBS():
 
     async def changeSource(self, player, slots, team, edition):
         if not self.ws or not self.ws.is_identified():
-            self.is_connected = 'disconnected'
+            self.is_connected = False
             return
         batch = []
         for slot in slots:
@@ -133,12 +133,11 @@ class OBS():
             52:'unova',
             53:'unova2',
             54:'unova2',
-
         }
         if not self.conf['show_badges']:
             return
         if not self.ws or not self.ws.is_identified():
-            self.is_connected = 'disconnected'
+            self.is_connected = False
             return
         batch = []
         for i in range(16):
@@ -161,7 +160,7 @@ class OBS():
                         {
                             "inputName": f"badge{i + 16 * (player - 1) + 1}",
                             "inputSettings": {
-                                "file": self.conf['badges_path'] + '/' + str(i + 1) + 'empty' + ".png"
+                                "file": self.conf['badges_path'] + '/' + badge_lut[self.munchlax.editions[player]] + str(i + 1) + 'empty' + ".png"
                             }
                         }
                     )
@@ -208,11 +207,11 @@ class OBS():
         else:
             sub = ''
         path = (
-            self.conf['common_path']# + '/'
-            + sub
+            self.conf['common_path']
+            + sub + '/'
             + animated
             + shiny
-            + female + '/'
+            + female # + '/'
         )
         file = str(pokemon.dexnr) + pokemon.form + filetype
         return path + file

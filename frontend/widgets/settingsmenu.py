@@ -12,6 +12,8 @@ from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.togglebutton import ToggleButton
+from backend.classes.obs import OBS
+from frontend.widgets.mainmenu import TrainerBox
 import frontend.UIFactory as UI
 import tkinter.filedialog as fd
 import logging
@@ -49,7 +51,7 @@ class SettingsMenu(Screen):
         layout = GridLayout(cols=2, size_hint_y=.85)
 
         button_box = BoxLayout(orientation="vertical", size_hint=(0.15, 1), pos_hint={"top": 0})
-        scrollview = ScrollSettings(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
+        scrollview = ScrollSettings(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
 
         settings_buttons = [
             ("Sprite\nPfade", 'sprite'),
@@ -84,13 +86,14 @@ class SettingsMenu(Screen):
         scrollview.scroll_y = scrolling
 
 class ScrollSettings(ScrollView):
-    def __init__(self,arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, **kwargs):
+    def __init__(self, settingsscreen, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, **kwargs):
         super().__init__(**kwargs)
         
+        self.settingsscreen = settingsscreen
         self.arceus = arceus
         self.bizhawk = bizhawk
         self.munchlax = munchlax
-        self.obs_websocket = obs_websocket
+        self.obs_websocket: OBS = obs_websocket
         self.externalIPv4 = externalIPv4
         self.externalIPv6 = externalIPv6
         self.configsave = configsave
@@ -252,7 +255,7 @@ class ScrollSettings(ScrollView):
 
         checkboxes_box = BoxLayout(size_hint_x=.7, size_hint_y=None, size=(0,"30dp"))
         for i in range(1, 5):
-            checkbox = CheckBox(group='player_count', pos_hint={"center_y": .5}, size_hint=(None, None), size=("20dp", "20dp"))
+            checkbox = CheckBox(group='player_count', pos_hint={"center_y": .5}, size_hint=(None, None), size=("20dp", "20dp"), allow_no_selection=False)
             checkbox.bind(on_press=lambda instance, player_count=i: self.change_player_count(player_count, player_box)) # type: ignore
             self.ids[f"player_count_{i}"] = weakref.proxy(checkbox)
             checkboxes_box.add_widget(checkbox)
@@ -316,8 +319,7 @@ class ScrollSettings(ScrollView):
             player_box.remove_widget(self.ids["player_settings"])
             self.add_player_checkBoxes(player_box)
         
-        with open(f"{self.configsave}player.yml", 'w') as file:
-            yaml.dump(self.pl, file)
+        self.save_changes()
     
     def player_ausklappen(self, instance, player_box):
         if instance.state == "down":
@@ -450,7 +452,6 @@ class ScrollSettings(ScrollView):
         self.sp['single_path_check'] = not self.ids.game_sprites_check.state == 'down'
         self.sp['items_path'] = self.ids.items_path.text
         self.sp['badges_path'] = self.ids.badges_path.text
-        # self.munchlax.conf = self.sp
         asyncio.create_task(self.obs_websocket.redraw_obs())
 
         if self.ids["games_ausklappen"].state == 'down':
@@ -517,3 +518,17 @@ class ScrollSettings(ScrollView):
 
         with open(f"{self.configsave}player.yml", 'w') as file:
             yaml.dump(self.pl, file)
+
+        main_menu = self.settingsscreen.manager.get_screen("MainMenu")
+        trainer_box_box = main_menu.ids["trainer_box_1"].parent
+
+        for player in range(2,5):
+            if f"trainer_box_{player}" in main_menu.ids:
+                trainer_box_box.remove_widget(main_menu.ids[f"trainer_box_{player}"])
+                del main_menu.ids[f"trainer_box_{player}"]
+
+        color_lut = {1:"1a4d9a7f", 2:"9a671a7f", 3:"9a9a1a7f", 4:"1a9a1a7f"}
+
+        for player in range(2,self.pl['player_count'] + 1):
+            trainer = TrainerBox(player, self.munchlax, self.obs_websocket, main_menu, color_lut[player], orientation='vertical', size_hint=(None, 1), size=("140dp",0))
+            trainer_box_box.add_widget(trainer)

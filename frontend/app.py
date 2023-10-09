@@ -58,8 +58,8 @@ class Screens(ScreenManager):
         self.add_widget(
             SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
         )
-        self.current = "MainMenu"
-        # update_menu.check_for_update()
+        self.current = "Update"
+        update_menu.check_for_update()
 
 class TrackerApp(App):
     def __init__(self, **kwargs):
@@ -76,7 +76,6 @@ class TrackerApp(App):
             ["powershell.exe", command],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            shell=True,
         )
         stdout, stderr = process.communicate()
         self.externalIPv6 = stdout.decode()

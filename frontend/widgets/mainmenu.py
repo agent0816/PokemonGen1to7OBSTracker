@@ -538,6 +538,29 @@ class TrainerBox(BoxLayout):
         self.munchlax: Munchlax = munchlax
         self.obs_websocket: OBS = obs_websocket
         self.pokemon_boxes = {}
+        self.badges = {}
+        self.badge_lut = {
+            11: "kanto",
+            12: "kanto",
+            13: "kanto",
+            21: "johto",
+            22: "johto",
+            23: "johto",
+            31: "hoenn",
+            32: "hoenn",
+            33: "hoenn",
+            34: "kanto",
+            35: "kanto",
+            41: "sinnoh",
+            42: "sinnoh",
+            43: "sinnoh",
+            44: "johto",
+            45: "johto",
+            51: "unova",
+            52: "unova",
+            53: "unova2",
+            54: "unova2",
+        }
         screen.ids[f"trainer_box_{player_id}"] = weakref.proxy(self)
 
         decimal_color = (
@@ -560,6 +583,10 @@ class TrainerBox(BoxLayout):
             self.pokemon_boxes[f"slot{pokemon}"] = pokemon_box
 
             self.add_widget(pokemon_box)
+
+        badge_box = self.create_badge_box()
+
+        self.add_widget(badge_box)
 
         Clock.schedule_interval(self.team_aktualisieren, 1)
 
@@ -606,34 +633,26 @@ class TrainerBox(BoxLayout):
         return pokemon_box
 
     def create_badge_box(self):
-        badge_lut = {
-            11: "kanto",
-            12: "kanto",
-            13: "kanto",
-            21: "johto",
-            22: "johto",
-            23: "johto",
-            31: "hoenn",
-            32: "hoenn",
-            33: "hoenn",
-            34: "kanto",
-            35: "kanto",
-            41: "sinnoh",
-            42: "sinnoh",
-            43: "sinnoh",
-            44: "johto",
-            45: "johto",
-            51: "unova",
-            52: "unova",
-            53: "unova2",
-            54: "unova2",
-        }
+        badge_box = BoxLayout(orientation='vertical')
+        first_half = BoxLayout(orientation='horizontal')
+        second_half = BoxLayout(orientation='horizontal')
 
-        
+        for badge in range(1,9):
+            badge_image = Image(source=f"{self.obs_websocket.conf['badges_path']}/kanto{badge}empty.png", fit_mode='contain')
+            self.badges[badge] = badge_image
+            if badge < 5:
+                first_half.add_widget(badge_image)
+            else:
+                second_half.add_widget(badge_image)
+
+        badge_box.add_widget(first_half)
+        badge_box.add_widget(second_half)
+
+        return badge_box
 
 
     def team_aktualisieren(self, instance):
-        if self.player_id not in self.munchlax.sorted_teams or self.player_id not in self.munchlax.editions:
+        if self.player_id not in self.munchlax.sorted_teams or self.player_id not in self.munchlax.editions or self.player_id not in self.munchlax.badges:
             return
 
         team = self.munchlax.sorted_teams[self.player_id]
@@ -648,3 +667,12 @@ class TrainerBox(BoxLayout):
             slot_box.ids["Sprite"].source = self.obs_websocket.get_sprite(pokemon,self.obs_websocket.conf["animated"],self.munchlax.editions[self.player_id])
             slot_box.ids["Item_Name"].text = "-" if pokemon.item == 0 else f"{pokemon.item}"
             slot_box.ids["Item_Image"].source = f"{self.obs_websocket.conf['items_path']}/{pokemon.item}.png"
+
+        badges = self.munchlax.badges[self.player_id]
+        badge_string = f"{self.obs_websocket.conf['badges_path']}"
+
+        for badge in range(1,9):
+            if badges & 2**badge:
+                self.badges[badge].source = f"{badge_string}/{self.badge_lut[self.munchlax.editions[self.player_id]]}.png"
+            else:
+                self.badges[badge].source = f"{badge_string}/{self.badge_lut[self.munchlax.editions[self.player_id]]}empty.png"

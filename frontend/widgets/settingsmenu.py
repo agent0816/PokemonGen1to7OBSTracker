@@ -525,6 +525,7 @@ class ScrollSettings(ScrollView):
         for player in range(2,5):
             if f"trainer_box_{player}" in main_menu.ids:
                 trainer_box_box.remove_widget(main_menu.ids[f"trainer_box_{player}"])
+                del main_menu.ids[f"trainer_box_{player}"]
 
         color_lut = {1:"1a4d9a7f", 2:"9a671a7f", 3:"9a9a1a7f", 4:"1a9a1a7f"}
 

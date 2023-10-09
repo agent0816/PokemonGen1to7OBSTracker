@@ -673,6 +673,6 @@ class TrainerBox(BoxLayout):
 
         for badge in range(1,9):
             if badges & 2**badge:
-                self.badges[badge].source = f"{badge_string}/{self.badge_lut[self.munchlax.editions[self.player_id]]}.png"
+                self.badges[badge].source = f"{badge_string}/{self.badge_lut[self.munchlax.editions[self.player_id]]}{badge}.png"
             else:
-                self.badges[badge].source = f"{badge_string}/{self.badge_lut[self.munchlax.editions[self.player_id]]}empty.png"
+                self.badges[badge].source = f"{badge_string}/{self.badge_lut[self.munchlax.editions[self.player_id]]}{badge}empty.png"

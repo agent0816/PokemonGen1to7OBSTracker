@@ -34,7 +34,7 @@ function main()
     local HgSs = 0x27C310 -- HeartGold/SoulSilver
 
     local S = 0x022348F4 -- Schwarz
-    local W = 0x02234914 -- Weiß
+    local W = 0x022349D4 -- Weiß Offset 0xC0 zu englisch
     local S2 = 0x0221E32C -- Schwarz 2
     local W2 = 0x0221E34C -- Weiß 2
 
@@ -142,7 +142,7 @@ function main()
         elseif gameversion == 22272 then
             pointer = W
             gameversion = 52
-            badgepointer = 0x23CD10
+            badgepointer = 0x23CDD0 -- offset 0xC0 zu englisch
         elseif gameversion == 16946 then
             pointer = S2
             gameversion = 53
@@ -190,7 +190,7 @@ function main()
             lastTeam = team
         end
 
-        msg = {gameversion, PLAYER, table.unpack(team)}
+        msg = {table.unpack(team)}
         if gameversion < 30 then
             for i = 0, 65 do
                 msg[#msg + 1] = memory.readbyte(namepointer + i, domain)

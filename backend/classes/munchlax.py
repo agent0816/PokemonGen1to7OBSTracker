@@ -49,15 +49,14 @@ class Munchlax:
                 length = int.from_bytes(await reader.read(4), 'big')
                 msg = await reader.read(length)
                 self.unsorted_teams = pickle.loads(msg)
-                self.logger.info("alter_teams")
                 self.logger.info(self.unsorted_teams)
                 new_teams = self.unsorted_teams.copy()
                 for player in new_teams:
                     team = new_teams[player]
-                    self.logger.info(team)
                     new_teams[player] = self.sort(team[:6], self.sp['order'])
                     if player not in self.badges or self.unsorted_teams[player][6] != self.badges[player]:
                         self.badges[player] = self.unsorted_teams[player][6]
+                        self.logger.info(f"{self.badges[player]=}")
                     if player not in self.editions or self.unsorted_teams[player][7] != self.editions[player]:
                         self.editions[player] = self.unsorted_teams[player][7]
                     if self.obs and self.obs.is_connected:

@@ -44,16 +44,14 @@ class Bizhawk:
             self.logger.info(f"Emulator {client_id} connected.")
 
             def get_length():
-                if edition < 20:
+                if edition > 10 and edition < 20:
                     return 331
                 elif edition < 30:
                     return 362
                 elif edition < 40:
                     return 601
-                elif edition < 50:
+                else:
                     return 1418
-                elif edition < 60:
-                    return 1321
 
             def update_teams(team):
                 team = pokedecoder.team(team, edition)
@@ -66,7 +64,6 @@ class Bizhawk:
 
             edition_length = int((await reader.read(2)).decode())
             edition = int((await reader.read(edition_length)).decode())
-            self.logger.info(f"initial: {edition}")
 
             player = int(client_id[7:])
 
@@ -75,15 +72,6 @@ class Bizhawk:
             update_teams(msg)
             while True:
                 try:
-                    header = await reader.read(2)
-                    if len(header) < 2:
-                        continue
-                    edition = header[0]
-                    player = header[1]
-                    self.logger.info(f"while: {edition}")
-                    self.logger.info(f"while: {player}")
-                    length = get_length()
-                    self.logger.info(length)
                     msg = await reader.read(length)
                     update_teams(msg)
                 except Exception as err:

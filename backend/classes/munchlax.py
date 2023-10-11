@@ -4,6 +4,7 @@ import hashlib
 import logging
 import sys
 import pickle
+import traceback
 from backend.classes.obs import OBS
 
 class Munchlax:
@@ -81,8 +82,8 @@ class Munchlax:
                     self.sorted_teams = new_teams.copy()
 
             except Exception as err:
-                self.logger.error(f"alter_teams abgebrochen: {err}")
-                self.logger.error(sys.exc_info())
+                self.logger.error(f"alter_teams abgebrochen: {type(err)},{err}")
+                self.logger.error(f"{traceback.format_exc()}")
                 break
 
         await self.disconnect()
@@ -109,7 +110,8 @@ class Munchlax:
                 async with self.writer_lock:
                     await self.send_message('heartbeat')
             except Exception as err:
-                self.logger.warning(f"Heartbeat failed: {err}")
+                self.logger.warning(f"Heartbeat failed: {type(err)},{err}")
+                self.logger.error(f"{traceback.format_exc()}")
                 break
         
         await self.disconnect() #type: ignore
@@ -124,7 +126,8 @@ class Munchlax:
                     async with self.writer_lock:
                         await self.send_message(self.bizhawk_teams)
                 except Exception as err:
-                    self.logger.warning(f"Teams senden failed: {err}")
+                    self.logger.warning(f"Teams senden failed: {type(err)},{err}")
+                    self.logger.error(f"{traceback.format_exc()}")
                     break
             await asyncio.sleep(1)
         

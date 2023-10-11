@@ -82,7 +82,8 @@ class Arceus:
                     await self.send_message(writer, self.teams)
                 await asyncio.sleep(1)
             except Exception as exc:
-                self.logger.error(f"update_all_clients abgebrochen:{exc}")
+                self.logger.error(f"update_all_clients abgebrochen:{type(exc)},{exc}")
+                self.logger.error(f"{traceback.format_exc()}")
                 break
     
     async def disconnect_client(self, client_id):

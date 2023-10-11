@@ -1,6 +1,7 @@
 import simpleobsws
 import logging
 import sys
+import traceback
 from websockets.exceptions import WebSocketException
 
 class OBS():
@@ -44,10 +45,12 @@ class OBS():
                 if not self.munchlax.obs:
                     self.munchlax.obs = self
             except WebSocketException as wserr:
-                self.logger.error(f"wserr: {type(wserr)} {wserr}")
+                self.logger.error(f"wserr: {type(wserr)}, {wserr}")
+                self.logger.error(f"{traceback.format_exc()}")
                 self.is_connected = False
             except Exception as err:
-                self.logger.error(f"err: {type(err)} {err}")
+                self.logger.error(f"err: {type(err)},{err}")
+                self.logger.error(f"{traceback.format_exc()}")
                 self.is_connected = False
 
     async def disconnect(self):

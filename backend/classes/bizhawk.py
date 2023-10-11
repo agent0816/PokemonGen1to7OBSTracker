@@ -1,6 +1,7 @@
 import logging
 import sys
 import asyncio
+import traceback
 from backend.classes.munchlax import Munchlax
 import backend.pokedecoder as pokedecoder
 
@@ -65,6 +66,8 @@ class Bizhawk:
 
             edition_length = int((await reader.read(2)).decode())
             edition = int((await reader.read(edition_length)).decode())
+            self.logger.info(f"initial: {edition}")
+
             player = int(client_id[7:])
 
             length = get_length()
@@ -77,16 +80,19 @@ class Bizhawk:
                         continue
                     edition = header[0]
                     player = header[1]
+                    self.logger.info(f"while: {edition}")
+                    self.logger.info(f"while: {player}")
                     length = get_length()
+                    self.logger.info(length)
                     msg = await reader.read(length)
                     update_teams(msg)
                 except Exception as err:
-                    self.logger.error(f"handle_bizhawk abgebrochen: {err}")
-                    self.logger.error(sys.exc_info())
+                    self.logger.error(f"handle_bizhawk abgebrochen: {type(err)},{err}")
+                    self.logger.error(f"{traceback.format_exc()}")
                     break
         except Exception as err:
-            self.logger.error(f"handle_bizhawk abgebrochen: {err}")
-            self.logger.error(sys.exc_info())
+            self.logger.error(f"handle_bizhawk abgebrochen: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
 
         await self.disconnect(client_id)
 

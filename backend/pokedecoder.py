@@ -154,8 +154,14 @@ def pokemon45(data, gen):
     unshuffled_bytes, decrypted_battle_stats, shiny_value, personality = decryptpokemon(data, '45')
     dexnr = int.from_bytes(unshuffled_bytes[0:2], 'little')
     item = int.from_bytes(unshuffled_bytes[2:4], 'little')
+
+    if dexnr >= 650:
+        return Pokemon(0, item='-', nickname='', lvl=1)
+
     if item in items:
         item = items[item]
+    else:
+        item = '-'
     met_location = int.from_bytes(unshuffled_bytes[0x3E:0x40], 'little')
     if met_location == 0:  # diamant/perl
         met_location = int.from_bytes(unshuffled_bytes[0x78:0x7A], 'little')
@@ -172,8 +178,10 @@ def pokemon45(data, gen):
             if char in charset:
                 nickname += charset[char]
     else:
-        nickname = unshuffled_bytes[0x38:0x4e].decode('utf-8').split('\u0000\u0000')[0].replace('\u0000', '')
-
+        try:
+            nickname = unshuffled_bytes[0x38:0x4e].decode('utf-8').split('\u0000\u0000')[0].replace('\u0000', '')
+        except UnicodeDecodeError:
+            nickname = ''
     form = unshuffled_bytes[0x38] % 32
     form -= form % 8
     if dexnr == 201:
@@ -262,7 +270,10 @@ def team(data, edition):
     elif gen == 5:
         for i in range(6):
             liste.append(pokemon45(data[i * length: (i + 1) * length], 5))
-    else:
+    elif gen == 6:
+        for i in range(6):
+            liste.append(pokemon67(data[i * length: (i + 1) * length]))
+    elif gen == 7:
         for i in range(6):
             liste.append(pokemon67(data[i * length: (i + 1) * length]))
 

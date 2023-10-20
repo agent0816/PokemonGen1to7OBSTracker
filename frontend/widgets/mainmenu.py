@@ -664,7 +664,7 @@ class TrainerBox(BoxLayout):
 
             slot_box.ids["Level"].text = f"lvl {pokemon.lvl}"
             slot_box.ids["Nickname"].text = pokemon.nickname
-            slot_box.ids["Sprite"].source = self.obs_websocket.get_sprite(pokemon,self.obs_websocket.conf["animated"],self.munchlax.editions[self.player_id])
+            slot_box.ids["Sprite"].source = self.obs_websocket.get_sprite(pokemon,self.obs_websocket.conf["animated"],self.munchlax.editions[self.player_id], two_pc=False)
             slot_box.ids["Item_Name"].text = "-" if pokemon.item == 0 else f"{pokemon.item}"
             slot_box.ids["Item_Image"].source = f"{self.obs_websocket.conf['items_path']}/{pokemon.item}.png"
 

@@ -73,7 +73,7 @@ class OBS():
             return
         batch = []
         for slot in slots:
-            sprite = self.get_sprite(team[slot], self.conf['animated'], edition)
+            sprite = self.get_sprite(team[slot], self.conf['animated'], edition, two_pc=self.conf['obs_2_pc'])
 
             batch.append(
                 simpleobsws.Request(
@@ -96,6 +96,7 @@ class OBS():
                     )
                 )
         if self.conf['show_items'] and edition > 20:
+            items_path = self.conf['items_path'] if not self.conf['obs_2_pc'] else self.conf['items_obs_path']
             for slot in slots:
                 batch.append(
                     simpleobsws.Request(
@@ -103,7 +104,7 @@ class OBS():
                         {
                             "inputName": f"item{slot + 6 * (player - 1) + 1}",
                             "inputSettings": {
-                                "file": self.conf['items_path'] + '/'
+                                "file": items_path + '/'
                                 + str(team[slot].item)
                                 + ".png"
                             },
@@ -142,6 +143,8 @@ class OBS():
         if not self.ws or not self.ws.is_identified():
             self.is_connected = False
             return
+        badge_path = self.conf['badges_path'] if not self.conf['obs_2_pc'] else self.conf['badges_obs_path']
+        
         batch = []
         for i in range(16):
             if (self.munchlax.badges[player] & 2**i):
@@ -151,7 +154,7 @@ class OBS():
                         {
                             "inputName": f"badge{i + 16 * (player - 1) + 1}",
                             "inputSettings": {
-                                "file": self.conf['badges_path'] + '/' + badge_lut[self.munchlax.editions[player]] + str(i + 1) + ".png"
+                                "file": badge_path + '/' + badge_lut[self.munchlax.editions[player]] + str(i + 1) + ".png"
                             }
                         }
                     )
@@ -163,7 +166,7 @@ class OBS():
                         {
                             "inputName": f"badge{i + 16 * (player - 1) + 1}",
                             "inputSettings": {
-                                "file": self.conf['badges_path'] + '/' + badge_lut[self.munchlax.editions[player]] + str(i + 1) + 'empty' + ".png"
+                                "file": badge_path + '/' + badge_lut[self.munchlax.editions[player]] + str(i + 1) + 'empty' + ".png"
                             }
                         }
                     )
@@ -171,7 +174,13 @@ class OBS():
 
         await self.ws.call_batch(batch)
 
-    def get_sprite(self, pokemon, anim, edition):
+    def get_sprite(self, pokemon, anim, edition, two_pc=False):
+        if two_pc:
+            common_path = self.conf['common_obs_path']
+            obs = '_obs'
+        else:
+            common_path = self.conf['common_path']
+            obs = ''
         shiny = "shiny/" if pokemon.shiny else ""
         subpath = {
             11: 'red',
@@ -206,15 +215,15 @@ class OBS():
             animated = ""
             filetype = ".png"
         if not self.conf['single_path_check']:
-            sub = self.conf[subpath[edition]]
+            sub = self.conf[f"{subpath[edition]}{obs}"]
         else:
-            sub = ''
+            sub = '/'
         path = (
-            self.conf['common_path']
-            + sub + '/'
+            common_path
+            + sub 
             + animated
             + shiny
-            + female # + '/'
+            + female
         )
         file = str(pokemon.dexnr) + pokemon.form + filetype
         return path + file

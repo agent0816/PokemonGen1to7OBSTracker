@@ -18,6 +18,10 @@ def load_config(path, standard_settings):
         cur_keys = cur_settings.keys()
         if key not in cur_keys:
             cur_settings[key] = standard_settings[key]
+        if (key.endswith('obs') or key.endswith('obs_path')) and cur_settings[key] == '':
+            new_key = key.replace('_obs', '')
+            cur_settings[key] = cur_settings[new_key]
+
     save_config(path, cur_settings)
 
 def init_config_folder():
@@ -27,31 +31,51 @@ def init_config_folder():
     sprites = Path('backend/config/sprites.yml')
     sp = {
         "alphasapphire":'',
+        "alphasapphire_obs":'',
         "animated":False,
         "badges_path":'',
+        "badges_obs_path":'',
         "black":'',
+        "black_obs":'',
         "common_path":'',
+        "common_obs_path":'',
         "crystal":'',
+        "crystal_obs":'',
         "diamond":'',
+        "diamond_obs":'',
         "edition_override":'',
         "emerald":'',
+        "emerald_obs":'',
         "firered":'',
+        "firered_obs":'',
         "gold":'',
+        "gold_obs":'',
         "heartgold":'',
+        "heartgold_obs":'',
         "items_path":'',
+        "items_obs_path":'',
+        "obs_2_pc":False,
         "order":'team',
         "platinum":'',
+        "platinum_obs":'',
         "red":'',
+        "red_obs":'',
         "ruby":'',
+        "ruby_obs":'',
         "show_badges":False,
         "show_items":False,
         "show_nicknames":False,
         "silver":'',
+        "silver_obs":'',
         "single_path_check":False,
         "sun":'',
+        "sun_obs":'',
         "usun":'',
+        "usun_obs":'',
         "x":'',
-        "yellow":''
+        "x_obs":'',
+        "yellow":'',
+        "yellow_obs":''
     }
     if not sprites.exists():
         save_config(sprites, sp)

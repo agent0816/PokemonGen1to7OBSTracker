@@ -130,8 +130,21 @@ class ScrollSettings(ScrollView):
                                 text_id_name="common_path", text_validate_function=None,
                                 browse_function=self.browse)
 
+        UI.create_text_and_browse_button(sprite_box,self.ids,
+                                box_id_name='items_path_box',
+                                label_text='Dateipfad Items',
+                                text_id_name="items_path", text_validate_function=None,
+                                browse_function=self.browse)
+        
+        UI.create_text_and_browse_button(sprite_box,self.ids,
+                                box_id_name='badges_path_box',
+                                label_text='Dateipfad Orden',
+                                text_id_name="badges_path", text_validate_function=None,
+                                browse_function=self.browse)
+
         float_box = BoxLayout(orientation='vertical', size_hint_y=None, height=0)
         float_box.bind(minimum_height=float_box.setter('height')) # type: ignore
+        self.ids["game_sprite_paths"] = weakref.proxy(float_box)
 
         game_sprites_bool_box = BoxLayout(orientation='horizontal', size_hint_y=None, size=(0,"30dp"))
 
@@ -150,17 +163,26 @@ class ScrollSettings(ScrollView):
 
         sprite_box.add_widget(float_box)
 
-        UI.create_text_and_browse_button(sprite_box,self.ids,
-                                box_id_name='items_path_box',
-                                label_text='Dateipfad Items',
-                                text_id_name="items_path", text_validate_function=None,
-                                browse_function=self.browse)
-        
-        UI.create_text_and_browse_button(sprite_box,self.ids,
-                                box_id_name='badges_path_box',
-                                label_text='Dateipfad Orden',
-                                text_id_name="badges_path", text_validate_function=None,
-                                browse_function=self.browse)
+        float_box_obs = BoxLayout(orientation='vertical', size_hint_y=None, height=0, spacing="20dp")
+        float_box_obs.bind(minimum_height=float_box_obs.setter('height')) # type: ignore
+        self.ids["obs_sprites_box"] = weakref.proxy(float_box_obs)
+
+        obs_sprites_bool_box = BoxLayout(orientation='horizontal', size_hint_y=None, size=(0,"30dp"))
+
+        obs_sprites_label_einzeln = Label(text="Hast du ein Streamsetup mit zwei PCs?", size_hint_x=.7)
+        obs_sprites_bool_box.add_widget(obs_sprites_label_einzeln)
+
+        obs_sprites_checkbox = CheckBox(size_hint_x=.2, on_press=lambda instance: self.obs_2_pcs_setup(instance))
+        self.ids["obs_sprites_check"] = weakref.proxy(obs_sprites_checkbox)
+        obs_sprites_bool_box.add_widget(obs_sprites_checkbox)
+
+        obs_sprites_ausklappen = ToggleButton(text=">",size_hint_x=.1, on_press=lambda instance: self.obs_sprites_ausklappen(instance, float_box_obs))
+        self.ids["obs_games_ausklappen"] = weakref.proxy(obs_sprites_ausklappen)
+        obs_sprites_bool_box.add_widget(obs_sprites_ausklappen)
+
+        sprite_box.add_widget(obs_sprites_bool_box)
+
+        sprite_box.add_widget(float_box_obs)
 
         box.add_widget(sprite_box)
 
@@ -275,6 +297,8 @@ class ScrollSettings(ScrollView):
         
         self.add_widget(box)
 
+        self.obs_2_pcs_setup(obs_sprites_checkbox, initializing=True)
+
         self.load_config()
     
     def set_game_sprites(self, sprite_box):
@@ -290,6 +314,23 @@ class ScrollSettings(ScrollView):
         
         sprite_box.add_widget(game_sprites_box)
 
+    def set_obs_sprites(self, sprite_box):
+        obs_sprites_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing="20dp")
+        obs_sprites_box.bind(minimum_height=obs_sprites_box.setter('height')) # type: ignore
+        self.ids["obs_sprites"] = weakref.proxy(obs_sprites_box)
+
+        game_sprites_label_einzeln = Label(text="Sprites jedes Spiels einzeln festlegen:", size_hint_x=.7)
+        obs_sprites_box.add_widget(game_sprites_label_einzeln)
+
+        for text, id in self.games.items():
+            UI.create_text_and_browse_button(obs_sprites_box,self.ids,
+                                    box_size_hint_y=None,
+                                    label_text=f"{text} OBS",
+                                    text_id_name=f"{id}_obs", text_validate_function=None,
+                                    browse_function=self.browse)
+        
+        sprite_box.add_widget(obs_sprites_box)
+
     def game_sprites_ausklappen(self, instance, sprite_box):
         if instance.state == "down":
             instance.text = "^"
@@ -300,18 +341,80 @@ class ScrollSettings(ScrollView):
             games = self.ids["game_sprites"]
             sprite_box.remove_widget(games)
 
+    def obs_sprites_ausklappen(self, instance, obs_sprite_box):
+        if instance.state == "down":
+            instance.text = "^"
+            self.set_obs_sprites(obs_sprite_box)
+            self.load_obs_sprites_config()
+        else:
+            instance.text = ">"
+            games = self.ids["obs_sprites"]
+            obs_sprite_box.remove_widget(games)
+
     def ausklapp_button_zeigen_oder_verstecken(self, instance, initializing=False):
         ausklappbutton = self.ids["games_ausklappen"]
-        if not initializing:
-            self.save_changes(instance)
         if instance.state == 'down':
             ausklappbutton.disabled = False
             ausklappbutton.opacity = 1
         else:
+            if ausklappbutton.state == 'down':
+                ausklappbutton.state = 'normal'
+                self.game_sprites_ausklappen(ausklappbutton, self.ids["game_sprite_paths"])
             ausklappbutton.disabled = True
             ausklappbutton.opacity = 0
-            if ausklappbutton.state == "down":
-                self.game_sprites_ausklappen(ausklappbutton, self.ids["sprite"])
+        if not initializing:
+            self.save_changes(instance)
+
+    def obs_ausklapp_button_zeigen_oder_verstecken(self, instance, initializing=False):
+        ausklappbutton_obs = self.ids["obs_games_ausklappen"]
+        if instance.state == 'down':
+            ausklappbutton_obs.disabled = False
+            ausklappbutton_obs.opacity = 1
+        else:
+            ausklappbutton_obs.disabled = True
+            ausklappbutton_obs.opacity = 0
+            if ausklappbutton_obs.state == "down":
+                self.obs_sprites_ausklappen(ausklappbutton_obs, self.ids["obs_sprites_box"])
+
+    def obs_2_pcs_setup(self, instance, initializing=False):
+        float_box = self.ids["obs_sprites_box"]
+        if instance.state == 'down' or (self.sp['obs_2_pc'] and initializing):
+
+            UI.create_text_and_browse_button(float_box,self.ids,
+                                    box_id_name='common_obs_path_box', 
+                                    label_text='Dateipfad Sprites OBS',
+                                    text_id_name="common_obs_path", text_validate_function=None,
+                                    browse_function=self.browse)
+
+            UI.create_text_and_browse_button(float_box,self.ids,
+                                    box_id_name='items_obs_path_box',
+                                    label_text='Dateipfad Items OBS',
+                                    text_id_name="items_obs_path", text_validate_function=None,
+                                    browse_function=self.browse)
+            
+            UI.create_text_and_browse_button(float_box,self.ids,
+                                    box_id_name='badges_obs_path_box',
+                                    label_text='Dateipfad Orden OBS',
+                                    text_id_name="badges_obs_path", text_validate_function=None,
+                                    browse_function=self.browse)
+
+            self.ids.common_obs_path.text = self.sp['common_path']
+            self.ids.items_obs_path.text = self.sp['items_path']
+            self.ids.badges_obs_path.text = self.sp['badges_path']
+
+        else:
+            children = float_box.children.copy()
+            for child in children:
+                float_box.remove_widget(child)
+            ausklappbutton_obs = self.ids["obs_games_ausklappen"]
+            if ausklappbutton_obs.state == 'down':
+                ausklappbutton_obs.state = 'normal'
+                self.obs_sprites_ausklappen(ausklappbutton_obs, float_box)
+
+        self.obs_ausklapp_button_zeigen_oder_verstecken(instance)
+
+        if not initializing:
+            self.save_changes()
     
     def change_player_count(self, player_count, player_box):
         self.pl["player_count"] = player_count
@@ -403,9 +506,14 @@ class ScrollSettings(ScrollView):
         if path:
             if self.ids["games_ausklappen"].state == 'down':
                 games = [self.ids[id] for text, id in self.games.items()]
+                common_path = self.sp['common_path']
+            elif self.ids["obs_games_ausklappen"].state == 'down':
+                games = [self.ids[f"{id}_obs"] for text, id in self.games.items()]
+                common_path = self.sp['common_obs_path']
             else:
                 games=[]
-            stripped_path = path.replace(self.sp['common_path'], "", 1) if widget in games else path
+                common_path = self.sp['common_path']
+            stripped_path = path.replace(common_path, "", 1) if widget in games else path
             widget.text = stripped_path
             self.save_changes()
     
@@ -414,7 +522,10 @@ class ScrollSettings(ScrollView):
         self.ids.items_path.text = self.sp['items_path']
         self.ids.badges_path.text = self.sp['badges_path']
         self.ids.game_sprites_check.state = 'down' if not self.sp['single_path_check'] else 'normal'
+        self.ids.obs_sprites_check.state = 'down' if self.sp['obs_2_pc'] else 'normal'
+
         self.ausklapp_button_zeigen_oder_verstecken(self.ids.game_sprites_check, initializing=True)
+        self.obs_ausklapp_button_zeigen_oder_verstecken(self.ids.obs_sprites_check, initializing=True)
 
         self.ids.bizhawk_exe.text = self.bh['path']
         self.ids.bizhawk_port.text = self.bh['port']
@@ -447,12 +558,34 @@ class ScrollSettings(ScrollView):
         self.ids.gen7_sun.text = self.sp['sun']
         self.ids.gen7_usun.text = self.sp['usun']
 
+    def load_obs_sprites_config(self):
+        self.ids.gen1_red_obs.text = self.sp['red_obs']
+        self.ids.gen1_yellow_obs.text = self.sp['yellow_obs']
+        self.ids.gen2_silver_obs.text = self.sp['silver_obs']
+        self.ids.gen2_gold_obs.text = self.sp['gold_obs']
+        self.ids.gen2_crystal_obs.text = self.sp['crystal_obs']
+        self.ids.gen3_ruby_obs.text = self.sp['ruby_obs']
+        self.ids.gen3_emerald_obs.text = self.sp['emerald_obs']
+        self.ids.gen3_firered_obs.text = self.sp['firered_obs']
+        self.ids.gen4_diamond_obs.text = self.sp['diamond_obs']
+        self.ids.gen4_platinum_obs.text = self.sp['platinum_obs']
+        self.ids.gen4_heartgold_obs.text = self.sp['heartgold_obs']
+        self.ids.gen5_black_obs.text = self.sp['black_obs']
+        self.ids.gen6_x_obs.text = self.sp['x_obs']
+        self.ids.gen6_alphasapphire_obs.text = self.sp['alphasapphire_obs']
+        self.ids.gen7_sun_obs.text = self.sp['sun_obs']
+        self.ids.gen7_usun_obs.text = self.sp['usun_obs']
+
     def save_changes(self, *args):
         self.sp['common_path'] = self.ids.common_path.text
         self.sp['single_path_check'] = not self.ids.game_sprites_check.state == 'down'
         self.sp['items_path'] = self.ids.items_path.text
         self.sp['badges_path'] = self.ids.badges_path.text
-        asyncio.create_task(self.obs_websocket.redraw_obs())
+        self.sp['obs_2_pc'] = self.ids.obs_sprites_check.state == 'down'
+        if self.sp['obs_2_pc']:
+            self.sp['common_obs_path'] = self.ids.common_obs_path.text
+            self.sp['items_obs_path'] = self.ids.items_obs_path.text
+            self.sp['badges_obs_path'] = self.ids.badges_obs_path.text
 
         if self.ids["games_ausklappen"].state == 'down':
             self.sp['red'] = self.ids.gen1_red.text
@@ -471,6 +604,26 @@ class ScrollSettings(ScrollView):
             self.sp['alphasapphire'] = self.ids.gen6_alphasapphire.text
             self.sp['sun'] = self.ids.gen7_sun.text
             self.sp['usun'] = self.ids.gen7_usun.text
+
+        if self.ids["obs_games_ausklappen"].state == 'down':
+            self.sp['red_obs'] = self.ids.gen1_red_obs.text
+            self.sp['yellow_obs'] = self.ids.gen1_yellow_obs.text
+            self.sp['silver_obs'] = self.ids.gen2_silver_obs.text
+            self.sp['gold_obs'] = self.ids.gen2_gold_obs.text
+            self.sp['crystal_obs'] = self.ids.gen2_crystal_obs.text
+            self.sp['ruby_obs'] = self.ids.gen3_ruby_obs.text
+            self.sp['emerald_obs'] = self.ids.gen3_emerald_obs.text
+            self.sp['firered_obs'] = self.ids.gen3_firered_obs.text
+            self.sp['diamond_obs'] = self.ids.gen4_diamond_obs.text
+            self.sp['platinum_obs'] = self.ids.gen4_platinum_obs.text
+            self.sp['heartgold_obs'] = self.ids.gen4_heartgold_obs.text
+            self.sp['black_obs'] = self.ids.gen5_black_obs.text
+            self.sp['x_obs'] = self.ids.gen6_x_obs.text
+            self.sp['alphasapphire_obs'] = self.ids.gen6_alphasapphire_obs.text
+            self.sp['sun_obs'] = self.ids.gen7_sun_obs.text
+            self.sp['usun_obs'] = self.ids.gen7_usun_obs.text
+        
+        asyncio.create_task(self.obs_websocket.redraw_obs())
 
         with open(f"{self.configsave}sprites.yml", 'w') as file:
             yaml.dump(self.sp, file)

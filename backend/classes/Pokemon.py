@@ -29,6 +29,8 @@ class Pokemon:
             return False
         if self.item != other.item:
             return False
+        if self.lvl != other.lvl:
+            return False
         return True
 
     def __lt__(self, other):

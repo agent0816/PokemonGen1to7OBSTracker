@@ -45,12 +45,12 @@ def create_label_and_checkboxes(rootwidget, ids,
     rootwidget.add_widget(box)
 
 def create_text_and_browse_button(rootwidget,ids,
-                                box_id_name=None, box_size=(0,"30dp"),box_padding=("5dp",0),box_spacing="5dp", box_size_hint_y=None,
+                                box_id_name=None, box_size=(0,"30dp"),box_padding=("5dp",0),box_spacing="5dp", box_size_hint_y=None, box_size_hint_x=1.0,
                                 label_id_name=None, label_text='', label_size_hint=(.2,1),
                                 text_id_name=None, text_size_hint=(.6,1), text_validate_function=None, password=False, multiline=False,
                                 browse_id_name=None, browse_function=None, browse_text="Durchsuchen", browse_size_hint=(.2,1), browse_modus='directory'):
     
-    box = BoxLayout(orientation='horizontal', size_hint_y=box_size_hint_y, size=box_size, padding=box_padding, spacing=box_spacing)
+    box = BoxLayout(orientation='horizontal', size_hint_x=box_size_hint_x,size_hint_y=box_size_hint_y, size=box_size, padding=box_padding, spacing=box_spacing)
     if box_id_name is not None:
         ids[box_id_name] = weakref.proxy(box)
     rootwidget.add_widget(box)

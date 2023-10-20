@@ -1,4 +1,5 @@
 import asyncio
+import ctypes
 import logging
 import sys
 from kivy.uix.button import Button
@@ -41,14 +42,22 @@ class Update(Screen):
 
     def show_update_popup(self, app_update):
         box = BoxLayout(orientation='vertical')
-        box.add_widget(Label(text='Update verfügbar!'))
+
+        if not self.is_admin():
+            text = 'Update verfügbar!\nBei Klick auf Download werden Admin Privilegien abgefragt und das Programm neu gestartet.'
+            admin = False
+        else:
+            text = 'Update verfügbar!'
+            admin = True
+
+        box.add_widget(Label(text=text))
 
         self.progress_bar = ProgressBar(max=100)
         box.add_widget(self.progress_bar)
 
         btn_layout = BoxLayout()
         download_btn = Button(text='Download')
-        download_btn.bind(on_press=lambda x: self.download_update(app_update)) # type: ignore
+        download_btn.bind(on_press=lambda x: self.download_update(app_update, admin=admin)) # type: ignore
         btn_layout.add_widget(download_btn)
 
         cancel_btn = Button(text='Abbrechen')
@@ -58,17 +67,29 @@ class Update(Screen):
         box.add_widget(btn_layout)
 
         self.popup = Popup(title='Update verfügbar!', content=box,
-                           size_hint=(None, None), size=(400, 300), auto_dismiss=False)
+                           size_hint=(None, None), size=(600, 300), auto_dismiss=False)
         self.popup.open()
 
-    async def async_download_update(self, app_update):
-        await asyncio.get_event_loop().run_in_executor(None, app_update.download)
-        if app_update.is_downloaded():
-            await asyncio.get_event_loop().run_in_executor(None, app_update.extract_overwrite)
+    async def async_download_update(self, app_update, admin=False):
+        if not admin:
+            logger.info("Starten des Programms als Administrator für das Update")
+            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+            sys.exit(0)
+        else:
+            logger.info("Download wird gestartet.")
+            await asyncio.get_event_loop().run_in_executor(None, app_update.download)
+            if app_update.is_downloaded():
+                await asyncio.get_event_loop().run_in_executor(None, app_update.extract_overwrite)
 
-    def download_update(self, app_update):
-        asyncio.ensure_future(self.async_download_update(app_update))
+    def download_update(self, app_update, admin = False):
+        asyncio.ensure_future(self.async_download_update(app_update, admin=admin))
 
+    def is_admin(self):
+        try:
+            return ctypes.windll.shell32.IsUserAnAdmin()
+        except:
+            return False
+    
     def cancel_update(self, instance):
         self.popup.dismiss()
         self.parent.current = "MainMenu"

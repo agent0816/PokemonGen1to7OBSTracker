@@ -1,5 +1,6 @@
 __pycache__/
 backend/config/
+backend/updater
 logs/
 testserver.py
 tmp/
@@ -13,3 +14,4 @@ client_config.py
 .pyupdater/
 keypack.pyu
 compile.ps1
+*.exe

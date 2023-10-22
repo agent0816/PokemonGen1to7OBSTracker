@@ -81,6 +81,7 @@ class MainMenu(Screen):
         obs,
         bh,
         pl,
+        app_version,
         **kwargs,
     ):
         self.arceus = arceus
@@ -94,6 +95,7 @@ class MainMenu(Screen):
         self.obs = obs
         self.bh = bh
         self.pl = pl
+        self.app_version = app_version
         self.connectors = set()
 
         super().__init__(**kwargs)
@@ -121,7 +123,7 @@ class MainMenu(Screen):
         control_frame = BoxLayout(orientation="horizontal")
 
         logo_settings = BoxLayout(orientation="vertical", size_hint=(0.3, 1))
-        logo = Label(text="Logo")
+        logo = Label(text=f"Logo\nVersion {self.app_version}")
         logo_settings.add_widget(logo)
 
         settings = Button(text="Einstellungen", on_press=self.switch_to_settings)

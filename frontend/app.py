@@ -28,7 +28,7 @@ stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
 APP_NAME = 'PokemonOBSTracker'
-APP_VERSION = '0.3'
+APP_VERSION = '0.5'
 
 class Screens(ScreenManager):
     def __init__(
@@ -53,10 +53,10 @@ class Screens(ScreenManager):
         update_menu = Update(APP_NAME, APP_VERSION)
         self.add_widget(update_menu)
         self.add_widget(
-            MainMenu(arceus, bizhawk, bizhawk_instances, munchlax, obs_websocket, configsave, sp, rem, obs, bh, pl)
+            MainMenu(arceus, bizhawk, bizhawk_instances, munchlax, obs_websocket, configsave, sp, rem, obs, bh, pl, APP_VERSION)
         )
         self.add_widget(
-            SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
+            SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, APP_VERSION)
         )
         self.current = "Update"
         update_menu.check_for_update()

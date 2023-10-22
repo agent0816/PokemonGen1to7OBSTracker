@@ -30,7 +30,7 @@ stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
 class SettingsMenu(Screen):
-    def __init__(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, **kwargs):
+    def __init__(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, app_version, **kwargs):
         super().__init__(**kwargs)
 
         self.name = "SettingsMenu"
@@ -41,7 +41,7 @@ class SettingsMenu(Screen):
         logo = Label(text='Logo', size_hint=(.15,1))
         header_box.add_widget(logo)
 
-        header_box.add_widget(Label(size_hint_x=.7))
+        header_box.add_widget(Label(text=f"Version {app_version}",size_hint_x=.7))
         
         main_menu_button = Button(text="Hauptmenü",size_hint_x=.15, on_press=lambda instance: setattr(self.manager, 'current', "MainMenu"))
         header_box.add_widget(main_menu_button)

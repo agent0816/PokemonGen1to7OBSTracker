@@ -4,9 +4,10 @@ import logging
 import os
 import subprocess
 import tempfile
-logging.basicConfig(level=logging.DEBUG, filename='logs/updater.log',format='[%(asctime)s] %(levelname)s: %(message)s', filemode='w', encoding='utf-8')
+logging.basicConfig(level=logging.INFO, filename='logs/updater.log',format='[%(asctime)s] %(levelname)s: %(message)s', filemode='w', encoding='utf-8')
 
 log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 def _win_overwrite(**kwargs):
     extracted_files = kwargs.get("extracted_files")

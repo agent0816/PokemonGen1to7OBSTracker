@@ -178,10 +178,16 @@ def pokemon45(data, gen):
             if char in charset:
                 nickname += charset[char]
     else:
-        try:
-            nickname = unshuffled_bytes[0x38:0x4e].decode('utf-8').split('\u0000\u0000')[0].replace('\u0000', '')
-        except UnicodeDecodeError:
-            nickname = ''
+        nickname = b''
+        nickname_array_length = range(0x40,0x40+len(unshuffled_bytes[0x40:0x56]),2)
+        for index in nickname_array_length:
+            if unshuffled_bytes[index] == 0xff:
+                break
+            else:
+                char = unshuffled_bytes[index:index+2]
+                nickname += char
+        nickname = nickname.decode('iso-8859-1', errors='ignore').replace('\u0000','')
+
     form = unshuffled_bytes[0x38] % 32
     form -= form % 8
     if dexnr == 201:

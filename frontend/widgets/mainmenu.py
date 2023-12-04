@@ -26,6 +26,7 @@ import frontend.UIFactory as UI
 import logging
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 logging_formatter = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s")
 
 file_handler = logging.FileHandler("logs/frontend.log", "w")

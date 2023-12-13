@@ -233,6 +233,37 @@ def pokemon45(data, gen):
 
 
 def pokemon67(data):
+    unown = {0x00: '', 0x08: '-b', 0x10: '-c', 0x18: '-d', 0x20: '-e', 0x28: '-f', 0x30: '-g', 0x38: '-h', 0x40: '-i', 0x48: '-j', 0x50: '-k', 0x58: '-l', 0x60: '-m', 0x68: '-n', 0x70: '-o', 0x78: '-p', 0x80: '-q', 0x88: '-r', 0x90: '-s', 0x98: '-t', 0xA0: '-u', 0xA8: '-v', 0xB0: '-w', 0xB8: '-x', 0xC0: '-y', 0xC8: '-z', 0xD0: '-exclamation', 0xD8: '-question'}
+    burmy = {0x00: '-plant', 0x08: '-sandy', 0x10: '-trash'}
+    shellos = {0x00: '-west', 0x08: '-east'}
+    rotom = {0x00: '', 0x08: '-heat', 0x10: '-wash', 0x18: '-frost', 0x20: '-fan', 0x28: '-mow'}
+    giratina = {0x00: '', 0x08: '-origin'}
+    shaymin = {0x00: '', 0x08: '-sky'}
+    deoxys = {0x00: '', 0x08: '-attack', 0x10: '-defense', 0x18: '-speed'}
+    arceus = {0x00: '', 0x08: '-fighting', 0x10: '-flying', 0x18: '-poison', 0x20: '-ground', 0x28: '-rock', 0x30: '-bug', 0x38: '-ghost', 0x40: '-steel', 0x48: '-unknown', 0x50: '-fire', 0x58: '-water', 0x60: '-grass', 0x68: '-electric', 0x70: '-psychic', 0x78: '-ice', 0x80: '-dragon', 0x88: '-dark'}
+    deerling = {0x00: '', 0x08: '-spring', 0x10: '-summer', 0x18: '-autumn', 0x20: '-winter'}
+    basculin = {0x00: '', 0x08: '-blue-striped'}
+    boreos = {0x00: '', 0x08: '-therian'}
+    kyurem = {0x00: '', 0x08: '-white', 0x18: '-black'}
+    keldeo = {0x00: '', 0x08: '-resolute'}
+    genesect = {0x00: '', 0x08: '-douse', 0x10: '-shock', 0x18: '-burn', 0x20: '-chill'}
+    vivillon = {} # 666
+    flabebe = {} # 669-671
+    furfrou = {} # 676
+    aegislash = {} # 681
+    pumpkaboo = {} # 710 - 711
+    xerneas = {} # 716
+    zygarde = {} # 718
+    hoopa = {} # 720
+    oricorio = {} # 741
+    lycanroc = {} # 745
+    wishiwashi = {} # 746
+    silvally = {} # 773
+    minior = {} # 774
+    mimikyu = {} # 778
+    necrozma = {} # 800
+    magearna = {} # 801
+
     unshuffled_bytes, decrypted_battle_stats, shiny_value, _ = decryptpokemon(data, '67')
     dexnr = int.from_bytes(unshuffled_bytes[:2], 'little')
     item = int.from_bytes(unshuffled_bytes[2:4], 'little')

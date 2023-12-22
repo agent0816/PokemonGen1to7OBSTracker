@@ -9,6 +9,9 @@ from frontend.widgets.settingsmenu import SettingsMenu
 from frontend.widgets.updatemenu import Update
 from kivy.app import App
 from kivy.core.window import Window
+# from kivy.logger import Logger
+# from kivy.logger import LOG_LEVELS
+# Logger.setLevel(logging.INFO)
 from kivy.uix.screenmanager import FadeTransition
 from kivy.uix.screenmanager import ScreenManager
 from backend.classes.arceus import Arceus
@@ -17,6 +20,7 @@ from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 logging_formatter = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s")
 
 file_handler = logging.FileHandler("logs/frontend.log", "w")
@@ -28,7 +32,7 @@ stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
 APP_NAME = 'PokemonOBSTracker'
-APP_VERSION = '0.5'
+APP_VERSION = '0.5.1'
 
 class Screens(ScreenManager):
     def __init__(

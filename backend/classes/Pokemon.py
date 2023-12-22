@@ -1,21 +1,19 @@
-import yaml
 from typing import Literal
 
 class Pokemon:
     def __init__(self, dexnr: int, shiny: bool = False, female = False, form = '', **kwargs):
         self.dexnr: int | Literal['egg'] = dexnr
-        self.nickname: str = ''
-        self.nickname: str = kwargs.get('nickname') #type:ignore
+        self.nickname: str = kwargs.get('nickname', '')
         self.lvl = kwargs.get('lvl')
         self.shiny: bool = shiny
         self.female = female
         self.form = form
-        self.route = 0
-        if 'route' in kwargs:
-            self.route = kwargs.get('route')
-        self.item = 0
-        if 'item' in kwargs:
-            self.item = kwargs.get('item')
+        if 'route' not in kwargs:
+            self.route = 0
+        if 'item' not in kwargs:
+            self.item = 0
+        for key in kwargs.keys():
+            self.__dict__[key] = kwargs.get(key)
 
     def __repr__(self):
         return f'<{self.dexnr}, {self.nickname}, lvl={self.lvl}, item={self.item}>'

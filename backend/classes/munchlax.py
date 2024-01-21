@@ -80,7 +80,9 @@ class Munchlax:
                             await self.obs.changeSource(player, diff, team, self.editions[player]) #type: ignore
                             await self.obs.change_badges(player) #type: ignore
                     self.sorted_teams = new_teams.copy()
-
+            except UnicodeEncodeError as err:
+                self.logger.error(f"Unicode Shit:{type(err)},{err}")
+                self.logger.error(f"{traceback.format_exc()}")
             except Exception as err:
                 self.logger.error(f"alter_teams abgebrochen: {type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")

@@ -214,11 +214,13 @@ def get_form(data, dexnr):
     alola = [19,20,26,27,28,37,38,50,51,74,75,76,88,89,103,105]
 
     form = data - data % 8
-    form = forms_dict.get(dexnr).get(form, 0)
+    if dexnr in forms_dict.keys():
+        species_form = forms_dict.get(dexnr)
+        form = species_form.get(form, 0)
     if dexnr in mega:
-        mega_dict.get(form, 0)
+        form = mega_dict.get(form, 0)
     if dexnr in alola:
-        alola_dict.get(form, 0)
+        form = alola_dict.get(form, 0)
     if isinstance(form, int):
         form = ''
 

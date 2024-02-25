@@ -111,7 +111,8 @@ def init_config_folder():
     bh = {
         "host":'127.0.0.1',
         "path":'',
-        "port":'43885'
+        "port":'43885',
+        "save_automatically" : False
     }
     if not biz.exists():
         save_config(biz, bh)

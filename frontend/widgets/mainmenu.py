@@ -118,7 +118,7 @@ class MainMenu(Screen):
         frame.add_widget(pokemon_frame)
         self.add_widget(frame)
 
-        self.init_config(self.sp, self.rem)
+        self.init_config(self.sp, self.rem, self.bh)
 
     def create_control_frame(self):
         control_frame = BoxLayout(orientation="horizontal")
@@ -274,6 +274,7 @@ class MainMenu(Screen):
         showing_frame.add_widget(sort_layout)
 
         checkmarks = (
+            ("SaveRAM automatisch", "bizhawk_check"),
             ("Orden anzeigen", "badges_check"),
             ("Namen anzeigen", "names_check"),
             ("Items anzeigen", "items_check"),
@@ -477,11 +478,12 @@ class MainMenu(Screen):
                 asyncio.create_task(self.arceus.stop())
             instance.text = "Server starten"
 
-    def init_config(self, sp, rem):
+    def init_config(self, sp, rem, bh):
         self.ids.animated_check.state = "down" if sp["animated"] else "normal"
         self.ids.names_check.state = "down" if sp["show_nicknames"] else "normal"
         self.ids.items_check.state = "down" if sp["show_items"] else "normal"
         self.ids.badges_check.state = "down" if sp["show_badges"] else "normal"
+        self.ids.bizhawk_check.state = "down" if bh["save_automatically"] else "normal"
         self.ids[sp["order"]].state = "down"
         self.ids["start_server"].state = "down" if rem["start_server"] else "normal"
         self.toggle_server_client(
@@ -505,6 +507,11 @@ class MainMenu(Screen):
         asyncio.create_task(self.obs_websocket.redraw_obs())
         with open(f"{self.configsave}sprites.yml", "w") as file:
             yaml.dump(self.sp, file)
+
+        self.bh["save_automatically"] = self.ids.bizhawk_check.state == "down"
+
+        with open(f"{self.configsave}bh_config.yml", "w") as file:
+            yaml.dump(self.bh, file)
 
         self.rem["start_server"] = self.ids["start_server"].state == "down"
 

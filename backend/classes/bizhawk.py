@@ -16,6 +16,8 @@ class Bizhawk:
         self.is_connected = False
         self.disconnect_lock = asyncio.Lock()
         self.bh = bh
+        self.about_to_exit = False
+        self.save_automatically = True
 
         self.logger = self.init_logging()
 
@@ -65,16 +67,35 @@ class Bizhawk:
 
             # edition_length = int((await reader.read(2)).decode())
             edition = int((await self.receive_messages(reader)).decode())
-
             player = int(client_id[7:])
 
+            msg = (await self.receive_messages(reader)).decode()
+            if msg != "Aufgabe":
+                raise Exception("Irgendwas stimmt mit der Initialisierung nicht")
+            else:
+                await self.send_messages(writer, "team")
             length = get_length()
             msg = await reader.read(length)
             update_teams(msg)
+            counter = 2
             while True:
+                counter = counter % (60 * 10)
                 try:
-                    msg = await reader.read(length)
-                    update_teams(msg)
+                    data = (await self.receive_messages(reader)).decode()
+                    if data == "Aufgabe" and counter % 60 != 0 and (counter != 1 or not self.bh["save_automatically"]) and not self.about_to_exit:
+                        await self.send_messages(writer, data)
+                    elif (counter == 1 and self.bh["save_automatically"]) or self.about_to_exit:
+                        if self.about_to_exit:
+                            self.about_to_exit = False
+                        await self.send_messages(writer, "saveRAM")
+                        msg = (await self.receive_messages(reader)).decode()
+                        self.logger.info(f"Bizhawk {client_id}: {msg}")
+                    elif counter % 60 == 0:
+                        await self.send_messages(writer, "team")
+                        msg = await reader.read(length)
+                        update_teams(msg)
+
+                    counter += 1
                 except Exception as err:
                     self.logger.error(f"handle_bizhawk abgebrochen: {type(err)},{err}")
                     self.logger.error(f"{traceback.format_exc()}")
@@ -128,9 +149,16 @@ class Bizhawk:
 
         return result
 
+    async def send_messages(self, writer, message_to_biz):
+        message = f"{len(message_to_biz)} {message_to_biz}"
+        writer.write(message.encode())
+        await writer.drain()
 
     async def stop_and_terminate(self, bizhawk_instances):
+        self.about_to_exit = True
+        await asyncio.sleep(1)
         await self.stop()
 
         for bizhawk in bizhawk_instances:
             bizhawk.terminate()
+        

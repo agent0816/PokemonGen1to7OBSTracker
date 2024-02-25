@@ -166,7 +166,7 @@ function main()
     logging.info("registered game " .. tostring(gameversion) .. " for Munchlax")
 
     local msg = ''
-    local lastTime = os.time()
+    -- local lastTime = os.time()
     local currTime = 0
     local lastTeam = {}
     local fluctcount = 0
@@ -235,13 +235,22 @@ function main()
         if gameversion > 50 then
             msg[#msg + 1] = memory.readbyte(badgepointer, 'Main RAM')
         end
-        currTime = os.time()
-        if lastTime + INTERVAL <= currTime and fluctcount > 3 then
-            lastTime = currTime
+        -- currTime = os.time()
+        -- if lastTime + INTERVAL <= currTime and fluctcount > 3 then
+        --     lastTime = currTime
+        --     comm.socketServerSendBytes(msg)
+        -- end
+        local check_msg = "Aufgabe"
+        comm.socketServerSend(check_msg)
+        local response = comm.socketServerResponse()
+        if response == "team" then
             comm.socketServerSendBytes(msg)
-            
         end
-        client.saveram()
+        if response == "saveRAM" then
+            client.saveram()
+            check_msg = "saveRAM erfolgreich"
+            comm.socketServerSend(check_msg)
+        end
         emu.frameadvance()
     end
 end

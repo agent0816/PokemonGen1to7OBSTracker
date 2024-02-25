@@ -131,8 +131,10 @@ def pokemon3(data, edition):
             break
     return Pokemon(species, not (key % 0x10000 ^ key >> 16) > 8, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location) # type: ignore
 
-
-def pokemon45(data, gen):
+def get_form(data, dexnr):   
+    mega_charizard_mewtu = {0x00: '', 0x08: '-megax', 0x10: 'megay'}
+    mega_dict = {0x00: '', 0x08: '-mega'}
+    alola_dict = {0x00: '', 0x08: '-alola'}
     unown = {0x00: '', 0x08: '-b', 0x10: '-c', 0x18: '-d', 0x20: '-e', 0x28: '-f', 0x30: '-g', 0x38: '-h', 0x40: '-i', 0x48: '-j', 0x50: '-k', 0x58: '-l', 0x60: '-m', 0x68: '-n', 0x70: '-o', 0x78: '-p', 0x80: '-q', 0x88: '-r', 0x90: '-s', 0x98: '-t', 0xA0: '-u', 0xA8: '-v', 0xB0: '-w', 0xB8: '-x', 0xC0: '-y', 0xC8: '-z', 0xD0: '-exclamation', 0xD8: '-question'}
     burmy = {0x00: '-plant', 0x08: '-sandy', 0x10: '-trash'}
     shellos = {0x00: '-west', 0x08: '-east'}
@@ -147,7 +149,85 @@ def pokemon45(data, gen):
     kyurem = {0x00: '', 0x08: '-white', 0x18: '-black'}
     keldeo = {0x00: '', 0x08: '-resolute'}
     genesect = {0x00: '', 0x08: '-douse', 0x10: '-shock', 0x18: '-burn', 0x20: '-chill'}
+    vivillon = {} # 666
+    flabebe = {} # 669-671
+    furfrou = {} # 676
+    aegislash = {} # 681
+    pumpkaboo = {} # 710 - 711
+    xerneas = {} # 716
+    zygarde = {} # 718
+    hoopa = {} # 720
+    oricorio = {} # 741
+    lycanroc = {} # 745
+    wishiwashi = {} # 746
+    silvally = {} # 773
+    minior = {} # 774
+    mimikyu = {} # 778
+    necrozma = {} # 800
+    magearna = {} # 801
 
+    forms_dict = {
+        6: mega_charizard_mewtu,
+        150: mega_charizard_mewtu,
+        201: unown,
+        412: burmy,
+        413: burmy,
+        422: shellos,
+        423: shellos,
+        479: rotom,
+        487: giratina,
+        492: shaymin,
+        493: arceus,
+        386: deoxys,
+        585: deerling,
+        586: deerling,
+        550: basculin,
+        641: boreos,
+        642: boreos,
+        645: boreos,
+        647: keldeo,
+        646: kyurem,
+        649: genesect,
+        666: vivillon,
+        669: flabebe,
+        670: flabebe,
+        671: flabebe,
+        676: furfrou,
+        681: aegislash,
+        710: pumpkaboo,
+        711: pumpkaboo,
+        716: xerneas,
+        718: zygarde,
+        720: hoopa,
+        741: oricorio,
+        745: lycanroc,
+        746: wishiwashi,
+        773: silvally,
+        774: minior,
+        778: mimikyu,
+        800: necrozma,
+        801: magearna
+    }
+
+    mega = [3,6,9,15,18,65,80,94,115,127,130,142,150,181,208,212,214,229,248,254,257,260,282,302,303,306,308,310,319,323,334,354,359,362,373,376,380,381,384,428,445,448,460,475,531,719]
+
+    alola = [19,20,26,27,28,37,38,50,51,74,75,76,88,89,103,105]
+
+    form = data - data % 8
+    if dexnr in forms_dict.keys():
+        species_form = forms_dict.get(dexnr)
+        form = species_form.get(form, 0)
+    if dexnr in mega:
+        form = mega_dict.get(form, 0)
+    if dexnr in alola:
+        form = alola_dict.get(form, 0)
+    if isinstance(form, int):
+        form = ''
+
+    return form
+
+
+def pokemon45(data, gen):
     charset = gen4charset
     items = items4 if gen == 4 else items5
 
@@ -188,38 +268,7 @@ def pokemon45(data, gen):
                 nickname += char
         nickname = nickname.decode('iso-8859-1', errors='ignore').replace('\u0000','')
 
-    form = unshuffled_bytes[0x38] % 32
-    form -= form % 8
-    if dexnr == 201:
-        form = unown[form]
-    if dexnr in [412, 413]:
-        form = burmy[form] # type: ignore
-    if dexnr in [422, 423]:
-        form = shellos[form] # type: ignore
-    if dexnr == 479:
-        form = rotom[form] # type: ignore
-    if dexnr == 487:
-        form = giratina[form] # type: ignore
-    if dexnr == 492:
-        form = shaymin[form] # type: ignore
-    if dexnr == 493:
-        form = arceus[form] # type: ignore
-    if dexnr == 386:
-        form = deoxys[form] # type: ignore
-    if dexnr in [585, 586]:
-        form = deerling[form] # type: ignore
-    if dexnr == 550:
-        form = basculin[form] # type: ignore
-    if dexnr in [641, 642, 645]:
-        form = boreos[form] # type: ignore
-    if dexnr == 647:
-        form = keldeo[form] # type: ignore
-    if dexnr == 646:
-        form = kyurem[form] # type: ignore
-    if dexnr == 649:
-        form = genesect[form] # type: ignore
-    if isinstance(form, int):
-        form = ''
+    form = get_form(unshuffled_bytes[0x38], dexnr) # % 32
     if dexnr not in range(650):
         dexnr = 0
         nickname = ''
@@ -231,39 +280,7 @@ def pokemon45(data, gen):
         dexnr = 'egg'
     return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location) # type: ignore
 
-
 def pokemon67(data):
-    unown = {0x00: '', 0x08: '-b', 0x10: '-c', 0x18: '-d', 0x20: '-e', 0x28: '-f', 0x30: '-g', 0x38: '-h', 0x40: '-i', 0x48: '-j', 0x50: '-k', 0x58: '-l', 0x60: '-m', 0x68: '-n', 0x70: '-o', 0x78: '-p', 0x80: '-q', 0x88: '-r', 0x90: '-s', 0x98: '-t', 0xA0: '-u', 0xA8: '-v', 0xB0: '-w', 0xB8: '-x', 0xC0: '-y', 0xC8: '-z', 0xD0: '-exclamation', 0xD8: '-question'}
-    burmy = {0x00: '-plant', 0x08: '-sandy', 0x10: '-trash'}
-    shellos = {0x00: '-west', 0x08: '-east'}
-    rotom = {0x00: '', 0x08: '-heat', 0x10: '-wash', 0x18: '-frost', 0x20: '-fan', 0x28: '-mow'}
-    giratina = {0x00: '', 0x08: '-origin'}
-    shaymin = {0x00: '', 0x08: '-sky'}
-    deoxys = {0x00: '', 0x08: '-attack', 0x10: '-defense', 0x18: '-speed'}
-    arceus = {0x00: '', 0x08: '-fighting', 0x10: '-flying', 0x18: '-poison', 0x20: '-ground', 0x28: '-rock', 0x30: '-bug', 0x38: '-ghost', 0x40: '-steel', 0x48: '-unknown', 0x50: '-fire', 0x58: '-water', 0x60: '-grass', 0x68: '-electric', 0x70: '-psychic', 0x78: '-ice', 0x80: '-dragon', 0x88: '-dark'}
-    deerling = {0x00: '', 0x08: '-spring', 0x10: '-summer', 0x18: '-autumn', 0x20: '-winter'}
-    basculin = {0x00: '', 0x08: '-blue-striped'}
-    boreos = {0x00: '', 0x08: '-therian'}
-    kyurem = {0x00: '', 0x08: '-white', 0x18: '-black'}
-    keldeo = {0x00: '', 0x08: '-resolute'}
-    genesect = {0x00: '', 0x08: '-douse', 0x10: '-shock', 0x18: '-burn', 0x20: '-chill'}
-    vivillon = {} # 666
-    flabebe = {} # 669-671
-    furfrou = {} # 676
-    aegislash = {} # 681
-    pumpkaboo = {} # 710 - 711
-    xerneas = {} # 716
-    zygarde = {} # 718
-    hoopa = {} # 720
-    oricorio = {} # 741
-    lycanroc = {} # 745
-    wishiwashi = {} # 746
-    silvally = {} # 773
-    minior = {} # 774
-    mimikyu = {} # 778
-    necrozma = {} # 800
-    magearna = {} # 801
-
     unshuffled_bytes, decrypted_battle_stats, shiny_value, _ = decryptpokemon(data, '67')
     dexnr = int.from_bytes(unshuffled_bytes[:2], 'little')
     item = int.from_bytes(unshuffled_bytes[2:4], 'little')
@@ -274,8 +291,16 @@ def pokemon67(data):
     lvl = int(decrypted_battle_stats[4])
     met_location = int.from_bytes(unshuffled_bytes[0xD2:0xD4], 'little')
     nickname = unshuffled_bytes[0x38:0x4e].decode('utf-8').split('\u0000\u0000')[0].replace('\u0000', '')
-    # TODO
-    form = ''
+    form = get_form(unshuffled_bytes[0x15], dexnr)#  % 32
+    if dexnr not in range(810):
+        dexnr = 0
+        nickname = ''
+    if unshuffled_bytes[0x6f] & 64 and dexnr != 0:
+        if dexnr == 490:
+            form = '-manaphy'
+        else:
+            form = ''
+        dexnr = 'egg'
     return Pokemon(dexnr, shiny_value < 9, female, item=item, form=form, lvl=lvl, nickname=nickname, route=met_location)
 
 

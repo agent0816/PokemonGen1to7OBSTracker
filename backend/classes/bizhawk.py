@@ -38,8 +38,8 @@ class Bizhawk:
     async def handle_bizhawk(self, reader, writer):
         client_id = None
         try:
-            id_length = int((await reader.read(2)).decode())
-            client_id = (await reader.read(id_length)).decode()
+            # id_length = int((await reader.read(2)).decode())
+            client_id = (await self.receive_messages(reader)).decode()
             self.bizhawks[client_id] = writer
             self.bizhawks_status[client_id] = 'connected'
             self.logger.info(f"Emulator {client_id} connected.")
@@ -63,8 +63,8 @@ class Bizhawk:
                 teams[player] = team
                 self.munchlax.unsorted_teams[player] = team
 
-            edition_length = int((await reader.read(2)).decode())
-            edition = int((await reader.read(edition_length)).decode())
+            # edition_length = int((await reader.read(2)).decode())
+            edition = int((await self.receive_messages(reader)).decode())
 
             player = int(client_id[7:])
 
@@ -110,6 +110,24 @@ class Bizhawk:
             
             self.port = self.bh['port']
             self.logger.info("Bizhawk has been stopped.")
+
+    async def receive_messages(self, reader):
+        length = b''
+        flag = True
+        while flag:
+            data = await reader.read(1)
+            if not data:
+                return None
+            if data.decode() != " ":
+                length += data
+            else:
+                flag = False
+        length = int(length.decode())
+
+        result = await reader.read(length)
+
+        return result
+
 
     async def stop_and_terminate(self, bizhawk_instances):
         await self.stop()

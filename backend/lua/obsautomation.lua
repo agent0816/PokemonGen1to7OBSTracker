@@ -9,6 +9,9 @@ gui.clearGraphics()
 comm.socketServerSend("player" .. string.format("%03d", PLAYER))
 logging.info("registered " .. "player" .. string.format("%03d", PLAYER) .. " for Munchlax")
 
+local save_msg = 0
+local fluct_init = false
+
 function main()
     -- wie viele Sekunden zwischen den Updates
     local INTERVAL = 1
@@ -25,18 +28,59 @@ function main()
     local NKr = 0xDE41 -- Nicknames Kristall
     local EKr = 0xDCD8 -- Eier Kristall
 
-    local FrLg = 0x02024284 -- Feuerrot/Blattgrün
-    local RS = 0x03004370 -- Rubin/Saphir
-    local E = 0x020244EC -- Smaragd
+    local FrLg = 0x2024284 -- Feuerrot/Blattgrün
+    local RS = 0x3004370 -- Rubin/Saphir
+    local E = 0x20244EC -- Smaragd
 
     local DP = 0x26D7EC -- Diamant/Perl
+    local DPBattlePlayer = 0x2B9D18
+    local DPBattleOpponent = 0x2BA2C8
+    local DPBattleOpponentID = 0x2AFFCE -- (u_le_16 0x0 = wild | > 0x0 ist Trainer ID)
+    local DPinBattle = DPBattlePlayer - 0x8
+    -- local DPinBattle = 0x23BBDF -- (u_le_8 0x21 = true, 0x20 = false) 0xA7 Unterschied zu Englisch
+    -- 0x27E358
     local Pl = 0x27E40C -- Platin
+    local PlBattlePlayer = 0x2C9C04
+    local PlBattleOpponent = 0x2CA1B4
+    local PlBattleOpponentID = 0x2BFBF6 -- (u_le_16 0x0 = wild | > 0x0 ist Trainer ID)
+    local PlinBattle = PlBattlePlayer - 0x8
+    -- local PlinBattle = 0x24A71A -- (u_le_8 0x10 = true, 0x00 = false)
     local HgSs = 0x27C310 -- HeartGold/SoulSilver
+    local HgSsBattlePlayer = 0x0
+    local HgSsBattleOpponent = 0x0
+    local HgSsBattleOpponentID = 0x0
+    local HgSsinBattle = HgSsBattlePlayer - 0x8
 
-    local S = 0x022348F4 -- Schwarz
-    local W = 0x022349D4 -- Weiß Offset 0xC0 zu englisch
+    -- 0x240 Unterschied Deutsch Englisch
+
+    local S = 0x022348F4 -- Schwarz Offset 0xC0 zu englisch
+    local SBattlePlayer = 0x0226A6D4
+    local ScurHPinBattle = 0x0226D5F4 -- u_le_16 548 Byte für jedes Pokemon 0x224 | Level: addr + 0x8 u_16_le % 256
+    local SBattleOpponent = 0x0226B194 
+    local SBattleOpponentID = 0x022696FE -- (u_le_16 0x0 = wild | > 0x0 ist Trainer ID)
+    local SinBattle = SBattlePlayer - 0x8 -- (u_le_32 0x6 | addr + 0x4 ; 0x1 <= u_le_32 <= 0x6)
+    -- local SinBattle = 0x21D077E
+    
+    local W = 0x022349D4 -- Weiß
+    local WBattlePlayer = 0x0226A7B4
+    local WcurHPinBattle = 0x0226D6D4
+    local WBattleOpponent = 0x0226B274
+    local WBattleOpponentID = 0x022697DE
+    local WinBattle = WBattlePlayer - 0x8
+    
     local S2 = 0x0221E32C -- Schwarz 2
+    local S2BattlePlayer = 0x02258214
+    local S2curHPinBattle = 0x0225B134
+    local S2BattleOpponent = 0x02258774
+    local S2BattleOpponentID = 0x02257232
+    local S2inBattle = S2BattlePlayer - 0x8
+    
     local W2 = 0x0221E34C -- Weiß 2
+    local W2BattlePlayer = 0x0221E2CC
+    local W2curHPinBattle = 0x0225B154
+    local W2BattleOpponent = 0x02258714
+    local W2BattleOpponentID = 0x022571D2
+    local W2inBattle = W2BattlePlayer - 0x8
 
     local length = 0
     local gameversion = ''
@@ -112,43 +156,52 @@ function main()
         gameversion = memory.read_u16_be(0x23FFE08, 'ARM9 System Bus')
         if gameversion == 17408 then
             pointer = DP
+            battlepointer = DPBattlePlayer
             gameversion = 41
             badgepointer = 0xB70
             badgeoffset = 0x292
         elseif gameversion == 20480 then
             pointer = DP
+            battlepointer = DPBattlePlayer
             gameversion = 42
             badgepointer = 0xB70
             badgeoffset = 0x292
         elseif gameversion == 20556 then
             pointer = Pl
+            battlepointer = PlBattlePlayer
             gameversion = 43
             badgepointer = 0xBA8
             badgeoffset = 0x96
         elseif gameversion == 18503 then
             pointer = HgSs
+            battlepointer = HgSsBattlePlayer
             gameversion = 44
             badgepointer = 0xBA8
             badgeoffset = 0x8E
         elseif gameversion == 21331 then
             pointer = HgSs
+            battlepointer = HgSsBattlePlayer
             gameversion = 45
             badgepointer = 0xBA8
             badgeoffset = 0x8E
         elseif gameversion == 16896 then
             pointer = S
+            battlepointer = SBattlePlayer
             gameversion = 51
             badgepointer = 0x23CCF0
         elseif gameversion == 22272 then
             pointer = W
+            battlepointer = WBattlePlayer
             gameversion = 52
             badgepointer = 0x23CDD0 -- offset 0xC0 zu englisch
         elseif gameversion == 16946 then
             pointer = S2
+            battlepointer = S2BattlePlayer
             gameversion = 53
             badgepointer = 0x226628
         elseif gameversion == 22322 then
             pointer = W2
+            battlepointer = W2BattlePlayer
             gameversion = 54
             badgepointer = 0x226648
         end
@@ -170,6 +223,7 @@ function main()
     local currTime = 0
     local lastTeam = {}
     local fluctcount = 0
+    old_pointer = pointer
 
     local function areTablesEqual(t1, t2)
         for i = 1, #t1 do
@@ -182,8 +236,19 @@ function main()
     end
 
     while true do
+        local max_team_player = memory.read_u32_le(battlepointer - 0x8, domain)
+        local cur_team_player = memory.read_u32_le(battlepointer - 0x4, domain)
+
+        if max_team_player == 6 and cur_team_player > 0 and cur_team_player <= 7 then
+            pointer = battlepointer
+        else
+            pointer = old_pointer
+        end
+        
         team = memory.read_bytes_as_array(pointer, length, domain)
         if areTablesEqual(team, lastTeam) then
+            if fluctcount % 30 == 0 then
+            end
             fluctcount = fluctcount + 1
         else
             fluctcount = 0
@@ -240,11 +305,19 @@ function main()
         --     lastTime = currTime
         --     comm.socketServerSendBytes(msg)
         -- end
+        if fluctcount > 3 then
+            save_msg = msg
+            fluct_init = true
+        end
         local check_msg = "Aufgabe"
         comm.socketServerSend(check_msg)
         local response = comm.socketServerResponse()
         if response == "team" then
-            comm.socketServerSendBytes(msg)
+            if fluct_init then
+                comm.socketServerSendBytes(save_msg)
+            else
+                comm.socketServerSendBytes(msg)
+            end
         end
         if response == "saveRAM" then
             client.saveram()

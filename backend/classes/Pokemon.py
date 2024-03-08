@@ -12,11 +12,15 @@ class Pokemon:
             self.route = 0
         if 'item' not in kwargs:
             self.item = 0
+        if 'cur_hp' not in kwargs:
+            self.cur_hp = 1
+        if 'max_hp' not in kwargs:
+            self.max_hp = 1
         for key in kwargs.keys():
             self.__dict__[key] = kwargs.get(key)
 
     def __repr__(self):
-        return f'<{self.dexnr}, {self.nickname}, lvl={self.lvl}, item={self.item}>'
+        return f'<{self.dexnr}, {self.nickname}, lvl={self.lvl}, item={self.item}, hp={self.cur_hp}/{self.max_hp}>'
 
     def __eq__(self, other) -> bool:
         if self.dexnr != other.dexnr:
@@ -28,6 +32,8 @@ class Pokemon:
         if self.item != other.item:
             return False
         if self.lvl != other.lvl:
+            return False
+        if self.cur_hp != other.cur_hp:
             return False
         return True
 

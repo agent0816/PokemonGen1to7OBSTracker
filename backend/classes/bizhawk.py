@@ -58,6 +58,7 @@ class Bizhawk:
 
             def update_teams(team):
                 team = pokedecoder.team(team, edition)
+                self.logger.info(team)
                 teams = self.munchlax.bizhawk_teams
                 if player in teams:
                     if teams[player] == team:

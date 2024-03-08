@@ -51,11 +51,13 @@ def pokemon1(data):
     if dexnr in species1_lut:
         dexnr = species1_lut.get(dexnr)
     lvl = data[0x21]
+    cur_hp = int.from_bytes(data[0x1:0x3], 'little')
+    max_hp = int.from_bytes(data[0x22:0x24], 'little')
     nickname = ''
     for char in data[44:]:
         if char in gen1charset:
             nickname += gen1charset[char]
-    return Pokemon(dexnr, False, lvl=lvl, nickname=nickname)
+    return Pokemon(dexnr, False, lvl=lvl, nickname=nickname, cur_hp=cur_hp, max_hp=max_hp)
 
 
 def pokemon2(data):
@@ -65,6 +67,8 @@ def pokemon2(data):
     if item in items2:
         item = items2[item]
     lvl = data[0x1F]
+    cur_hp = int.from_bytes(data[0x22:0x24], 'little')
+    max_hp = int.from_bytes(data[0x24:0x26], 'little')
     nickname = ''
     form = ''
     egg = data[-1] == 0xFD
@@ -80,7 +84,7 @@ def pokemon2(data):
         dexnr = 'egg'
         form = ''
 
-    return Pokemon(dexnr, False, lvl=lvl, form=form, nickname=nickname, item=item) # type: ignore
+    return Pokemon(dexnr, False, lvl=lvl, form=form, nickname=nickname, item=item, cur_hp=cur_hp, max_hp=max_hp) # type: ignore
 
 
 def pokemon3(data, edition):
@@ -118,6 +122,8 @@ def pokemon3(data, edition):
         form = ''
         species = 'egg'
     lvl = data[84]
+    cur_hp = int.from_bytes(data[0x56:0x58], 'little')
+    max_hp = int.from_bytes(data[0x58:0x5a], 'little')
     # female = False
     # if not egg:
     #     female = personality % 256 < gender_lut[species]
@@ -129,7 +135,7 @@ def pokemon3(data, edition):
             nickname += gen3charset[char]
         if char == 0xFF:
             break
-    return Pokemon(species, not (key % 0x10000 ^ key >> 16) > 8, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location) # type: ignore
+    return Pokemon(species, not (key % 0x10000 ^ key >> 16) > 8, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp) # type: ignore
 
 def get_form(data, dexnr):   
     mega_charizard_mewtu = {0x00: '', 0x08: '-megax', 0x10: 'megay'}
@@ -246,6 +252,8 @@ def pokemon45(data, gen):
     if met_location == 0:  # diamant/perl
         met_location = int.from_bytes(unshuffled_bytes[0x78:0x7A], 'little')
     lvl = decrypted_battle_stats[4]
+    cur_hp = int.from_bytes(decrypted_battle_stats[6:8], 'little')
+    max_hp = int.from_bytes(decrypted_battle_stats[8:10], 'little')
     if dexnr in range(650):
         female = personality % 256 < gender_lut[dexnr]
     else:
@@ -278,7 +286,7 @@ def pokemon45(data, gen):
         else:
             form = ''
         dexnr = 'egg'
-    return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location) # type: ignore
+    return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp) # type: ignore
 
 def pokemon67(data):
     unshuffled_bytes, decrypted_battle_stats, shiny_value, _ = decryptpokemon(data, '67')
@@ -289,6 +297,8 @@ def pokemon67(data):
     if dexnr in gender_lut:
         female = personality % 256 < gender_lut[dexnr]
     lvl = int(decrypted_battle_stats[4])
+    cur_hp = int.from_bytes(decrypted_battle_stats[6:8], 'little')
+    max_hp = int.from_bytes(decrypted_battle_stats[8:10], 'little')
     met_location = int.from_bytes(unshuffled_bytes[0xD2:0xD4], 'little')
     nickname = unshuffled_bytes[0x38:0x4e].decode('utf-8').split('\u0000\u0000')[0].replace('\u0000', '')
     form = get_form(unshuffled_bytes[0x15], dexnr)#  % 32
@@ -301,7 +311,7 @@ def pokemon67(data):
         else:
             form = ''
         dexnr = 'egg'
-    return Pokemon(dexnr, shiny_value < 9, female, item=item, form=form, lvl=lvl, nickname=nickname, route=met_location)
+    return Pokemon(dexnr, shiny_value < 9, female, item=item, form=form, lvl=lvl, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp)
 
 
 def team(data, edition):

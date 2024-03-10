@@ -69,7 +69,11 @@ class Bizhawk:
                 team = self.munchlax.bizhawk_teams[player]
                 splitted_stats = stats.split(",")
                 for index, stat in enumerate(splitted_stats):
-                    team[index].cur_hp = int(stat)
+                    try:
+                        new_hp = int(stat)
+                        team[index].cur_hp = new_hp
+                    except Exception as err:
+                        self.logger.error(f"Mit folgenden Werten gescheitert:{splitted_stats}")
                 self.munchlax.unsorted_teams[player] = team
 
             # edition_length = int((await reader.read(2)).decode())

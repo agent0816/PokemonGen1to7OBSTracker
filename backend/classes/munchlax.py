@@ -82,11 +82,13 @@ class Munchlax:
                             await self.obs.change_badges(player) #type: ignore
                     self.sorted_teams = new_teams.copy()
             except UnicodeEncodeError as err:
-                self.logger.error(f"Unicode Shit:{type(err)},{err}")
+                self.logger.error(f"Unicode error:{type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")
             except UnpicklingError as err:
                 self.logger.error(f"Pickle Data error:{type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")
+                self.logger.error(f"Länge der empfangenen Daten: {length=}")
+                self.logger.error(f"Empfangene Daten: {msg}")
             except Exception as err:
                 self.logger.error(f"alter_teams abgebrochen: {type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")

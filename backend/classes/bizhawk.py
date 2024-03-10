@@ -58,12 +58,18 @@ class Bizhawk:
 
             def update_teams(team):
                 team = pokedecoder.team(team, edition)
-                self.logger.info(team)
                 teams = self.munchlax.bizhawk_teams
                 if player in teams:
                     if teams[player] == team:
                         return
                 teams[player] = team
+                self.munchlax.unsorted_teams[player] = team
+
+            def update_stats(stats):
+                team = self.munchlax.bizhawk_teams[player]
+                splitted_stats = stats.split(",")
+                for index, stat in enumerate(splitted_stats):
+                    team[index].cur_hp = int(stat)
                 self.munchlax.unsorted_teams[player] = team
 
             # edition_length = int((await reader.read(2)).decode())
@@ -79,13 +85,12 @@ class Bizhawk:
             msg = await reader.read(length)
             update_teams(msg)
             counter = 2
+            in_battle = False
             while True:
                 counter = counter % (60 * 10)
                 try:
                     data = (await self.receive_messages(reader)).decode()
-                    if data == "Aufgabe" and counter % 60 != 0 and (counter != 1 or not self.bh["save_automatically"]) and not self.about_to_exit:
-                        await self.send_messages(writer, data)
-                    elif (counter == 1 and self.bh["save_automatically"]) or self.about_to_exit:
+                    if (counter == 1 and self.bh["save_automatically"]) or self.about_to_exit:
                         if self.about_to_exit:
                             self.about_to_exit = False
                         await self.send_messages(writer, "saveRAM")
@@ -95,6 +100,17 @@ class Bizhawk:
                         await self.send_messages(writer, "team")
                         msg = await reader.read(length)
                         update_teams(msg)
+                    elif counter % 60 == 2 and not in_battle:
+                        await self.send_messages(writer, "in_battle")
+                        data = (await self.receive_messages(reader)).decode()
+                        in_battle = data == "true"
+                    elif counter % 60 == 3 and in_battle: 
+                        await self.send_messages(writer, "stat_aktualisieren")
+                        data = (await self.receive_messages(reader)).decode()
+                        in_battle = False
+                        update_stats(data)
+                    else:
+                        await self.send_messages(writer, data)
 
                     counter += 1
                 except Exception as err:

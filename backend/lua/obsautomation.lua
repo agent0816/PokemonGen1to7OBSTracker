@@ -187,21 +187,25 @@ function main()
         elseif gameversion == 16896 then
             pointer = S
             battlepointer = SBattlePlayer
+            curHPinBattlepointer = ScurHPinBattle
             gameversion = 51
             badgepointer = 0x23CCF0
         elseif gameversion == 22272 then
             pointer = W
             battlepointer = WBattlePlayer
+            curHPinBattlepointer = WcurHPinBattle
             gameversion = 52
             badgepointer = 0x23CDD0 -- offset 0xC0 zu englisch
         elseif gameversion == 16946 then
             pointer = S2
             battlepointer = S2BattlePlayer
+            curHPinBattlepointer = S2curHPinBattle
             gameversion = 53
             badgepointer = 0x226628
         elseif gameversion == 22322 then
             pointer = W2
             battlepointer = W2BattlePlayer
+            curHPinBattlepointer = W2curHPinBattle
             gameversion = 54
             badgepointer = 0x226648
         end
@@ -235,14 +239,25 @@ function main()
         return true
     end
 
+    local max_team_player = 0
+    local cur_team_player = 0
+    local in_battle = false
+    local battle_msg = ''
+
     while true do
-        local max_team_player = memory.read_u32_le(battlepointer - 0x8, domain)
-        local cur_team_player = memory.read_u32_le(battlepointer - 0x4, domain)
+        if gameversion > 40 then
+            max_team_player = memory.read_u32_le(battlepointer - 0x8, domain)
+            cur_team_player = memory.read_u32_le(battlepointer - 0x4, domain)
+        end
 
         if max_team_player == 6 and cur_team_player > 0 and cur_team_player <= 7 then
             pointer = battlepointer
+            in_battle = true
+            battle_msg = 'true'
         else
             pointer = old_pointer
+            in_battle = false
+            battle_msg = 'false'
         end
         
         team = memory.read_bytes_as_array(pointer, length, domain)
@@ -300,15 +315,24 @@ function main()
         if gameversion > 50 then
             msg[#msg + 1] = memory.readbyte(badgepointer, 'Main RAM')
         end
-        -- currTime = os.time()
-        -- if lastTime + INTERVAL <= currTime and fluctcount > 3 then
-        --     lastTime = currTime
-        --     comm.socketServerSendBytes(msg)
-        -- end
+
+        local battle_stats = ''
+
+        if in_battle and gameversion > 50 then
+            for pokemon = 1 , cur_team_player, 1 do
+                local hp = memory.read_u16_le(curHPinBattlepointer + (pokemon - 1) * 0x224, domain)
+                battle_stats = battle_stats .. hp
+                if pokemon < cur_team_player then
+                    battle_stats = battle_stats .. ","
+                end
+            end
+        end
+
         if fluctcount > 3 then
             save_msg = msg
             fluct_init = true
         end
+
         local check_msg = "Aufgabe"
         comm.socketServerSend(check_msg)
         local response = comm.socketServerResponse()
@@ -323,6 +347,12 @@ function main()
             client.saveram()
             check_msg = "saveRAM erfolgreich"
             comm.socketServerSend(check_msg)
+        end
+        if response == "in_battle" then
+            comm.socketServerSend(battle_msg)
+        end
+        if response == "stat_aktualisieren" then
+            comm.socketServerSend(battle_stats)
         end
         emu.frameadvance()
     end

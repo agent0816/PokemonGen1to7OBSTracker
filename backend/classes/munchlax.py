@@ -4,6 +4,7 @@ import hashlib
 import logging
 import sys
 import pickle
+from pickle import UnpicklingError
 import traceback
 from backend.classes.obs import OBS
 
@@ -82,6 +83,9 @@ class Munchlax:
                     self.sorted_teams = new_teams.copy()
             except UnicodeEncodeError as err:
                 self.logger.error(f"Unicode Shit:{type(err)},{err}")
+                self.logger.error(f"{traceback.format_exc()}")
+            except UnpicklingError as err:
+                self.logger.error(f"Pickle Data error:{type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")
             except Exception as err:
                 self.logger.error(f"alter_teams abgebrochen: {type(err)},{err}")

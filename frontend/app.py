@@ -5,10 +5,12 @@ import yaml
 import requests
 import logging
 from frontend.widgets.mainmenu import MainMenu
+from frontend.widgets.sessionsmenu import SessionMenu
 from frontend.widgets.settingsmenu import SettingsMenu
 from frontend.widgets.updatemenu import Update
 from kivy.app import App
 from kivy.core.window import Window
+
 # from kivy.logger import Logger
 # from kivy.logger import LOG_LEVELS
 # Logger.setLevel(logging.INFO)
@@ -31,8 +33,9 @@ stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
-APP_NAME = 'PokemonOBSTracker'
-APP_VERSION = '0.6'
+APP_NAME = "PokemonOBSTracker"
+APP_VERSION = "0.6"
+
 
 class Screens(ScreenManager):
     def __init__(
@@ -50,27 +53,56 @@ class Screens(ScreenManager):
         obs,
         bh,
         pl,
+        session_list,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
         update_menu = Update(APP_NAME, APP_VERSION)
         self.add_widget(update_menu)
-        self.add_widget(
-            MainMenu(arceus, bizhawk, bizhawk_instances, munchlax, obs_websocket, configsave, sp, rem, obs, bh, pl, APP_VERSION)
+        main_menu = MainMenu(
+            arceus,
+            bizhawk,
+            bizhawk_instances,
+            munchlax,
+            obs_websocket,
+            configsave,
+            sp,
+            rem,
+            obs,
+            bh,
+            pl,
+            APP_VERSION,
         )
-        self.add_widget(
-            SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, APP_VERSION)
+        self.add_widget(main_menu)
+        settings_menu = SettingsMenu(
+            arceus,
+            bizhawk,
+            munchlax,
+            obs_websocket,
+            externalIPv4,
+            externalIPv6,
+            configsave,
+            sp,
+            rem,
+            obs,
+            bh,
+            pl,
+            APP_VERSION,
         )
+        self.add_widget(settings_menu)
+        session_menu = SessionMenu(session_list, main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, APP_VERSION)
+        self.add_widget(session_menu)
         self.current = "Update"
         update_menu.check_for_update()
+
 
 class TrackerApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         Window.bind(on_request_close=self.exit_check)
 
-    def build(self):        
+    def build(self):
         try:
             self.externalIPv4 = requests.get("https://ipinfo.io/ip", timeout=1).text
         except requests.exceptions.Timeout:
@@ -83,7 +115,7 @@ class TrackerApp(App):
         )
         stdout, stderr = process.communicate()
         self.externalIPv6 = stdout.decode()
-        self.configsave = "backend/config/"
+        self.configsave = "backend/config/default/"
         self.bh = {}
         with open(f"{self.configsave}bh_config.yml") as file:
             self.bh = yaml.safe_load(file)
@@ -99,23 +131,30 @@ class TrackerApp(App):
         self.rem = {}
         with open(f"{self.configsave}remote.yml") as file:
             self.rem = yaml.safe_load(file)
+        self.session_list = []
+        with open(f"{self.configsave}../session_list.yml") as file:
+            self.session_list = yaml.safe_load(file)
 
         self.arceus = Arceus("", self.rem["client_port"], self.rem)
         self.bizhawk = Bizhawk(self.bh["host"], self.bh["port"], self.bh)
         self.bizhawk_instances = []
-        
-        ip_to_connect = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
-        port_to_connect = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
-        self.munchlax = Munchlax(
-            ip_to_connect, port_to_connect, self.rem, self.sp
+
+        ip_to_connect = (
+            "127.0.0.1" if self.rem["start_server"] else self.rem["server_ip_adresse"]
         )
+        port_to_connect = (
+            self.rem["client_port"]
+            if self.rem["start_server"]
+            else self.rem["server_port"]
+        )
+        self.munchlax = Munchlax(ip_to_connect, port_to_connect, self.rem, self.sp)
         self.obs_websocket = OBS(
             self.obs["host"],
             self.obs["port"],
             self.obs["password"],
             self.munchlax,
             self.sp,
-            self.obs
+            self.obs,
         )
 
         arguments = [
@@ -131,26 +170,29 @@ class TrackerApp(App):
             self.rem,
             self.obs,
             self.bh,
-            self.pl
+            self.pl,
+            self.session_list,
         ]
 
         return Screens(*arguments)
 
     def exit_check(self, *args, **kwargs):
-        self.save_config(f"{self.configsave}bh_config.yml", self.bh)
-        self.save_config(f"{self.configsave}obs_config.yml", self.obs)
-        self.save_config(f"{self.configsave}sprites.yml", self.sp)
-        self.save_config(f"{self.configsave}player.yml", self.pl)
-        self.save_config(f"{self.configsave}remote.yml", self.rem)
+        # self.save_config(f"{self.configsave}bh_config.yml", self.bh)
+        # self.save_config(f"{self.configsave}obs_config.yml", self.obs)
+        # self.save_config(f"{self.configsave}sprites.yml", self.sp)
+        # self.save_config(f"{self.configsave}player.yml", self.pl)
+        # self.save_config(f"{self.configsave}remote.yml", self.rem)
+
+        print(self.configsave)
 
         for bizhawk in self.bizhawk_instances:
             bizhawk.terminate()
         tasks = [
-                asyncio.create_task(self.bizhawk.stop()),
-                asyncio.create_task(self.obs_websocket.disconnect()),
-                asyncio.create_task(self.munchlax.disconnect()),
-                asyncio.create_task(self.arceus.stop())
-                ]
+            asyncio.create_task(self.bizhawk.stop()),
+            asyncio.create_task(self.obs_websocket.disconnect()),
+            asyncio.create_task(self.munchlax.disconnect()),
+            asyncio.create_task(self.arceus.stop()),
+        ]
         asyncio.create_task(asyncio.wait(tasks, timeout=3))
 
     def save_config(self, path, setting):

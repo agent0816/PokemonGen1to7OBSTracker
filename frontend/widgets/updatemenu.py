@@ -39,7 +39,7 @@ class Update(Screen):
         if app_update:
             self.show_update_popup(app_update)
         else:
-            self.parent.current = "MainMenu"
+            self.parent.current = "SessionMenu"
 
     def show_update_popup(self, app_update):
         box = BoxLayout(orientation='vertical')

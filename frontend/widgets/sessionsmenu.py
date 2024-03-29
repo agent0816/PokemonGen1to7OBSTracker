@@ -1,6 +1,7 @@
 import asyncio
 from dataclasses import dataclass
 import weakref
+import yaml
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -15,6 +16,38 @@ from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.togglebutton import ToggleButton
+
+@dataclass
+class Session():
+    name: str
+    settings: dict
+
+class DeleteSessionPopup(Popup):
+    def __init__(self, session_menu, session_name, **kwargs):
+        super().__init__(**kwargs)        
+        self.session_menu = session_menu
+        self.session_name = session_name
+        
+        self.title = "Session löschen!"
+        self.size_hint = (0.8, 0.4)
+
+        layout = BoxLayout(orientation="vertical")
+        layout.add_widget(Label(text=f"Möchtest du Session '{self.session_name}' löschen?"))
+
+        btn_layout = BoxLayout(size_hint_y=None, height="50dp", spacing="5dp")
+        btn_yes = Button(text="Ja", on_press=self.on_yes)
+        btn_no = Button(text="Nein", on_press=self.dismiss)
+
+        btn_layout.add_widget(btn_yes)
+        btn_layout.add_widget(btn_no)
+        layout.add_widget(btn_layout)
+
+        self.content = layout
+
+    def on_yes(self, instance):
+        self.session_menu.session_list_names.remove(self.session_name)
+        self.session_menu.session_list_box.update_session_box()
+        self.dismiss()
 
 class CreateSessionPopup(Popup):
     def __init__(self, sessionmenu, **kwargs):
@@ -319,10 +352,18 @@ class SessionList(ScrollView):
             self.session_box.add_widget(session_selector)
 
 class SessionMenu(Screen):
-    def __init__(self, session_list_names, app_version, **kwargs):
+    def __init__(self, session_list_names, main_menu, settings_menu, configsave, sp, rem, obs, bh, pl,app_version, **kwargs):
         super().__init__(**kwargs)
 
         self.name = "SessionMenu"
+        self.main_menu = main_menu
+        self.settings_menu = settings_menu
+        self.configsave = configsave
+        self.sp = sp
+        self.rem = rem
+        self.obs = obs
+        self.bh = bh
+        self.pl = pl
 
         self.session_list_names = session_list_names
         self.newest_session_name = None
@@ -351,10 +392,10 @@ class SessionMenu(Screen):
         new_session_button = Button(text="neue Session", on_press=self.create_session_button)
         button_box.add_widget(new_session_button)
 
-        select_session = Button(text="Session\nbearbeiten")
+        select_session = Button(text="Session\nauswählen", on_press=self.select_session)
         button_box.add_widget(select_session)
 
-        delete_session = Button(text="Session\nlöschen")
+        delete_session = Button(text="Session\nlöschen", on_press=self.delete_session)
         button_box.add_widget(delete_session)
 
         session_box.add_widget(button_box)
@@ -388,13 +429,26 @@ class SessionMenu(Screen):
             
     def write_session(self, popup):
         if not popup.canceled:
-            self.create_session(self.newest_session_name)
+            self.create_session(self.newest_session_name, {})
         self.newest_session_name = None
 
-@dataclass
-class Session():
-    name: str
-    settings: dict
+    def delete_session(self, instance):
+        session_to_delete = self.get_selected_session()
+        if session_to_delete:
+            popup = DeleteSessionPopup(self, session_to_delete)
+            popup.open()
+
+    def get_selected_session(self):
+        for button in ToggleButton.get_widgets("sessions"):
+            if button.state == "down":
+                return button.text
+        return None
+
+    def select_session(self, instance):
+        selected_session = self.get_selected_session()
+        if selected_session:
+            self.configsave = self.configsave.replace("default", selected_session)
+            print(self.configsave)
 
 if __name__ == "__main__":
     class TestApp(App):
@@ -403,6 +457,9 @@ if __name__ == "__main__":
 
         def build(self):
             session_list = ['erste','zweite','dritte']
+            configsave = "backend/config/"
+            with open(f"{configsave}../session_list.yml", "w") as file:
+                yaml.dump(session_list, file)
             return SessionMenu(session_list, '0.6')
     
     app = TestApp()

@@ -394,6 +394,7 @@ class MainMenu(Screen):
                             f'--lua={os.path.abspath(f"./backend/lua/Player{i+1}.lua")}',
                             f'--socket_ip={self.bh["host"]}',
                             f'--socket_port={self.bh["port"]}',
+                            # f'--chromeless',
                         ]
                     )
                     self.bizhawk_instances.append(process)

@@ -10,7 +10,10 @@ from backend.classes.obs import OBS
 
 class Munchlax:
     def __init__(self, host, port, rem, sp):
-        self.client_id = self.generate_hashed_id()
+        self.client_id = rem.get("client_id")
+        if self.client_id == 0:
+            self.client_id = self.generate_hashed_id()
+            rem["client_id"] = self.client_id
         self.bizhawk_teams = {}
         self.sorted_teams = {}
         self.unsorted_teams = {}

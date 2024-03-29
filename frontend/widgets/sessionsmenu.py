@@ -485,7 +485,7 @@ class SessionMenu(Screen):
 
     def save_session_list(self):
         new_config = self.configsave.text.replace("default/", "")
-        with open(f"{new_config}/session_list.yml") as file:
+        with open(f"{new_config}/session_list.yml", "w") as file:
             yaml.dump(self.session_list_names, file)
 
     def select_session(self, instance):

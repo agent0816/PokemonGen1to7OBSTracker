@@ -42,7 +42,7 @@ def init_config_folder():
     for entry in config.iterdir():
         if entry.is_file() and entry != session_list:
             files.append(entry)
-        elif entry != default_session:
+        elif not entry.is_file():
             sessions.append(entry)
     if files:
         update_session(config, default=True)

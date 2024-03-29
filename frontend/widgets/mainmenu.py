@@ -492,9 +492,12 @@ class MainMenu(Screen):
 
     def save_changes(self, instance):
         sorts = {"DexNr.": "dexnr", "Team": "team", "Level": "lvl", "Route": "route"}
-        for button in ToggleButton.get_widgets("sort"):
+        toggle_widgets = ToggleButton.get_widgets("sort")
+        for button in toggle_widgets:
             if button.state == "down":
                 self.sp["order"] = sorts[button.text]
+        
+        del toggle_widgets
 
         self.sp["animated"] = self.ids.animated_check.state == "down"
         self.sp["show_nicknames"] = self.ids.names_check.state == "down"

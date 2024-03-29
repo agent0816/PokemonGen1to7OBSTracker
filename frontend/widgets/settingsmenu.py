@@ -35,6 +35,8 @@ class SettingsMenu(Screen):
         super().__init__(**kwargs)
 
         self.name = "SettingsMenu"
+        self.session_selected = False
+        self.session = "default"
 
         box = BoxLayout(orientation="vertical")
         header_box = BoxLayout(orientation='horizontal', size_hint_y=0.15, padding=(0,"10dp"))
@@ -42,9 +44,9 @@ class SettingsMenu(Screen):
         logo = Label(text='Logo', size_hint=(.15,1))
         header_box.add_widget(logo)
 
-        header_box.add_widget(Label(text=f"Version {app_version}",size_hint_x=.7))
+        header_box.add_widget(Label(text=f"Version {app_version} | Session: {self.session}",size_hint_x=.7))
         
-        main_menu_button = Button(text="Hauptmenü",size_hint_x=.15, on_press=lambda instance: setattr(self.manager, 'current', "MainMenu"))
+        main_menu_button = Button(text="Hauptmenü",size_hint_x=.15, on_press=self.back_to_menu)
         header_box.add_widget(main_menu_button)
 
         box.add_widget(header_box)
@@ -72,6 +74,12 @@ class SettingsMenu(Screen):
 
         box.add_widget(layout)
         self.add_widget(box)
+
+    def back_to_menu(self, instance):
+        if self.session_selected:
+            self.manager.current = "MainMenu"
+        else:
+            self.manager.current = "SessionMenu"
 
     def jump_to(self, scrollview, jump_id):
         scroll_max_height = scrollview.children[0].height

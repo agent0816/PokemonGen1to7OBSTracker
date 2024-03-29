@@ -1,5 +1,6 @@
 import asyncio
-from dataclasses import dataclass
+from pathlib import Path
+import pathvalidate
 import weakref
 import yaml
 from kivy.app import App
@@ -17,10 +18,10 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.togglebutton import ToggleButton
 
-@dataclass
-class Session():
-    name: str
-    settings: dict
+# @dataclass
+# class Session():
+#     name: str
+#     settings: dict
 
 class DeleteSessionPopup(Popup):
     def __init__(self, session_menu, session_name, **kwargs):
@@ -79,14 +80,16 @@ class CreateSessionPopup(Popup):
 
     def on_yes(self, instance):
         name = self.name_text_box.text
-        if not self.name_text_box.text:
+        if not name:
             self.error_label.text = "Der Name darf nicht leer sein."
-        elif name not in self.sessionmenu.session_list_names:
+        elif not pathvalidate.is_valid_filename(name):
+            self.error_label.text = f"Der Name enthält unerlaubte Zeichen. Vorschlag: {pathvalidate.sanitize_filename(name)}"
+        elif name in self.sessionmenu.session_list_names:
+            self.error_label.text = "Dieser Session-Name existiert bereits."
+        else:
             self.sessionmenu.newest_session_name = name
         
             self.dismiss()
-        else:
-            self.error_label.text = "Dieser Session-Name existiert bereits."
 
 class SessionOnboardingPopup(Popup):
     def __init__(self, sessionmenu, screenmanager, **kwargs):
@@ -141,6 +144,14 @@ class SessionOnboardingPopup(Popup):
         current_screen = self.screenmanager.screens[self.screen_number]
         screen_is_valid = self.validate_inputs(current_screen)
         if screen_is_valid:
+            self.sessionmenu.pl["your_name"] = self.screenmanager.ids["name_text"].text
+            selected_game = ""
+            toggle_buttons = ToggleButton.get_widgets("games")
+            for button in toggle_buttons:
+                if button.state == "down":
+                    selected_game = button.text
+            del toggle_buttons
+            self.sessionmenu.pl["session_game"] = selected_game
             self.dismiss()
         else:
             current_screen.error_label.text = "Bitte eine Angabe machen!"
@@ -195,7 +206,7 @@ class SessionOnboardingScreen(ScreenManager):
         screen.add_widget(Label(text="Wie möchtest du heißen?", size_hint=(1, .3)))
 
         name_text_box = TextInput(size_hint=(.6,None), size=(0, "30dp"), pos_hint={'center_x':0.5}, multiline=False, write_tab=False)
-        screen.ids["name_text"] = weakref.proxy(name_text_box)
+        self.ids["name_text"] = weakref.proxy(name_text_box)
         screen.add_widget(name_text_box)
         
         error_label = Label(color=(1,0,0,1), text = " ", size_hint=(1, .3))
@@ -241,10 +252,13 @@ class SessionOnboardingScreen(ScreenManager):
         screen_layout.add_widget(error_label)
 
         def validation_callback():
-            for button in ToggleButton.get_widgets("games"):
+            result = False
+            toggle_buttons = ToggleButton.get_widgets("games")
+            for button in toggle_buttons:
                 if button.state =="down":
-                    return True
-            return False
+                    result = True
+            del toggle_buttons
+            return result
 
         return screen_layout, validation_callback
 
@@ -369,9 +383,6 @@ class SessionMenu(Screen):
         self.newest_session_name = None
         self.session_dict = {}
 
-        for session in self.session_list_names:
-            self.create_session(session, {}, init=True)
-
         box = BoxLayout(orientation="vertical")
         header_box = BoxLayout(orientation='horizontal', size_hint_y=0.15, padding=(0,"10dp"))
         
@@ -386,7 +397,7 @@ class SessionMenu(Screen):
 
         button_box = BoxLayout(orientation='vertical', size_hint_x=0.15)
 
-        standard_config_button = Button(text="Standard \nEinstellungen")
+        standard_config_button = Button(text="Standard \nEinstellungen", on_press=self.go_to_default_settings)
         button_box.add_widget(standard_config_button)
 
         new_session_button = Button(text="neue Session", on_press=self.create_session_button)
@@ -409,12 +420,8 @@ class SessionMenu(Screen):
 
         self.add_widget(box)
 
-    def create_session(self, name, configuration, init=False):
-        self.session_dict[name] = Session(name, {}) if init else Session(name, configuration)
-
-        if not init:
-            self.session_list_names.append(name)
-            self.session_list_box.update_session_box()
+    def go_to_default_settings(self, instance):
+        self.manager.current = "SettingsMenu"
 
     def create_session_button(self, instance):
         popup = CreateSessionPopup(self)
@@ -422,6 +429,8 @@ class SessionMenu(Screen):
         popup.open()
 
     def onboarding_session(self, instance):
+        self.default_player_name = self.pl["your_name"]
+        self.default_selected_game = self.pl["session_game"]
         if self.newest_session_name:
             popup = SessionOnboardingPopup(self, SessionOnboardingScreen())
             popup.bind(on_dismiss=lambda popup: self.write_session(popup))
@@ -429,26 +438,60 @@ class SessionMenu(Screen):
             
     def write_session(self, popup):
         if not popup.canceled:
-            self.create_session(self.newest_session_name, {})
+            self.session_list_names.append(self.newest_session_name)
+            self.session_list_box.update_session_box()
+            self.save_new_session()
+            self.save_session_list()
+        self.pl["your_name"] = self.default_player_name
+        self.pl["session_game"] = self.default_selected_game
         self.newest_session_name = None
+
+    def save_new_session(self):
+        new_session_name = self.newest_session_name.replace(" ", "_")
+        new_config = self.configsave.text.replace("default", new_session_name)
+        new_session = Path(f"{new_config}")
+        new_session.mkdir()
+
+        with open(f"{new_session}/sprites.yml", 'w') as file:
+            yaml.dump(self.sp, file)
+
+        with open(f"{new_session}/bh_config.yml", 'w') as file:
+            yaml.dump(self.bh, file)
+
+        with open(f"{new_session}/obs_config.yml", 'w') as file:
+            yaml.dump(self.obs, file)
+
+        with open(f"{new_session}/remote.yml", 'w') as file:
+            yaml.dump(self.rem, file)
+
+        with open(f"{new_session}/player.yml", 'w') as file:
+            yaml.dump(self.pl, file)
 
     def delete_session(self, instance):
         session_to_delete = self.get_selected_session()
         if session_to_delete:
             popup = DeleteSessionPopup(self, session_to_delete)
             popup.open()
+        self.save_session_list()
 
     def get_selected_session(self):
-        for button in ToggleButton.get_widgets("sessions"):
+        toggle_widgets = ToggleButton.get_widgets("sessions")
+        result = None
+        for button in toggle_widgets:
             if button.state == "down":
-                return button.text
-        return None
+                result = button.text
+        del toggle_widgets
+        return result
+
+    def save_session_list(self):
+        new_config = self.configsave.text.replace("default/", "")
+        with open(f"{new_config}/session_list.yml") as file:
+            yaml.dump(self.session_list_names, file)
 
     def select_session(self, instance):
         selected_session = self.get_selected_session()
         if selected_session:
-            self.configsave = self.configsave.replace("default", selected_session)
-            print(self.configsave)
+            self.configsave.text = self.configsave.text.replace("default", selected_session)
 
 if __name__ == "__main__":
     class TestApp(App):

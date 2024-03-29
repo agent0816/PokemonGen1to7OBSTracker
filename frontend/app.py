@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass
 import sys
 import subprocess
 import yaml
@@ -96,6 +97,14 @@ class Screens(ScreenManager):
         self.current = "Update"
         update_menu.check_for_update()
 
+@dataclass
+class MutableString(object):
+    text: str
+
+    def __repr__(self) -> str:
+        return self.text
+    def __str__(self) -> str:
+        return self.text
 
 class TrackerApp(App):
     def __init__(self, **kwargs):
@@ -115,7 +124,7 @@ class TrackerApp(App):
         )
         stdout, stderr = process.communicate()
         self.externalIPv6 = stdout.decode()
-        self.configsave = "backend/config/default/"
+        self.configsave = MutableString("backend/config/default/")
         self.bh = {}
         with open(f"{self.configsave}bh_config.yml") as file:
             self.bh = yaml.safe_load(file)
@@ -177,13 +186,11 @@ class TrackerApp(App):
         return Screens(*arguments)
 
     def exit_check(self, *args, **kwargs):
-        # self.save_config(f"{self.configsave}bh_config.yml", self.bh)
-        # self.save_config(f"{self.configsave}obs_config.yml", self.obs)
-        # self.save_config(f"{self.configsave}sprites.yml", self.sp)
-        # self.save_config(f"{self.configsave}player.yml", self.pl)
-        # self.save_config(f"{self.configsave}remote.yml", self.rem)
-
-        print(self.configsave)
+        self.save_config(f"{self.configsave}bh_config.yml", self.bh)
+        self.save_config(f"{self.configsave}obs_config.yml", self.obs)
+        self.save_config(f"{self.configsave}sprites.yml", self.sp)
+        self.save_config(f"{self.configsave}player.yml", self.pl)
+        self.save_config(f"{self.configsave}remote.yml", self.rem)
 
         for bizhawk in self.bizhawk_instances:
             bizhawk.terminate()

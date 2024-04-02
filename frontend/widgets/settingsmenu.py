@@ -35,8 +35,7 @@ class SettingsMenu(Screen):
         super().__init__(**kwargs)
 
         self.name = "SettingsMenu"
-        self.session_selected = False
-        self.session = "default"
+        self.selected_session = "default"
 
         box = BoxLayout(orientation="vertical")
         header_box = BoxLayout(orientation='horizontal', size_hint_y=0.15, padding=(0,"10dp"))
@@ -44,7 +43,8 @@ class SettingsMenu(Screen):
         logo = Label(text='Logo', size_hint=(.15,1))
         header_box.add_widget(logo)
 
-        header_box.add_widget(Label(text=f"Version {app_version} | Session: {self.session}",size_hint_x=.7))
+        self.head_label = Label(text=f"Version {app_version} | Session: {self.selected_session}",size_hint_x=.7)
+        header_box.add_widget(self.head_label)
         
         main_menu_button = Button(text="Hauptmenü",size_hint_x=.15, on_press=self.back_to_menu)
         header_box.add_widget(main_menu_button)
@@ -54,7 +54,7 @@ class SettingsMenu(Screen):
         layout = GridLayout(cols=2, size_hint_y=.85)
 
         button_box = BoxLayout(orientation="vertical", size_hint=(0.15, 1), pos_hint={"top": 0})
-        scrollview = ScrollSettings(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
+        self.scrollview = ScrollSettings(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
 
         settings_buttons = [
             ("Sprite\nPfade", 'sprite'),
@@ -66,20 +66,22 @@ class SettingsMenu(Screen):
 
         for text, screen_name in settings_buttons:
             button = Button(text=text)
-            button.bind(on_press=lambda instance, jump_id=screen_name: self.jump_to(scrollview, jump_id)) #type: ignore
+            button.bind(on_press=lambda instance, jump_id=screen_name: self.jump_to(self.scrollview, jump_id)) #type: ignore
             button_box.add_widget(button)
 
         layout.add_widget(button_box)
-        layout.add_widget(scrollview)
+        layout.add_widget(self.scrollview)
 
         box.add_widget(layout)
         self.add_widget(box)
 
     def back_to_menu(self, instance):
-        if self.session_selected:
+        if self.is_session_selected:
             self.manager.current = "MainMenu"
         else:
             self.manager.current = "SessionMenu"
+
+        self.scrollview.save_changes()
 
     def jump_to(self, scrollview, jump_id):
         scroll_max_height = scrollview.children[0].height
@@ -640,8 +642,7 @@ class ScrollSettings(ScrollView):
         self.bh['path'] = self.ids.bizhawk_exe.text
         self.bh['port'] = self.ids.bizhawk_port.text
 
-        if not self.bizhawk.server:
-            self.bizhawk.port = self.bh['port']
+        self.update_bizhawk()
         
         with open(f"{self.configsave}bh_config.yml", 'w') as file:
             yaml.dump(self.bh, file)
@@ -650,10 +651,7 @@ class ScrollSettings(ScrollView):
         self.obs['host'] = self.ids["obs_host"].text
         self.obs['port'] = self.ids["obs_port"].text
 
-        if not self.obs_websocket.ws:
-            self.obs_websocket.password = self.obs['password']
-            self.obs_websocket.host = self.obs['host']
-            self.obs_websocket.port = self.obs['port']
+        self.update_obs_websocket()
         
         with open(f"{self.configsave}obs_config.yml", 'w') as file:
             yaml.dump(self.obs, file)
@@ -663,12 +661,9 @@ class ScrollSettings(ScrollView):
         self.rem['server_ip_adresse'] = self.ids['ip_server'].text
         self.rem['server_port'] = self.ids['port_server'].text
 
-        if not self.arceus.server:
-            self.arceus.port = self.rem['client_port']
+        self.update_arceus()
 
-        if not self.munchlax.is_connected:
-            self.munchlax.host = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
-            self.munchlax.port = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
+        self.update_munchlax()
 
         with open(f"{self.configsave}remote.yml", 'w') as file:
             yaml.dump(self.rem, file)
@@ -681,6 +676,34 @@ class ScrollSettings(ScrollView):
         with open(f"{self.configsave}player.yml", 'w') as file:
             yaml.dump(self.pl, file)
 
+        self.update_trainer_boxes()
+
+    def update_bizhawk(self):
+        if not self.bizhawk.server:
+            self.bizhawk.port = self.bh['port']
+
+    def update_obs_websocket(self):
+        if not self.obs_websocket.ws:
+            self.obs_websocket.password = self.obs['password']
+            self.obs_websocket.host = self.obs['host']
+            self.obs_websocket.port = self.obs['port']
+
+    def update_arceus(self):
+        if not self.arceus.server:
+            self.arceus.port = self.rem['client_port']
+
+    def update_munchlax(self):
+        if not self.munchlax.is_connected:
+            self.munchlax.host = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
+            self.munchlax.port = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
+
+    def update_connections(self):
+        self.update_bizhawk()
+        self.update_obs_websocket()
+        self.update_arceus()
+        self.update_munchlax()
+
+    def update_trainer_boxes(self):
         main_menu = self.settingsscreen.manager.get_screen("MainMenu")
         trainer_box_box = main_menu.ids["trainer_box_1"].parent
 

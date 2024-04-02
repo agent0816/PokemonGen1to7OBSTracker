@@ -41,6 +41,7 @@ class BizhawkSavePopup(Popup):
         self.bizhawk_instances = bizhawk_instances
         self.bizhawk_button = bizhawk_button
         self.bizhawk = bizhawk
+        self.canceled = False
 
         self.title = "Speichern nicht vergessen!"
         self.size_hint = (0.8, 0.4)
@@ -50,7 +51,7 @@ class BizhawkSavePopup(Popup):
 
         btn_layout = BoxLayout(size_hint_y=None, height="50dp", spacing="5dp")
         btn_yes = Button(text="Ja", on_press=self.on_yes)
-        btn_no = Button(text="Nein", on_press=self.dismiss)
+        btn_no = Button(text="Nein", on_press=self.on_cancel)
 
         btn_layout.add_widget(btn_yes)
         btn_layout.add_widget(btn_no)
@@ -62,6 +63,10 @@ class BizhawkSavePopup(Popup):
         asyncio.create_task(self.bizhawk.stop_and_terminate(self.bizhawk_instances))
 
         self.bizhawk_button.text = "Bizhawk starten"
+        self.dismiss()
+
+    def on_cancel(self, instance):
+        self.canceled = True
         self.dismiss()
 
 
@@ -93,6 +98,7 @@ class MainMenu(Screen):
         self.obs = obs
         self.bh = bh
         self.pl = pl
+        self.selected_session = ""
         self.app_version = app_version
         self.connectors = set()
 
@@ -115,8 +121,6 @@ class MainMenu(Screen):
         frame.add_widget(pokemon_frame)
         self.add_widget(frame)
 
-        self.init_config(self.sp, self.rem, self.bh)
-
     def create_control_frame(self):
         control_frame = BoxLayout(orientation="horizontal")
 
@@ -124,8 +128,12 @@ class MainMenu(Screen):
         logo = Label(text=f"Logo\nVersion {self.app_version}")
         logo_settings.add_widget(logo)
 
-        settings = Button(text="Einstellungen", on_press=self.switch_to_settings)
-        logo_settings.add_widget(settings)
+        self.settings = Button(text=f"Einstellungen\n{self.selected_session}", on_press=self.switch_to_settings)
+        logo_settings.add_widget(self.settings)
+
+        change_session = Button(text="Session wechseln", on_press=self.change_session)
+        logo_settings.add_widget(change_session)
+
         control_frame.add_widget(logo_settings)
 
         connections = BoxLayout(orientation="horizontal")
@@ -360,6 +368,29 @@ class MainMenu(Screen):
                     id=client_id,
                 )
 
+    def change_session(self, instance):
+        popup = BizhawkSavePopup(self.bizhawk_instances, instance, self.bizhawk)
+        if self.bizhawk_instances:
+            popup.open()
+
+        if not popup.canceled:
+            self.disconnect_all()
+        
+            self.save_changes()
+            selected_session = self.selected_session.replace(" ","_")
+            self.configsave.text = self.configsave.text.replace(selected_session, "default")
+
+            self.manager.current = "SessionMenu"
+
+    def disconnect_all(self):
+        tasks = [
+                    asyncio.create_task(self.bizhawk.stop()),
+                    asyncio.create_task(self.obs_websocket.disconnect()),
+                    asyncio.create_task(self.munchlax.disconnect()),
+                    asyncio.create_task(self.arceus.stop()),
+                ]
+        asyncio.create_task(asyncio.wait(tasks, timeout=3))
+
     def toggle_obs(self, instance):
         if instance.text == "OBS verbinden":
             self.connectOBS()
@@ -476,19 +507,22 @@ class MainMenu(Screen):
                 asyncio.create_task(self.arceus.stop())
             instance.text = "Server starten"
 
-    def init_config(self, sp, rem, bh):
-        self.ids.animated_check.state = "down" if sp["animated"] else "normal"
-        self.ids.names_check.state = "down" if sp["show_nicknames"] else "normal"
-        self.ids.items_check.state = "down" if sp["show_items"] else "normal"
-        self.ids.badges_check.state = "down" if sp["show_badges"] else "normal"
-        self.ids.bizhawk_check.state = "down" if bh["save_automatically"] else "normal"
-        self.ids[sp["order"]].state = "down"
-        self.ids["start_server"].state = "down" if rem["start_server"] else "normal"
+    def init_config(self, initializing=False):
+        self.ids.animated_check.state = "down" if self.sp["animated"] else "normal"
+        self.ids.names_check.state = "down" if self.sp["show_nicknames"] else "normal"
+        self.ids.items_check.state = "down" if self.sp["show_items"] else "normal"
+        self.ids.badges_check.state = "down" if self.sp["show_badges"] else "normal"
+        self.ids.bizhawk_check.state = "down" if self.bh["save_automatically"] else "normal"
+        self.ids[self.sp["order"]].state = "down"
+        self.ids["start_server"].state = "down" if self.rem["start_server"] else "normal"
+        self.settings.text = f"Einstellungen\n{self.selected_session}"
         self.toggle_server_client(
             self.ids["start_server"],
             self.ids["server_client_button"],
-            initializing=True,
+            initializing=initializing,
         )
+        self.munchlax.change_order()
+        self.update_munchlax_connections()
 
     def save_changes(self, instance):
         sorts = {"DexNr.": "dexnr", "Team": "team", "Level": "lvl", "Route": "route"}
@@ -503,7 +537,6 @@ class MainMenu(Screen):
         self.sp["show_nicknames"] = self.ids.names_check.state == "down"
         self.sp["show_items"] = self.ids.items_check.state == "down"
         self.sp["show_badges"] = self.ids.badges_check.state == "down"
-        # self.conf = self.sp
         self.munchlax.change_order()
         asyncio.create_task(self.obs_websocket.redraw_obs())
         with open(f"{self.configsave}sprites.yml", "w") as file:
@@ -516,6 +549,12 @@ class MainMenu(Screen):
 
         self.rem["start_server"] = self.ids["start_server"].state == "down"
 
+        self.update_munchlax_connections()
+
+        with open(f"{self.configsave}remote.yml", "w") as file:
+            yaml.dump(self.rem, file)
+
+    def update_munchlax_connections(self):
         ip_to_connect = (
             "127.0.0.1" if self.rem["start_server"] else self.rem["server_ip_adresse"]
         )
@@ -527,9 +566,6 @@ class MainMenu(Screen):
 
         self.munchlax.host = ip_to_connect
         self.munchlax.port = port_to_connect
-
-        with open(f"{self.configsave}remote.yml", "w") as file:
-            yaml.dump(self.rem, file)
 
     def start_or_end_arceus(self, instance):
         if instance.state == "down":

@@ -366,18 +366,20 @@ class SessionList(ScrollView):
             self.session_box.add_widget(session_selector)
 
 class SessionMenu(Screen):
-    def __init__(self, session_list_names, main_menu, settings_menu, configsave, sp, rem, obs, bh, pl,app_version, **kwargs):
+    def __init__(self, session_list_names, main_menu, settings_menu, configsave, sp, rem, obs, bh, pl, app_version, **kwargs):
         super().__init__(**kwargs)
 
         self.name = "SessionMenu"
         self.main_menu = main_menu
         self.settings_menu = settings_menu
         self.configsave = configsave
+        self.default_config = configsave.text
         self.sp = sp
         self.rem = rem
         self.obs = obs
         self.bh = bh
         self.pl = pl
+        self.app_version = app_version
 
         self.session_list_names = session_list_names
         self.newest_session_name = None
@@ -421,6 +423,7 @@ class SessionMenu(Screen):
         self.add_widget(box)
 
     def go_to_default_settings(self, instance):
+        self.select_session(instance, default=True)
         self.manager.current = "SettingsMenu"
 
     def create_session_button(self, instance):
@@ -467,6 +470,62 @@ class SessionMenu(Screen):
         with open(f"{new_session}/player.yml", 'w') as file:
             yaml.dump(self.pl, file)
 
+    def select_session(self, instance, default=False):
+        if not default:
+            selected_session = self.get_selected_session()
+        else:
+            selected_session = "default"
+
+        if selected_session:
+            self.main_menu.selected_session = selected_session
+
+            self.settings_menu.selected_session = selected_session
+            self.settings_menu.head_label.text = f"Version {self.app_version} | Session: {selected_session}"
+
+            selected_session = selected_session.replace(" ", "_")
+            if not default:
+                self.configsave.text = self.configsave.text.replace("default", selected_session)
+                self.settings_menu.is_session_selected = True
+                self.manager.current = "MainMenu"
+            else:
+                self.configsave.text = self.default_config
+                self.settings_menu.is_session_selected = False
+
+            with open(f"{self.configsave}sprites.yml", 'r') as file:
+                new_sp = yaml.safe_load(file)
+            
+            for key, value in new_sp.items():
+                self.sp[key] = value
+
+            with open(f"{self.configsave}bh_config.yml", 'r') as file:
+                new_bh = yaml.safe_load(file)
+
+            for key, value in new_bh.items():
+                self.bh[key] = value
+
+            with open(f"{self.configsave}obs_config.yml", 'r') as file:
+                new_obs = yaml.safe_load(file)
+
+            for key, value in new_obs.items():
+                self.obs[key] = value
+
+            with open(f"{self.configsave}remote.yml", 'r') as file:
+                new_rem = yaml.safe_load(file)
+
+            for key, value in new_rem.items():
+                self.rem[key] = value
+
+            with open(f"{self.configsave}player.yml", 'r') as file:
+                new_pl = yaml.safe_load(file)
+
+            for key, value in new_pl.items():
+                self.pl[key] = value
+
+            self.settings_menu.scrollview.load_config()
+            self.settings_menu.scrollview.update_trainer_boxes()
+            self.settings_menu.scrollview.update_connections()
+            self.main_menu.init_config()
+
     def delete_session(self, instance):
         session_to_delete = self.get_selected_session()
         if session_to_delete:
@@ -487,23 +546,3 @@ class SessionMenu(Screen):
         new_config = self.configsave.text.replace("default/", "")
         with open(f"{new_config}/session_list.yml", "w") as file:
             yaml.dump(self.session_list_names, file)
-
-    def select_session(self, instance):
-        selected_session = self.get_selected_session()
-        if selected_session:
-            self.configsave.text = self.configsave.text.replace("default", selected_session)
-
-if __name__ == "__main__":
-    class TestApp(App):
-        def __init__(self, **kwargs):
-            super().__init__(**kwargs)
-
-        def build(self):
-            session_list = ['erste','zweite','dritte']
-            configsave = "backend/config/"
-            with open(f"{configsave}../session_list.yml", "w") as file:
-                yaml.dump(session_list, file)
-            return SessionMenu(session_list, '0.6')
-    
-    app = TestApp()
-    asyncio.run(app.async_run())

@@ -35,7 +35,7 @@ class Update(Screen):
         client = Client(ClientConfig(), refresh=True)
         client.add_progress_hook(self.print_status_info)
         app_update = client.update_check(self.app_name, self.app_version)
-        logger.info(app_update)
+        logger.info(f"{app_update=}")
         if app_update:
             self.show_update_popup(app_update)
         else:

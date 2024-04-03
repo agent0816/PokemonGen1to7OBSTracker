@@ -9,7 +9,7 @@ import traceback
 from backend.classes.obs import OBS
 
 class Munchlax:
-    def __init__(self, host, port, rem, sp):
+    def __init__(self, host, port, rem, sp, pl):
         self.client_id = rem.get("client_id")
         if self.client_id == 0:
             self.client_id = self.generate_hashed_id()
@@ -21,6 +21,7 @@ class Munchlax:
         self.editions = {}
         self.rem = rem
         self.sp = sp
+        self.pl = pl
         self.host = host
         self.port = port
         self.is_connected = False
@@ -117,9 +118,9 @@ class Munchlax:
     async def send_heartbeat(self):
         while True:
             try:
-                await asyncio.sleep(5)
                 async with self.writer_lock:
                     await self.send_message('heartbeat')
+                await asyncio.sleep(5)
             except Exception as err:
                 self.logger.warning(f"Heartbeat failed: {type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")
@@ -149,8 +150,10 @@ class Munchlax:
         self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
         self.logger.info(f"Munchlax {self.client_id} bei Arceus({self.host},{self.port}) registriert")
         
+        name = self.pl.get('your_name', '')
+
         async with self.writer_lock:
-            await self.send_message(self.client_id)
+            await self.send_message(f"{name}_{self.client_id}")
         self.is_connected = 'connected'
 
         self.heartbeat_task = asyncio.create_task(self.send_heartbeat())

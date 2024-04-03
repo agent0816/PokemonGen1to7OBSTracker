@@ -4,6 +4,7 @@ import sys
 import weakref
 import yaml
 import asyncio
+from pathlib import Path
 from kivy.clock import Clock
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
@@ -105,6 +106,10 @@ class MainMenu(Screen):
         super().__init__(**kwargs)
         self.name = "MainMenu"
 
+        self.clear_button = Button(
+            text="Clients bereinigen", on_press=self.clear_clients
+        )
+
         frame = BoxLayout(orientation="horizontal")
         click_frame = BoxLayout(orientation="vertical")
 
@@ -128,7 +133,10 @@ class MainMenu(Screen):
         logo = Label(text=f"Logo\nVersion {self.app_version}")
         logo_settings.add_widget(logo)
 
-        self.settings = Button(text=f"Einstellungen\n{self.selected_session}", on_press=self.switch_to_settings)
+        self.settings = Button(
+            text=f"Einstellungen\n{self.selected_session}",
+            on_press=self.switch_to_settings,
+        )
         logo_settings.add_widget(self.settings)
 
         change_session = Button(text="Session wechseln", on_press=self.change_session)
@@ -206,7 +214,7 @@ class MainMenu(Screen):
         UI.create_connection_status_with_labels(
             munchlax_status_box,
             ObjectConnectionStatusCircle,
-            self.munchlax.client_id[:3],
+            self.munchlax.client_id[0],
             self.munchlax,
             ids=self.ids,
             id=self.munchlax.client_id,
@@ -342,7 +350,7 @@ class MainMenu(Screen):
                     UI.create_connection_status_with_labels(
                         box,
                         ValueConnectionStatusCircle,
-                        client_id[:3],
+                        self.arceus.munchlax_names[client_id],
                         client_id,
                         self.arceus.munchlax_status,
                         ids=self.ids,
@@ -369,7 +377,12 @@ class MainMenu(Screen):
                 )
 
     def change_session(self, instance):
-        popup = BizhawkSavePopup(self.bizhawk_instances, instance, self.bizhawk, on_dismiss=lambda popup: self.session_popup(popup))
+        popup = BizhawkSavePopup(
+            self.bizhawk_instances,
+            instance,
+            self.bizhawk,
+            on_dismiss=lambda popup: self.session_popup(popup),
+        )
         if self.bizhawk_instances:
             popup.open()
         else:
@@ -378,20 +391,20 @@ class MainMenu(Screen):
     def session_popup(self, popup):
         if not popup.canceled:
             self.disconnect_all()
-        
+
             self.save_changes(popup)
-            selected_session = self.selected_session.replace(" ","_")
-            self.configsave.text = self.configsave.text.replace(selected_session, "default")
+            session_menu = self.manager.get_screen("SessionMenu")
+            session_menu.load_session_config(default=True)
 
             self.manager.current = "SessionMenu"
 
     def disconnect_all(self):
         tasks = [
-                    asyncio.create_task(self.bizhawk.stop()),
-                    asyncio.create_task(self.obs_websocket.disconnect()),
-                    asyncio.create_task(self.munchlax.disconnect()),
-                    asyncio.create_task(self.arceus.stop()),
-                ]
+            asyncio.create_task(self.bizhawk.stop()),
+            asyncio.create_task(self.obs_websocket.disconnect()),
+            asyncio.create_task(self.munchlax.disconnect()),
+            asyncio.create_task(self.arceus.stop()),
+        ]
         asyncio.create_task(asyncio.wait(tasks, timeout=3))
 
     def toggle_obs(self, instance):
@@ -415,27 +428,33 @@ class MainMenu(Screen):
             logger.info("OBS disconnected.")
 
     def launchbh(self, instance):
-        instance.disabled = True
-        if instance.text == "Bizhawk starten":
-            if not self.bizhawk.server:
-                task = asyncio.create_task(self.bizhawk.start(self.munchlax))
-                self.connectors.add(task)
-            for i in range(self.pl["player_count"]):
-                if not self.pl[f"remote_{i+1}"]:
-                    process = subprocess.Popen(
-                        [
-                            self.bh["path"],
-                            f'--lua={os.path.abspath(f"./backend/lua/Player{i+1}.lua")}',
-                            f'--socket_ip={self.bh["host"]}',
-                            f'--socket_port={self.bh["port"]}',
-                            # f'--chromeless',
-                        ]
-                    )
-                    self.bizhawk_instances.append(process)
-            instance.text = "Bizhawk beenden"
-        elif instance.text == "Bizhawk beenden":
-            popup = BizhawkSavePopup(self.bizhawk_instances, instance, self.bizhawk)
-            popup.open()
+        bizhawk_path = Path(self.bh["path"])
+        if (
+            bizhawk_path.exists()
+            and bizhawk_path.is_file()
+            and self.bh["path"].endswith(".exe")
+        ):
+            instance.disabled = True
+            if instance.text == "Bizhawk starten":
+                if not self.bizhawk.server:
+                    task = asyncio.create_task(self.bizhawk.start(self.munchlax))
+                    self.connectors.add(task)
+                for i in range(self.pl["player_count"]):
+                    if not self.pl[f"remote_{i+1}"]:
+                        process = subprocess.Popen(
+                            [
+                                self.bh["path"],
+                                f'--lua={os.path.abspath(f"./backend/lua/Player{i+1}.lua")}',
+                                f'--socket_ip={self.bh["host"]}',
+                                f'--socket_port={self.bh["port"]}',
+                                # f'--chromeless',
+                            ]
+                        )
+                        self.bizhawk_instances.append(process)
+                instance.text = "Bizhawk beenden"
+            elif instance.text == "Bizhawk beenden":
+                popup = BizhawkSavePopup(self.bizhawk_instances, instance, self.bizhawk)
+                popup.open()
 
         def enable_button(button):
             button.disabled = False
@@ -443,26 +462,20 @@ class MainMenu(Screen):
         Clock.schedule_once(lambda dt: enable_button(instance), 5)
 
     def toggle_server_client(self, instance, button, initializing=False):
-        clear_button = self.ids.get("status_clearing", None)	
         if instance.state == "down":
             button.text = "Server starten"
             button.unbind(on_press=self.connect_client)
             button.bind(on_press=self.launchserver)
             self.ids["arceus_status"].opacity = 1
 
-            if not clear_button:
-                status_clearing = Button(
-                    text="Clients bereinigen", on_press=self.clear_clients
-                )
-                self.ids["status_clearing"] = weakref.proxy(status_clearing)
-                self.ids["buttons_box"].add_widget(status_clearing)
+            self.ids["buttons_box"].add_widget(self.clear_button)
         else:
             button.text = "Client starten"
             button.unbind(on_press=self.launchserver)
             button.bind(on_press=self.connect_client)
             self.ids["arceus_status"].opacity = 0
-            if not initializing and clear_button:
-                self.ids["buttons_box"].remove_widget(self.ids["status_clearing"])
+            if not initializing and self.clear_button in self.ids["buttons_box"].children:
+                self.ids["buttons_box"].remove_widget(self.clear_button)
             if self.rem["start_server"]:
                 asyncio.create_task(self.munchlax.disconnect())
                 asyncio.create_task(self.arceus.stop())
@@ -517,9 +530,13 @@ class MainMenu(Screen):
         self.ids.names_check.state = "down" if self.sp["show_nicknames"] else "normal"
         self.ids.items_check.state = "down" if self.sp["show_items"] else "normal"
         self.ids.badges_check.state = "down" if self.sp["show_badges"] else "normal"
-        self.ids.bizhawk_check.state = "down" if self.bh["save_automatically"] else "normal"
+        self.ids.bizhawk_check.state = (
+            "down" if self.bh["save_automatically"] else "normal"
+        )
         self.ids[self.sp["order"]].state = "down"
-        self.ids["start_server"].state = "down" if self.rem["start_server"] else "normal"
+        self.ids["start_server"].state = (
+            "down" if self.rem["start_server"] else "normal"
+        )
         self.settings.text = f"Einstellungen\n{self.selected_session}"
         self.toggle_server_client(
             self.ids["start_server"],
@@ -535,7 +552,7 @@ class MainMenu(Screen):
         for button in toggle_widgets:
             if button.state == "down":
                 self.sp["order"] = sorts[button.text]
-        
+
         del toggle_widgets
 
         self.sp["animated"] = self.ids.animated_check.state == "down"
@@ -559,6 +576,15 @@ class MainMenu(Screen):
         with open(f"{self.configsave}remote.yml", "w") as file:
             yaml.dump(self.rem, file)
 
+    def update_munchlax_connection_circle(self):
+        client_id = self.munchlax.client_id
+        if client_id in self.ids:
+            circle = self.ids.get(client_id, None)
+            if circle:
+                for widget in circle.children:
+                    if type(widget) == Label:
+                        widget.text = self.pl.get("your_name", "TBD")
+
     def update_munchlax_connections(self):
         ip_to_connect = (
             "127.0.0.1" if self.rem["start_server"] else self.rem["server_ip_adresse"]
@@ -579,4 +605,8 @@ class MainMenu(Screen):
                 asyncio.create_task(self.arceus.stop())
 
     def switch_to_settings(self, instance):
+        settings_menu = self.manager.get_screen("SettingsMenu")
+        name_text_box = settings_menu.scrollview.ids.get("your_name", None)
+        if name_text_box:
+            name_text_box.disabled = self.munchlax.is_connected
         self.manager.current = "SettingsMenu"

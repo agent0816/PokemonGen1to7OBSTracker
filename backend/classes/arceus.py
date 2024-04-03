@@ -12,6 +12,7 @@ class Arceus:
         self.host = host
         self.port = port
         self.munchlaxes = {}
+        self.munchlax_names = {}
         self.munchlax_status = {}
         self.munchlax_heartbeats = {}
         self.heartbeat_counts = {}
@@ -41,8 +42,11 @@ class Arceus:
     
     async def handle_munchlax(self, reader, writer):
 
-        client_id = await self.receive_message(reader)
+        client_id_with_name = tuple((await self.receive_message(reader)).split("_"))
+        client_name = client_id_with_name[0]
+        client_id = client_id_with_name[1]
         self.munchlaxes[client_id] = writer
+        self.munchlax_names[client_id] = client_name
         self.munchlax_status[client_id] = 'connected'
         self.heartbeat_counts[client_id] = 0
         self.logger.info(f"Client {client_id} connected and registered.")
@@ -95,6 +99,7 @@ class Arceus:
                 await writer.wait_closed()
                 self.logger.info(f"Client {client_id} disconnected.")
                 del self.munchlaxes[client_id]
+                del self.munchlax_names[client_id]
                 del self.munchlax_status[client_id]
                 del self.munchlax_heartbeats[client_id]
                 del self.heartbeat_counts[client_id]

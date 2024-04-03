@@ -140,7 +140,7 @@ class SessionOnboardingPopup(Popup):
             current_screen.error_label.text = ""
             self.change_screen(instance)
         else:
-            current_screen.error_label.text = "Bitte eine Angabe machen!"
+            current_screen.error_label.text = "Bitte eine Angabe machen! Es darf kein '_' enthalten sein!"
     
     def validate_inputs(self, current_screen):
         return current_screen.is_valid()
@@ -219,7 +219,7 @@ class SessionOnboardingScreen(ScreenManager):
         screen.add_widget(error_label)
 
         def validation_callback(text_to_validate=name_text_box):
-            if text_to_validate.text:
+            if text_to_validate.text and "_" not in text_to_validate.text:
                 return True
             return False
 
@@ -360,6 +360,9 @@ class SessionList(ScrollView):
 
     def update_session_box(self, init=False):
         children = self.session_box.children
+        for child in children:
+            if child.state == 'down':
+                child.state = 'normal'
         if not init and children:
             self.session_box.clear_widgets()
         
@@ -482,7 +485,7 @@ class SessionMenu(Screen):
         else:
             selected_session = "default"
 
-        if selected_session:
+        if selected_session and Path(self.configsave.text).exists():
             self.main_menu.selected_session = selected_session
 
             self.settings_menu.selected_session = selected_session
@@ -497,48 +500,53 @@ class SessionMenu(Screen):
                 self.configsave.text = self.default_config
                 self.settings_menu.is_session_selected = False
 
-            with open(f"{self.configsave}sprites.yml", 'r') as file:
-                new_sp = yaml.safe_load(file)
-            
-            for key, value in new_sp.items():
-                self.sp[key] = value
-
-            with open(f"{self.configsave}bh_config.yml", 'r') as file:
-                new_bh = yaml.safe_load(file)
-
-            for key, value in new_bh.items():
-                self.bh[key] = value
-
-            with open(f"{self.configsave}obs_config.yml", 'r') as file:
-                new_obs = yaml.safe_load(file)
-
-            for key, value in new_obs.items():
-                self.obs[key] = value
-
-            with open(f"{self.configsave}remote.yml", 'r') as file:
-                new_rem = yaml.safe_load(file)
-
-            for key, value in new_rem.items():
-                self.rem[key] = value
-
-            with open(f"{self.configsave}player.yml", 'r') as file:
-                new_pl = yaml.safe_load(file)
-
-            for key, value in new_pl.items():
-                self.pl[key] = value
+            self.load_session_config()
 
             self.settings_menu.scrollview.ids["your_name"].disabled = False
             self.settings_menu.scrollview.load_config()
             self.settings_menu.scrollview.update_trainer_boxes()
             self.settings_menu.scrollview.update_connections()
+            self.main_menu.update_munchlax_connection_circle()
             self.main_menu.init_config()
+
+    def load_session_config(self, default=False):
+        if default:
+            self.configsave.text = self.default_config
+        with open(f"{self.configsave}sprites.yml", 'r') as file:
+            new_sp = yaml.safe_load(file)
+            
+        for key, value in new_sp.items():
+            self.sp[key] = value
+
+        with open(f"{self.configsave}bh_config.yml", 'r') as file:
+            new_bh = yaml.safe_load(file)
+
+        for key, value in new_bh.items():
+            self.bh[key] = value
+
+        with open(f"{self.configsave}obs_config.yml", 'r') as file:
+            new_obs = yaml.safe_load(file)
+
+        for key, value in new_obs.items():
+            self.obs[key] = value
+
+        with open(f"{self.configsave}remote.yml", 'r') as file:
+            new_rem = yaml.safe_load(file)
+
+        for key, value in new_rem.items():
+            self.rem[key] = value
+
+        with open(f"{self.configsave}player.yml", 'r') as file:
+            new_pl = yaml.safe_load(file)
+
+        for key, value in new_pl.items():
+            self.pl[key] = value
 
     def delete_session(self, instance):
         session_to_delete = self.get_selected_session()
         if session_to_delete:
             popup = DeleteSessionPopup(self, session_to_delete, on_dismiss=lambda instance: self.save_session_list())
             popup.open()
-        self.save_session_list()
 
     def get_selected_session(self):
         toggle_widgets = ToggleButton.get_widgets("sessions")

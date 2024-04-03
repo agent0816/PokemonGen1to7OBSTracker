@@ -701,6 +701,9 @@ class ScrollSettings(ScrollView):
         with open(f"{self.configsave}player.yml", 'w') as file:
             yaml.dump(self.pl, file)
 
+        main_menu = self.settingsscreen.manager.get_screen("MainMenu")
+        main_menu.update_munchlax_connection_circle()
+
         self.update_trainer_boxes()
 
     def update_bizhawk(self):

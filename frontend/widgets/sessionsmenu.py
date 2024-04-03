@@ -1,9 +1,7 @@
-import asyncio
 from pathlib import Path
 import pathvalidate
 import weakref
 import yaml
-from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.floatlayout import FloatLayout
@@ -17,11 +15,6 @@ from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.togglebutton import ToggleButton
-
-# @dataclass
-# class Session():
-#     name: str
-#     settings: dict
 
 class DeleteSessionPopup(Popup):
     def __init__(self, session_menu, session_name, **kwargs):
@@ -48,6 +41,18 @@ class DeleteSessionPopup(Popup):
     def on_yes(self, instance):
         self.session_menu.session_list_names.remove(self.session_name)
         self.session_menu.session_list_box.update_session_box()
+
+        directory_to_delete = self.session_menu.configsave.text.replace("default", self.session_name).replace(" ", "_")
+
+        path_to_delete = Path(directory_to_delete)
+
+        if path_to_delete.exists():
+            for entry in path_to_delete.iterdir():
+                if entry.is_file():
+                    entry.unlink()
+
+            path_to_delete.rmdir()
+
         self.dismiss()
 
 class CreateSessionPopup(Popup):
@@ -424,6 +429,7 @@ class SessionMenu(Screen):
 
     def go_to_default_settings(self, instance):
         self.select_session(instance, default=True)
+        self.settings_menu.scrollview.ids["your_name"].disabled = True
         self.manager.current = "SettingsMenu"
 
     def create_session_button(self, instance):
@@ -521,6 +527,7 @@ class SessionMenu(Screen):
             for key, value in new_pl.items():
                 self.pl[key] = value
 
+            self.settings_menu.scrollview.ids["your_name"].disabled = False
             self.settings_menu.scrollview.load_config()
             self.settings_menu.scrollview.update_trainer_boxes()
             self.settings_menu.scrollview.update_connections()
@@ -529,7 +536,7 @@ class SessionMenu(Screen):
     def delete_session(self, instance):
         session_to_delete = self.get_selected_session()
         if session_to_delete:
-            popup = DeleteSessionPopup(self, session_to_delete)
+            popup = DeleteSessionPopup(self, session_to_delete, on_dismiss=lambda instance: self.save_session_list())
             popup.open()
         self.save_session_list()
 
@@ -543,6 +550,6 @@ class SessionMenu(Screen):
         return result
 
     def save_session_list(self):
-        new_config = self.configsave.text.replace("default/", "")
+        new_config = self.default_config.replace("default/", "")
         with open(f"{new_config}/session_list.yml", "w") as file:
             yaml.dump(self.session_list_names, file)

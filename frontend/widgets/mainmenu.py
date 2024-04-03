@@ -369,14 +369,17 @@ class MainMenu(Screen):
                 )
 
     def change_session(self, instance):
-        popup = BizhawkSavePopup(self.bizhawk_instances, instance, self.bizhawk)
+        popup = BizhawkSavePopup(self.bizhawk_instances, instance, self.bizhawk, on_dismiss=lambda popup: self.session_popup(popup))
         if self.bizhawk_instances:
             popup.open()
+        else:
+            self.session_popup(popup)
 
+    def session_popup(self, popup):
         if not popup.canceled:
             self.disconnect_all()
         
-            self.save_changes()
+            self.save_changes(popup)
             selected_session = self.selected_session.replace(" ","_")
             self.configsave.text = self.configsave.text.replace(selected_session, "default")
 
@@ -440,23 +443,25 @@ class MainMenu(Screen):
         Clock.schedule_once(lambda dt: enable_button(instance), 5)
 
     def toggle_server_client(self, instance, button, initializing=False):
+        clear_button = self.ids.get("status_clearing", None)	
         if instance.state == "down":
             button.text = "Server starten"
             button.unbind(on_press=self.connect_client)
             button.bind(on_press=self.launchserver)
             self.ids["arceus_status"].opacity = 1
 
-            status_clearing = Button(
-                text="Clients bereinigen", on_press=self.clear_clients
-            )
-            self.ids["status_clearing"] = weakref.proxy(status_clearing)
-            self.ids["buttons_box"].add_widget(status_clearing)
+            if not clear_button:
+                status_clearing = Button(
+                    text="Clients bereinigen", on_press=self.clear_clients
+                )
+                self.ids["status_clearing"] = weakref.proxy(status_clearing)
+                self.ids["buttons_box"].add_widget(status_clearing)
         else:
             button.text = "Client starten"
             button.unbind(on_press=self.launchserver)
             button.bind(on_press=self.connect_client)
             self.ids["arceus_status"].opacity = 0
-            if not initializing:
+            if not initializing and clear_button:
                 self.ids["buttons_box"].remove_widget(self.ids["status_clearing"])
             if self.rem["start_server"]:
                 asyncio.create_task(self.munchlax.disconnect())

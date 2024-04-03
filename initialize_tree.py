@@ -126,7 +126,7 @@ def update_session(sessionpath, default=False):
         "remote_2":False,
         "remote_3":False,
         "remote_4":False,
-        "session_game": 0,
+        "session_game": '',
         "your_name": "",
     }
     if not player.exists():

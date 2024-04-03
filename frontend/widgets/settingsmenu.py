@@ -280,6 +280,27 @@ class ScrollSettings(ScrollView):
         ueberschrift_player = Label(text="Spieler", size_hint=(1, None), size=(0,"20dp"), font_size="20sp")
         player_box.add_widget(ueberschrift_player)
 
+        UI.create_label_and_Textbox(player_box, self.ids, 
+                            label_text='Anzeigename', 
+                            text_box_id='your_name',text_validate_function=self.save_changes)
+
+        session_game_box = BoxLayout(orientation='horizontal', size=(0, "30dp"), spacing="20dp")
+        session_game_box.bind(minimum_height=session_game_box.setter('height')) # type: ignore
+
+        player_box.add_widget(session_game_box)
+
+        session_game_grid=GridLayout(cols=2,size_hint_y=None, spacing="20dp")
+        session_game_grid.bind(minimum_height=session_game_grid.setter('height'))
+
+        session_game_label = Label(text="Spiel der Session", size_hint=(.2,None), size=(0,"30dp"))
+        session_game_grid.add_widget(session_game_label)
+
+        session_game = Label(text="", size_hint=(.8,None), size=(0,"30dp"))
+        self.ids["session_game"] = weakref.proxy(session_game)
+        session_game_grid.add_widget(session_game)
+
+        player_box.add_widget(session_game_grid)
+
         player_count_box = BoxLayout(orientation='horizontal', size=(0, "30dp"), spacing="20dp")
         player_count_box.bind(minimum_height=player_count_box.setter('height')) # type: ignore
 
@@ -549,6 +570,8 @@ class ScrollSettings(ScrollView):
         self.ids["port_client"].text = self.rem[f'client_port']
         self.ids['port_server'].text = self.rem[f'server_port']
 
+        self.ids["your_name"].text = self.pl.get('your_name', '')
+        self.ids["session_game"].text = self.pl.get('session_game', '')
         self.ids[f"player_count_{self.pl['player_count']}"].state = "down"
 
     def load_game_sprites_config(self):
@@ -667,6 +690,8 @@ class ScrollSettings(ScrollView):
 
         with open(f"{self.configsave}remote.yml", 'w') as file:
             yaml.dump(self.rem, file)
+
+        self.pl["your_name"] = self.ids["your_name"].text
 
         if self.ids["player_settings_ausklappen"].state == 'down':
             for i in range(1, self.pl['player_count'] + 1):

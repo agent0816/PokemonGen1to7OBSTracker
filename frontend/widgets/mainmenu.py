@@ -146,7 +146,7 @@ class MainMenu(Screen):
 
         connections = BoxLayout(orientation="horizontal")
 
-        buttons_box = BoxLayout(orientation="vertical")
+        buttons_box = BoxLayout(orientation="vertical", size_hint= (0.4,1))
         self.ids["buttons_box"] = weakref.proxy(buttons_box)
 
         server_client_button = Button(text="Server/Client", on_press=self.launchserver)
@@ -346,16 +346,19 @@ class MainMenu(Screen):
     def change_munchlax_status(self, box):
         if self.rem["start_server"]:
             for client_id in self.arceus.munchlax_status:
+                name = self.arceus.munchlax_names[client_id]
                 if client_id not in self.ids:
                     UI.create_connection_status_with_labels(
                         box,
                         ValueConnectionStatusCircle,
-                        self.arceus.munchlax_names[client_id],
+                        name,
                         client_id,
                         self.arceus.munchlax_status,
                         ids=self.ids,
                         id=client_id,
                     )
+                else:
+                    self.update_Munchlax_Connection_Label(client_id, name)
         else:
             if (
                 self.munchlax.is_connected
@@ -578,12 +581,16 @@ class MainMenu(Screen):
 
     def update_munchlax_connection_circle(self):
         client_id = self.munchlax.client_id
+        name = self.pl.get("your_name", "TBD")
+        self.update_Munchlax_Connection_Label(client_id, name)
+
+    def update_Munchlax_Connection_Label(self, client_id, name):
         if client_id in self.ids:
             circle = self.ids.get(client_id, None)
             if circle:
                 for widget in circle.children:
                     if type(widget) == Label:
-                        widget.text = self.pl.get("your_name", "TBD")
+                        widget.text = name
 
     def update_munchlax_connections(self):
         ip_to_connect = (

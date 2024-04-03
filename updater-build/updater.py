@@ -40,7 +40,8 @@ def _win_overwrite_ps(extracted_files, source_path, app_destination):
 
     log.info(powershell_script)
 
-    powershell_script = f"Remove-Item -Path {os.path.join(source_path, 'backend')} -Recurse -Force\n"
+    powershell_script = f"(New-Object -ComObject Wscript.shell).Popup('Der Tracker wurder erfolgreich geupdatet. Der Tracker kann nun neu gestartet werden.',0,'Updateprozess PokemonOBSTracker',0+64)\n"
+    powershell_script += f"Remove-Item -Path {os.path.join(source_path, 'backend')} -Recurse -Force\n"
     powershell_script += f"Unregister-ScheduledTask -TaskName 'UpdatePokemonOBSTracker' -Confirm:$false\n"
     powershell_script += f"Remove-Item -Path {temp_script_path} -Force"
 
@@ -52,16 +53,22 @@ def _win_overwrite_ps(extracted_files, source_path, app_destination):
     print(temp_script_path)
 
     # Erstellen Sie den Befehl, um das PowerShell-Skript mit Admin-Rechten auszuführen
+#     command = f'''
+# $Action = New-ScheduledTaskAction -Execute 'Powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File {temp_script_path}"
+# $Trigger = New-ScheduledTaskTrigger -At (Get-Date).AddSeconds(5) -Once
+# Register-ScheduledTask -Action $Action -Trigger $Trigger -TaskName "UpdatePokemonOBSTracker" -User "NT AUTHORITY\\SYSTEM" -RunLevel Highest
+#             '''
+    
     command = f'''
 $Action = New-ScheduledTaskAction -Execute 'Powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File {temp_script_path}"
 $Trigger = New-ScheduledTaskTrigger -At (Get-Date).AddSeconds(5) -Once
-Register-ScheduledTask -Action $Action -Trigger $Trigger -TaskName "UpdatePokemonOBSTracker" -User "NT AUTHORITY\\SYSTEM" -RunLevel Highest
+Register-ScheduledTask -Action $Action -Trigger $Trigger -TaskName "UpdatePokemonOBSTracker" -User $env:USERNAME -RunLevel Highest
             '''
     
     # command = f"Start-Process -Verb RunAs -Wait -FilePath PowerShell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command {powershell_script}'"
     log.info(command)
     # Führen Sie den Befehl aus
-    process = subprocess.Popen(["powershell", "-Command", command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
+    process = subprocess.Popen(["powershell", "-Command", command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW) # creationflags=subprocess.CREATE_NEW_CONSOLE) , creationflags=subprocess.CREATE_NO_WINDOW)
     stdout, stderr = process.communicate()
 
     log.info("out: ", stdout.decode('windows-1252'))

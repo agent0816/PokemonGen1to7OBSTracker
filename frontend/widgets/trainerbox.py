@@ -86,6 +86,36 @@ class TrainerBox(BoxLayout):
             52: "unova",
             53: "unova2",
             54: "unova2",
+            61: "kalos",
+            62: "kalos",
+            63: "hoenn",
+            64: "hoenn",
+        }
+        self.edition_lut = {
+            "Rot" : 11,
+            "Blau": 12,
+            "Gelb": 13,
+            "Gold": 21,
+            "Silber": 22,
+            "Kristall": 23,
+            "Rubin": 31,
+            "Saphir": 32,
+            "Smaragd": 33,
+            "Feuerrot": 34,
+            "Blattgrün": 35,
+            "Diamant": 41,
+            "Perl": 42,
+            "Platin": 43,
+            "Herzgold": 44,
+            "Seelensilber": 45,
+            "Schwarz": 51,
+            "Weiß": 52,
+            "Schwarz 2": 53,
+            "Weiß 2": 54,
+            "X": 61,
+            "Y": 62,
+            "Omega Rubin": 63,
+            "Alpha Saphir": 64
         }
         screen.ids[f"trainer_box_{player_id}"] = weakref.proxy(self)
 
@@ -125,8 +155,11 @@ class TrainerBox(BoxLayout):
         first_half = BoxLayout(orientation='horizontal')
         second_half = BoxLayout(orientation='horizontal')
 
+        edition = self.edition_lut.get(self.munchlax.pl.get("session_game"), 11)
+        region = self.badge_lut.get(edition)
+
         for badge in range(1,9):
-            badge_image = Image(source=f"{self.obs_websocket.conf['badges_path']}/kanto{badge}empty.png", fit_mode='contain')
+            badge_image = Image(source=f"{self.obs_websocket.conf['badges_path']}/{region}{badge}empty.png", fit_mode='contain')
             self.badges[badge] = badge_image
             if badge < 5:
                 first_half.add_widget(badge_image)

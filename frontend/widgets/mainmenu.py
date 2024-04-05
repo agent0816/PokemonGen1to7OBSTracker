@@ -121,9 +121,10 @@ class MainMenu(Screen):
 
         frame.add_widget(click_frame)
 
-        pokemon_frame = self.create_pokemon_frame()
+        self.pokemon_frame = ScrollView(do_scroll_y=False, do_scroll_x=True)
+        self.create_pokemon_frame()
 
-        frame.add_widget(pokemon_frame)
+        frame.add_widget(self.pokemon_frame)
         self.add_widget(frame)
 
     def create_control_frame(self):
@@ -315,8 +316,6 @@ class MainMenu(Screen):
         return showing_frame
 
     def create_pokemon_frame(self):
-        pokemon_frame = ScrollView(do_scroll_y=False, do_scroll_x=True)
-
         box = BoxLayout(
             orientation="horizontal",
             size_hint_x=None,
@@ -340,8 +339,7 @@ class MainMenu(Screen):
             )
             box.add_widget(trainer)
 
-        pokemon_frame.add_widget(box)
-        return pokemon_frame
+        self.pokemon_frame.add_widget(box)
 
     def change_munchlax_status(self, box):
         if self.rem["start_server"]:

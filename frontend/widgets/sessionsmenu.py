@@ -294,11 +294,11 @@ class GameSelectionScreen(ScreenManager):
         self.transition = CardTransition()
         self.games={
             'Gen 1':[('Rot', 'Rot'), ('Blau', 'Blau'),('Gelb', 'Gelb')],
-            'Gen 2':[('Silber', 'Silber'),('Gold', 'Gold'),('Kristall', 'Kristall')],
+            'Gen 2':[('Gold', 'Gold'),('Silber', 'Silber'),('Kristall', 'Kristall')],
             'Gen 3':[('Rubin', 'Rubin'), ('Saphir', 'Saphir'),('Smaragd', 'Smaragd'),('Feuerrot', 'Feuerrot'), ('Blattgrün', 'Blattgruen')]
             ,'Gen 4':[('Diamant', 'Diamant'), ('Perl', 'Perl'),('Platin', 'Platin'),('Herzgold', 'Herzgold'), ('Seelensilber', 'Seelensilber')],
             'Gen 5':[('Schwarz', 'Schwarz'),('Weiß', 'Weiss'),('Schwarz 2', 'Schwarz2'), ('Weiß 2', 'Weiss2')],
-            'Gen 6':[('X', 'X'),('Y', 'Y'),('Alpha Saphir', 'Alpha_Saphir'), ('Omega Rubin', 'Omega_Rubin')],
+            'Gen 6':[('X', 'X'),('Y', 'Y'), ('Omega Rubin', 'Omega_Rubin'),('Alpha Saphir', 'Alpha_Saphir')],
             'Gen 7':[('Sonne', 'Sonne') ,('Mond', 'Mond'), ('Ultra Sonne', 'Ultrasonne'), ('Ultra Mond', 'Ultramond')]
         }
         for gen, gameslist in self.games.items():
@@ -361,7 +361,7 @@ class SessionList(ScrollView):
     def update_session_box(self, init=False):
         children = self.session_box.children
         for child in children:
-            if child.state == 'down':
+            if type(child) != Label and child.state == 'down':
                 child.state = 'normal'
         if not init and children:
             self.session_box.clear_widgets()
@@ -495,19 +495,22 @@ class SessionMenu(Screen):
             if not default:
                 self.configsave.text = self.configsave.text.replace("default", selected_session)
                 self.settings_menu.is_session_selected = True
-                self.manager.current = "MainMenu"
             else:
                 self.configsave.text = self.default_config
                 self.settings_menu.is_session_selected = False
 
             self.load_session_config()
 
-            self.settings_menu.scrollview.ids["your_name"].disabled = False
             self.settings_menu.scrollview.load_config()
-            self.settings_menu.scrollview.update_trainer_boxes()
-            self.settings_menu.scrollview.update_connections()
-            self.main_menu.update_munchlax_connection_circle()
-            self.main_menu.init_config()
+            if not default:
+                self.settings_menu.scrollview.ids["your_name"].disabled = False
+                self.settings_menu.scrollview.update_connections()
+                self.settings_menu.scrollview.update_trainer_boxes()
+                self.main_menu.pokemon_frame.clear_widgets()
+                self.main_menu.create_pokemon_frame()
+                self.main_menu.update_munchlax_connection_circle()
+                self.main_menu.init_config()
+                self.manager.current = "MainMenu"
 
     def load_session_config(self, default=False):
         if default:

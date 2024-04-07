@@ -157,8 +157,8 @@ class MainMenu(Screen):
         obs_connect = Button(text="OBS verbinden", on_press=self.toggle_obs)
         buttons_box.add_widget(obs_connect)
 
-        emulator = Button(text="Bizhawk starten", on_press=self.launchbh)
-        buttons_box.add_widget(emulator)
+        self.emulator = Button(text="Bizhawk starten", on_press=self.launchbh)
+        buttons_box.add_widget(self.emulator)
 
         connections.add_widget(buttons_box)
 
@@ -435,8 +435,8 @@ class MainMenu(Screen):
             and bizhawk_path.is_file()
             and self.bh["path"].endswith(".exe")
         ):
-            instance.disabled = True
-            if instance.text == "Bizhawk starten":
+            self.emulator.disabled = True
+            if self.emulator.text == "Bizhawk starten":
                 if not self.bizhawk.server:
                     task = asyncio.create_task(self.bizhawk.start(self.munchlax))
                     self.connectors.add(task)
@@ -452,15 +452,15 @@ class MainMenu(Screen):
                             ]
                         )
                         self.bizhawk_instances.append(process)
-                instance.text = "Bizhawk beenden"
-            elif instance.text == "Bizhawk beenden":
-                popup = BizhawkSavePopup(self.bizhawk_instances, instance, self.bizhawk)
+                self.emulator.text = "Bizhawk beenden"
+            elif self.emulator.text == "Bizhawk beenden":
+                popup = BizhawkSavePopup(self.bizhawk_instances, self.emulator, self.bizhawk)
                 popup.open()
 
         def enable_button(button):
             button.disabled = False
 
-        Clock.schedule_once(lambda dt: enable_button(instance), 5)
+        Clock.schedule_once(lambda dt: enable_button(self.emulator), 5)
 
     def toggle_server_client(self, instance, button, initializing=False):
         if instance.state == "down":
@@ -469,7 +469,8 @@ class MainMenu(Screen):
             button.bind(on_press=self.launchserver)
             self.ids["arceus_status"].opacity = 1
 
-            self.ids["buttons_box"].add_widget(self.clear_button)
+            if self.clear_button not in self.ids["buttons_box"].children:
+                self.ids["buttons_box"].add_widget(self.clear_button)
         else:
             button.text = "Client starten"
             button.unbind(on_press=self.launchserver)

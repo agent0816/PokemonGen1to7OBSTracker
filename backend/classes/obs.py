@@ -71,6 +71,9 @@ class OBS():
         if not self.ws or not self.ws.is_identified():
             self.is_connected = False
             return
+        if not slots:
+            return
+        self.logger.info(f"changeSource ausgeführt: Spieler {player} mit Slots {slots}")
         batch = []
         for slot in slots:
             sprite = self.get_sprite(team[slot], self.conf['animated'], edition, two_pc=self.conf['obs_2_pc'])
@@ -144,7 +147,7 @@ class OBS():
             self.is_connected = False
             return
         badge_path = self.conf['badges_path'] if not self.conf['obs_2_pc'] else self.conf['badges_obs_path']
-        
+        self.logger.info(f"change_badges ausgeführt: Spieler {player}")
         batch = []
         for i in range(16):
             if (self.munchlax.badges[player] & 2**i):

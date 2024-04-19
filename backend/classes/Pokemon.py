@@ -22,6 +22,17 @@ class Pokemon:
     def __repr__(self):
         return f'<{self.dexnr}, {self.nickname}, lvl={self.lvl}, item={self.item}, hp={self.cur_hp}/{self.max_hp}>'
 
+    def obs_property_changed(self, other, sp):
+        if sp["show_items"] and self.item != other.item:
+            return False
+        if sp["show_nicknames"] and self.nickname != other.nickname:
+            return False
+        if self.dexnr != other.dexnr:
+            return False
+        if self.shiny != other.shiny:
+            return False
+        return True
+
     def __eq__(self, other) -> bool:
         if self.dexnr != other.dexnr:
             return False

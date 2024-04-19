@@ -57,33 +57,33 @@ class Munchlax:
                 self.unsorted_teams = pickle.loads(msg)
                 self.logger.info(self.unsorted_teams)
                 new_teams = self.unsorted_teams.copy()
+                self.logger.info(f"{new_teams=}")
                 for player in new_teams:
                     team = new_teams[player]
                     new_teams[player] = self.sort(team[:6], self.sp['order'])
+                    if player not in self.editions or self.unsorted_teams[player][7] != self.editions[player]:
+                        self.editions[player] = self.unsorted_teams[player][7]
                     if player not in self.badges or self.unsorted_teams[player][6] != self.badges[player]:
                         self.badges[player] = self.unsorted_teams[player][6]
                         self.logger.info(f"{self.badges[player]=}")
-                    if player not in self.editions or self.unsorted_teams[player][7] != self.editions[player]:
-                        self.editions[player] = self.unsorted_teams[player][7]
-                    if self.obs and self.obs.is_connected:
-                        await self.obs.change_badges(player) #type: ignore
+                        if self.obs and self.obs.is_connected:
+                            await self.obs.change_badges(player)
                 if new_teams != self.sorted_teams:
                     for player in new_teams:
                         if player not in self.sorted_teams:
-                            if self.obs and  self.obs.is_connected: 
-                                await self.obs.changeSource(player, range(6), new_teams[player], self.editions[player]) #type: ignore
+                            if self.obs and self.obs.is_connected: 
+                                await self.obs.changeSource(player, range(6), new_teams[player], self.editions[player]) 
                             continue
-
+                        
                         diff = []
                         team = new_teams[player]
                         old_team = self.sorted_teams[player]
                         for i in range(6):
-                            if team[i] != old_team[i]:
+                            if not team[i].obs_property_changed(old_team[i], self.sp):
                                 self.logger.debug(f"{i=},{team[i]=}")
                                 diff.append(i)
                         if self.obs and self.obs.is_connected:
-                            await self.obs.changeSource(player, diff, team, self.editions[player]) #type: ignore
-                            await self.obs.change_badges(player) #type: ignore
+                            await self.obs.changeSource(player, diff, team, self.editions[player]) 
                     self.sorted_teams = new_teams.copy()
             except UnicodeEncodeError as err:
                 self.logger.error(f"Unicode error:{type(err)},{err}")

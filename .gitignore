@@ -3,6 +3,7 @@ backend/config/
 backend/updater
 logs/
 testserver.py
+testmain.py
 tmp/
 dist/
 build/
@@ -15,4 +16,3 @@ client_config.py
 keypack.pyu
 compile.ps1
 *.exe
-testmain.py

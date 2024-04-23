@@ -3,6 +3,7 @@ backend/config/
 backend/updater
 logs/
 testserver.py
+testmain.py
 tmp/
 dist/
 build/

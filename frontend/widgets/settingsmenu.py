@@ -410,7 +410,7 @@ class ScrollSettings(ScrollView):
 
     def obs_2_pcs_setup(self, instance, initializing=False):
         float_box = self.ids["obs_sprites_box"]
-        if instance.state == 'down' or (self.sp['obs_2_pc'] and initializing):
+        if (instance.state == 'down') or (self.sp['obs_2_pc'] and initializing):
 
             UI.create_text_and_browse_button(float_box,self.ids,
                                     box_id_name='common_obs_path_box', 
@@ -491,7 +491,9 @@ class ScrollSettings(ScrollView):
                                             label_id_name=idRemoteLabel, label_text="remote")
 
             UI.create_label_and_checkboxes(box, self.ids, 
-                                            checkbox_id_name=idOBS,checkbox_on_press=self.toggle_obs, checkbox_active=self.pl[f"obs_{i}"], checkbox_disabled=not self.pl[f"remote_{i}"],
+                                            checkbox_id_name=idOBS,
+                                            # checkbox_on_press=self.toggle_obs,
+                                            checkbox_active=self.pl[f"obs_{i}"], checkbox_disabled=not self.pl[f"remote_{i}"],
                                             label_id_name=idOBSLabel, label_text="OBS", label_size=["40dp", "20dp"])
             self.ids[idRemote].ids[idOBS] = self.ids[idOBS]
             self.ids[idRemoteLabel].ids[idOBSLabel] = self.ids[idOBSLabel]
@@ -515,7 +517,20 @@ class ScrollSettings(ScrollView):
             if 'state' in dir(ObsCheckBox):
                 ObsCheckBox.state = 'normal'
         self.save_changes()
-    
+
+    def hide_extras(self):
+        buttons = [self.ids["player_settings_ausklappen"], self.ids["games_ausklappen"], self.ids["obs_games_ausklappen"]]
+        check_button = self.ids["obs_sprites_check"]
+        if (check_button.state == 'down' and not self.ids["obs_sprites_box"].children) or (check_button.state != 'down' and self.ids["obs_sprites_box"].children):
+            self.obs_2_pcs_setup(check_button)
+        for button in buttons:
+            was_disabled = button.disabled
+            if button.state == 'down':
+                button.disabled = False
+                button.trigger_action(0)
+                button.state = 'normal'
+                button.disabled = was_disabled 
+
     def clipboard(self, instance, *args):
         result = (instance.text).split(']')[1].split('[')[0]
         Clipboard.copy(result)

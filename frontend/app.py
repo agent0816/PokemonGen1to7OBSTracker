@@ -19,6 +19,7 @@ from kivy.uix.screenmanager import FadeTransition
 from kivy.uix.screenmanager import ScreenManager
 from backend.classes.arceus import Arceus
 from backend.classes.bizhawk import Bizhawk
+from backend.classes.citrahandler import CitraHandler
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
 
@@ -43,6 +44,7 @@ class Screens(ScreenManager):
         self,
         arceus,
         bizhawk,
+        citra,
         bizhawk_instances,
         munchlax,
         obs_websocket,
@@ -64,6 +66,7 @@ class Screens(ScreenManager):
         main_menu = MainMenu(
             arceus,
             bizhawk,
+            citra,
             bizhawk_instances,
             munchlax,
             obs_websocket,
@@ -148,6 +151,8 @@ class TrackerApp(App):
         self.bizhawk = Bizhawk(self.bh["host"], self.bh["port"], self.bh)
         self.bizhawk_instances = []
 
+        self.citra = CitraHandler()
+
         ip_to_connect = (
             "127.0.0.1" if self.rem["start_server"] else self.rem["server_ip_adresse"]
         )
@@ -169,6 +174,7 @@ class TrackerApp(App):
         arguments = [
             self.arceus,
             self.bizhawk,
+            self.citra,
             self.bizhawk_instances,
             self.munchlax,
             self.obs_websocket,

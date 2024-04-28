@@ -502,6 +502,7 @@ class SessionMenu(Screen):
             self.load_session_config()
 
             self.settings_menu.scrollview.load_config()
+            self.settings_menu.scrollview.hide_extras()
             if not default:
                 self.settings_menu.scrollview.ids["your_name"].disabled = False
                 self.settings_menu.scrollview.update_connections()

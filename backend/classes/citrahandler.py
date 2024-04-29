@@ -11,6 +11,7 @@ class CitraHandler:
     def __init__(self):
         self.citra_instance = Citra()
         self.is_connected = False
+        self.player_number = None
 
         pointer_xy = yaml.safe_load("backen/data/pointer_xy.yml")
         pointer_oras = yaml.safe_load("backen/data/pointer_oras.yml")
@@ -65,24 +66,43 @@ class CitraHandler:
 
     async def handle_citra(self):
         while self.started and self.is_connected:
-            
-            await asyncio.sleep(1)
+            try:
+                await asyncio.sleep(1)
+            except ConnectionResetError:
+                self.is_connected = False
+            except Exception:
+                pass
 
         self.logger.info("Citra getrennt.")
+        if self.started:
+            self.start_button.trigger_action(0)
+
+        self.player_number = None
 
     async def start(self, munchlax, button):
         self.munchlax: Munchlax = munchlax
-        self.started = True
         self.logger.info("Citra verbunden.")
+        self.started = True
 
-        self.get_pointer()
-        
+        self.start_button = button
+
+        self.set_pointer()
+        self.set_player_number()
+        if not self.player_number:
+            self.is_connected = False
         asyncio.create_task(self.handle_citra())
 
-    def get_pointer(self):
-        edition = self.edition_lut.get(self.munchlax.pl["session_game"], 0)
+    def set_pointer(self):
+        self.edition = self.edition_lut.get(self.munchlax.pl["session_game"], 0)
 
-        self.pointer = self.pointer_lut[edition]
+        self.pointer = self.pointer_lut[self.edition]
+
+    def set_player_number(self):
+        for i in range(1, self.munchlax.pl['player_count'] + 1):
+            if not self.munchlax.pl[f"remote_{i}"]:
+                self.player_number = i
+        if self.player_number:
+            self.munchlax.editions[self.player_number] = self.edition
 
     async def stop(self):
         self.started = False

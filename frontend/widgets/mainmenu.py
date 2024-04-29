@@ -248,6 +248,7 @@ class MainMenu(Screen):
     def emulator_status_box(self, game):
         if self.emulator_box.children:
             self.emulator_box.clear_widgets()
+            self.emulator_box.add_widget(Label(text="Emulator Status"))
         
         emulator_status_box = BoxLayout(orientation="horizontal")
 
@@ -256,19 +257,15 @@ class MainMenu(Screen):
                 emulator_status_box, ObjectConnectionStatusCircle, "Citra", self.citra
             )
 
-            emulator_status_check = self.change_citra_status
-
         else:
 
             UI.create_connection_status_with_labels(
                 emulator_status_box, ObjectConnectionStatusCircle, "Server", self.bizhawk
             )
 
-            emulator_status_check = self.change_bizhawk_status
-
-        Clock.schedule_interval(
-            lambda instance: emulator_status_check(emulator_status_box), 1
-        )
+            Clock.schedule_interval(
+                lambda instance: self.change_bizhawk_status(emulator_status_box), 1
+            )
 
         self.emulator_box.add_widget(emulator_status_box)
 
@@ -383,10 +380,14 @@ class MainMenu(Screen):
                 self.ids["server_client_button"].text = "Client beenden"
 
     def change_emulator_button(self):
-        if self.pl["session_game"] in ['X','Y','Omega Rubin','Alpha Saphir','Sonne', 'Mond','Ultra Sonne', 'Ultra Mond']:
+        if self.pl["session_game"] in ['X','Y','Omega Rubin','Alpha Saphir','Sonne', 'Mond','Ultra Sonne', 'Ultra Mond'] and self.emulator.text.startswith("Bizhawk"):
             self.emulator.unbind(on_press=self.launchbh)
             self.emulator.text = "Citra verbinden"
             self.emulator.bind(on_press=self.connect_citra)
+        elif self.emulator.text == "Citra verbinden":
+            self.emulator.unbind(on_press=self.connect_citra)
+            self.emulator.text = "Bizhawk starten"
+            self.emulator.bind(on_press=self.launchbh)
 
     def change_citra_status(self, box):
         self.citra.check_connection()
@@ -493,12 +494,22 @@ class MainMenu(Screen):
         self.citra.check_connection()
         if instance.text == "Citra verbinden" and self.citra.is_connected:
             instance.text = "Citra trennen"
-            task = asyncio.create_task(self.citra.start(self.munchlax))
+            task = asyncio.create_task(self.citra.start(self.munchlax, instance))
             self.connectors.add(task)
         else:
             instance.text = "Citra verbinden"
-            if self.citra.is_connected:
-                asyncio.create_task(self.citra.stop())
+            if not self.citra.player_number:
+                self.citra.is_connected = False
+                box = BoxLayout(orientation='vertical')
+                box.add_widget(Label(text="Es wurde kein Spieler ausgewählt."))
+                btn = Button(text='OK',size_hint=(.5,.4),pos_hint={'center_x':.5})
+                box.add_widget(btn)
+
+                popup = Popup(title='Spieler auswählen', content=box, size_hint=(None, None), size=(400, 150))
+
+                btn.bind(on_release=popup.dismiss, on_press=self.switch_to_settings)
+                popup.open()
+            asyncio.create_task(self.citra.stop())
 
     def toggle_server_client(self, instance, button, initializing=False):
         if instance.state == "down":
@@ -584,6 +595,7 @@ class MainMenu(Screen):
         )
         self.settings.text = f"Einstellungen\n{self.selected_session}"
         self.change_emulator_button()
+        self.emulator_status_box(self.pl["session_game"])
         self.toggle_server_client(
             self.ids["start_server"],
             self.ids["server_client_button"],

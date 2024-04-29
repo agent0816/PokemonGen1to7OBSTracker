@@ -486,7 +486,7 @@ class ScrollSettings(ScrollView):
             idOBSLabel = f"obs_label_{i}"
 
             UI.create_label_and_checkboxes(box, self.ids, 
-                                            checkbox_id_name=idRemote,checkbox_on_press=self.toggle_obs, checkbox_active=self.pl[f"remote_{i}"],
+                                            checkbox_id_name=idRemote,checkbox_on_press=self.check_player_for_citra, checkbox_active=self.pl[f"remote_{i}"],
                                             checkbox_pos_hint={'center_x':.5, 'center_y':.5},
                                             label_id_name=idRemoteLabel, label_text="remote")
 
@@ -518,6 +518,15 @@ class ScrollSettings(ScrollView):
                 ObsCheckBox.state = 'normal'
         self.save_changes()
 
+    def check_player_for_citra(self, widget):
+        if self.munchlax.pl["session_game"] in ['X','Y','Omega Rubin','Alpha Saphir','Sonne', 'Mond','Ultra Sonne', 'Ultra Mond']:
+            for i in range(1, self.pl['player_count'] + 1):
+                remote_button = self.ids[f"remote_player_{i}"]
+                if remote_button.state != "down" and remote_button != widget:
+                    remote_button.state = 'down'
+                    self.toggle_obs(remote_button)
+        self.toggle_obs(widget)
+
     def hide_extras(self):
         buttons = [self.ids["player_settings_ausklappen"], self.ids["games_ausklappen"], self.ids["obs_games_ausklappen"]]
         check_button = self.ids["obs_sprites_check"]
@@ -541,8 +550,7 @@ class ScrollSettings(ScrollView):
 
         popup = Popup(title='Kopiervorgang erfolgreich', content=box, size_hint=(None, None), size=(400, 150))
 
-        # Bind the on_press event of the button to the dismiss function of the popup
-        btn.bind(on_press=popup.dismiss) # type: ignore
+        btn.bind(on_press=popup.dismiss)
         popup.open()
 
     def browse(self, widget, modus):

@@ -1,11 +1,11 @@
-team_reihenfolge: 0x08ce1c5c
 badges: 0x08c6a6a0
+battle_kind: 0x08203e9c
 box_beginning: 0x08c861b8
+kampf_trainer: 0x082059e0
+kampf_wild: 0x08203ed0
+team_reihenfolge: 0x08ce1c5c
 trainer_id: 0x08c79c2c
 trainer_name: 0x08c79c73
 trainer_name_in_fight: 0x08203e80
-kampf_wild: 0x08203ed0
-kampf_trainer: 0x082059e0
-wild_value: 0x0234
 trainer_value: 0x0030
-battle_kind: 0x08203e9c
+wild_value: 0x0234

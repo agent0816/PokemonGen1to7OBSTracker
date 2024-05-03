@@ -12,7 +12,7 @@ SLOT_OFFSET = 484
 SLOT_DATA_SIZE = (8 + (4 * BLOCK_SIZE)) # 232
 STAT_DATA_OFFSET = 112
 STAT_DATA_SIZE = 22
-BATTLE_STAT_OFFSET = 580
+IN_BATTLE_STAT_OFFSET = 580
 
 class CitraHandler:
     def __init__(self):
@@ -99,16 +99,20 @@ class CitraHandler:
         teams[self.player_number] = team
         self.munchlax.unsorted_teams[self.player_number] = team
 
-    def update_stats(self, stats):
-        team = self.munchlax.bizhawk_teams[self.player_number]
-        # TODO: data structure for stats
-        self.munchlax.unsorted_teams[self.player_number] = team
+    def update_stats(self, stats: dict):
+        if stats:
+            team = self.munchlax.bizhawk_teams[self.player_number]
+            for slot, statlist in stats.items():
+                for key, value in statlist.items():
+                    old_value = team[slot].__dict__[key]
+                    old_value = value if old_value != value else old_value
+            self.munchlax.unsorted_teams[self.player_number] = team
 
     def read_team(self):
         result = b''
         # Teamreihenfolge auslesen:
         team_pointer = self.citra_instance.read_memory(self.pointer["team_reihenfolge"], 25)
-        number_of_team_pokemon = int.from_bytes(team_pointer[24:],'little')
+        self.number_of_team_pokemon = int.from_bytes(team_pointer[24:],'little')
         for i in range(6):
             read_address = int.from_bytes(team_pointer[i*4:i*4 + 4], 'little') + 0x40
             pokemon = self.citra_instance.read_memory(read_address, SLOT_DATA_SIZE)
@@ -116,9 +120,27 @@ class CitraHandler:
             result += pokemon + battle_stats
         return result
     
-    def read_stats(self):
-        # TODO: implementing data structure 
-        return {}
+    def read_in_battle_stats(self):
+        result = {}
+        battle_kind = int.from_bytes(self.citra_instance.read_memory(self.pointer["battle_kind"], 2))
+        if battle_kind == self.pointer["trainer_value"]:
+            read_address = self.pointer["kampf_trainer"]
+        elif battle_kind == self.pointer["wild_value"]:
+            read_address = self.pointer["kampf_wild"]
+        else:
+            read_address = None
+
+        if read_address:
+            for index in range(self.number_of_team_pokemon):
+                stats_dict = {}
+                stat_bytes = self.citra_instance.read_memory(read_address + index * IN_BATTLE_STAT_OFFSET, 20)
+                stats_dict['lvl'] = int.from_bytes(stat_bytes[16:17], 'little')
+                stats_dict['cur_hp'] = int.from_bytes(stat_bytes[6:8], 'little')
+                stats_dict['max_hp'] = int.from_bytes(stat_bytes[8:10], 'little')
+                stats_dict['item'] = int.from_bytes(stat_bytes[10:12], 'little')
+                result[index] = stats_dict
+
+        return result
     
     def read_badges(self):
         return self.citra_instance.read_memory(self.pointer["badges"], 1)

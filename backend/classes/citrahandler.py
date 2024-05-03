@@ -7,16 +7,27 @@ from backend.classes.citra import Citra
 from backend.classes.munchlax import Munchlax
 import backend.pokedecoder as pokedecoder
 
+BLOCK_SIZE = 56
+SLOT_OFFSET = 484
+SLOT_DATA_SIZE = (8 + (4 * BLOCK_SIZE)) # 232
+STAT_DATA_OFFSET = 112
+STAT_DATA_SIZE = 22
+BATTLE_STAT_OFFSET = 580
+
 class CitraHandler:
     def __init__(self):
         self.citra_instance = Citra()
         self.is_connected = False
         self.player_number = None
 
-        pointer_xy = yaml.safe_load("backen/data/pointer_xy.yml")
-        pointer_oras = yaml.safe_load("backen/data/pointer_oras.yml")
-        pointer_sm = yaml.safe_load("backen/data/pointer_sm.yml")
-        pointer_usum = yaml.safe_load("backen/data/pointer_usum.yml")
+        with open("backend/data/pointer_xy.yml") as file:
+            pointer_xy = yaml.safe_load(file)
+        with open("backend/data/pointer_oras.yml") as file:
+            pointer_oras = yaml.safe_load(file)
+        with open("backend/data/pointer_sm.yml") as file:
+            pointer_sm = yaml.safe_load(file)
+        with open("backend/data/pointer_usum.yml") as file:
+            pointer_usum = yaml.safe_load(file)
 
         self.edition_lut = {
             "X": 61,
@@ -78,6 +89,39 @@ class CitraHandler:
             self.start_button.trigger_action(0)
 
         self.player_number = None
+
+    def update_teams(self, team):
+        team = pokedecoder.team(team, self.edition)
+        teams = self.munchlax.bizhawk_teams
+        if self.player_number in teams:
+            if teams[self.player_number] == team:
+                return
+        teams[self.player_number] = team
+        self.munchlax.unsorted_teams[self.player_number] = team
+
+    def update_stats(self, stats):
+        team = self.munchlax.bizhawk_teams[self.player_number]
+        # TODO: data structure for stats
+        self.munchlax.unsorted_teams[self.player_number] = team
+
+    def read_team(self):
+        result = b''
+        # Teamreihenfolge auslesen:
+        team_pointer = self.citra_instance.read_memory(self.pointer["team_reihenfolge"], 25)
+        number_of_team_pokemon = int.from_bytes(team_pointer[24:],'little')
+        for i in range(6):
+            read_address = int.from_bytes(team_pointer[i*4:i*4 + 4], 'little') + 0x40
+            pokemon = self.citra_instance.read_memory(read_address, SLOT_DATA_SIZE)
+            battle_stats = self.citra_instance.read_memory(read_address + SLOT_DATA_SIZE + STAT_DATA_OFFSET, STAT_DATA_SIZE)
+            result += pokemon + battle_stats
+        return result
+    
+    def read_stats(self):
+        # TODO: implementing data structure 
+        return {}
+    
+    def read_badges(self):
+        return self.citra_instance.read_memory(self.pointer["badges"], 1)
 
     async def start(self, munchlax, button):
         self.munchlax: Munchlax = munchlax

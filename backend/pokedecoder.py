@@ -155,14 +155,14 @@ def get_form(data, dexnr):
     kyurem = {0x00: '', 0x08: '-white', 0x18: '-black'}
     keldeo = {0x00: '', 0x08: '-resolute'}
     genesect = {0x00: '', 0x08: '-douse', 0x10: '-shock', 0x18: '-burn', 0x20: '-chill'}
-    vivillon = {} # 666
-    flabebe = {} # 669-671
-    furfrou = {} # 676
-    aegislash = {} # 681
-    pumpkaboo = {} # 710 - 711
-    xerneas = {} # 716
-    zygarde = {} # 718
-    hoopa = {} # 720
+    vivillon = {0x00: '', 0x08: '-polar', 0x10: '-tundra', 0x18: '-continental', 0x20: '-garden', 0x28: '-elegant', 0x30: '-meadow', 0x38: '-modern', 0x40: '-marine', 0x48: '-archipelago', 0x50: '-high-plains', 0x58: '-sandstorm', 0x60: '-river', 0x68: '-monsoon', 0x70: '-savanna', 0x78: '-sun', 0x80: '-ocean', 0x88: '-jungle', 0x90: '-fancy', 0x98: '-poke-ball'} # 666
+    flabebe = {0x00: '', 0x08: '-yellow', 0x10: '-orange', 0x18: '-blue', 0x20: '-white'} # 669-671
+    furfrou = {0x00: '', 0x08: '-heart', 0x10: '-star', 0x18: '-diamond', 0x20: '-debutante', 0x28: '-matron', 0x30: '-dandy', 0x38: '-la-reine', 0x40: '-kabuki', 0x48: '-pharaoh', 0x50: '-k'} # 676
+    aegislash = {0x00: '', 0x08: '-blade'} # 681
+    pumpkaboo = {0x00: '', 0x08: '-small', 0x10: '-large', 0x18: '-super'} # 710 - 711
+    xerneas = {0x00: '-neutral', 0x08: '-active'} # 716
+    zygarde = {0x00: ''} # 718
+    hoopa = {0x00: '', 0x08: '-unbound'} # 720
     oricorio = {} # 741
     lycanroc = {} # 745
     wishiwashi = {} # 746
@@ -220,6 +220,7 @@ def get_form(data, dexnr):
     alola = [19,20,26,27,28,37,38,50,51,74,75,76,88,89,103,105]
 
     form = data - data % 8
+    print(f"{form:02x}")
     if dexnr in forms_dict.keys():
         species_form = forms_dict.get(dexnr)
         form = species_form.get(form, 0)
@@ -297,10 +298,10 @@ def pokemon67(data):
     if dexnr in gender_lut:
         female = personality % 256 < gender_lut[dexnr]
     lvl = int(decrypted_battle_stats[4])
-    cur_hp = int.from_bytes(decrypted_battle_stats[6:8], 'little')
-    max_hp = int.from_bytes(decrypted_battle_stats[8:10], 'little')
+    cur_hp = int.from_bytes(decrypted_battle_stats[8:10], 'little')
+    max_hp = int.from_bytes(decrypted_battle_stats[10:12], 'little')
     met_location = int.from_bytes(unshuffled_bytes[0xD2:0xD4], 'little')
-    nickname = unshuffled_bytes[0x38:0x4e].decode('utf-8').split('\u0000\u0000')[0].replace('\u0000', '')
+    nickname = unshuffled_bytes[0x38:0x4e].decode('iso-8859-1').split('\u0000\u0000')[0].replace('\u0000', '')
     form = get_form(unshuffled_bytes[0x15], dexnr)#  % 32
     if dexnr not in range(810):
         dexnr = 0
@@ -309,7 +310,7 @@ def pokemon67(data):
         if dexnr == 490:
             form = '-manaphy'
         else:
-            form = ''
+            form = form = get_form(unshuffled_bytes[0x15], dexnr)
         dexnr = 'egg'
     return Pokemon(dexnr, shiny_value < 9, female, item=item, form=form, lvl=lvl, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp)
 

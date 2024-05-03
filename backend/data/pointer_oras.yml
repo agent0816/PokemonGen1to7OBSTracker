@@ -1,8 +1,11 @@
 badges: 0x08c6ddd4
 battle_kind: 0x082041c8
 box_beginning: 0x08c9a144
+in_battle: False
+in_battle_value: False
 kampf_trainer: 0x08205d0c
 kampf_wild: 0x082041fc
+out_of_battle_value: False
 team_reihenfolge: 0x08cf71f0
 trainer_id: 0x08c7d350
 trainer_name: 0x08c7d3b1

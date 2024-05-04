@@ -491,7 +491,8 @@ class MainMenu(Screen):
         Clock.schedule_once(lambda dt: enable_button(self.emulator), 5)
 
     def connect_citra(self, instance):
-        self.citra.check_connection()
+        if not self.citra.started:
+            self.citra.check_connection()
         if instance.text == "Citra verbinden" and self.citra.is_connected:
             instance.text = "Citra trennen"
             task = asyncio.create_task(self.citra.start(self.munchlax, instance))

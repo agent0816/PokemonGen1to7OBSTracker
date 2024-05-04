@@ -220,7 +220,7 @@ def get_form(data, dexnr):
     alola = [19,20,26,27,28,37,38,50,51,74,75,76,88,89,103,105]
 
     form = data - data % 8
-    print(f"{form:02x}")
+    # print(f"{form:02x}")
     if dexnr in forms_dict.keys():
         species_form = forms_dict.get(dexnr)
         form = species_form.get(form, 0)
@@ -290,6 +290,7 @@ def pokemon45(data, gen):
     return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp) # type: ignore
 
 def pokemon67(data):
+    items = items5
     unshuffled_bytes, decrypted_battle_stats, shiny_value, _ = decryptpokemon(data, '67')
     dexnr = int.from_bytes(unshuffled_bytes[:2], 'little')
     item = int.from_bytes(unshuffled_bytes[2:4], 'little')
@@ -300,6 +301,10 @@ def pokemon67(data):
     lvl = int(decrypted_battle_stats[4])
     cur_hp = int.from_bytes(decrypted_battle_stats[8:10], 'little')
     max_hp = int.from_bytes(decrypted_battle_stats[10:12], 'little')
+    if item in items:
+        item = items[item]
+    else:
+        item = '-'
     met_location = int.from_bytes(unshuffled_bytes[0xD2:0xD4], 'little')
     nickname = unshuffled_bytes[0x38:0x4e].decode('iso-8859-1').split('\u0000\u0000')[0].replace('\u0000', '')
     form = get_form(unshuffled_bytes[0x15], dexnr)#  % 32

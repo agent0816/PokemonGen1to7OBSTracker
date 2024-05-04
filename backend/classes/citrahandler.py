@@ -19,6 +19,7 @@ class CitraHandler:
         self.citra_instance = Citra()
         self.is_connected = False
         self.player_number = None
+        self.started = False
 
         with open("backend/data/pointer_xy.yml") as file:
             pointer_xy = yaml.safe_load(file)
@@ -78,11 +79,21 @@ class CitraHandler:
     async def handle_citra(self):
         while self.started and self.is_connected:
             try:
+                new_data = b''
+                new_data += self.read_team()
+                new_data += self.read_badges()
+
+                update_data = self.read_in_battle_stats()
+
+                self.update_teams(new_data)
+                self.update_stats(update_data)
                 await asyncio.sleep(1)
             except ConnectionResetError:
                 self.is_connected = False
-            except Exception:
-                pass
+            except Exception as err:
+                self.logger.error(f"handle_citra abgebrochen: {type(err)},{err}")
+                self.logger.error(f"{traceback.format_exc()}")
+                self.is_connected = False
 
         self.logger.info("Citra getrennt.")
         if self.started:
@@ -104,8 +115,8 @@ class CitraHandler:
             team = self.munchlax.bizhawk_teams[self.player_number]
             for slot, statlist in stats.items():
                 for key, value in statlist.items():
-                    old_value = team[slot].__dict__[key]
-                    old_value = value if old_value != value else old_value
+                    old_value_dict = team[slot].__dict__
+                    old_value_dict[key] = value if old_value_dict[key] != value else old_value_dict[key]
             self.munchlax.unsorted_teams[self.player_number] = team
 
     def read_team(self):
@@ -172,6 +183,7 @@ class CitraHandler:
 
     async def stop(self):
         self.started = False
+        self.is_connected = False
         
 if __name__ == "__main__":
     pass

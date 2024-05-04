@@ -201,10 +201,11 @@ class TrackerApp(App):
         for bizhawk in self.bizhawk_instances:
             bizhawk.terminate()
         tasks = [
+            asyncio.create_task(self.arceus.stop()),
+            asyncio.create_task(self.citra.stop()),
             asyncio.create_task(self.bizhawk.stop()),
             asyncio.create_task(self.obs_websocket.disconnect()),
             asyncio.create_task(self.munchlax.disconnect()),
-            asyncio.create_task(self.arceus.stop()),
         ]
         asyncio.create_task(asyncio.wait(tasks, timeout=3))
 

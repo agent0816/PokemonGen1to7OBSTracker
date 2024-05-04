@@ -48,14 +48,12 @@ class Munchlax:
         return logger
 
     async def alter_teams(self):
-        reader = self.reader
-
         while True:
             try:
                 # length = int.from_bytes(await reader.read(4), 'big')
                 # msg = await reader.read(length)
                 # self.unsorted_teams = pickle.loads(msg)
-                self.unsorted_teams = await self.receive_message(reader)
+                self.unsorted_teams = await self.receive_message()
                 self.logger.info(self.unsorted_teams)
                 new_teams = self.unsorted_teams.copy()
                 self.logger.info(f"{new_teams=}")
@@ -100,17 +98,6 @@ class Munchlax:
                 break
 
         await self.disconnect()
-
-    async def receive_message(self, reader):
-        total_length = int.from_bytes(await reader.read(4), 'big')
-        message = b''
-
-        while len(message) < total_length:
-            chunk_length = int.from_bytes(await reader.read(4), 'big')
-            chunk = await reader.read(chunk_length)
-            message += chunk
-
-        return pickle.loads(message)
 
     def sort(self, liste, key):
         key = key.lower().replace('.', '')
@@ -224,10 +211,24 @@ class Munchlax:
 
     async def receive_message(self):
         reader = self.reader
-        message_length = int.from_bytes(await reader.read(4), 'big')
-        message = await reader.read(message_length)
+        total_length = int.from_bytes(await reader.read(4), 'big')
+        message = b''
+
+        while len(message) < total_length:
+            chunk_length = int.from_bytes(await reader.read(4), 'big')
+            chunk = await reader.read(chunk_length)
+            message += chunk
 
         return pickle.loads(message)
+
+    # async def receive_message(self):
+    #     reader = self.reader
+    #     message_length = int.from_bytes(await reader.read(4), 'big')
+    #     self.logger.info(f"Munchlax: {message_length=}")
+    #     message = await reader.read(message_length)
+    #     self.logger.info(f"Munchlax: {message=}")
+
+    #     return pickle.loads(message)
     
     def generate_hashed_id(self):
         random_id = os.urandom(16)

@@ -137,10 +137,16 @@ def pokemon3(data, edition):
             break
     return Pokemon(species, not (key % 0x10000 ^ key >> 16) > 8, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp) # type: ignore
 
-def get_form(data, dexnr):   
+def get_form(data, dexnr, gen):   
     mega_charizard_mewtu = {0x00: '', 0x08: '-megax', 0x10: 'megay'}
     mega_dict = {0x00: '', 0x08: '-mega'}
     alola_dict = {0x00: '', 0x08: '-alola'}
+    pikachu_whole = {
+        6: {0x00: '', 0x08: '-rockstar', 0x10: '-belle', 0x18: '-popstar', 0x20: '-phd', 0x28: '-libre', 0x30: '-cosplay'},
+        7: {0x00: '', 0x08: '-kanto-cap', 0x10: '-hoenn-cap', 0x18: '-sinnoh-cap', 0x20: '-unova-cap', 0x28: '-kalos-cap', 0x30: '-alola-cap', 0x38: '-partner-cap'}
+    }
+    pikachu = pikachu_whole.get(gen, {0x00:''})
+    pichu = {0x00: '', 0x08: '-spiky-eared'}
     unown = {0x00: '', 0x08: '-b', 0x10: '-c', 0x18: '-d', 0x20: '-e', 0x28: '-f', 0x30: '-g', 0x38: '-h', 0x40: '-i', 0x48: '-j', 0x50: '-k', 0x58: '-l', 0x60: '-m', 0x68: '-n', 0x70: '-o', 0x78: '-p', 0x80: '-q', 0x88: '-r', 0x90: '-s', 0x98: '-t', 0xA0: '-u', 0xA8: '-v', 0xB0: '-w', 0xB8: '-x', 0xC0: '-y', 0xC8: '-z', 0xD0: '-exclamation', 0xD8: '-question'}
     burmy = {0x00: '-plant', 0x08: '-sandy', 0x10: '-trash'}
     shellos = {0x00: '-west', 0x08: '-east'}
@@ -174,7 +180,9 @@ def get_form(data, dexnr):
 
     forms_dict = {
         6: mega_charizard_mewtu,
+        25: pikachu,
         150: mega_charizard_mewtu,
+        172: pichu,
         201: unown,
         412: burmy,
         413: burmy,
@@ -277,7 +285,7 @@ def pokemon45(data, gen):
                 nickname += char
         nickname = nickname.decode('iso-8859-1', errors='ignore').replace('\u0000','')
 
-    form = get_form(unshuffled_bytes[0x38], dexnr) # % 32
+    form = get_form(unshuffled_bytes[0x38], dexnr, gen) # % 32
     if dexnr not in range(650):
         dexnr = 0
         nickname = ''
@@ -289,7 +297,7 @@ def pokemon45(data, gen):
         dexnr = 'egg'
     return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp) # type: ignore
 
-def pokemon67(data):
+def pokemon67(data, gen):
     items = items5
     unshuffled_bytes, decrypted_battle_stats, shiny_value, _ = decryptpokemon(data, '67')
     dexnr = int.from_bytes(unshuffled_bytes[:2], 'little')
@@ -307,7 +315,7 @@ def pokemon67(data):
         item = '-'
     met_location = int.from_bytes(unshuffled_bytes[0xD2:0xD4], 'little')
     nickname = unshuffled_bytes[0x38:0x4e].decode('iso-8859-1').split('\u0000\u0000')[0].replace('\u0000', '')
-    form = get_form(unshuffled_bytes[0x15], dexnr)#  % 32
+    form = get_form(unshuffled_bytes[0x15], dexnr, gen)#  % 32
     if dexnr not in range(810):
         dexnr = 0
         nickname = ''
@@ -315,7 +323,7 @@ def pokemon67(data):
         if dexnr == 490:
             form = '-manaphy'
         else:
-            form = form = get_form(unshuffled_bytes[0x15], dexnr)
+            form = form = get_form(unshuffled_bytes[0x15], dexnr, gen)
         dexnr = 'egg'
     return Pokemon(dexnr, shiny_value < 9, female, item=item, form=form, lvl=lvl, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp)
 
@@ -350,10 +358,10 @@ def team(data, edition):
             liste.append(pokemon45(data[i * length: (i + 1) * length], 5))
     elif gen == 6:
         for i in range(6):
-            liste.append(pokemon67(data[i * length: (i + 1) * length]))
+            liste.append(pokemon67(data[i * length: (i + 1) * length], gen))
     elif gen == 7:
         for i in range(6):
-            liste.append(pokemon67(data[i * length: (i + 1) * length]))
+            liste.append(pokemon67(data[i * length: (i + 1) * length], gen))
 
     if len(data) % 6 == 1:
         liste.append(data[-1])

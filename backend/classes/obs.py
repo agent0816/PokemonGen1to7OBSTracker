@@ -119,67 +119,74 @@ class OBS():
             await self.ws.call_batch(batch)
 
     async def change_badges(self, player):
-        badge_lut = {
-            11:'kanto',
-            12:'kanto',
-            13:'kanto',
-            21:'johto',
-            22:'johto',
-            23:'johto',
-            31:'hoenn',
-            32:'hoenn',
-            33:'hoenn',
-            34:'kanto',
-            35:'kanto',
-            41:'sinnoh',
-            42:'sinnoh',
-            43:'sinnoh',
-            44:'johto',
-            45:'johto',
-            51:'unova',
-            52:'unova',
-            53:'unova2',
-            54:'unova2',
-            61:'kalos',
-            62:'kalos',
-            63:'hoenn',
-            64:'hoenn',
-        }
-        if not self.conf['show_badges']:
-            return
-        if not self.ws or not self.ws.is_identified():
-            self.is_connected = False
-            return
-        badge_path = self.conf['badges_path'] if not self.conf['obs_2_pc'] else self.conf['badges_obs_path']
-        self.logger.info(f"change_badges ausgeführt: Spieler {player}")
-        batch = []
-        for i in range(16):
-            if (self.munchlax.badges[player] & 2**i):
-                batch.append(
-                    simpleobsws.Request(
-                        "SetInputSettings",
-                        {
-                            "inputName": f"badge{i + 16 * (player - 1) + 1}",
-                            "inputSettings": {
-                                "file": badge_path + '/' + badge_lut[self.munchlax.editions[player]] + str(i + 1) + ".png"
+        if self.munchlax.editions[player] < 70:
+            badge_lut = {
+                11:'kanto',
+                12:'kanto',
+                13:'kanto',
+                21:'johto',
+                22:'johto',
+                23:'johto',
+                31:'hoenn',
+                32:'hoenn',
+                33:'hoenn',
+                34:'kanto',
+                35:'kanto',
+                41:'sinnoh',
+                42:'sinnoh',
+                43:'sinnoh',
+                44:'johto',
+                45:'johto',
+                51:'unova',
+                52:'unova',
+                53:'unova2',
+                54:'unova2',
+                61:'kalos',
+                62:'kalos',
+                63:'hoenn',
+                64:'hoenn',
+                71:'alola',
+                72:'alola',
+                73:'alola',
+                74:'alola',
+            }
+            if not self.conf['show_badges']:
+                return
+            if not self.ws or not self.ws.is_identified():
+                self.is_connected = False
+                return
+            badge_path = self.conf['badges_path'] if not self.conf['obs_2_pc'] else self.conf['badges_obs_path']
+            self.logger.info(f"change_badges ausgeführt: Spieler {player}")
+            region = badge_lut[self.munchlax.editions[player]]
+            badge_number = 16 if region == 'johto' else 8
+            batch = []
+            for i in range(badge_number):
+                if (self.munchlax.badges[player] & 2**i):
+                    batch.append(
+                        simpleobsws.Request(
+                            "SetInputSettings",
+                            {
+                                "inputName": f"badge{i + 16 * (player - 1) + 1}",
+                                "inputSettings": {
+                                    "file": badge_path + '/' + region + str(i + 1) + ".png"
+                                }
                             }
-                        }
+                        )
                     )
-                )
-            else:
-                batch.append(
-                    simpleobsws.Request(
-                        "SetInputSettings",
-                        {
-                            "inputName": f"badge{i + 16 * (player - 1) + 1}",
-                            "inputSettings": {
-                                "file": badge_path + '/' + badge_lut[self.munchlax.editions[player]] + str(i + 1) + 'empty' + ".png"
+                else:
+                    batch.append(
+                        simpleobsws.Request(
+                            "SetInputSettings",
+                            {
+                                "inputName": f"badge{i + 16 * (player - 1) + 1}",
+                                "inputSettings": {
+                                    "file": badge_path + '/' + badge_lut[self.munchlax.editions[player]] + str(i + 1) + 'empty' + ".png"
+                                }
                             }
-                        }
+                        )
                     )
-                )
 
-        await self.ws.call_batch(batch)
+            await self.ws.call_batch(batch)
 
     def get_sprite(self, pokemon, anim, edition, two_pc=False):
         if two_pc:

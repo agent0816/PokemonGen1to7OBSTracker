@@ -12,7 +12,6 @@ SLOT_OFFSET = 484
 SLOT_DATA_SIZE = (8 + (4 * BLOCK_SIZE)) # 232
 STAT_DATA_OFFSET = 112
 STAT_DATA_SIZE = 22
-IN_BATTLE_STAT_OFFSET = 580
 
 class CitraHandler:
     def __init__(self):
@@ -133,7 +132,7 @@ class CitraHandler:
     
     def read_in_battle_stats(self):
         result = {}
-        battle_kind = int.from_bytes(self.citra_instance.read_memory(self.pointer["battle_kind"], 2))
+        battle_kind = int.from_bytes(self.citra_instance.read_memory(self.pointer["battle_kind"], 2), 'little')
         if battle_kind == self.pointer["trainer_value"]:
             read_address = self.pointer["kampf_trainer"]
         elif battle_kind == self.pointer["wild_value"]:
@@ -142,19 +141,24 @@ class CitraHandler:
             read_address = None
 
         if read_address:
+            offset = self.pointer["in_battle_stat_offset"]
             for index in range(self.number_of_team_pokemon):
                 stats_dict = {}
-                stat_bytes = self.citra_instance.read_memory(read_address + index * IN_BATTLE_STAT_OFFSET, 20)
+                stat_bytes = self.citra_instance.read_memory(read_address + index * offset, 20)
                 stats_dict['lvl'] = int.from_bytes(stat_bytes[16:17], 'little')
-                stats_dict['cur_hp'] = int.from_bytes(stat_bytes[6:8], 'little')
-                stats_dict['max_hp'] = int.from_bytes(stat_bytes[8:10], 'little')
+                stats_dict['max_hp'] = int.from_bytes(stat_bytes[6:8], 'little')
+                stats_dict['cur_hp'] = int.from_bytes(stat_bytes[8:10], 'little')
                 stats_dict['item'] = int.from_bytes(stat_bytes[10:12], 'little')
                 result[index] = stats_dict
 
         return result
     
     def read_badges(self):
-        return self.citra_instance.read_memory(self.pointer["badges"], 1)
+        result = b'\x00'
+        read_address = self.pointer["badges"]
+        if read_address:
+            result = self.citra_instance.read_memory(read_address, 1)
+        return result
 
     async def start(self, munchlax, button):
         self.munchlax: Munchlax = munchlax

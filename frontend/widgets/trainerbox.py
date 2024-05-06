@@ -90,6 +90,10 @@ class TrainerBox(BoxLayout):
             62: "kalos",
             63: "hoenn",
             64: "hoenn",
+            71:'alola',
+            72:'alola',
+            73:'alola',
+            74:'alola',
         }
         self.edition_lut = {
             "Rot" : 11,

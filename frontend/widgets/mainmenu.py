@@ -380,11 +380,12 @@ class MainMenu(Screen):
                 self.ids["server_client_button"].text = "Client beenden"
 
     def change_emulator_button(self):
-        if self.pl["session_game"] in ['X','Y','Omega Rubin','Alpha Saphir','Sonne', 'Mond','Ultra Sonne', 'Ultra Mond'] and self.emulator.text.startswith("Bizhawk"):
+        games_list = ['X','Y','Omega Rubin','Alpha Saphir','Sonne', 'Mond','Ultra Sonne', 'Ultra Mond']
+        if self.pl["session_game"] in games_list and self.emulator.text.startswith("Bizhawk"):
             self.emulator.unbind(on_press=self.launchbh)
             self.emulator.text = "Citra verbinden"
             self.emulator.bind(on_press=self.connect_citra)
-        elif self.emulator.text == "Citra verbinden":
+        elif self.emulator.text == "Citra verbinden" and self.pl["session_game"] not in games_list:
             self.emulator.unbind(on_press=self.connect_citra)
             self.emulator.text = "Bizhawk starten"
             self.emulator.bind(on_press=self.launchbh)
@@ -586,6 +587,7 @@ class MainMenu(Screen):
             self.ids.badges_check.state = "normal"
             self.sp["show_badges"] = False
         else:
+            self.ids.badges_check.disabled = False
             self.ids.badges_check.state = "down" if self.sp["show_badges"] else "normal"
         self.ids.bizhawk_check.state = (
             "down" if self.bh["save_automatically"] else "normal"

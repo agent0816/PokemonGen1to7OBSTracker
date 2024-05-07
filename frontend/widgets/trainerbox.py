@@ -121,7 +121,8 @@ class TrainerBox(BoxLayout):
             "Omega Rubin": 63,
             "Alpha Saphir": 64
         }
-        screen.ids[f"trainer_box_{player_id}"] = weakref.proxy(self)
+        self.screen = screen
+        self.screen.ids[f"trainer_box_{player_id}"] = weakref.proxy(self)
 
         decimal_color = (
             int(color[0:2], 16) / 255,
@@ -177,24 +178,29 @@ class TrainerBox(BoxLayout):
 
 
     def team_aktualisieren(self, instance):
-        if self.player_id not in self.munchlax.sorted_teams or self.player_id not in self.munchlax.editions or self.player_id not in self.munchlax.badges:
+        if self.screen.name == "SessionMenu" or self.player_id not in self.munchlax.sorted_teams or self.player_id not in self.munchlax.editions or self.player_id not in self.munchlax.badges:
             return
+        else:
+            self.old_team = self.munchlax.sorted_teams[self.player_id]
 
-        team = self.munchlax.sorted_teams[self.player_id]
-        # items4 = yaml.safe_load(open('backend/data/items4.yml'))
-        # team = [Pokemon(i+24, female=True, lvl=i+30, item=items4[i+22], nickname=f"nickname {i}") for i in range(1,7)]
+        new_team = self.munchlax.sorted_teams[self.player_id]
 
-        for slot, pokemon in enumerate(team):
+        for slot, pokemon in enumerate(new_team):
             slot_box = self.pokemon_boxes[f"slot{slot}"]
 
             slot_box.ids["Level"].text = f"lvl {pokemon.lvl}"
             slot_box.ids["Nickname"].text = pokemon.nickname
-            slot_box.ids["Sprite"].source = self.obs_websocket.get_sprite(pokemon,self.obs_websocket.conf["animated"],self.munchlax.editions[self.player_id], two_pc=False)
+            sprite_widget = slot_box.ids["Sprite"]
+            sprite_path = self.obs_websocket.get_sprite(pokemon,False,self.munchlax.editions[self.player_id], two_pc=False) # self.obs_websocket.conf["animated"]
+            if sprite_widget.source != sprite_path:
+                sprite_widget.source = sprite_path
             slot_box.ids["Item_Name"].text = "-" if pokemon.item == 0 else f"{pokemon.item}"
             slot_box.ids["Item_Image"].source = f"{self.obs_websocket.conf['items_path']}/{pokemon.item}.png"
             slot_box.ids["hp_bar"].max = pokemon.max_hp
             slot_box.ids["hp_bar"].value = pokemon.cur_hp
             slot_box.ids["hp_text"].text = f"{pokemon.cur_hp}/{pokemon.max_hp}"
+
+        self.old_team = new_team
 
         badges = self.munchlax.badges[self.player_id]
         badge_string = f"{self.obs_websocket.conf['badges_path']}"

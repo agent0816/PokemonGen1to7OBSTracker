@@ -585,6 +585,8 @@ class MainMenu(Screen):
         if self.pl["session_game"] in ['Sonne', 'Mond','Ultra Sonne', 'Ultra Mond']:
             self.ids.badges_check.disabled = True
             self.ids.badges_check.state = "normal"
+            self.ids.bizhawk_check.disabled = True
+            self.ids.bizhawk_check.state = "normal"
             self.sp["show_badges"] = False
         else:
             self.ids.badges_check.disabled = False

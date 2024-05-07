@@ -230,7 +230,7 @@ class OBS():
             female = "female/"
         else:
             female = ""
-        if anim and edition in (23, 33, 41, 42, 43, 44, 45, 51, 52, 53, 54):
+        if anim and edition in (23, 33, 41, 42, 43, 44, 45, 51, 52, 53, 54, 61,62,63,64,71,72,73,74):
             filetype = ".gif"
             animated = "animated/"
         else:

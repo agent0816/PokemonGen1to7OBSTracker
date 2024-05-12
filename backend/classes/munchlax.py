@@ -90,8 +90,8 @@ class Munchlax:
             except UnpicklingError as err:
                 self.logger.error(f"Pickle Data error:{type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")
-                self.logger.error(f"Länge der empfangenen Daten: {length=}")
-                self.logger.error(f"Empfangene Daten: {msg}")
+            except EOFError as err:
+                self.logger.error(f"{traceback.format_exc()}")
             except Exception as err:
                 self.logger.error(f"alter_teams abgebrochen: {type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")
@@ -181,13 +181,33 @@ class Munchlax:
                 self.host = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
                 self.port = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
 
+    # async def send_message(self, message):
+    #     serialized_message = pickle.dumps(message)
+    #     length = len(serialized_message).to_bytes(4, 'big')
+    #     self.writer.write(length)
+    #     await self.writer.drain()
+    #     self.writer.write(serialized_message)
+    #     await self.writer.drain()
+
     async def send_message(self, message):
         serialized_message = pickle.dumps(message)
+        CHUNK_SIZE = 500  # Die Größe jedes Chunks in Bytes
+
+        # Gesamtlänge der Nachricht senden
         length = len(serialized_message).to_bytes(4, 'big')
         self.writer.write(length)
         await self.writer.drain()
-        self.writer.write(serialized_message)
-        await self.writer.drain()
+
+        # Nachricht in Chunks senden
+        for i in range(0, len(serialized_message), CHUNK_SIZE):
+            chunk = serialized_message[i:i+CHUNK_SIZE]
+            # Größe des aktuellen Chunks senden
+            chunk_length = len(chunk).to_bytes(4, 'big')
+            self.writer.write(chunk_length)
+            await self.writer.drain()
+            # Chunk senden
+            self.writer.write(chunk)
+            await self.writer.drain()
 
     async def receive_message(self):
         reader = self.reader

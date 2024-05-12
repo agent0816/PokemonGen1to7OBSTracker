@@ -33,8 +33,10 @@ def create_label_and_checkboxes(rootwidget, ids,
     
     box = BoxLayout(orientation='horizontal', size_hint_x=.3)
 
-    checkBox = CheckBox(on_press=checkbox_on_press,active=checkbox_active, pos_hint=checkbox_pos_hint, size_hint=checkbox_size_hint, size=checkbox_size, disabled=checkbox_disabled)
+    checkBox = CheckBox(active=checkbox_active, pos_hint=checkbox_pos_hint, size_hint=checkbox_size_hint, size=checkbox_size, disabled=checkbox_disabled)
     checkboxLabel = Label(text=label_text, pos_hint=label_pos_hint, size_hint=label_size_hint, size=label_size)
+    if checkbox_on_press:
+        checkBox.bind(on_press=checkbox_on_press)
     box.add_widget(checkBox)
     if checkbox_id_name is not None:
         ids[checkbox_id_name] = weakref.proxy(checkBox)

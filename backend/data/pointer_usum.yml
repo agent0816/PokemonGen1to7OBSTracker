@@ -1,0 +1,12 @@
+badges: False
+battle_kind: 0x30009724
+box_beginning: 0x33015ab0
+in_battle_stat_offset: 0x330
+kampf_trainer: 0x30009758
+kampf_wild: 0x30009758
+team_reihenfolge: 0x33f7f9b8
+trainer_id: 0x33fc1c54
+trainer_name: 0x3301543c
+trainer_name_in_fight: False
+trainer_value: 0x0320
+wild_value: 0x0320

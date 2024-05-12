@@ -78,6 +78,7 @@ class Arceus:
 
     async def update_all_clients(self, writer):
         old_teams = self.teams.copy()
+        self.logger.info(f"Arceus: {self.teams}")
         await self.send_message(writer, self.teams)
 
         while True:
@@ -104,14 +105,43 @@ class Arceus:
                 del self.munchlax_heartbeats[client_id]
                 del self.heartbeat_counts[client_id]
 
+    # async def send_message(self, writer, message):
+    #     serialized_message = pickle.dumps(message)
+    #     length = len(serialized_message).to_bytes(4, 'big')
+    #     writer.write(length)
+    #     await writer.drain()
+    #     writer.write(serialized_message)
+    #     await writer.drain()
+    
     async def send_message(self, writer, message):
         serialized_message = pickle.dumps(message)
+        CHUNK_SIZE = 500  # Die Größe jedes Chunks in Bytes
+
+        # Gesamtlänge der Nachricht senden
+        self.logger.info(f"{serialized_message=}")
         length = len(serialized_message).to_bytes(4, 'big')
         writer.write(length)
         await writer.drain()
-        writer.write(serialized_message)
-        await writer.drain()
-    
+
+        # Nachricht in Chunks senden
+        for i in range(0, len(serialized_message), CHUNK_SIZE):
+            chunk = serialized_message[i:i+CHUNK_SIZE]
+            self.logger.info(f"Arceus: {chunk=}")
+            # Größe des aktuellen Chunks senden
+            chunk_length = len(chunk).to_bytes(4, 'big')
+            writer.write(chunk_length)
+            await writer.drain()
+            # Chunk senden
+            writer.write(chunk)
+            await writer.drain()
+
+
+    # async def receive_message(self, reader):
+    #     message_length = int.from_bytes(await reader.read(4), 'big')
+    #     message = await reader.read(message_length)
+
+    #     return pickle.loads(message)
+
     async def receive_message(self, reader):
         message_length = int.from_bytes(await reader.read(4), 'big')
         message = await reader.read(message_length)

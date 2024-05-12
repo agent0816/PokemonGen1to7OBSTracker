@@ -76,6 +76,7 @@ class MainMenu(Screen):
         self,
         arceus,
         bizhawk,
+        citra,
         bizhawk_instances,
         munchlax,
         obs_websocket,
@@ -90,6 +91,7 @@ class MainMenu(Screen):
     ):
         self.arceus = arceus
         self.bizhawk = bizhawk
+        self.citra = citra
         self.bizhawk_instances = bizhawk_instances
         self.munchlax = munchlax
         self.obs_websocket: OBS = obs_websocket
@@ -231,28 +233,41 @@ class MainMenu(Screen):
 
         # lokale Bizhawks und Bizhawk-server
 
-        bizhawk_box = BoxLayout(orientation="vertical")
+        self.emulator_box = BoxLayout(orientation="vertical")
 
-        bizhawk_box.add_widget(Label(text="Bizhawk Status"))
-        bizhawk_status_box = BoxLayout(orientation="horizontal")
+        self.emulator_box.add_widget(Label(text="Emulator Status"))
 
-        UI.create_connection_status_with_labels(
-            bizhawk_status_box, ObjectConnectionStatusCircle, "Server", self.bizhawk
-        )
-
-        Clock.schedule_interval(
-            lambda instance: self.change_bizhawk_status(bizhawk_status_box), 1
-        )
-
-        bizhawk_box.add_widget(bizhawk_status_box)
-
-        status_box.add_widget(bizhawk_box)
+        status_box.add_widget(self.emulator_box)
 
         connections.add_widget(status_box)
 
         control_frame.add_widget(connections)
 
         return control_frame
+
+    def emulator_status_box(self, game):
+        if self.emulator_box.children:
+            self.emulator_box.clear_widgets()
+            self.emulator_box.add_widget(Label(text="Emulator Status"))
+        
+        emulator_status_box = BoxLayout(orientation="horizontal")
+
+        if game in ['X','Y','Omega Rubin','Alpha Saphir','Sonne', 'Mond','Ultra Sonne', 'Ultra Mond']:
+            UI.create_connection_status_with_labels(
+                emulator_status_box, ObjectConnectionStatusCircle, "Citra", self.citra
+            )
+
+        else:
+
+            UI.create_connection_status_with_labels(
+                emulator_status_box, ObjectConnectionStatusCircle, "Server", self.bizhawk
+            )
+
+            Clock.schedule_interval(
+                lambda instance: self.change_bizhawk_status(emulator_status_box), 1
+            )
+
+        self.emulator_box.add_widget(emulator_status_box)
 
     def create_showing_frame(self):
         showing_frame = BoxLayout(orientation="horizontal")
@@ -364,6 +379,20 @@ class MainMenu(Screen):
             ):
                 self.ids["server_client_button"].text = "Client beenden"
 
+    def change_emulator_button(self):
+        games_list = ['X','Y','Omega Rubin','Alpha Saphir','Sonne', 'Mond','Ultra Sonne', 'Ultra Mond']
+        if self.pl["session_game"] in games_list and self.emulator.text.startswith("Bizhawk"):
+            self.emulator.unbind(on_press=self.launchbh)
+            self.emulator.text = "Citra verbinden"
+            self.emulator.bind(on_press=self.connect_citra)
+        elif self.emulator.text == "Citra verbinden" and self.pl["session_game"] not in games_list:
+            self.emulator.unbind(on_press=self.connect_citra)
+            self.emulator.text = "Bizhawk starten"
+            self.emulator.bind(on_press=self.launchbh)
+
+    def change_citra_status(self, box):
+        self.citra.check_connection()
+    
     def change_bizhawk_status(self, box):
         for client_id in self.bizhawk.bizhawks_status:
             if client_id not in self.ids:
@@ -462,6 +491,28 @@ class MainMenu(Screen):
 
         Clock.schedule_once(lambda dt: enable_button(self.emulator), 5)
 
+    def connect_citra(self, instance):
+        if not self.citra.started:
+            self.citra.check_connection()
+        if instance.text == "Citra verbinden" and self.citra.is_connected:
+            instance.text = "Citra trennen"
+            task = asyncio.create_task(self.citra.start(self.munchlax, instance))
+            self.connectors.add(task)
+        else:
+            instance.text = "Citra verbinden"
+            if not self.citra.player_number:
+                self.citra.is_connected = False
+                box = BoxLayout(orientation='vertical')
+                box.add_widget(Label(text="Es wurde kein Spieler ausgewählt."))
+                btn = Button(text='OK',size_hint=(.5,.4),pos_hint={'center_x':.5})
+                box.add_widget(btn)
+
+                popup = Popup(title='Spieler auswählen', content=box, size_hint=(None, None), size=(400, 150))
+
+                btn.bind(on_release=popup.dismiss, on_press=self.switch_to_settings)
+                popup.open()
+            asyncio.create_task(self.citra.stop())
+
     def toggle_server_client(self, instance, button, initializing=False):
         if instance.state == "down":
             button.text = "Server starten"
@@ -531,7 +582,15 @@ class MainMenu(Screen):
         self.ids.animated_check.state = "down" if self.sp["animated"] else "normal"
         self.ids.names_check.state = "down" if self.sp["show_nicknames"] else "normal"
         self.ids.items_check.state = "down" if self.sp["show_items"] else "normal"
-        self.ids.badges_check.state = "down" if self.sp["show_badges"] else "normal"
+        if self.pl["session_game"] in ['Sonne', 'Mond','Ultra Sonne', 'Ultra Mond']:
+            self.ids.badges_check.disabled = True
+            self.ids.badges_check.state = "normal"
+            self.ids.bizhawk_check.disabled = True
+            self.ids.bizhawk_check.state = "normal"
+            self.sp["show_badges"] = False
+        else:
+            self.ids.badges_check.disabled = False
+            self.ids.badges_check.state = "down" if self.sp["show_badges"] else "normal"
         self.ids.bizhawk_check.state = (
             "down" if self.bh["save_automatically"] else "normal"
         )
@@ -540,6 +599,8 @@ class MainMenu(Screen):
             "down" if self.rem["start_server"] else "normal"
         )
         self.settings.text = f"Einstellungen\n{self.selected_session}"
+        self.change_emulator_button()
+        self.emulator_status_box(self.pl["session_game"])
         self.toggle_server_client(
             self.ids["start_server"],
             self.ids["server_client_button"],

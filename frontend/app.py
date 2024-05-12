@@ -19,6 +19,7 @@ from kivy.uix.screenmanager import FadeTransition
 from kivy.uix.screenmanager import ScreenManager
 from backend.classes.arceus import Arceus
 from backend.classes.bizhawk import Bizhawk
+from backend.classes.citrahandler import CitraHandler
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
 
@@ -35,7 +36,7 @@ stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
 APP_NAME = "PokemonOBSTracker"
-APP_VERSION = "0.6.1"
+APP_VERSION = "0.7.0"
 
 
 class Screens(ScreenManager):
@@ -43,6 +44,7 @@ class Screens(ScreenManager):
         self,
         arceus,
         bizhawk,
+        citra,
         bizhawk_instances,
         munchlax,
         obs_websocket,
@@ -64,6 +66,7 @@ class Screens(ScreenManager):
         main_menu = MainMenu(
             arceus,
             bizhawk,
+            citra,
             bizhawk_instances,
             munchlax,
             obs_websocket,
@@ -148,6 +151,8 @@ class TrackerApp(App):
         self.bizhawk = Bizhawk(self.bh["host"], self.bh["port"], self.bh)
         self.bizhawk_instances = []
 
+        self.citra = CitraHandler()
+
         ip_to_connect = (
             "127.0.0.1" if self.rem["start_server"] else self.rem["server_ip_adresse"]
         )
@@ -169,6 +174,7 @@ class TrackerApp(App):
         arguments = [
             self.arceus,
             self.bizhawk,
+            self.citra,
             self.bizhawk_instances,
             self.munchlax,
             self.obs_websocket,
@@ -195,10 +201,11 @@ class TrackerApp(App):
         for bizhawk in self.bizhawk_instances:
             bizhawk.terminate()
         tasks = [
+            asyncio.create_task(self.arceus.stop()),
+            asyncio.create_task(self.citra.stop()),
             asyncio.create_task(self.bizhawk.stop()),
             asyncio.create_task(self.obs_websocket.disconnect()),
             asyncio.create_task(self.munchlax.disconnect()),
-            asyncio.create_task(self.arceus.stop()),
         ]
         asyncio.create_task(asyncio.wait(tasks, timeout=3))
 

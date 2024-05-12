@@ -119,63 +119,74 @@ class OBS():
             await self.ws.call_batch(batch)
 
     async def change_badges(self, player):
-        badge_lut = {
-            11:'kanto',
-            12:'kanto',
-            13:'kanto',
-            21:'johto',
-            22:'johto',
-            23:'johto',
-            31:'hoenn',
-            32:'hoenn',
-            33:'hoenn',
-            34:'kanto',
-            35:'kanto',
-            41:'sinnoh',
-            42:'sinnoh',
-            43:'sinnoh',
-            44:'johto',
-            45:'johto',
-            51:'unova',
-            52:'unova',
-            53:'unova2',
-            54:'unova2',
-        }
-        if not self.conf['show_badges']:
-            return
-        if not self.ws or not self.ws.is_identified():
-            self.is_connected = False
-            return
-        badge_path = self.conf['badges_path'] if not self.conf['obs_2_pc'] else self.conf['badges_obs_path']
-        self.logger.info(f"change_badges ausgeführt: Spieler {player}")
-        batch = []
-        for i in range(16):
-            if (self.munchlax.badges[player] & 2**i):
-                batch.append(
-                    simpleobsws.Request(
-                        "SetInputSettings",
-                        {
-                            "inputName": f"badge{i + 16 * (player - 1) + 1}",
-                            "inputSettings": {
-                                "file": badge_path + '/' + badge_lut[self.munchlax.editions[player]] + str(i + 1) + ".png"
+        if self.munchlax.editions[player] < 70:
+            badge_lut = {
+                11:'kanto',
+                12:'kanto',
+                13:'kanto',
+                21:'johto',
+                22:'johto',
+                23:'johto',
+                31:'hoenn',
+                32:'hoenn',
+                33:'hoenn',
+                34:'kanto',
+                35:'kanto',
+                41:'sinnoh',
+                42:'sinnoh',
+                43:'sinnoh',
+                44:'johto',
+                45:'johto',
+                51:'unova',
+                52:'unova',
+                53:'unova2',
+                54:'unova2',
+                61:'kalos',
+                62:'kalos',
+                63:'hoenn',
+                64:'hoenn',
+                71:'alola',
+                72:'alola',
+                73:'alola',
+                74:'alola',
+            }
+            if not self.conf['show_badges']:
+                return
+            if not self.ws or not self.ws.is_identified():
+                self.is_connected = False
+                return
+            badge_path = self.conf['badges_path'] if not self.conf['obs_2_pc'] else self.conf['badges_obs_path']
+            self.logger.info(f"change_badges ausgeführt: Spieler {player}")
+            region = badge_lut[self.munchlax.editions[player]]
+            badge_number = 16 if region == 'johto' else 8
+            batch = []
+            for i in range(badge_number):
+                if (self.munchlax.badges[player] & 2**i):
+                    batch.append(
+                        simpleobsws.Request(
+                            "SetInputSettings",
+                            {
+                                "inputName": f"badge{i + 16 * (player - 1) + 1}",
+                                "inputSettings": {
+                                    "file": badge_path + '/' + region + str(i + 1) + ".png"
+                                }
                             }
-                        }
+                        )
                     )
-                )
-            else:
-                batch.append(
-                    simpleobsws.Request(
-                        "SetInputSettings",
-                        {
-                            "inputName": f"badge{i + 16 * (player - 1) + 1}",
-                            "inputSettings": {
-                                "file": badge_path + '/' + badge_lut[self.munchlax.editions[player]] + str(i + 1) + 'empty' + ".png"
+                else:
+                    batch.append(
+                        simpleobsws.Request(
+                            "SetInputSettings",
+                            {
+                                "inputName": f"badge{i + 16 * (player - 1) + 1}",
+                                "inputSettings": {
+                                    "file": badge_path + '/' + badge_lut[self.munchlax.editions[player]] + str(i + 1) + 'empty' + ".png"
+                                }
                             }
-                        }
+                        )
                     )
-                )
 
-        await self.ws.call_batch(batch)
+            await self.ws.call_batch(batch)
 
     def get_sprite(self, pokemon, anim, edition, two_pc=False):
         if two_pc:
@@ -206,21 +217,32 @@ class OBS():
             52: 'black',
             53: 'black',
             54: 'black',
+            61: 'x',
+            62: 'x',
+            63: 'alphasapphire',
+            64: 'alphasapphire',
+            71: 'sun',
+            72: 'sun',
+            73: 'usun',
+            74: 'usun'
         }
         if pokemon.female and edition > 40 and pokemon.dexnr in [3, 12, 19, 20, 25, 26, 41, 42, 44, 45, 64, 65, 84, 85, 97, 111, 112, 118, 119, 123, 129, 130, 154, 165, 166, 178, 185, 186, 190, 194, 195, 198, 202, 203, 207, 208, 212, 214, 215, 215, 217, 221, 224, 229, 232, 255, 256, 257, 267, 269, 272, 274, 275, 307, 308, 315, 316, 317, 322, 323, 332, 350, 369, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 407, 415, 417, 418, 419, 424, 443, 444, 445, 449, 450, 453, 454, 456, 457, 459, 460, 461, 464, 465, 473, 521, 592, 593, 668, 678, 876, 902]:
             female = "female/"
         else:
             female = ""
-        if anim and edition in (23, 33, 41, 42, 43, 44, 45, 51, 52, 53, 54):
+        if anim and edition in (23, 33, 41, 42, 43, 44, 45, 51, 52, 53, 54, 61,62,63,64,71,72,73,74):
             filetype = ".gif"
             animated = "animated/"
         else:
             animated = ""
             filetype = ".png"
         if not self.conf['single_path_check']:
-            sub = self.conf[f"{subpath[edition]}{obs}"]
+            conf_path = self.conf[f"{subpath[edition]}{obs}"]
+            common_slash = "" if (common_path.endswith("/") and not conf_path.startswith("/")) or (not common_path.endswith("/") and conf_path.startswith("/")) else "/"
+            slash = "" if conf_path.endswith("/") else "/"
+            sub = common_slash + self.conf[f"{subpath[edition]}{obs}"] + slash
         else:
-            sub = '/'
+            sub = "" if common_path.endswith("/") else "/"
         path = (
             common_path
             + sub 

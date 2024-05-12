@@ -1,0 +1,12 @@
+badges: 0x08c6ddd4
+battle_kind: 0x082041c8
+box_beginning: 0x08c9a144
+in_battle_stat_offset: 0x244
+kampf_trainer: 0x08205d0c
+kampf_wild: 0x082041fc
+team_reihenfolge: 0x08cf71f0
+trainer_id: 0x08c7d350
+trainer_name: 0x08c7d3b1
+trainer_name_in_fight: 0x082041a8
+trainer_value: 0x0030
+wild_value: 0x0234

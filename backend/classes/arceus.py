@@ -143,8 +143,13 @@ class Arceus:
     #     return pickle.loads(message)
 
     async def receive_message(self, reader):
-        message_length = int.from_bytes(await reader.read(4), 'big')
-        message = await reader.read(message_length)
+        total_length = int.from_bytes(await reader.read(4), 'big')
+        message = b''
+
+        while len(message) < total_length:
+            chunk_length = int.from_bytes(await reader.read(4), 'big')
+            chunk = await reader.read(chunk_length)
+            message += chunk
 
         return pickle.loads(message)
     

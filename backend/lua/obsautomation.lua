@@ -291,12 +291,14 @@ function main()
         if gameversion > 30 and gameversion < 40 then
             if gameversion < 33 then
                 badges = memory.read_u16_le(badgepointer, domain)
-                badges = bit.rshift(badges, 7)
+                -- badges = bit.rshift(badges, 7)
+                badges = badges >> 7
                 msg[#msg + 1] = badges & 0xFFFFFFFF
             elseif gameversion == 33 then
                 badges = memory.read_u32_le(badgepointer, domain) + 0x137C
                 badges = memory.read_u16_le(badges, domain)
-                badges = bit.rshift(badges, 7)
+                -- badges = bit.rshift(badges, 7)
+                badges = badges >> 7
                 msg[#msg + 1] = badges & 0xFFFFFFFF
             elseif gameversion > 33 then
                 badges = memory.read_u32_le(badgepointer, domain) + 0xFE4

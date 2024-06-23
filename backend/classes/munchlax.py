@@ -84,14 +84,14 @@ class Munchlax:
                         if self.obs and self.obs.is_connected:
                             await self.obs.changeSource(player, diff, team, self.editions[player]) 
                     self.sorted_teams = new_teams.copy()
-            except UnicodeEncodeError as err:
-                self.logger.error(f"Unicode error:{type(err)},{err}")
-                self.logger.error(f"{traceback.format_exc()}")
-            except UnpicklingError as err:
-                self.logger.error(f"Pickle Data error:{type(err)},{err}")
-                self.logger.error(f"{traceback.format_exc()}")
+            except (UnicodeEncodeError, UnicodeDecodeError) as err:
+                self.logger.warning(f"Unicode error:{type(err)},{err}")
+                self.logger.warning(f"{traceback.format_exc()}")
+            except (UnpicklingError, AttributeError) as err:
+                self.logger.warning(f"Pickle Data error:{type(err)},{err}")
+                self.logger.warning(f"{traceback.format_exc()}")
             except EOFError as err:
-                self.logger.error(f"{traceback.format_exc()}")
+                self.logger.warning(f"{traceback.format_exc()}")
             except Exception as err:
                 self.logger.error(f"alter_teams abgebrochen: {type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")

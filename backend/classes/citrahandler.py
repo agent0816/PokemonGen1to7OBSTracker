@@ -13,6 +13,8 @@ SLOT_DATA_SIZE = (8 + (4 * BLOCK_SIZE)) # 232
 STAT_DATA_OFFSET = 112
 STAT_DATA_SIZE = 22
 
+items5 = yaml.safe_load(open('backend/data/items5.yml'))
+
 class CitraHandler:
     def __init__(self):
         self.citra_instance = Citra()
@@ -140,6 +142,8 @@ class CitraHandler:
         else:
             read_address = None
 
+        items = items5
+
         if read_address:
             offset = self.pointer["in_battle_stat_offset"]
             for index in range(self.number_of_team_pokemon):
@@ -148,7 +152,11 @@ class CitraHandler:
                 stats_dict['lvl'] = int.from_bytes(stat_bytes[16:17], 'little')
                 stats_dict['max_hp'] = int.from_bytes(stat_bytes[6:8], 'little')
                 stats_dict['cur_hp'] = int.from_bytes(stat_bytes[8:10], 'little')
-                stats_dict['item'] = int.from_bytes(stat_bytes[10:12], 'little')
+                item = int.from_bytes(stat_bytes[10:12], 'little')
+                if item in items:
+                    stats_dict['item'] = items[item]
+                else:
+                    stats_dict['item'] = '-'
                 result[index] = stats_dict
 
         return result

@@ -310,7 +310,6 @@ def pokemon45(data, gen):
 def pokemon67(data, gen):
     items = items5
     unshuffled_bytes, decrypted_battle_stats, shiny_value, _ = decryptpokemon(data, '67')
-    print(shiny_value)
     dexnr = int.from_bytes(unshuffled_bytes[:2], 'little')
     item = int.from_bytes(unshuffled_bytes[2:4], 'little')
     female = False

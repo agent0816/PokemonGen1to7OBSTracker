@@ -16,8 +16,8 @@ def decryptpokemon(data, gen):
     def prng(seed):
         return (0x41C64E6D * seed + 0x6073) % 0x100000000
     offset_lut = [[0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 3, 1, 2], [0, 2, 3, 1], [0, 3, 2, 1], [1, 0, 2, 3], [1, 0, 3, 2], [2, 0, 1, 3], [3, 0, 1, 2], [2, 0, 3, 1], [3, 0, 2, 1], [1, 2, 0, 3], [1, 3, 0, 2], [2, 1, 0, 3], [3, 1, 0, 2], [2, 3, 0, 1], [3, 2, 0, 1], [1, 2, 3, 0], [1, 3, 2, 0], [2, 1, 3, 0], [3, 1, 2, 0], [2, 3, 1, 0], [3, 2, 1, 0]]
-    personality_value = int.from_bytes(data[:4], 'little')
-    shift_value = ((personality_value & 0x3E000) >> 0xD) % 24
+    encryption_key = int.from_bytes(data[:4], 'little')
+    shift_value = ((encryption_key & 0x3E000) >> 0xD) % 24
     if gen == '45':
         cutoff = 136
         blocksize = 32
@@ -25,7 +25,7 @@ def decryptpokemon(data, gen):
     else:
         cutoff = 232
         blocksize = 56
-        key = personality_value
+        key = encryption_key
     encrypted_bytes = data[8:cutoff]
     decrypted_bytes = b''
     for i in range(len(encrypted_bytes) // 2):
@@ -36,14 +36,18 @@ def decryptpokemon(data, gen):
         unshuffled_bytes += decrypted_bytes[offset_lut[shift_value][i] * blocksize:offset_lut[shift_value][i] * blocksize + blocksize]
     tid = int.from_bytes(unshuffled_bytes[4:6], 'little')
     sid = int.from_bytes(unshuffled_bytes[6:8], 'little')
+    if gen == '67':
+        personality_value = int.from_bytes(unshuffled_bytes[16:20], 'little')
+    else:
+        personality_value = encryption_key
     shiny_value = tid ^ sid ^ (personality_value >> 16) ^ (personality_value % 0x10000)
     encrypted_battle_stats = data[cutoff:]
-    key = personality_value
+    key = encryption_key
     decrypted_battle_stats = b''
     for i in range(len(encrypted_battle_stats) // 2):
         key = prng(key)
         decrypted_battle_stats += (int.from_bytes(encrypted_battle_stats[i * 2:i * 2 + 2], 'little') ^ (key >> 16)).to_bytes(2, 'little')
-    return (unshuffled_bytes, decrypted_battle_stats, shiny_value, personality_value)
+    return (unshuffled_bytes, decrypted_battle_stats, shiny_value, encryption_key)
 
 
 def pokemon1(data):
@@ -306,6 +310,7 @@ def pokemon45(data, gen):
 def pokemon67(data, gen):
     items = items5
     unshuffled_bytes, decrypted_battle_stats, shiny_value, _ = decryptpokemon(data, '67')
+    print(shiny_value)
     dexnr = int.from_bytes(unshuffled_bytes[:2], 'little')
     item = int.from_bytes(unshuffled_bytes[2:4], 'little')
     female = False
@@ -331,7 +336,7 @@ def pokemon67(data, gen):
         else:
             form = form = get_form(unshuffled_bytes[0x15], dexnr, gen)
         dexnr = 'egg'
-    return Pokemon(dexnr, shiny_value < 9, female, item=item, form=form, lvl=lvl, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp)
+    return Pokemon(dexnr, shiny_value < 17, female, item=item, form=form, lvl=lvl, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp)
 
 
 def team(data, edition):

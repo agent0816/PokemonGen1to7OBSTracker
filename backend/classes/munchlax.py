@@ -54,9 +54,8 @@ class Munchlax:
                 # msg = await reader.read(length)
                 # self.unsorted_teams = pickle.loads(msg)
                 self.unsorted_teams = await self.receive_message()
-                self.logger.info(self.unsorted_teams)
+                self.logging_teams(self.unsorted_teams)
                 new_teams = self.unsorted_teams.copy()
-                self.logger.info(f"{new_teams=}")
                 for player in new_teams:
                     team = new_teams[player]
                     new_teams[player] = self.sort(team[:6], self.sp['order'])
@@ -99,6 +98,10 @@ class Munchlax:
 
         await self.disconnect()
 
+    def logging_teams(self, teams: dict):
+        for player, team in teams.items():
+            self.logger.info(f"logging_teams: \n player {player} \n {team}")
+    
     def sort(self, liste, key):
         key = key.lower().replace('.', '')
         if key == 'dexnr':

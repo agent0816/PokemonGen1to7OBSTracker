@@ -1,4 +1,7 @@
 from typing import Literal
+import logging
+import traceback
+import sys
 
 class Pokemon:
     def __init__(self, dexnr: int, shiny: bool = False, female = False, form = '', **kwargs):
@@ -19,8 +22,33 @@ class Pokemon:
         for key in kwargs.keys():
             self.__dict__[key] = kwargs.get(key)
 
+        self.logger = self.init_logging()
+
+    def init_logging(self):
+        logger = logging.getLogger(__name__)
+        logger.setLevel(logging.INFO)
+
+        logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+
+        file_handler = logging.FileHandler('./logs/PokemonObjects.log', 'w')
+        file_handler.setFormatter(logging_formatter)
+        logger.addHandler(file_handler)
+
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(logging_formatter)
+        logger.addHandler(stream_handler)
+
+        return logger
+
     def __repr__(self):
-        return f'<{self.dexnr}, {self.nickname}, lvl={self.lvl}, item={self.item}, hp={self.cur_hp}/{self.max_hp}>'
+        try:
+            representation: str = f'<{self.dexnr}, {self.nickname}, lvl={self.lvl}, item={self.item}, hp={self.cur_hp}/{self.max_hp}>'
+        except AttributeError as err:
+            self.logger.warning(f"Pokemon.__repr__ failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            representation = "there was an error."
+        
+        return representation
 
     def obs_property_changed(self, other, sp):
         if sp["show_items"] and self.item != other.item:

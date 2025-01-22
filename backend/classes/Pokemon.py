@@ -40,12 +40,14 @@ class Pokemon:
         for key in kwargs.keys():
             self.__dict__[key] = kwargs.get(key)
 
+        self.logger = logger
+
     def __repr__(self):
         try:
             representation: str = f'<{self.dexnr}, {self.nickname}, lvl={self.lvl}, item={self.item}, hp={self.cur_hp}/{self.max_hp}>'
         except AttributeError as err:
-            logger.warning(f"Pokemon.__repr__ failed: {type(err)},{err}")
-            logger.error(f"{traceback.format_exc()}")
+            self.logger.warning(f"Pokemon.__repr__ failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
             representation = "there was an error."
         
         return representation

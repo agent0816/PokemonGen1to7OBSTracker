@@ -3,7 +3,7 @@ import logging
 import traceback
 import sys
 
-def init_logging(self):
+def init_logging():
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
 

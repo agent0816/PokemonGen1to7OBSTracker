@@ -1,0 +1,314 @@
+alola:
+- 19
+- 20
+- 26
+- 27
+- 28
+- 37
+- 38
+- 50
+- 51
+- 74
+- 75
+- 76
+- 88
+- 89
+- 103
+- 105
+arceus_gen_4:
+  0: ''
+  8: -fighting
+  16: -flying
+  24: -poison
+  32: -ground
+  40: -rock
+  48: -bug
+  56: -ghost
+  64: -steel
+  72: -unknown
+  80: -fire
+  88: -water
+  96: -grass
+  104: -electric
+  112: -psychic
+  120: -ice
+  128: -dragon
+  136: -dark
+forms_dict:
+  6: &id001
+    0: ''
+    8: -mega-x
+    16: -mega-y
+  25:
+    6:
+      0: ''
+      8: -rockstar
+      16: -belle
+      24: -popstar
+      32: -phd
+      40: -libre
+      48: -cosplay
+    7:
+      0: ''
+      8: -kanto-cap
+      16: -hoenn-cap
+      24: -sinnoh-cap
+      32: -unova-cap
+      40: -kalos-cap
+      48: -alola-cap
+      56: -partner-cap
+  150: *id001
+  172:
+    0: ''
+    8: -spiky-eared
+  201:
+    0: ''
+    8: -b
+    16: -c
+    24: -d
+    32: -e
+    40: -f
+    48: -g
+    56: -h
+    64: -i
+    72: -j
+    80: -k
+    88: -l
+    96: -m
+    104: -n
+    112: -o
+    120: -p
+    128: -q
+    136: -r
+    144: -s
+    152: -t
+    160: -u
+    168: -v
+    176: -w
+    184: -x
+    192: -y
+    200: -z
+    208: -exclamation
+    216: -question
+  386:
+    0: ''
+    8: -attack
+    16: -defense
+    24: -speed
+  412: &id002
+    0: -plant
+    8: -sandy
+    16: -trash
+  413: *id002
+  422: &id003
+    0: -west
+    8: -east
+  423: *id003
+  479:
+    0: ''
+    8: -heat
+    16: -wash
+    24: -frost
+    32: -fan
+    40: -mow
+  487:
+    0: ''
+    8: -origin
+  492:
+    0: ''
+    8: -sky
+  493: &id008
+    0: ''
+    8: -fighting
+    16: -flying
+    24: -poison
+    32: -ground
+    40: -rock
+    48: -bug
+    56: -ghost
+    64: -steel
+    72: -fire
+    80: -water
+    88: -grass
+    96: -electric
+    104: -psychic
+    112: -ice
+    120: -dragon
+    128: -dark
+    136: -fairy
+  550:
+    0: ''
+    8: -blue-striped
+  585: &id004
+    0: ''
+    8: -summer
+    16: -autumn
+    24: -winter
+  586: *id004
+  641: &id005
+    0: ''
+    8: -therian
+  642: *id005
+  645: *id005
+  646:
+    0: ''
+    8: -white
+    24: -black
+  647:
+    0: ''
+    8: -resolute
+  649:
+    0: ''
+    8: -douse
+    16: -shock
+    24: -burn
+    32: -chill
+  666:
+    0: ''
+    8: -polar
+    16: -tundra
+    24: -continental
+    32: -garden
+    40: -elegant
+    48: -meadow
+    56: -modern
+    64: -marine
+    72: -archipelago
+    80: -high-plains
+    88: -sandstorm
+    96: -river
+    104: -monsoon
+    112: -savanna
+    120: -sun
+    128: -ocean
+    136: -jungle
+    144: -fancy
+    152: -poke-ball
+  669: &id006
+    0: ''
+    8: -yellow
+    16: -orange
+    24: -blue
+    32: -white
+  670: *id006
+  671: *id006
+  676:
+    0: ''
+    8: -heart
+    16: -star
+    24: -diamond
+    32: -debutante
+    40: -matron
+    48: -dandy
+    56: -la-reine
+    64: -kabuki
+    72: -pharaoh
+  681:
+    0: ''
+    8: -blade
+  710: &id007
+    0: ''
+    8: -small
+    16: -large
+    24: -super
+  711: *id007
+  716:
+    0: -neutral
+    8: -active
+  718:
+    0: ''
+    8: '-10'
+    16: -complete
+    24: -complete
+  720:
+    0: ''
+    8: -unbound
+  741:
+    0: ''
+    8: -pom-pom
+    16: -pau
+    24: -sensu
+  745:
+    0: ''
+    8: -midnight
+    16: -dusk
+  746:
+    0: ''
+    8: -school
+  773: *id008
+  774:
+    0: ''
+    8: -orange-meteor
+    16: -yellow-meteor
+    24: -green-meteor
+    32: -blue-meteor
+    40: -indigo-meteor
+    48: -violet-meteor
+    56: -red
+    64: -orange
+    72: -yellow
+    80: -green
+    88: -indigo
+    96: -blue
+    104: -violet
+  778:
+    0: ''
+    8: -busted
+    16: -totem-disguised
+    24: -totem-busted
+  800:
+    0: ''
+    8: -dusk
+    16: -dawn
+    24: -ultra
+  801:
+    0: ''
+    8: -original
+mega:
+- 3
+- 9
+- 15
+- 18
+- 65
+- 80
+- 94
+- 115
+- 127
+- 130
+- 142
+- 181
+- 208
+- 212
+- 214
+- 229
+- 248
+- 254
+- 257
+- 260
+- 282
+- 302
+- 303
+- 306
+- 308
+- 310
+- 319
+- 323
+- 334
+- 354
+- 359
+- 362
+- 373
+- 376
+- 380
+- 381
+- 384
+- 428
+- 445
+- 448
+- 460
+- 475
+- 531
+- 719
+primal:
+- 382
+- 383

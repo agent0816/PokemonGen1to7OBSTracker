@@ -19,6 +19,7 @@ class Munchlax:
         self.unsorted_teams = {}
         self.badges = {}
         self.editions = {}
+        self.initialized = False
         self.rem = rem
         self.sp = sp
         self.pl = pl
@@ -50,12 +51,9 @@ class Munchlax:
     async def alter_teams(self):
         while True:
             try:
-                # length = int.from_bytes(await reader.read(4), 'big')
-                # msg = await reader.read(length)
-                # self.unsorted_teams = pickle.loads(msg)
                 self.unsorted_teams = await self.receive_message()
-                self.logging_teams(self.unsorted_teams)
                 new_teams = self.unsorted_teams.copy()
+                self.logging_teams(self.unsorted_teams, "unsorted teams received")
                 for player in new_teams:
                     team = new_teams[player]
                     new_teams[player] = self.sort(team[:6], self.sp['order'])
@@ -66,11 +64,12 @@ class Munchlax:
                         self.logger.info(f"{self.badges[player]=}")
                         if self.obs and self.obs.is_connected:
                             await self.obs.change_badges(player)
-                if new_teams != self.sorted_teams:
+                if new_teams != self.sorted_teams or not self.initialized:
                     for player in new_teams:
-                        if player not in self.sorted_teams:
+                        if player not in self.sorted_teams or not self.initialized:
                             if self.obs and self.obs.is_connected: 
-                                await self.obs.changeSource(player, range(6), new_teams[player], self.editions[player]) 
+                                await self.obs.changeSource(player, range(6), new_teams[player], self.editions[player])
+                                self.initialized = True
                             continue
                         
                         diff = []
@@ -98,7 +97,8 @@ class Munchlax:
 
         await self.disconnect()
 
-    def logging_teams(self, teams: dict):
+    def logging_teams(self, teams: dict, dictname: str):
+        self.logger.info(dictname)
         for player, team in teams.items():
             self.logger.info(f"logging_teams: \n player {player} \n {team}")
     

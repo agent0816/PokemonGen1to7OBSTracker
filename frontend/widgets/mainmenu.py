@@ -536,6 +536,7 @@ class MainMenu(Screen):
             self.save_changes(instance)
 
     def clear_clients(self, instance):
+        self.munchlax.clear_everything()
         box = self.ids["munchlax_status_box"]
         id_list = [id for id in self.arceus.munchlaxes]
         if not self.munchlax.is_connected:

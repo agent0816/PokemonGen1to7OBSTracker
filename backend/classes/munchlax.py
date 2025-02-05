@@ -48,6 +48,14 @@ class Munchlax:
 
         return logger
 
+    def clear_everything(self):
+        self.bizhawk_teams = {}
+        self.sorted_teams = {}
+        self.unsorted_teams = {}
+        self.badges = {}
+        self.editions = {}
+        self.initialized = False
+
     async def alter_teams(self):
         while True:
             try:
@@ -163,6 +171,7 @@ class Munchlax:
         self.alter_teams_task = asyncio.create_task(self.alter_teams())
 
     async def disconnect(self):
+        self.initialized = False
         async with self.disconnect_lock:
             if self.is_connected:
                 try:
@@ -183,14 +192,6 @@ class Munchlax:
 
                 self.host = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
                 self.port = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
-
-    # async def send_message(self, message):
-    #     serialized_message = pickle.dumps(message)
-    #     length = len(serialized_message).to_bytes(4, 'big')
-    #     self.writer.write(length)
-    #     await self.writer.drain()
-    #     self.writer.write(serialized_message)
-    #     await self.writer.drain()
 
     async def send_message(self, message):
         serialized_message = pickle.dumps(message)
@@ -223,15 +224,6 @@ class Munchlax:
             message += chunk
 
         return pickle.loads(message)
-
-    # async def receive_message(self):
-    #     reader = self.reader
-    #     message_length = int.from_bytes(await reader.read(4), 'big')
-    #     self.logger.info(f"Munchlax: {message_length=}")
-    #     message = await reader.read(message_length)
-    #     self.logger.info(f"Munchlax: {message=}")
-
-    #     return pickle.loads(message)
     
     def generate_hashed_id(self):
         random_id = os.urandom(16)

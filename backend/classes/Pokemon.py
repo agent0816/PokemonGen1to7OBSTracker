@@ -37,6 +37,10 @@ class Pokemon:
             self.cur_hp = 1
         if 'max_hp' not in kwargs:
             self.max_hp = 1
+        if 'checksum_given' not in kwargs:
+            self.checksum_given = -1
+        if 'checksum_calculated' not in kwargs:
+            self.checksum_calculated = -1
         for key in kwargs.keys():
             self.__dict__[key] = kwargs.get(key)
 
@@ -44,9 +48,12 @@ class Pokemon:
 
     def __repr__(self):
         try:
-            representation: str = f'<{self.dexnr}, {self.nickname}, lvl={self.lvl}, item={self.item}, hp={self.cur_hp}/{self.max_hp}>'
+            representation: str = f'<{self.dexnr}, {self.nickname}, lvl={self.lvl}, item={self.item}, hp={self.cur_hp}/{self.max_hp}'
+            if self.checksum_given >= 0 and self.checksum_calculated >= 0:
+                representation += f', checksum={self.checksum_given}, checksum berechnet={self.checksum_calculated}'
+            representation += ">"
         except AttributeError as err:
-            self.logger.warning(f"Pokemon.__repr__ failed: {type(err)},{err}")
+            self.logger.error(f"Pokemon.__repr__ failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
             representation = "there was an error."
         

@@ -36,7 +36,7 @@ stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
 APP_NAME = "PokemonOBSTracker"
-APP_VERSION = "0.7.6"
+APP_VERSION = "0.7.7"
 
 
 class Screens(ScreenManager):

@@ -14,7 +14,7 @@ SLOT_DATA_SIZE = (8 + (4 * BLOCK_SIZE)) # 232
 STAT_DATA_OFFSET = 112
 STAT_DATA_SIZE = 22
 
-items5 = yaml.safe_load(open('backend/data/items5.yml'))
+items6andup = yaml.safe_load(open('backend/data/items.yml'))
 
 class CitraHandler:
     def __init__(self):
@@ -147,7 +147,7 @@ class CitraHandler:
         else:
             read_address = None
 
-        items = items5
+        items = items6andup
 
         if read_address:
             offset = self.pointer["in_battle_stat_offset"]

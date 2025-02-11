@@ -3,6 +3,7 @@ import sys
 import asyncio
 import traceback
 from backend.classes.munchlax import Munchlax
+from backend.classes.Pokemon import Pokemon
 import backend.pokedecoder as pokedecoder
 
 class Bizhawk:
@@ -57,11 +58,15 @@ class Bizhawk:
                     return 1418
 
             def update_teams(team):
-                team = pokedecoder.team(team, edition)
+                team: list[Pokemon] = pokedecoder.team(team, edition)
                 teams = self.munchlax.bizhawk_teams
                 if player in teams:
                     if teams[player] == team:
                         return
+                for index, pokemon in enumerate(team):
+                    if index < 6:
+                        if pokemon.checksum_given <= 0 or pokemon.checksum_given != pokemon.checksum_calculated:
+                            return
                 teams[player] = team
                 self.munchlax.unsorted_teams[player] = team
 

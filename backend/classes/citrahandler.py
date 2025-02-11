@@ -5,6 +5,7 @@ import traceback
 import yaml
 from backend.classes.citra import Citra
 from backend.classes.munchlax import Munchlax
+from backend.classes.Pokemon import Pokemon
 import backend.pokedecoder as pokedecoder
 
 BLOCK_SIZE = 56
@@ -103,11 +104,15 @@ class CitraHandler:
         self.player_number = None
 
     def update_teams(self, team):
-        team = pokedecoder.team(team, self.edition)
+        team: list[Pokemon] = pokedecoder.team(team, self.edition)
         teams = self.munchlax.bizhawk_teams
         if self.player_number in teams:
             if teams[self.player_number] == team:
                 return
+        for index, pokemon in enumerate(team):
+            if index < 6:
+                if pokemon.checksum_given <= 0 or pokemon.checksum_given != pokemon.checksum_calculated:
+                    return
         teams[self.player_number] = team
         self.munchlax.unsorted_teams[self.player_number] = team
 

@@ -234,7 +234,9 @@ def pokemon3(data, edition):
             nickname += gen3charset[char]
         if char == 0xFF:
             break
-    return Pokemon(species, not shiny_value > 8, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated)  # type: ignore
+    result = Pokemon(species, not shiny_value > 8, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated)
+    # print(result)
+    return result
 
 
 def pokemon45(data, gen):
@@ -376,7 +378,6 @@ def team(data, edition):
     elif gen == 7:
         for i in range(6):
             liste.append(pokemon67(data[i * length : (i + 1) * length], gen))
-
     if len(data) % 6 == 1:
         liste.append(data[-1])
     else:

@@ -129,26 +129,39 @@ function main()
     elseif emu.getsystemid() == 'GBA' then
         length = 600
         gameversion = memory.read_u24_be(0xa8, 'ROM')
+        language = memory.read_u32_be(0xac, 'ROM')
         if gameversion == 5395778 then
             pointer = RS
             gameversion = 31
-            badgepointer = 0x2026a54
+            if language == 1096308292 then
+                badgepointer = 0x2026a54
+            end
         elseif gameversion == 5456208 then
             pointer = RS
             gameversion = 32
-            badgepointer = 0x2026a54
+            if language == 1096306756 then 
+                badgepointer = 0x2026a54
+            end
         elseif gameversion == 4541765 then
             pointer = E
             gameversion = 33
-            badgepointer = 0x03005d8c
+            if language == 1112556868 then
+                badgepointer = 0x03005d8c
+            end
         elseif gameversion == 4606290 then
             pointer = FrLg
             gameversion = 34
-            badgepointer = 0x3004F58
+            if language == 1112560197 then
+                badgepointer = 0x3005008
+            elseif language == 1112560196 then
+                badgepointer = 0x3004F58
+            end
         elseif gameversion == 4998465 then
             pointer = FrLg
             gameversion = 35
-            badgepointer = 0x3004F58
+            if language == 1112557380 then 
+                badgepointer = 0x3004F58
+            end
         end
         domain = 'System Bus'
 

@@ -109,12 +109,19 @@ class CitraHandler:
         if self.player_number in teams:
             if teams[self.player_number] == team:
                 return
+        else:
+            teams[self.player_number] = team
+            self.munchlax.unsorted_teams[self.player_number] = team
         for index, pokemon in enumerate(team):
-            if index < 6:
-                if pokemon.checksum_given <= 0 or pokemon.checksum_given != pokemon.checksum_calculated:
-                    return
-        teams[self.player_number] = team
-        self.munchlax.unsorted_teams[self.player_number] = team
+            if index < 6 and self.player_number in teams:
+                if pokemon.checksum_given < 0 or pokemon.checksum_given != pokemon.checksum_calculated:
+                    continue
+                else:
+                    teams[self.player_number][index] = team[index]
+                    self.munchlax.unsorted_teams[self.player_number][index] = team[index]
+            else:
+                teams[self.player_number][index] = team[index]
+                self.munchlax.unsorted_teams[self.player_number][index] = team[index]
 
     def update_stats(self, stats: dict):
         if stats:

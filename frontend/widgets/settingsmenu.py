@@ -579,6 +579,11 @@ class ScrollSettings(ScrollView):
         self.ids.game_sprites_check.state = 'down' if not self.sp['single_path_check'] else 'normal'
         self.ids.obs_sprites_check.state = 'down' if self.sp['obs_2_pc'] else 'normal'
 
+        if self.sp['obs_2_pc']:
+            self.ids.common_obs_path.text = self.sp['common_obs_path']
+            self.ids.items_obs_path.text = self.sp['items_obs_path']
+            self.ids.badges_obs_path.text = self.sp['badges_obs_path']
+
         self.ausklapp_button_zeigen_oder_verstecken(self.ids.game_sprites_check, initializing=True)
         self.obs_ausklapp_button_zeigen_oder_verstecken(self.ids.obs_sprites_check, initializing=True)
 

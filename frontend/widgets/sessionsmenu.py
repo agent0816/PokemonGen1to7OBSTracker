@@ -506,9 +506,10 @@ class SessionMenu(Screen):
             if not default:
                 self.settings_menu.scrollview.ids["your_name"].disabled = False
                 self.settings_menu.scrollview.update_connections()
-                self.settings_menu.scrollview.update_trainer_boxes()
+                # self.settings_menu.scrollview.update_trainer_boxes()
                 self.main_menu.pokemon_frame.clear_widgets()
-                self.main_menu.create_pokemon_frame()
+                # self.main_menu.create_pokemon_frame()
+                self.main_menu.create_analysis_frame()
                 self.main_menu.update_munchlax_connection_circle()
                 self.main_menu.init_config()
                 self.manager.current = "MainMenu"

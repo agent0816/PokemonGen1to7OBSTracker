@@ -732,7 +732,7 @@ class ScrollSettings(ScrollView):
         main_menu = self.settingsscreen.manager.get_screen("MainMenu")
         main_menu.update_munchlax_connection_circle()
 
-        self.update_trainer_boxes()
+        # self.update_trainer_boxes()
 
     def update_bizhawk(self):
         if not self.bizhawk.server:

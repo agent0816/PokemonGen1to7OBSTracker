@@ -17,6 +17,8 @@ class Munchlax:
         self.bizhawk_teams = {}
         self.sorted_teams = {}
         self.unsorted_teams = {}
+        self.unconverted_team = {}
+        self.raw_team = {}
         self.badges = {}
         self.editions = {}
         self.initialized = False

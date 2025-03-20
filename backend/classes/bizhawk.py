@@ -57,8 +57,8 @@ class Bizhawk:
                 else:
                     return 1418
 
-            def update_teams(team):
-                team: list[Pokemon] = pokedecoder.team(team, edition)
+            def update_teams(_team):
+                team: list[Pokemon] = pokedecoder.team(_team, edition)
                 teams = self.munchlax.bizhawk_teams
                 if player in teams:
                     if teams[player] == team:
@@ -76,6 +76,17 @@ class Bizhawk:
                     else:
                         teams[player][index] = team[index]
                         self.munchlax.unsorted_teams[player][index] = team[index]
+
+            def update_teams_no_checksum(_team):
+                team, tuple_pokemon, raw_data = pokedecoder.team_for_analysis(_team, edition)
+                teams = self.munchlax.bizhawk_teams
+                if player in teams:
+                    if teams[player] == team:
+                        return
+                teams[player] = team
+                self.munchlax.unsorted_teams[player] = team
+                self.munchlax.unconverted_team[player] = tuple_pokemon
+                self.munchlax.raw_team[player] = raw_data
 
             def update_stats(stats):
                 team = self.munchlax.bizhawk_teams[player]
@@ -99,7 +110,7 @@ class Bizhawk:
                 await self.send_messages(writer, "team")
             length = get_length()
             msg = await reader.read(length)
-            update_teams(msg)
+            update_teams_no_checksum(msg)
             counter = 2
             in_battle = False
             while True:
@@ -116,7 +127,7 @@ class Bizhawk:
                         await self.send_messages(writer, "team")
                         msg = await reader.read(length)
                         print(self.munchlax.unsorted_teams)
-                        update_teams(msg)
+                        update_teams_no_checksum(msg)
                     elif counter % 60 == 2 and not in_battle:
                         await self.send_messages(writer, "in_battle")
                         data = (await self.receive_messages(reader)).decode()

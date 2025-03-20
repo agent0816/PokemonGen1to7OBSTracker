@@ -70,6 +70,116 @@ class BizhawkSavePopup(Popup):
         self.canceled = True
         self.dismiss()
 
+class HexReaderWidget(BoxLayout):
+    def __init__(self, munchlax, player, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = "vertical"
+
+        self.munchlax = munchlax
+        self.player = player
+
+        #
+        # 1) ScrollView für den Hex-Dump (oben)
+        #
+        # Falls du einen Teil des Layouts reservieren möchtest, setze z. B. size_hint=(1, None), height=200
+        # und gib dem Rest des Widgets size_hint=(1, 1). 
+        # Hier Beispiel: Feste Höhe 200 für den Hex-Dump-Bereich
+        #
+        self.scroll_hex = BoxLayout(size_hint=(1, None), height=200)
+        self.hex_label = Label(
+            text="Hex-Reader Output",
+            pos_hint={"right":1},
+            size_hint=(None, None),   # Label soll seine Größe an den Inhalt anpassen
+            halign="left",
+            valign="top",
+            text_size=(600, None)    # Feste Breite = 600 px; Höhe wird dynamisch
+        )
+        # Damit die Höhe des Labels dem gerenderten Text entspricht:
+        self.hex_label.bind(texture_size=self._update_hex_label_size)
+        self.scroll_hex.add_widget(self.hex_label)
+        self.add_widget(self.scroll_hex)
+
+        #
+        # 2) Refresh-Button
+        #
+        self.refresh_button = Button(text="Refresh", size_hint=(1, None), height=40)
+        self.refresh_button.bind(on_press=self.refresh_hex)
+        self.add_widget(self.refresh_button)
+
+        #
+        # 3) ScrollView + GridLayout für die Tabelle (Attribut, Hex, Wert)
+        #
+        self.scroll_comparison = BoxLayout(size_hint=(1, 1))
+        self.comparison_grid = GridLayout(cols=3, spacing=5, size_hint=(1, None))
+        self.comparison_grid.bind(minimum_height=self.comparison_grid.setter("height"))
+        self.scroll_comparison.add_widget(self.comparison_grid)
+        self.add_widget(self.scroll_comparison)
+
+        #
+        # Optional: Wenn du das Widget insgesamt auf eine feste Höhe festlegen willst,
+        # kannst du das weiterhin tun (size_hint_y=None, self.height=500, usw.).
+        # Ansonsten nutzt du das automatische Layout des umgebenden Containers.
+        #
+        # self.size_hint_y = None
+        # self.height = 500
+
+    def _update_hex_label_size(self, instance, value):
+        """Passt die Höhe des Labels an die Texturgröße an, damit das ScrollView korrekt scrollt."""
+        self.hex_label.height = self.hex_label.texture_size[1]
+
+    def refresh_hex(self, instance=None):
+        # 1) Daten aus munchlax holen
+        tuple_pokemon = self.munchlax.unconverted_team[self.player][0]
+        pokemon = self.munchlax.unsorted_teams[self.player][0]
+        data = self.munchlax.raw_team[self.player][0]
+
+        # 2) Hexdump in das Label schreiben
+        self.hex_label.text = data.hex()
+
+        # 3) Tabelle neu aufbauen
+        self.comparison_grid.clear_widgets()
+
+        # Kopfzeile
+        self.comparison_grid.add_widget(Label(text="Attribut", bold=True))
+        self.comparison_grid.add_widget(Label(text="Hex", bold=True))
+        self.comparison_grid.add_widget(Label(text="Wert", bold=True))
+
+        # Zeilenweise Attribut / Hex / Wert eintragen
+        for key, (hex_val, conv_val) in tuple_pokemon.items():
+            if key == "encrypted":
+                # Erste Spalte (Attribut):
+                lbl_attr = Label(text=key, size_hint=(None, None))
+                lbl_attr.text_size = (200, None)
+                self.comparison_grid.add_widget(lbl_attr)
+
+                # Zweite Spalte (Hex) – das ist meist lang, also breiter:
+                lbl_hex = Label(text=str(hex_val), size_hint=(None, None), halign='left', valign='top')
+                lbl_hex.text_size = (200, None)
+                lbl_hex.bind(texture_size=lambda inst, val: setattr(inst, 'height', val[1]))
+                self.comparison_grid.add_widget(lbl_hex)
+
+                # Dritte Spalte (Wert):
+                lbl_val = Label(text=str(conv_val), size_hint=(None, None), halign='left', valign='top')
+                lbl_val.text_size = (200, None)
+                lbl_val.bind(texture_size=lambda inst, val: setattr(inst, 'height', val[1]))
+                self.comparison_grid.add_widget(lbl_val)
+
+            else:
+                # Für die restlichen Felder reicht oft ein fester Zeilenhöhe:
+                row_height = 30
+
+                # Attribut
+                self.comparison_grid.add_widget(Label(
+                    text=key, size_hint_y=None, height=row_height
+                ))
+                # Hex
+                self.comparison_grid.add_widget(Label(
+                    text=str(hex_val), size_hint_y=None, height=row_height
+                ))
+                # Wert
+                self.comparison_grid.add_widget(Label(
+                    text=str(conv_val), size_hint_y=None, height=row_height
+                ))
 
 class MainMenu(Screen):
     def __init__(
@@ -123,8 +233,10 @@ class MainMenu(Screen):
 
         frame.add_widget(click_frame)
 
-        self.pokemon_frame = ScrollView(do_scroll_y=False, do_scroll_x=True)
-        self.create_pokemon_frame()
+        # self.pokemon_frame = ScrollView(do_scroll_y=False, do_scroll_x=True)
+        self.pokemon_frame = Screen()
+        # self.create_pokemon_frame()
+        self.create_analysis_frame()
 
         frame.add_widget(self.pokemon_frame)
         self.add_widget(frame)
@@ -353,6 +465,11 @@ class MainMenu(Screen):
                 size=("140dp", 0),
             )
             box.add_widget(trainer)
+
+        self.pokemon_frame.add_widget(box)
+
+    def create_analysis_frame(self):
+        box = HexReaderWidget(self.munchlax, 1)
 
         self.pokemon_frame.add_widget(box)
 

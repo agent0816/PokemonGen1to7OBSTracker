@@ -184,40 +184,36 @@ def pokemon2(data):
     return Pokemon(dexnr, False, lvl=lvl, form=form, nickname=nickname, item=item, cur_hp=cur_hp, max_hp=max_hp)  # type: ignore
 
 
-def pokemon3(data, edition):
-    growth_lut = [32,32,32,32,32,32,44,44,56,68,56,68,44,44,56,68,56,68,44,44,56,68,56,68,]
-    attack_lut = [44, 44, 56, 68, 56, 68, 32, 32, 32, 32, 32, 32, 56, 68, 44, 44, 68, 56, 56, 68, 44, 44, 68, 56]
-    ev_lut = [56, 68, 44, 44, 68, 56, 56, 68, 44, 44, 68, 56, 32, 32, 32, 32, 32, 32, 68, 56, 68, 56, 44, 44]
-    misc_lut = [68,56,68,56,44,44,68,56,68,56,44,44,68,56,68,56,44,44,32,32,32,32,32,32,]
+def pokemon3(data: bytearray, edition):
     egg = False
     form = ""
+    tuple_pokemon = {}
+
     personality = int.from_bytes(data[:4], "little")
+    tuple_pokemon["PV"] = (data[:4].hex(), personality)
 
     unshuffled_bytes, shiny_value = decryptpokemon3(data)
+    tuple_pokemon["encrypted"] = (data[0x20:0x50].hex(), unshuffled_bytes.hex())
 
     checksum_given = int.from_bytes(data[0x1C:0x1E], 'little')
+
+    tuple_pokemon["checksum_given"] = (data[0x1C:0x1E].hex(), checksum_given)
     checksum_calculated = calculate_checksum(unshuffled_bytes)
+
+    tuple_pokemon["checksum_calculated"] = (checksum_calculated.to_bytes(2, 'little').hex(), checksum_calculated)
 
     if data[19] == 6:
         egg = True
     
+    tuple_pokemon["egg"] = (data[19:20].hex(), egg)
+
     species = int.from_bytes(unshuffled_bytes[0:2], 'little')
+
+    tuple_pokemon["species"] = (unshuffled_bytes[0:2].hex(), species)
     item = int.from_bytes(unshuffled_bytes[2:4], 'little')
 
-    if item in items3:
-        item = items3[item]
-    if species in range(277, 440):
-        species = species3_lut[species]
-        if isinstance(species, str):
-            form = species[3:]
-            species = int(species[:3])
-        if species == 386:
-            if edition == 34:
-                form = "-attack"
-            if edition == 35:
-                form = "-defense"
-            if edition == 33:
-                form = "-speed"
+    tuple_pokemon["item"] = (unshuffled_bytes[2:4].hex(), item)
+
     female = False
     if species in gender_lut:
         female = personality % 256 < gender_lut[species]
@@ -225,18 +221,23 @@ def pokemon3(data, edition):
         form = ""
         species = "egg"
     lvl = data[84]
+    tuple_pokemon["level"] = (data[84:85].hex(), lvl)
     cur_hp = int.from_bytes(data[0x56:0x58], "little")
+    tuple_pokemon["cur_hp"] = (data[0x56:0x58].hex(), cur_hp)
     max_hp = int.from_bytes(data[0x58:0x5A], "little")
+    tuple_pokemon["max_hp"] = (data[0x58:0x5A].hex(), max_hp)
     met_location = int.from_bytes(unshuffled_bytes[37:38], 'little')
+    tuple_pokemon["met_location"] = (unshuffled_bytes[37:38].hex(), met_location)
     nickname = ""
     for char in data[8:18]:
         if char in gen3charset:
             nickname += gen3charset[char]
         if char == 0xFF:
             break
+    tuple_pokemon["nickname"] = (data[8:18].hex(), nickname)
     result = Pokemon(species, not shiny_value > 8, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated)
-    # print(result)
-    return result
+    
+    return result, tuple_pokemon
 
 
 def pokemon45(data, gen):
@@ -385,3 +386,19 @@ def team(data, edition):
     liste.append(edition)
 
     return liste
+
+def team_for_analysis(data, edition):
+    length = len(data) // 6
+    raw_data = []
+    liste = []
+    tuple_list = []
+    gen = edition // 10
+
+    if gen == 3:
+        for i in range(6):
+            pokemon, tuple_pokemon = pokemon3(data[i * length : (i + 1) * length], edition)
+            raw_data.append(data[i * length : (i + 1) * length])
+            liste.append(pokemon)
+            tuple_list.append(tuple_pokemon)
+
+    return liste, tuple_list, raw_data

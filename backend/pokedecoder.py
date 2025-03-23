@@ -324,7 +324,7 @@ def pokemon67(data, gen):
     else:
         item = "-"
     met_location = int.from_bytes(unshuffled_bytes[0xD2:0xD4], "little")
-    nickname = (unshuffled_bytes[0x38:0x4E].decode("iso-8859-1").split("\u0000\u0000")[0].replace("\u0000", ""))
+    nickname = (unshuffled_bytes[0x38:0x51].decode("iso-8859-1").split("\u0000\u0000")[0].replace("\u0000", ""))
     form = get_form(unshuffled_bytes[0x15], dexnr, gen)  #  % 32
     if dexnr not in range(810):
         dexnr = 0

@@ -9,6 +9,7 @@ import logging
 from kivy.core.window import Window
 from kivy.uix.screenmanager import FadeTransition
 from kivy.uix.screenmanager import ScreenManager
+from kivy.uix.screenmanager import Screen
 
 from kivymd.app import MDApp
 
@@ -31,7 +32,7 @@ stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
 APP_NAME = "PokemonOBSTracker"
-APP_VERSION = "0.7.7"
+APP_VERSION = "0.8.0"
 
 @dataclass
 class MutableString(object):
@@ -122,7 +123,9 @@ class TrackerApp(MDApp):
             self.session_list,
         ]
 
-        return Screens(*arguments)
+        # return Screens(*arguments)
+
+        return Screen()
 
     def exit_check(self, *args, **kwargs):
         self.save_config(f"{self.configsave}bh_config.yml", self.bh)
@@ -130,6 +133,14 @@ class TrackerApp(MDApp):
         self.save_config(f"{self.configsave}sprites.yml", self.sp)
         self.save_config(f"{self.configsave}player.yml", self.pl)
         self.save_config(f"{self.configsave}remote.yml", self.rem)
+
+        for name in logging.root.manager.loggerDict:
+            this_logger = logging.getLogger(name)
+            if this_logger.hasHandlers:
+                handlers = this_logger.handlers
+                for handler in handlers:
+                    if type(handler) is type(file_handler):
+                        handler.close()
 
         for bizhawk in self.bizhawk_instances:
             bizhawk.terminate()

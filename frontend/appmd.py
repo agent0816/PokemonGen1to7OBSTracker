@@ -7,8 +7,7 @@ import requests
 import logging
 
 from kivy.core.window import Window
-from kivy.uix.screenmanager import FadeTransition
-from kivy.uix.screenmanager import ScreenManager
+from kivymd.uix.screenmanager import MDScreenManager
 from kivy.uix.screenmanager import Screen
 
 from kivymd.app import MDApp

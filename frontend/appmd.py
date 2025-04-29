@@ -6,9 +6,11 @@ import yaml
 import requests
 import logging
 
+from frontend.widgets.navbar import TrackerNavigationBar
+
 from kivy.core.window import Window
+from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.screenmanager import MDScreenManager
-from kivy.uix.screenmanager import Screen
 
 from kivymd.app import MDApp
 
@@ -32,6 +34,21 @@ logger.addHandler(stream_handler)
 
 APP_NAME = "PokemonOBSTracker"
 APP_VERSION = "0.8.0"
+
+class Screens(MDScreenManager):
+    def __init__(self,arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,session_list, **kwargs):
+        super().__init__(**kwargs)
+
+class MainWindow(MDBoxLayout):
+    def __init__(self,arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,session_list,**kwargs):
+        super().__init__(**kwargs)
+        self.screen_manager = Screens(arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,session_list)
+
+        navigation_list: list[dict] = [{"icon":"view-list","text":"Sessions", "active":True},{"icon":"home-variant-outline","text":"Main"}, {"icon":"cog","text":"Settings"}]
+        self.navbar = TrackerNavigationBar(self.screen_manager, navigation_list)
+
+        self.add_widget(self.navbar)
+        self.add_widget(self.screen_manager)
 
 @dataclass
 class MutableString(object):
@@ -122,9 +139,7 @@ class TrackerApp(MDApp):
             self.session_list,
         ]
 
-        # return Screens(*arguments)
-
-        return Screen()
+        return MainWindow(*arguments)
 
     def exit_check(self, *args, **kwargs):
         self.save_config(f"{self.configsave}bh_config.yml", self.bh)

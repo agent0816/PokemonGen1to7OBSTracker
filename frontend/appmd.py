@@ -7,12 +7,18 @@ import requests
 import logging
 
 from frontend.widgets.navbar import TrackerNavigationBar
+from frontend.widgets.mainmenumd import MainMenu
+from frontend.widgets.sessionsmenumd import SessionMenu
+from frontend.widgets.settingsmenumd import SettingsMenu
 
 from kivy.core.window import Window
-from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.screenmanager import MDScreenManager
+from kivy.uix.screenmanager import ScreenManager
+from kivy.uix.screenmanager import FadeTransition
 
 from kivymd.app import MDApp
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.screenmanager import MDScreenManager
+from kivymd.uix.transition.transition import MDSwapTransition
 
 from backend.classes.arceus import Arceus
 from backend.classes.bizhawk import Bizhawk
@@ -35,16 +41,26 @@ logger.addHandler(stream_handler)
 APP_NAME = "PokemonOBSTracker"
 APP_VERSION = "0.8.0"
 
-class Screens(MDScreenManager):
+class Screens(ScreenManager):
     def __init__(self,arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,session_list, **kwargs):
         super().__init__(**kwargs)
+        self.transition = FadeTransition()
+
+        main_menu = MainMenu(arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,configsave,sp,rem,obs,bh,pl,APP_VERSION,)
+        settings_menu = SettingsMenu(arceus,bizhawk,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,APP_VERSION,)
+        session_menu = SessionMenu(session_list, main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, APP_VERSION)
+        self.add_widget(session_menu)
+        self.add_widget(main_menu)
+        self.add_widget(settings_menu)
 
 class MainWindow(MDBoxLayout):
     def __init__(self,arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,session_list,**kwargs):
         super().__init__(**kwargs)
         self.screen_manager = Screens(arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,session_list)
 
-        navigation_list: list[dict] = [{"icon":"view-list","text":"Sessions", "screen_name":"SessionMenu", "active":True},{"icon":"home-variant-outline","text":"Main", "screen_name":"MainMenu"}, {"icon":"cog","text":"Settings", "screen_name":"SettingsMenu"}]
+        self.orientation = "vertical"
+
+        navigation_list: list[dict] = [{"icon":"view-list","display_name":"Sessions", "screen_name":"SessionMenu", "active":True},{"icon":"home-variant-outline","display_name":"Main", "screen_name":"MainMenu"}, {"icon":"cog","display_name":"Settings", "screen_name":"SettingsMenu"}]
         self.navbar = TrackerNavigationBar(self.screen_manager, navigation_list)
 
         self.add_widget(self.navbar)
@@ -65,6 +81,10 @@ class TrackerApp(MDApp):
         Window.bind(on_request_close=self.exit_check)
 
     def build(self):
+        self.theme_cls.theme_style_switch_animation = True
+        self.theme_cls.theme_style = "Dark"
+        self.theme_cls.primary_palette = "Orange"
+
         try:
             self.externalIPv4 = requests.get("https://ipinfo.io/ip", timeout=1).text
         except requests.exceptions.Timeout:

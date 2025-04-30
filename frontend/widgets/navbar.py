@@ -8,6 +8,7 @@ from kivymd.uix.navigationbar import MDNavigationItemIcon
 class TrackerNavigationItem(MDNavigationItem):
     icon = StringProperty()
     text = StringProperty()
+    screen_name = StringProperty()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -27,5 +28,6 @@ class TrackerNavigationBar(MDNavigationBar):
         item: MDNavigationItem,
         item_icon: str,
         item_text: str,
+        item_screen: str
     ):
-        self.screen_manager.current = item_text
+        self.screen_manager.current = item_screen

@@ -44,7 +44,7 @@ class MainWindow(MDBoxLayout):
         super().__init__(**kwargs)
         self.screen_manager = Screens(arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,session_list)
 
-        navigation_list: list[dict] = [{"icon":"view-list","text":"Sessions", "active":True},{"icon":"home-variant-outline","text":"Main"}, {"icon":"cog","text":"Settings"}]
+        navigation_list: list[dict] = [{"icon":"view-list","text":"Sessions", "screen_name":"SessionMenu", "active":True},{"icon":"home-variant-outline","text":"Main", "screen_name":"MainMenu"}, {"icon":"cog","text":"Settings", "screen_name":"SettingsMenu"}]
         self.navbar = TrackerNavigationBar(self.screen_manager, navigation_list)
 
         self.add_widget(self.navbar)

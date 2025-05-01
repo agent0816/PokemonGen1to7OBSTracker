@@ -26,7 +26,7 @@ class AddSessionCard(MDCard):
         self.add_widget(layout)
 
     def on_press(self):
-        print(self.session_menu)
+        pass
 
 class SessionCard(MDCard):
     def __init__(self, session_name, session_menu, **kwargs):
@@ -116,4 +116,7 @@ class SessionMenu(MDScreen):
         if self.selected_session is not None:
             self.selected_session.is_selected = False
             self.selected_session.change_selected_status()
-        self.selected_session = session_card
+        if session_card.is_selected:
+            self.selected_session = session_card
+        else:
+            self.selected_session = None

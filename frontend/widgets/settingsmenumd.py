@@ -6,5 +6,3 @@ class SettingsMenu(MDScreen):
         super().__init__(**kwargs)
 
         self.name = "SettingsMenu"
-
-        self.add_widget(MDLabel(text="SettingsMenu"))

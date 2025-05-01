@@ -23,5 +23,3 @@ class MainMenu(MDScreen):
         self.selected_session = ""
         self.app_version = app_version
         self.connectors = set()
-
-        self.add_widget(MDLabel(text="MainMenu"))

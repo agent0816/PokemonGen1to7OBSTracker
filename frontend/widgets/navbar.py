@@ -29,6 +29,3 @@ class TrackerNavigationBar(MDNavigationBar):
         item_display_name: str,
     ):
         self.screen_manager.current = item.screen_name
-
-    # def on_switch_tabs(self, *args):
-    #     print(args)

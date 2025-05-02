@@ -41,19 +41,31 @@ class SessionCard(MDCard):
 
         layout = MDRelativeLayout()
 
-        icon_button = MDIconButton(
+        self.icon_button = MDIconButton(
             icon="dots-vertical",
             pos_hint={"top": 1, "right": 1}
         )
-        session_label = MDLabel(
+        self.session_label = MDLabel(
             text=self.session_name,
             pos_hint={"center_y": .5, "left": 1},
             padding=("10dp", 0),
             adaptive_size=True,
         )
 
-        layout.add_widget(session_label)
-        layout.add_widget(icon_button)
+        menu_items = [
+            {
+                "text":"Select",
+                "on_release": self.menu_select,
+            }
+        ]
+        self.menu = MDDropdownMenu(
+            caller=self.icon_button, items=menu_items
+        )
+
+        self.icon_button.on_release = self.menu.open
+
+        layout.add_widget(self.session_label)
+        layout.add_widget(self.icon_button)
 
         self.add_widget(layout)
 
@@ -65,11 +77,18 @@ class SessionCard(MDCard):
         self.change_selected_status()
         self.session_menu.change_selected_session(self)
 
+    def menu_select(self, *args):
+        self.trigger_action(duration=0)
+        self.menu.dismiss()
+
     def change_selected_status(self):
+        item = self.menu.children[0].children[0].children[0]
         if self.is_selected:
             self.style = "filled"
+            item.text = "Deselect"
         else:
             self.style = "outlined"
+            item.text = "Select"
 
 class SessionMenu(MDScreen):
     def __init__(self, session_list_names, main_menu, settings_menu, configsave, sp, rem, obs, bh, pl, app_version, **kwargs):

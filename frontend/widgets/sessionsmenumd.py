@@ -16,6 +16,9 @@ class AddSessionCard(MDCard):
         self.session_menu = session_menu
         layout = MDRelativeLayout()
 
+        self.size_hint_y = None
+        self.size = (1, "40dp")
+
         icon_button = MDIcon(
             icon="plus",
             pos_hint={"center_y": .5, "center_x": .5}

@@ -79,22 +79,29 @@ class CreateSessionDialog(MDDialog):
 
         self.add_widget(MDDialogHeadlineText(text=F"Erstellen einer neuen Session"))
 
+        self.error_label = MDLabel(
+            text = '-', 
+            pos_hint={"center_x": 0.5}, 
+            size_hint_x = .6,
+            adaptive_height=True,
+            text_color="firebrick",
+            halign="center",
+            opacity=0
+            )
+
         self.name_text_box = MDTextField(
-                MDTextFieldLeadingIcon(
-                    icon="playlist-plus",
-                ),
                 MDTextFieldHintText(
                     text="Name der Session",
                 ),
                 mode="outlined",
                 size_hint_x = .6,
-                pos_hint={"center_x": 0.5}
+                pos_hint={"center_x": .5},
             )
-
+        
         self.add_widget(MDDialogContentContainer(
-            MDDivider(),
             self.name_text_box,
-            MDDivider(),
+            self.error_label,
+            spacing="10dp",
             orientation="vertical"
         ))
 
@@ -115,20 +122,23 @@ class CreateSessionDialog(MDDialog):
 
     def on_yes(self, instance):
         name = self.name_text_box.text
-        # if not name:
-        #     self.error_label.text = "Der Name darf nicht leer sein."
-        # elif not pathvalidate.is_valid_filename(name):
-        #     self.error_label.text = f"Der Name enthält unerlaubte Zeichen. Vorschlag: {pathvalidate.sanitize_filename(name)}"
-        # elif name in self.sessionmenu.session_list_names:
-        #     self.error_label.text = "Dieser Session-Name existiert bereits."
-        # else:
-        #     self.sessionmenu.newest_session_name = name
+
+        if not name:
+            self.error_label.text = "Der Name darf nicht leer sein."
+            self.error_label.opacity = 1
+        elif not pathvalidate.is_valid_filename(name):
+            self.error_label.text = f"Der Name enthält unerlaubte Zeichen. Vorschlag: {pathvalidate.sanitize_filename(name)}"
+            self.error_label.opacity = 1
+        elif name in self.session_menu.session_list_names:
+            self.error_label.text = "Dieser Session-Name existiert bereits."
+            self.error_label.opacity = 1
+        else:
+            self.session_menu.newest_session_name = name
         
-        #     self.dismiss()
-        self.session_menu.grid_layout.remove_widget(self.session_menu.add_session_card)
-        self.session_menu.grid_layout.add_widget(SessionCard(name, self.session_menu))
-        self.session_menu.grid_layout.add_widget(self.session_menu.add_session_card)
-        self.dismiss()
+            self.session_menu.grid_layout.remove_widget(self.session_menu.add_session_card)
+            self.session_menu.grid_layout.add_widget(SessionCard(name, self.session_menu))
+            self.session_menu.grid_layout.add_widget(self.session_menu.add_session_card)
+            self.dismiss()
 
 class AddSessionCard(MDCard):
     def __init__(self, session_menu, **kwargs):

@@ -66,19 +66,19 @@ class DeleteSessionDialog(MDDialog):
         ))
 
     def on_yes(self, instance):
-        # self.session_menu.session_list_names.remove(self.session_name)
+        self.session_menu.session_list_names.remove(self.session_name)
         self.session_menu.grid_layout.remove_widget(self.session_card)
 
-        # directory_to_delete = self.session_menu.configsave.text.replace("default", self.session_name).replace(" ", "_")
+        directory_to_delete = self.session_menu.configsave.text.replace("default", self.session_name).replace(" ", "_")
 
-        # path_to_delete = Path(directory_to_delete)
+        path_to_delete = Path(directory_to_delete)
 
-        # if path_to_delete.exists():
-        #     for entry in path_to_delete.iterdir():
-        #         if entry.is_file():
-        #             entry.unlink()
+        if path_to_delete.exists():
+            for entry in path_to_delete.iterdir():
+                if entry.is_file():
+                    entry.unlink()
 
-        #     path_to_delete.rmdir()
+            path_to_delete.rmdir()
 
         self.dismiss()
 
@@ -109,24 +109,24 @@ class GenToggleButton(MDButton, MDToggleButtonBehavior):
         super().__init__(self, *args, **kwargs)
         self.group = "games"
         self.allow_no_selection = False
-        self.add_widget(MDButtonText(text=text))
+        self.game_text = MDButtonText(text=text)
+        self.add_widget(self.game_text)
 
-class Gen_Screen(MDScreen):
-    def __init__(self, name, games, **kwargs):
+class GenScreen(MDScreen):
+    def __init__(self, name, games, callback, **kwargs):
         super().__init__(**kwargs)
         self.name = name
 
         box = MDBoxLayout(orientation='horizontal', pos_hint={'center_x':.5}, spacing="3dp")
         box.add_widget(Widget())
         for game in games:
-            toggle = GenToggleButton(text=game[0]) #, background_down='red', font_color_normal='yellow')
-            # toggle = ToggleImageButton(f"backend/ressources/{game[1]}.png", f"backend/ressources/{game[1]}_down.png", group="games")
+            toggle = GenToggleButton(text=game[0], on_press=callback)
             box.add_widget(toggle)
         box.add_widget(Widget())
         self.add_widget(box)
 
 class GameSelectionScreen(MDScreenManager):
-    def __init__(self, **kwargs):
+    def __init__(self, callback, **kwargs):
         super().__init__(**kwargs)
 
         # self.transition = CardTransition()
@@ -140,7 +140,7 @@ class GameSelectionScreen(MDScreenManager):
             'Gen 7':[('Sonne', 'Sonne') ,('Mond', 'Mond'), ('Ultra Sonne', 'Ultrasonne'), ('Ultra Mond', 'Ultramond')]
         }
         for gen, gameslist in self.games.items():
-            self.add_widget(Gen_Screen(gen, gameslist))
+            self.add_widget(GenScreen(gen, gameslist, callback))
 
         self.current = 'Gen 1'
 
@@ -199,7 +199,7 @@ class CreateSessionDialog(MDDialog):
             )
         )
 
-        self.game_selection_manager = GameSelectionScreen()
+        self.game_selection_manager = GameSelectionScreen(self.change_selected_game)
 
         item_list = [{"screen_name": generation} for generation in self.game_selection_manager.games]
         self.navbar = GameNavigationBar(self.game_selection_manager, item_list, size_hint_y=.5)
@@ -237,13 +237,20 @@ class CreateSessionDialog(MDDialog):
                 on_press=self.on_previous
             )
 
+        self.selected_game = MDLabel(
+            text = '-', 
+            pos_hint={"center_x": 0.5}, 
+            size_hint_x = .6,
+            halign="center",
+            )
+
         self.add_widget(MDDialogButtonContainer(
             MDButton(
                 MDButtonText(text='Abbrechen'),
                 style='elevated',
                 on_press=self.dismiss
             ),
-            Widget(),
+            self.selected_game,
             self.previous_button,
             self.next_button,
             spacing="10dp"
@@ -277,7 +284,6 @@ class CreateSessionDialog(MDDialog):
         self.screen_manager.current = self.screen_list[self.current_screen_index]
 
     def validate(self):
-
         if self.current_screen_index == 0:
             name = self.session_name_text_box.text
             if not name:
@@ -293,34 +299,70 @@ class CreateSessionDialog(MDDialog):
                 self.error_label.opacity = 1
                 return False
         elif self.current_screen_index == 1:
-            if not (self.name_text_box.text and "_" not in self.name_text_box.text):
+            if not self.name_text_box.text:
                 self.error_label.text = "Der Name darf nicht leer sein."
                 self.error_label.opacity = 1
                 return False
+            if "_" in self.name_text_box.text:
+                self.error_label.text = "Der Name darf keinen '_' enthalten."
+                self.error_label.opacity = 1
+                return False
         elif self.current_screen_index == 2:
-            result = False
-            toggle_buttons = ToggleButtonBehavior.get_widgets("games")
-            for button in toggle_buttons:
-                if button.state == "down":
-                    print(button)
-                    result = True
-            del toggle_buttons
-            return result
+            if self.selected_game.text == "-":
+                return False
 
         return True
     
+    def change_selected_game(self, instance):
+        self.selected_game.text = instance.game_text.text
+
     def on_confirmation(self, instance):
         name = self.session_name_text_box.text
         
         if self.validate():
             self.session_menu.grid_layout.remove_widget(self.session_menu.add_session_card)
-            self.session_menu.grid_layout.add_widget(SessionCard(name, self.session_menu))
+            self.session_menu.grid_layout.add_widget(SessionCard(name, self.session_menu, style="outlined"))
             self.session_menu.grid_layout.add_widget(self.session_menu.add_session_card)
             self.dismiss()
+            self.create_new_session()
         else:
             self.error_label.text = "Bitte ein Spiel auswählen"
             self.error_label.opacity = 1
 
+    def create_new_session(self):
+        new_session_name = self.session_name_text_box.text.replace(" ", "_")
+        player_name = self.name_text_box.text
+        selected_game = self.selected_game.text
+
+        new_config = self.session_menu.configsave.text.replace("default", new_session_name)
+        new_session_path = Path(f"{new_config}")
+        new_session_path.mkdir()
+
+        old_player_name = self.session_menu.pl["your_name"]
+        old_session_game = self.session_menu.pl["session_game"]
+
+        sp, bh, obs, rem, pl = self.session_menu.load_config_to_save()
+
+        self.session_menu.pl["your_name"] = player_name
+        self.session_menu.pl["session_game"] = selected_game
+
+        with open(f"{new_session_path}/sprites.yml", 'w') as file:
+            yaml.dump(sp, file)
+
+        with open(f"{new_session_path}/bh_config.yml", 'w') as file:
+            yaml.dump(bh, file)
+
+        with open(f"{new_session_path}/obs_config.yml", 'w') as file:
+            yaml.dump(obs, file)
+
+        with open(f"{new_session_path}/remote.yml", 'w') as file:
+            yaml.dump(rem, file)
+
+        with open(f"{new_session_path}/player.yml", 'w') as file:
+            yaml.dump(pl, file)
+
+        self.session_menu.pl["your_name"] = old_player_name
+        self.session_menu.pl["session_game"] = old_session_game
 
     def on_press(self):
         self._state = 0.0
@@ -431,8 +473,6 @@ class SessionMenu(MDScreen):
         self.app_version = app_version
 
         self.session_list_names = session_list_names
-        self.newest_session_name = None
-        self.session_dict = {}
         self.selected_session = None
 
         scroll_view = MDScrollView(do_scroll_x=False)
@@ -457,11 +497,65 @@ class SessionMenu(MDScreen):
 
         self.add_widget(scroll_view)
     
-    def change_selected_session(self, session_card):
+    def load_session_config(self, config = None):
+        if config is None:
+            config_path = self.configsave
+        else:
+            config_path = config
+
+        with open(f"{config_path}sprites.yml", 'r') as file:
+            new_sp = yaml.safe_load(file)
+
+        with open(f"{config_path}bh_config.yml", 'r') as file:
+            new_bh = yaml.safe_load(file)
+
+        with open(f"{config_path}obs_config.yml", 'r') as file:
+            new_obs = yaml.safe_load(file)
+
+        with open(f"{config_path}remote.yml", 'r') as file:
+            new_rem = yaml.safe_load(file)
+
+        with open(f"{config_path}player.yml", 'r') as file:
+            new_pl = yaml.safe_load(file)
+        
+        if config is None:
+            for key, value in new_sp.items():
+                self.sp[key] = value
+
+            for key, value in new_bh.items():
+                self.bh[key] = value
+
+            for key, value in new_obs.items():
+                self.obs[key] = value
+
+            for key, value in new_rem.items():
+                self.rem[key] = value
+
+            for key, value in new_pl.items():
+                self.pl[key] = value
+        else:
+            return new_sp, new_bh, new_obs, new_rem, new_rem
+        
+    def load_config_to_save(self):
+        if self.selected_session is not None:
+            return self.load_session_config(config=self.default_config)
+        
+        return self.sp, self.bh, self.obs, self.rem, self.pl
+
+    def change_selected_session(self, session_card: SessionCard):
         if self.selected_session is not None:
             self.selected_session.is_selected = False
             self.selected_session.change_selected_status()
         if session_card.is_selected:
             self.selected_session = session_card
+            self.configsave.text = self.default_config.replace("default", f"{(session_card.session_name.replace(' ', '_'))}")
         else:
             self.selected_session = None
+            self.configsave.text = self.default_config
+
+        self.load_session_config()
+
+    def save_session_list(self):
+        new_config = self.default_config.replace("default/", "")
+        with open(f"{new_config}/session_list.yml", "w") as file:
+            yaml.dump(self.session_list_names, file)

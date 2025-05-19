@@ -46,11 +46,11 @@ class Screens(ScreenManager):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
 
-        main_menu = MainMenu(arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,configsave,sp,rem,obs,bh,pl,APP_VERSION,)
+        self.main_menu = MainMenu(arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,configsave,sp,rem,obs,bh,pl,APP_VERSION,)
         settings_menu = SettingsMenu(arceus,bizhawk,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,APP_VERSION,)
-        session_menu = SessionMenu(session_list, main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, APP_VERSION)
+        session_menu = SessionMenu(session_list, self.main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, APP_VERSION)
         self.add_widget(session_menu)
-        self.add_widget(main_menu)
+        self.add_widget(self.main_menu)
         self.add_widget(settings_menu)
 
 class MainWindow(MDBoxLayout):

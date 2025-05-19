@@ -75,6 +75,5 @@ class MainMenu(MDScreen):
 
         def on_complete(animation, widget):
             self.middle_button.icon = new_icon
-            print(self.left_part.size_hint_x)
         anim.bind(on_complete=on_complete)
 

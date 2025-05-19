@@ -38,6 +38,8 @@ class DeleteSessionDialog(MDDialog):
         self.session_name = session_name
         self.session_card = session_card
         
+        self.auto_dismiss = False
+
         self.add_widget(MDDialogIcon(icon="delete-forever-outline"))
         self.add_widget(MDDialogHeadlineText(text=F"Wirklich die Session '{self.session_name}' löschen?"))
 
@@ -139,6 +141,7 @@ class CreateSessionDialog(MDDialog):
     def __init__(self, session_menu, **kwargs):
         super().__init__(**kwargs)
         self.session_menu = session_menu
+        self.auto_dismiss = False
 
         self.screen_list = ["create","player_name","game_select"]
         self.current_screen_index = 0

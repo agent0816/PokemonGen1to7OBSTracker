@@ -36,29 +36,11 @@ stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
 APP_NAME = "PokemonOBSTracker"
-APP_VERSION = "0.7.8"
+APP_VERSION = "0.7.10"
 
 
 class Screens(ScreenManager):
-    def __init__(
-        self,
-        arceus,
-        bizhawk,
-        citra,
-        bizhawk_instances,
-        munchlax,
-        obs_websocket,
-        externalIPv4,
-        externalIPv6,
-        configsave,
-        sp,
-        rem,
-        obs,
-        bh,
-        pl,
-        session_list,
-        **kwargs,
-    ):
+    def __init__(self,arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,session_list,**kwargs,):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
         update_menu = Update(APP_NAME, APP_VERSION)
@@ -79,21 +61,7 @@ class Screens(ScreenManager):
             APP_VERSION,
         )
         self.add_widget(main_menu)
-        settings_menu = SettingsMenu(
-            arceus,
-            bizhawk,
-            munchlax,
-            obs_websocket,
-            externalIPv4,
-            externalIPv6,
-            configsave,
-            sp,
-            rem,
-            obs,
-            bh,
-            pl,
-            APP_VERSION,
-        )
+        settings_menu = SettingsMenu(arceus,bizhawk,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,APP_VERSION,)
         self.add_widget(settings_menu)
         session_menu = SessionMenu(session_list, main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, APP_VERSION)
         self.add_widget(session_menu)

@@ -57,8 +57,8 @@ class Bizhawk:
                 else:
                     return 1418
 
-            def update_teams(team):
-                team: list[Pokemon] = pokedecoder.team(team, edition)
+            def update_teams(msg):
+                team: list[Pokemon] = pokedecoder.team(msg, edition)
                 teams = self.munchlax.bizhawk_teams
                 if player in teams:
                     if teams[player] == team:
@@ -68,7 +68,7 @@ class Bizhawk:
                     self.munchlax.unsorted_teams[player] = team
                 for index, pokemon in enumerate(team):
                     if index < 6 and player in teams:
-                        if pokemon.checksum_given < 0 or pokemon.checksum_given != pokemon.checksum_calculated:
+                        if (pokemon.checksum_given < 0 or pokemon.checksum_given != pokemon.checksum_calculated) and edition > 30:
                             continue
                         else:
                             teams[player][index] = team[index]
@@ -115,7 +115,6 @@ class Bizhawk:
                     elif counter % 60 == 0:
                         await self.send_messages(writer, "team")
                         msg = await reader.read(length)
-                        print(self.munchlax.unsorted_teams)
                         update_teams(msg)
                     elif counter % 60 == 2 and not in_battle:
                         await self.send_messages(writer, "in_battle")

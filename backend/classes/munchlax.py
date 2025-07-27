@@ -157,6 +157,7 @@ class Munchlax:
     
     async def connect(self):
         self.logger.info(f"trying to connect munchlax to ({self.host}, {self.port})")
+        await asyncio.sleep(0.1)
         self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
         self.logger.info(f"Munchlax {self.client_id} bei Arceus({self.host},{self.port}) registriert")
         

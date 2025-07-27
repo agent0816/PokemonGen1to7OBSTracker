@@ -462,7 +462,7 @@ class MainMenu(Screen):
         if (
             bizhawk_path.exists()
             and bizhawk_path.is_file()
-            and self.bh["path"].endswith(".exe")
+            and (self.bh["path"].endswith(".exe") or self.bh["path"].endswith(".sh"))
         ):
             self.emulator.disabled = True
             if self.emulator.text == "Bizhawk starten":
@@ -473,7 +473,7 @@ class MainMenu(Screen):
                     if not self.pl[f"remote_{i+1}"]:
                         process = subprocess.Popen(
                             [
-                                self.bh["path"],
+                                bizhawk_path,
                                 f'--lua={os.path.abspath(f"./backend/lua/Player{i+1}.lua")}',
                                 f'--socket_ip={self.bh["host"]}',
                                 f'--socket_port={self.bh["port"]}',

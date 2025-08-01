@@ -16,16 +16,18 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.properties import OptionProperty
 from kivy.properties import ColorProperty
+from kivy.properties import NumericProperty
 from kivy.uix.button import Button
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.stencilview import StencilView
 
 class MainMenu(MDScreen):
     COLLAPSE_THRESHOLD = 600
+    window_width = NumericProperty(Window.width)
+    window_height = NumericProperty(Window.height)
     
     def __init__(self,arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,configsave,sp,rem,obs,bh,pl,app_version,**kwargs):
         super().__init__(**kwargs)
-        
         self.name = "MainMenu"
         self.arceus = arceus
         self.bizhawk = bizhawk
@@ -42,8 +44,6 @@ class MainMenu(MDScreen):
         self.selected_session = ""
         self.app_version = app_version
         self.connectors = set()
-
-        self._resize_finished = Clock.create_trigger(self._on_resize_finished, 0.1)
 
         self.box = MDBoxLayout(orientation="horizontal")
 
@@ -80,25 +80,30 @@ class MainMenu(MDScreen):
         self.add_widget(self.box)
 
         Window.bind(on_resize=self._on_window_resize)
-        Clock.schedule_once(lambda dt: self._on_window_resize(Window, *Window.size), 0)
-    
+        Window.bind(on_maximize=self._on_max_restore)
+        Window.bind(on_restore=self._on_max_restore)
+
     def on_pre_enter(self):
         Clock.schedule_once(lambda dt: setattr(self.middle_button, "radius", [10,10,10,10]), .05)
         Clock.schedule_once(lambda dt: setattr(self.middle_button, "height", self.height), .05)
         self.middle_button._button_icon.x = 2
     
-    def _on_window_resize(self, window, width, height):
-        if width < self.COLLAPSE_THRESHOLD and self.left_part.width > 0:
-            self.toggle_menu()
-        elif width >= self.COLLAPSE_THRESHOLD and self.left_part.width == 0:
-            self.toggle_menu()
-        self._resize_finished()
+    def _on_max_restore(self, window):
+        self.on_window_width()
 
-    def _on_resize_finished(self, dt):
-        self.middle_button.height = self.height
+    def _on_window_resize(self, window, width, height):
+        self.window_width = width
+        self.window_height = height
+    
+    def on_window_width(self, *args):
+        if (self.width < self.COLLAPSE_THRESHOLD and self.left_part.width > 0) or (self.width >= self.COLLAPSE_THRESHOLD and self.left_part.width == 0):
+            self.toggle_menu()
+        
+    def on_window_height(self, *args):
+        Clock.schedule_once(lambda dt: setattr(self.middle_button, "height", self.height), .05)
 
     def toggle_menu(self, *args):
-        collapsed = self.left_part.width > 0 
+        collapsed = self.left_part.width > 0
 
         new_hint = 0 if collapsed else self.initial_w
         new_icon = "chevron-right" if collapsed else "chevron-left"

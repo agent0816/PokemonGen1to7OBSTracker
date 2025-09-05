@@ -14,8 +14,6 @@ from kivy.animation import Animation
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.properties import OptionProperty
-from kivy.properties import ColorProperty
 from kivy.properties import NumericProperty
 from kivy.uix.button import Button
 from kivy.uix.scrollview import ScrollView
@@ -51,7 +49,9 @@ class MainMenu(MDScreen):
         self.initial_w = Window.width * orig_menu_hint
 
         self.left_part = StencilView(size_hint_x=None, width = self.initial_w)
-        self.left_part.add_widget(MDLabel(text="linke Seite"))
+
+        self.control_menu = ControlMenu()
+        self.left_part.add_widget(self.control_menu)
 
         self.middle_icon = MDButtonIcon(icon="chevron-left")
 
@@ -67,12 +67,9 @@ class MainMenu(MDScreen):
 
         self.right_part = ScrollView(do_scroll_y=False, do_scroll_x=True)
 
-        self.scroll_box = MDBoxLayout(orientation="horizontal", size_hint_x=None)
+        self.scroll_box = TrainerMenu(orientation="horizontal", size_hint_x=None)
         self.scroll_box.bind(minimum_width=self.scroll_box.setter('width'))
         self.right_part.add_widget(self.scroll_box)
-        
-        for i in range(20):
-            self.scroll_box.add_widget(Button(text=f"{i}", size_hint_x=None, width="100dp"))
 
         self.box.add_widget(self.left_part)
         self.box.add_widget(self.middle_button)
@@ -115,3 +112,20 @@ class MainMenu(MDScreen):
             self.middle_icon.icon = new_icon
         anim.bind(on_complete=on_complete)
 
+class ControlMenu(MDBoxLayout):
+    def __init__(self, *args, **kwargs):
+        super().__init__(**kwargs)
+
+
+
+class TrainerMenu(MDBoxLayout):
+    def __init__(self, *args, **kwargs):
+        super().__init__(**kwargs)
+
+class TrainerBox(MDBoxLayout):
+    def __init__(self, *args, **kwargs):
+        super().__init__(**kwargs)
+
+class PokemonBox(MDBoxLayout):
+    def __init__(self, *args, **kwargs):
+        super().__init__(**kwargs)

@@ -17,4 +17,4 @@ keypack.pyu
 compile.ps1
 *.exe
 *.txt
-.venv/
+.venv

@@ -22,7 +22,7 @@ function main()
     local NRBG = 0xF2B9 -- Nicknames Rot/Blau/Gelb
 
     local GS = 0xFA2A -- Gold/Silber
-    local Kr = 0xFCDF -- Kristall
+    local Kr = 0xFCDF -- Kristall 9EAD0A2B6300
     local NGS = 0xFB8C -- Nicknames Gold/Silber
     local EGS = 0xFA23 -- Eier Gold/Silber
     local NKr = 0xDE41 -- Nicknames Kristall
@@ -256,13 +256,36 @@ function main()
     local cur_team_player = 0
     local in_battle = false
     local battle_msg = ''
+    team = {}
+    
+    for i = 1, length, 1 do
+        team[i] = 0
+        lastTeam[i] = 0
+    end
+    
+    local old_names = {}
+
+    for i = 1, 66 do
+        old_names[i] = 0
+    end
+
+    local old_eggs = {}
+
+    for i = 1, 6 do
+        old_eggs[i] = 0
+    end
+
+    local old_badges_johto = 0
+    local old_badges_kanto = 0
 
     while true do
         if gameversion > 40 then
             max_team_player = memory.read_u32_le(battlepointer - 0x8, domain)
             cur_team_player = memory.read_u32_le(battlepointer - 0x4, domain)
+        elseif gameversion == 23 then
+            cur_team_player = memory.readbyte(0xFCD7)
         end
-
+        
         if max_team_player == 6 and cur_team_player > 0 and cur_team_player <= 7 then
             pointer = battlepointer
             in_battle = true
@@ -273,7 +296,13 @@ function main()
             battle_msg = 'false'
         end
         
-        team = memory.read_bytes_as_array(pointer, length, domain)
+        if gameversion == 23 then
+            if cur_team_player > 0 and cur_team_player <= 7 then
+                team = memory.read_bytes_as_array(pointer, length, domain)
+            end
+        else
+            team = memory.read_bytes_as_array(pointer, length, domain)
+        end
         if areTablesEqual(team, lastTeam) then
             if fluctcount % 30 == 0 then
             end
@@ -284,7 +313,27 @@ function main()
         end
 
         msg = {table.unpack(team)}
-        if gameversion < 30 then
+        if gameversion == 23 then
+            local names = memory.read_bytes_as_array(namepointer, 66, domain)
+            local eggs = memory.read_bytes_as_array(eggpointer, 6, domain)
+            if cur_team_player > 0 and cur_team_player <= 7 then
+                old_names = names
+                for i = 1, 66 do
+                    msg[#msg + 1] = names[i]
+                end
+                old_eggs = eggs
+                for i = 1, 6 do
+                    msg[#msg + 1] = eggs[i]
+                end
+            else
+                for i = 1, 66 do
+                    msg[#msg + 1] = old_names[i]
+                end
+                for i = 1, 6 do
+                    msg[#msg + 1] = old_eggs[i]
+                end
+            end
+        elseif gameversion < 30 then
             for i = 0, 65 do
                 msg[#msg + 1] = memory.readbyte(namepointer + i, domain)
             end
@@ -295,10 +344,22 @@ function main()
             end
         end
         -- Orden
-        if gameversion < 30 then
-            msg[#msg + 1] = memory.readbyte(badgepointer, domain)
+        local badges_johto = memory.readbyte(badgepointer, domain)
+        local badges_kanto = memory.readbyte(badgepointer + 1, domain)
+        if gameversion == 23 then
+            if cur_team_player > 0 and cur_team_player <= 7 then
+                old_badges_johto = badges_johto
+                old_badges_kanto = badges_kanto
+                msg[#msg + 1] = badges_johto
+                msg[#msg + 1] = badges_kanto
+            else
+                msg[#msg + 1] = old_badges_johto
+                msg[#msg + 1] = old_badges_kanto
+            end 
+        elseif gameversion < 30 then
+            msg[#msg + 1] = badges_johto
             if gameversion > 20 then
-                msg[#msg + 1] = memory.readbyte(badgepointer + 1, domain)
+                msg[#msg + 1] = badges_kanto
             end
         end
         if gameversion > 30 and gameversion < 40 then

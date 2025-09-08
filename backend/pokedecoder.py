@@ -141,12 +141,14 @@ def pokemon1(data):
     if dexnr in species1_lut:
         dexnr = species1_lut.get(dexnr)
     lvl = data[0x21]
-    cur_hp = int.from_bytes(data[0x1:0x3], "little")
-    max_hp = int.from_bytes(data[0x22:0x24], "little")
+    cur_hp = int.from_bytes(data[0x1:0x3], "big")
+    max_hp = int.from_bytes(data[0x22:0x24], "big")
     nickname = ""
     for char in data[44:]:
         if char in gen1charset:
             nickname += gen1charset[char]
+        if char == 80:
+            break
     return Pokemon(
         dexnr, False, lvl=lvl, nickname=nickname, cur_hp=cur_hp, max_hp=max_hp
     )
@@ -159,14 +161,16 @@ def pokemon2(data):
     if item in items2:
         item = items2[item]
     lvl = data[0x1F]
-    cur_hp = int.from_bytes(data[0x22:0x24], "little")
-    max_hp = int.from_bytes(data[0x24:0x26], "little")
+    cur_hp = int.from_bytes(data[0x22:0x24], "big")
+    max_hp = int.from_bytes(data[0x24:0x26], "big")
     nickname = ""
     form = ""
     egg = data[-1] == 0xFD
     for char in data[48:-1]:
         if char in gen1charset:
             nickname += gen1charset[char]
+        if char == 80:
+            break
     ivs = [data[0x15] >> 4, data[0x15] % 16, data[0x16] >> 4, data[0x16] % 16]
     if dexnr == 201:
         letter = (
@@ -349,9 +353,8 @@ def team(data, edition):
             newdata += (
                 data[i * 44 : i * 44 + 44] + data[i * 11 + 264 : 11 + i * 11 + 264]
             )
-        data = newdata
         for i in range(6):
-            liste.append(pokemon1(data[i * length : (i + 1) * length]))
+            liste.append(pokemon1(newdata[i * length : (i + 1) * length]))
     elif gen == 2:
         newdata = b""
         for i in range(6):
@@ -360,9 +363,8 @@ def team(data, edition):
                 + data[i * 11 + 288 : 11 + i * 11 + 288]
                 + data[i + 354 : i + 355]
             )
-        data = newdata
         for i in range(6):
-            liste.append(pokemon2(data[i * length : (i + 1) * length]))
+            liste.append(pokemon2(newdata[i * length : (i + 1) * length]))
     elif gen == 3:
         for i in range(6):
             liste.append(pokemon3(data[i * length : (i + 1) * length], edition))

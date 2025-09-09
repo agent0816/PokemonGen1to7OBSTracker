@@ -5,6 +5,7 @@ logging.basicConfig(level=logging.INFO, filename='logs/main.log',format='[%(asct
 from kivy.config import Config
 Config.read("backend/kivy_config/gui.ini")
 import frontend.appmd as FEApp
+# import frontend.app as FEApp
 import asyncio
 for logger_name, logger in logging.Logger.manager.loggerDict.items():
     if isinstance(logger, logging.Logger):

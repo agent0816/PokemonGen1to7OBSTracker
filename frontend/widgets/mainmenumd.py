@@ -4,9 +4,15 @@ from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDButton
 from kivymd.uix.button import MDIconButton
 from kivymd.uix.button import MDButtonIcon
+from kivymd.uix.button import MDButtonText
+from kivymd.uix.divider import MDDivider
 from kivymd.uix.label import MDIcon
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
+from kivymd.uix.segmentedbutton import MDSegmentedButton
+from kivymd.uix.segmentedbutton import MDSegmentedButtonItem
+from kivymd.uix.segmentedbutton import MDSegmentButtonLabel
+from kivymd.uix.selectioncontrol import MDCheckbox
 
 from backend.classes.obs import OBS
 
@@ -15,12 +21,14 @@ from kivy.uix.behaviors import ButtonBehavior
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.properties import NumericProperty
+from kivy.properties import StringProperty
 from kivy.uix.button import Button
+from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.stencilview import StencilView
 
 class MainMenu(MDScreen):
-    COLLAPSE_THRESHOLD = 600
+    COLLAPSE_THRESHOLD = 700
     window_width = NumericProperty(Window.width)
     window_height = NumericProperty(Window.height)
     
@@ -50,7 +58,7 @@ class MainMenu(MDScreen):
 
         self.left_part = StencilView(size_hint_x=None, width = self.initial_w)
 
-        self.control_menu = ControlMenu()
+        self.control_menu = ControlMenu(self.app_version, orientation='vertical', theme_width="Custom", theme_height="Custom", width=self.initial_w, height=self.height)
         self.left_part.add_widget(self.control_menu)
 
         self.middle_icon = MDButtonIcon(icon="chevron-left")
@@ -67,7 +75,7 @@ class MainMenu(MDScreen):
 
         self.right_part = ScrollView(do_scroll_y=False, do_scroll_x=True)
 
-        self.scroll_box = TrainerMenu(orientation="horizontal", size_hint_x=None)
+        self.scroll_box = TrainerMenu(orientation="horizontal", adaptive_width=True)
         self.scroll_box.bind(minimum_width=self.scroll_box.setter('width'))
         self.right_part.add_widget(self.scroll_box)
 
@@ -113,10 +121,93 @@ class MainMenu(MDScreen):
         anim.bind(on_complete=on_complete)
 
 class ControlMenu(MDBoxLayout):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, app_version, *args, **kwargs):
         super().__init__(**kwargs)
+        self.app_version = app_version
 
+        self.padding = "4dp"
+        self.spacing = "4dp"
 
+        self.pos_hint = {"center": (0,.5)}
+
+        logo_settings = MDBoxLayout(theme_width="Custom", orientation="vertical", adaptive_height=True, size_hint_x=1)
+        logo = MDLabel(text=f"Logo\nVersion {self.app_version}", adaptive_height=True)
+        logo_settings.add_widget(logo)
+
+        self.add_widget(logo_settings)
+
+        start_server_button = MDButton(MDButtonText(text="Server starten", pos_hint={"center": (.5, .5)}), theme_width = "Custom", size_hint_x=1)
+
+        self.add_widget(start_server_button)
+        
+        self.add_widget(MDDivider())
+
+        client = MDSegmentedButtonItem(MDSegmentButtonLabel(text="Client"))
+        server = MDSegmentedButtonItem(MDSegmentButtonLabel(text="Server"))
+        client_or_server = MDSegmentedButton(server, client)
+
+        self.add_widget(client_or_server)
+
+        self.add_widget(MDDivider())
+        
+        connect_obs_button = MDButton(MDButtonText(text="OBS verbinden", pos_hint={"center": (.5, .5)}), theme_width = "Custom", size_hint_x=1 )
+
+        self.add_widget(connect_obs_button)
+
+        self.add_widget(MDDivider())
+
+        self.show_names = CheckItem(text="Namen anzeigen")
+        self.add_widget(self.show_names)
+
+        self.show_badges = CheckItem(text="Orden anzeigen")
+        self.add_widget(self.show_badges)
+
+        self.show_items = CheckItem(text="Items anzeigen")
+        self.add_widget(self.show_items)
+
+        self.animated_sprites = CheckItem(text="animierte Sprites")
+        self.add_widget(self.animated_sprites)
+
+        self.add_widget(MDDivider())
+
+        connect_emulator_button = MDButton(MDButtonText(text="Emulator starten", pos_hint={"center": (.5, .5)}), theme_width = "Custom", size_hint_x=1 )
+
+        self.add_widget(connect_emulator_button)
+
+        self.add_widget(MDDivider())
+
+        sorting_label = MDLabel(text="Sortierung", halign="center", adaptive_height=True)
+
+        self.add_widget(sorting_label)
+
+        # dexnr = MDSegmentedButtonItem(MDSegmentButtonLabel(text="Dex Nr."))
+        team = MDSegmentedButtonItem(MDSegmentButtonLabel(text="Team"))
+        # level = MDSegmentedButtonItem(MDSegmentButtonLabel(text="Level"))
+        route = MDSegmentedButtonItem(MDSegmentButtonLabel(text="Route"))
+
+        sorting = MDSegmentedButton(team, route)
+
+        self.add_widget(sorting)
+
+        self.add_widget(MDDivider())
+
+        self.save_ram_bizhawk = CheckItem(text="saveRAM automatisch")
+        self.add_widget(self.save_ram_bizhawk)
+
+class CheckItem(MDBoxLayout):
+    text = StringProperty()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.adaptive_height = True
+        self.widgets = [
+            MDCheckbox(),
+            MDLabel(
+                text=self.text,
+                adaptive_height=True,
+                halign="center",
+            ),
+        ]
 
 class TrainerMenu(MDBoxLayout):
     def __init__(self, *args, **kwargs):

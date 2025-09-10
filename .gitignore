@@ -19,3 +19,4 @@ compile.ps1
 *.txt
 .venv/
 tufup/
+.tufup-repo-config

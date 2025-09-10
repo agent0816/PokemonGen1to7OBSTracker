@@ -9,8 +9,8 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.progressbar import ProgressBar
 from kivy.uix.screenmanager import Screen
-from pyupdater.client import Client
-from client_config import ClientConfig
+from tufup.client import Client
+# from client_config import ClientConfig
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -32,9 +32,13 @@ class Update(Screen):
         self.name = "Update"
 
     def check_for_update(self):
-        client = Client(ClientConfig(), refresh=True)
-        client.add_progress_hook(self.print_status_info)
-        app_update = client.update_check(self.app_name, self.app_version)
+        self.client = Client(
+            app_name=self.app_name,
+            current_version=self.app_version,
+            refresh_required=False
+        )
+        # client.add_progress_hook(self.print_status_info)
+        app_update = self.client.check_for_updates()
         logger.info(f"{app_update=}")
         if app_update:
             self.show_update_popup(app_update)
@@ -69,17 +73,17 @@ class Update(Screen):
         
             logger.info("Download wird gestartet.")
             await asyncio.get_event_loop().run_in_executor(None, app_update.download)
-            if app_update.is_downloaded():
-                logger.info("Update wird entpackt")
-                extracted_files = await asyncio.get_event_loop().run_in_executor(None, app_update.win_extract)
-                logger.info("Starten des Updaters als Administrator")
-                app_path = os.path.abspath(os.getcwd())
-                update_path = app_update.update_folder
-                updater_path = os.path.join(app_path, "backend", "updater", "updater.exe")
-                args = f'--app-path "{app_path}" --update-path "{update_path}" --extracted-files "{extracted_files}"'
-                ctypes.windll.shell32.ShellExecuteW(None, "runas", updater_path, args, None, 1)
-                logger.info(f"{args=}")
-                sys.exit(0)
+            # if app_update.is_downloaded():
+            #     logger.info("Update wird entpackt")
+            #     extracted_files = await asyncio.get_event_loop().run_in_executor(None, app_update.win_extract)
+            #     logger.info("Starten des Updaters als Administrator")
+            #     app_path = os.path.abspath(os.getcwd())
+            #     update_path = app_update.update_folder
+            #     updater_path = os.path.join(app_path, "backend", "updater", "updater.exe")
+            #     args = f'--app-path "{app_path}" --update-path "{update_path}" --extracted-files "{extracted_files}"'
+            #     ctypes.windll.shell32.ShellExecuteW(None, "runas", updater_path, args, None, 1)
+            #     logger.info(f"{args=}")
+            #     sys.exit(0)
 
     def download_update(self, app_update, admin = False):
         asyncio.ensure_future(self.async_download_update(app_update))

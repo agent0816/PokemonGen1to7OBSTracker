@@ -58,7 +58,7 @@ class MainMenu(MDScreen):
 
         self.left_part = StencilView(size_hint_x=None, width = self.initial_w)
 
-        self.control_menu = ControlMenu(self.app_version, orientation='vertical', theme_width="Custom", theme_height="Custom", width=self.initial_w, height=self.height)
+        self.control_menu = ControlMenu(self.app_version, orientation='vertical', theme_width="Custom", size_hint_x=None, width=self.initial_w)
         self.left_part.add_widget(self.control_menu)
 
         self.middle_icon = MDButtonIcon(icon="chevron-left")
@@ -127,8 +127,6 @@ class ControlMenu(MDBoxLayout):
 
         self.padding = "4dp"
         self.spacing = "4dp"
-
-        self.pos_hint = {"center": (0,.5)}
 
         logo_settings = MDBoxLayout(theme_width="Custom", orientation="vertical", adaptive_height=True, size_hint_x=1)
         logo = MDLabel(text=f"Logo\nVersion {self.app_version}", adaptive_height=True)

@@ -12,6 +12,8 @@ from kivy.uix.screenmanager import Screen
 from tufup.client import Client
 # from client_config import ClientConfig
 
+from tufup.repo import Repository
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')

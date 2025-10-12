@@ -316,13 +316,37 @@ def pokemon67(data, gen):
 
     dexnr = int.from_bytes(unshuffled_bytes[:2], "little")
     item = int.from_bytes(unshuffled_bytes[2:4], "little")
+    experience_points = int.from_bytes(unshuffled_bytes[0x08:0x0C], 'little')
+    ability = int.from_bytes(unshuffled_bytes[0x0C:0x0D])
+    # ability_number = int.from_bytes(unshuffled_bytes[0x0D:0x0E])
     female = False
     personality = int.from_bytes(unshuffled_bytes[0x10:0x14], "little")
+    nature = int.from_bytes(unshuffled_bytes[0x14:0x15])
+
+    ev_names = ['hp','attack','defense','speed','special_attack','special_defense']
+    evs = {ev_names[index]: int(byte) for index, byte in enumerate(unshuffled_bytes[0x16:0x1C])}
+
+    move_bytes = unshuffled_bytes[0x52:0x5A]
+    pp_bytes = unshuffled_bytes[0x5A:0x5E]
+    moves = [{f"id": int.from_bytes(move_bytes[2*i:2*i+2], 'little'), "pp": int(byte)} for i, byte in enumerate(pp_bytes)]
+
+    iv_base = int.from_bytes(unshuffled_bytes[0x6C:0x70], 'little')
+    ivs = {ev_names[index]: ((iv_base >> (index * 5)) & 0x1F) for index in range(6)}
+
     if dexnr in gender_lut:
         female = personality % 256 < gender_lut[dexnr]
+    status_bytes = f"{int.from_bytes(decrypted_battle_stats[0:1]):#010b}".replace('0b','')
+    status = {}
+    status["sleep"] = int(status_bytes[0:3])
+    status["poison"] = int(status_bytes[3])
+    status["burn"] = int(status_bytes[4])
+    status["freeze"] = int(status_bytes[5])
+    status["para"] = int(status_bytes[6])
+    status["toxic"] = int(status_bytes[7])
     lvl = int(decrypted_battle_stats[4])
     cur_hp = int.from_bytes(decrypted_battle_stats[8:10], "little")
     max_hp = int.from_bytes(decrypted_battle_stats[10:12], "little")
+    battle_stats = {ev_names[index]: int.from_bytes(decrypted_battle_stats[index*2 + 10:12 + index*2], "little") for index in range(1,6)}
     if item in items:
         item = items[item]
     else:
@@ -339,7 +363,7 @@ def pokemon67(data, gen):
         else:
             form = form = get_form(unshuffled_bytes[0x15], dexnr, gen)
         dexnr = "egg"
-    return Pokemon(dexnr,shiny_value < 17,female,item=item,form=form,lvl=lvl,nickname=nickname,route=met_location,cur_hp=cur_hp,max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated)
+    return Pokemon(dexnr,shiny_value < 17,female,item=item,form=form,lvl=lvl,nickname=nickname,route=met_location,cur_hp=cur_hp,max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated, experience_points=experience_points, ability=ability, nature=nature, evs=evs, moves=moves, ivs=ivs, battle_stats=battle_stats, status=status)
 
 
 def team(data, edition):

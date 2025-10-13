@@ -199,6 +199,21 @@ def pokemon3(data, edition):
 
     unshuffled_bytes, shiny_value = decryptpokemon3(data)
 
+    experience_points = int.from_bytes(unshuffled_bytes[4:8], 'little')
+    # ability = int.from_bytes(unshuffled_bytes[0x0D:0x0E])
+    female = False
+    nature = personality % 25
+
+    ev_names = ['hp','attack','defense','speed','special_attack','special_defense']
+    evs = {ev_names[index]: int(byte) for index, byte in enumerate(unshuffled_bytes[0x19:0x1E])}
+
+    move_bytes = unshuffled_bytes[0x0D:0x15]
+    pp_bytes = unshuffled_bytes[0x15:0x19]
+    moves = [{f"id": int.from_bytes(move_bytes[2*i:2*i+2], 'little'), "pp": int(byte)} for i, byte in enumerate(pp_bytes)]
+
+    iv_base = int.from_bytes(unshuffled_bytes[0x29:0x2D], 'little')
+    ivs = {ev_names[index]: ((iv_base >> (index * 5)) & 0x1F) for index in range(6)}
+
     checksum_given = int.from_bytes(data[0x1C:0x1E], 'little')
     checksum_calculated = calculate_checksum(unshuffled_bytes)
 
@@ -228,17 +243,30 @@ def pokemon3(data, edition):
     if egg:
         form = ""
         species = "egg"
+    
+    status_bytes = f"{int.from_bytes(data[0x50:0x51]):#010b}".replace('0b','')
+    status = {}
+    status["sleep"] = int(status_bytes[0:3])
+    status["poison"] = int(status_bytes[3])
+    status["burn"] = int(status_bytes[4])
+    status["freeze"] = int(status_bytes[5])
+    status["para"] = int(status_bytes[6])
+    status["toxic"] = int(status_bytes[7])
+    
     lvl = data[84]
     cur_hp = int.from_bytes(data[0x56:0x58], "little")
     max_hp = int.from_bytes(data[0x58:0x5A], "little")
     met_location = int.from_bytes(unshuffled_bytes[37:38], 'little')
+
+    battle_stats = {ev_names[index]: int.from_bytes(data[index*2 + 0x5A:0x63 + index*2], "little") for index in range(1,6)}
+
     nickname = ""
     for char in data[8:18]:
         if char in gen3charset:
             nickname += gen3charset[char]
         if char == 0xFF:
             break
-    result = Pokemon(species, not shiny_value > 8, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated)
+    result = Pokemon(species, not shiny_value > 8, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated, experience_points=experience_points, nature=nature, evs=evs, moves=moves, ivs=ivs, battle_stats=battle_stats, status=status)
     return result
 
 
@@ -256,7 +284,10 @@ def pokemon45(data, gen):
     experience_points = int.from_bytes(unshuffled_bytes[0x08:0x0C], 'little')
     ability = int.from_bytes(unshuffled_bytes[0x0D:0x0E])
     female = False
-    nature = int.from_bytes(unshuffled_bytes[0x14:0x15])
+    if gen == 5:
+        nature = int.from_bytes(unshuffled_bytes[0x39:0x3A])
+    else:
+        nature = personality % 25
 
     ev_names = ['hp','attack','defense','speed','special_attack','special_defense']
     evs = {ev_names[index]: int(byte) for index, byte in enumerate(unshuffled_bytes[0x10:0x16])}

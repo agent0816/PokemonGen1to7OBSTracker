@@ -20,3 +20,4 @@ compile.ps1
 .venv/
 tufup/
 .tufup-repo-config
+.claude

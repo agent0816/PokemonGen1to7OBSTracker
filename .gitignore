@@ -21,3 +21,4 @@ compile.ps1
 tufup/
 .tufup-repo-config
 .claude
+CLAUDE.md

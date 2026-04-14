@@ -1,0 +1,156 @@
+import asyncio
+import sys
+import logging
+import traceback
+import yaml
+
+
+class SettingsController:
+    def __init__(self, configsave, sp, rem, obs, bh, pl, arceus, bizhawk, munchlax, obs_websocket):
+        self.configsave = configsave
+        self.sp = sp
+        self.rem = rem
+        self.obs = obs
+        self.bh = bh
+        self.pl = pl
+        self.arceus = arceus
+        self.bizhawk = bizhawk
+        self.munchlax = munchlax
+        self.obs_websocket = obs_websocket
+
+        self.logger = self._init_logging()
+
+    def _init_logging(self):
+        logger = logging.getLogger(__name__)
+        logger.setLevel(logging.INFO)
+
+        logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+
+        file_handler = logging.FileHandler('./logs/settings_controller.log', 'w')
+        file_handler.setFormatter(logging_formatter)
+        logger.addHandler(file_handler)
+
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(logging_formatter)
+        logger.addHandler(stream_handler)
+
+        return logger
+
+    # --- Load-Methoden: geben aktuelle Config-Werte zurück, damit die View ihre Felder befüllen kann ---
+
+    def load_sprites(self) -> dict:
+        return self.sp.copy()
+
+    def load_bizhawk(self) -> dict:
+        return self.bh.copy()
+
+    def load_obs(self) -> dict:
+        return self.obs.copy()
+
+    def load_remote(self) -> dict:
+        return self.rem.copy()
+
+    def load_player(self) -> dict:
+        return self.pl.copy()
+
+    # --- Private Update-Methoden: synchronisieren Backend-Objekte mit den aktuellen Config-Werten ---
+    # Werden nur aufgerufen, wenn das jeweilige Backend noch nicht verbunden ist.
+
+    def _update_bizhawk(self):
+        try:
+            if not self.bizhawk.server:
+                self.bizhawk.port = self.bh['port']
+        except Exception as err:
+            self.logger.error(f"Fehler beim Aktualisieren von BizHawk: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())
+
+    def _update_obs_websocket(self):
+        try:
+            if not self.obs_websocket.ws:
+                self.obs_websocket.password = self.obs['password']
+                self.obs_websocket.host = self.obs['host']
+                self.obs_websocket.port = self.obs['port']
+        except Exception as err:
+            self.logger.error(f"Fehler beim Aktualisieren des OBS-Websockets: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())
+
+    def _update_arceus(self):
+        try:
+            if not self.arceus.server:
+                self.arceus.port = self.rem['client_port']
+        except Exception as err:
+            self.logger.error(f"Fehler beim Aktualisieren von Arceus: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())
+
+    def _update_munchlax(self):
+        try:
+            if not self.munchlax.is_connected:
+                self.munchlax.host = '127.0.0.1' if self.rem['start_server'] else self.rem['server_ip_adresse']
+                self.munchlax.port = self.rem['client_port'] if self.rem['start_server'] else self.rem['server_port']
+        except Exception as err:
+            self.logger.error(f"Fehler beim Aktualisieren von Munchlax: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())
+
+    # --- Save-Methoden: übernehmen Widget-Werte aus der View, schreiben in Config-Dicts und persistieren als YAML ---
+    # Die View sammelt alle Werte und übergibt sie als plain dict. Der Controller entscheidet nicht,
+    # welche Keys vorhanden sein müssen — er schreibt nur, was übergeben wird.
+
+    def save_sprites(self, values: dict) -> None:
+        """Aktualisiert sp-Dict und speichert sprites.yml. Löst anschließend OBS-Neuzeichnung aus."""
+        try:
+            self.sp.update(values)
+            with open(f"{self.configsave}sprites.yml", 'w') as file:
+                yaml.dump(self.sp, file)
+            asyncio.create_task(self.obs_websocket.redraw_obs())
+            self.logger.info("sprites.yml gespeichert.")
+        except Exception as err:
+            self.logger.error(f"Fehler beim Speichern der Sprite-Einstellungen: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())
+
+    def save_bizhawk(self, values: dict) -> None:
+        """Aktualisiert bh-Dict, speichert bh_config.yml und synchronisiert das BizHawk-Objekt."""
+        try:
+            self.bh.update(values)
+            self._update_bizhawk()
+            with open(f"{self.configsave}bh_config.yml", 'w') as file:
+                yaml.dump(self.bh, file)
+            self.logger.info("bh_config.yml gespeichert.")
+        except Exception as err:
+            self.logger.error(f"Fehler beim Speichern der BizHawk-Einstellungen: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())
+
+    def save_obs(self, values: dict) -> None:
+        """Aktualisiert obs-Dict, speichert obs_config.yml und synchronisiert den OBS-Websocket."""
+        try:
+            self.obs.update(values)
+            self._update_obs_websocket()
+            with open(f"{self.configsave}obs_config.yml", 'w') as file:
+                yaml.dump(self.obs, file)
+            self.logger.info("obs_config.yml gespeichert.")
+        except Exception as err:
+            self.logger.error(f"Fehler beim Speichern der OBS-Einstellungen: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())
+
+    def save_remote(self, values: dict) -> None:
+        """Aktualisiert rem-Dict, speichert remote.yml und synchronisiert Arceus und Munchlax."""
+        try:
+            self.rem.update(values)
+            self._update_arceus()
+            self._update_munchlax()
+            with open(f"{self.configsave}remote.yml", 'w') as file:
+                yaml.dump(self.rem, file)
+            self.logger.info("remote.yml gespeichert.")
+        except Exception as err:
+            self.logger.error(f"Fehler beim Speichern der Remote-Einstellungen: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())
+
+    def save_player(self, values: dict) -> None:
+        """Aktualisiert pl-Dict und speichert player.yml."""
+        try:
+            self.pl.update(values)
+            with open(f"{self.configsave}player.yml", 'w') as file:
+                yaml.dump(self.pl, file)
+            self.logger.info("player.yml gespeichert.")
+        except Exception as err:
+            self.logger.error(f"Fehler beim Speichern der Spieler-Einstellungen: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())

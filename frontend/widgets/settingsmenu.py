@@ -13,6 +13,7 @@ from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.togglebutton import ToggleButton
 from backend.classes.obs import OBS
+from backend.controller.settings_controller import SettingsController
 from frontend.widgets.mainmenu import TrainerBox
 import frontend.UIFactory as UI
 import tkinter.filedialog as fd
@@ -113,7 +114,9 @@ class ScrollSettings(ScrollView):
         self.obs = obs
         self.bh = bh
         self.pl = pl
-        
+
+        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, arceus, bizhawk, munchlax, obs_websocket)
+
         self.games={
             'Rot und Blau':'gen1_red','Gelb':'gen1_yellow',
             'Silber':'gen2_silver','Gold':'gen2_gold','Kristall':'gen2_crystal',

@@ -576,70 +576,51 @@ class ScrollSettings(ScrollView):
             self.save_changes()
     
     def load_config(self):
-        self.ids.common_path.text = self.sp['common_path']
-        self.ids.items_path.text = self.sp['items_path']
-        self.ids.badges_path.text = self.sp['badges_path']
-        self.ids.game_sprites_check.state = 'down' if not self.sp['single_path_check'] else 'normal'
-        self.ids.obs_sprites_check.state = 'down' if self.sp['obs_2_pc'] else 'normal'
+        sp = self.controller.load_sprites()
+        self.ids.common_path.text = sp['common_path']
+        self.ids.items_path.text = sp['items_path']
+        self.ids.badges_path.text = sp['badges_path']
+        self.ids.game_sprites_check.state = 'down' if not sp['single_path_check'] else 'normal'
+        self.ids.obs_sprites_check.state = 'down' if sp['obs_2_pc'] else 'normal'
 
-        if self.sp['obs_2_pc']:
-            self.ids.common_obs_path.text = self.sp['common_obs_path']
-            self.ids.items_obs_path.text = self.sp['items_obs_path']
-            self.ids.badges_obs_path.text = self.sp['badges_obs_path']
+        if sp['obs_2_pc']:
+            self.ids.common_obs_path.text = sp['common_obs_path']
+            self.ids.items_obs_path.text = sp['items_obs_path']
+            self.ids.badges_obs_path.text = sp['badges_obs_path']
 
         self.ausklapp_button_zeigen_oder_verstecken(self.ids.game_sprites_check, initializing=True)
         self.obs_ausklapp_button_zeigen_oder_verstecken(self.ids.obs_sprites_check, initializing=True)
 
-        self.ids.bizhawk_exe.text = self.bh['path']
-        self.ids.bizhawk_port.text = self.bh['port']
+        bh = self.controller.load_bizhawk()
+        self.ids.bizhawk_exe.text = bh['path']
+        self.ids.bizhawk_port.text = bh['port']
 
-        self.ids["obs_password"].text = self.obs['password']
-        self.ids["obs_host"].text = self.obs['host']
-        self.ids["obs_port"].text = self.obs['port']
+        obs = self.controller.load_obs()
+        self.ids["obs_password"].text = obs['password']
+        self.ids["obs_host"].text = obs['host']
+        self.ids["obs_port"].text = obs['port']
 
-        self.ids["ip_server"].text = self.rem[f'server_ip_adresse']
-        self.ids["port_client"].text = self.rem[f'client_port']
-        self.ids['port_server'].text = self.rem[f'server_port']
+        rem = self.controller.load_remote()
+        self.ids["ip_server"].text = rem['server_ip_adresse']
+        self.ids["port_client"].text = rem['client_port']
+        self.ids['port_server'].text = rem['server_port']
 
-        self.ids["your_name"].text = self.pl.get('your_name', '')
-        self.ids["session_game"].text = self.pl.get('session_game', '')
-        self.ids[f"player_count_{self.pl['player_count']}"].state = "down"
+        pl = self.controller.load_player()
+        self.ids["your_name"].text = pl.get('your_name', '')
+        self.ids["session_game"].text = pl.get('session_game', '')
+        self.ids[f"player_count_{pl['player_count']}"].state = "down"
 
     def load_game_sprites_config(self):
-        self.ids.gen1_red.text = self.sp['red']
-        self.ids.gen1_yellow.text = self.sp['yellow']
-        self.ids.gen2_silver.text = self.sp['silver']
-        self.ids.gen2_gold.text = self.sp['gold']
-        self.ids.gen2_crystal.text = self.sp['crystal']
-        self.ids.gen3_ruby.text = self.sp['ruby']
-        self.ids.gen3_emerald.text = self.sp['emerald']
-        self.ids.gen3_firered.text = self.sp['firered']
-        self.ids.gen4_diamond.text = self.sp['diamond']
-        self.ids.gen4_platinum.text = self.sp['platinum']
-        self.ids.gen4_heartgold.text = self.sp['heartgold']
-        self.ids.gen5_black.text = self.sp['black']
-        self.ids.gen6_x.text = self.sp['x']
-        self.ids.gen6_alphasapphire.text = self.sp['alphasapphire']
-        self.ids.gen7_sun.text = self.sp['sun']
-        self.ids.gen7_usun.text = self.sp['usun']
+        sp = self.controller.load_sprites()
+        for _, game_id in self.games.items():
+            sp_key = game_id.split('_', 1)[1]  # z.B. 'gen3_firered' → 'firered'
+            self.ids[game_id].text = sp[sp_key]
 
     def load_obs_sprites_config(self):
-        self.ids.gen1_red_obs.text = self.sp['red_obs']
-        self.ids.gen1_yellow_obs.text = self.sp['yellow_obs']
-        self.ids.gen2_silver_obs.text = self.sp['silver_obs']
-        self.ids.gen2_gold_obs.text = self.sp['gold_obs']
-        self.ids.gen2_crystal_obs.text = self.sp['crystal_obs']
-        self.ids.gen3_ruby_obs.text = self.sp['ruby_obs']
-        self.ids.gen3_emerald_obs.text = self.sp['emerald_obs']
-        self.ids.gen3_firered_obs.text = self.sp['firered_obs']
-        self.ids.gen4_diamond_obs.text = self.sp['diamond_obs']
-        self.ids.gen4_platinum_obs.text = self.sp['platinum_obs']
-        self.ids.gen4_heartgold_obs.text = self.sp['heartgold_obs']
-        self.ids.gen5_black_obs.text = self.sp['black_obs']
-        self.ids.gen6_x_obs.text = self.sp['x_obs']
-        self.ids.gen6_alphasapphire_obs.text = self.sp['alphasapphire_obs']
-        self.ids.gen7_sun_obs.text = self.sp['sun_obs']
-        self.ids.gen7_usun_obs.text = self.sp['usun_obs']
+        sp = self.controller.load_sprites()
+        for _, game_id in self.games.items():
+            sp_key = game_id.split('_', 1)[1] + '_obs'  # z.B. 'gen3_firered' → 'firered_obs'
+            self.ids[f"{game_id}_obs"].text = sp[sp_key]
 
     def save_changes(self, *args):
         self.sp['common_path'] = self.ids.common_path.text

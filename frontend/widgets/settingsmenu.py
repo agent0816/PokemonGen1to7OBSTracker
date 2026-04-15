@@ -107,11 +107,6 @@ class ScrollSettings(ScrollView):
         self.externalIPv4 = externalIPv4
         self.externalIPv6 = externalIPv6
         self.configsave = configsave
-        self.sp = sp
-        self.rem = rem
-        self.obs = obs
-        self.bh = bh
-        self.pl = pl
 
         self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, arceus, bizhawk, munchlax, obs_websocket)
 

@@ -1,7 +1,5 @@
 import sys
 import weakref
-import yaml
-import asyncio
 from kivy.core.clipboard import Clipboard
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -623,125 +621,63 @@ class ScrollSettings(ScrollView):
             self.ids[f"{game_id}_obs"].text = sp[sp_key]
 
     def save_changes(self, *args):
-        self.sp['common_path'] = self.ids.common_path.text
-        self.sp['single_path_check'] = not self.ids.game_sprites_check.state == 'down'
-        self.sp['items_path'] = self.ids.items_path.text
-        self.sp['badges_path'] = self.ids.badges_path.text
-        self.sp['obs_2_pc'] = self.ids.obs_sprites_check.state == 'down'
-        if self.sp['obs_2_pc']:
-            self.sp['common_obs_path'] = self.ids.common_obs_path.text
-            self.sp['items_obs_path'] = self.ids.items_obs_path.text
-            self.sp['badges_obs_path'] = self.ids.badges_obs_path.text
+        # Sprite-Einstellungen sammeln
+        sprite_values = {
+            'common_path': self.ids.common_path.text,
+            'items_path': self.ids.items_path.text,
+            'badges_path': self.ids.badges_path.text,
+            'single_path_check': not self.ids.game_sprites_check.state == 'down',
+            'obs_2_pc': self.ids.obs_sprites_check.state == 'down',
+        }
+        if sprite_values['obs_2_pc']:
+            sprite_values['common_obs_path'] = self.ids.common_obs_path.text
+            sprite_values['items_obs_path'] = self.ids.items_obs_path.text
+            sprite_values['badges_obs_path'] = self.ids.badges_obs_path.text
 
         if self.ids["games_ausklappen"].state == 'down':
-            self.sp['red'] = self.ids.gen1_red.text
-            self.sp['yellow'] = self.ids.gen1_yellow.text
-            self.sp['silver'] = self.ids.gen2_silver.text
-            self.sp['gold'] = self.ids.gen2_gold.text
-            self.sp['crystal'] = self.ids.gen2_crystal.text
-            self.sp['ruby'] = self.ids.gen3_ruby.text
-            self.sp['emerald'] = self.ids.gen3_emerald.text
-            self.sp['firered'] = self.ids.gen3_firered.text
-            self.sp['diamond'] = self.ids.gen4_diamond.text
-            self.sp['platinum'] = self.ids.gen4_platinum.text
-            self.sp['heartgold'] = self.ids.gen4_heartgold.text
-            self.sp['black'] = self.ids.gen5_black.text
-            self.sp['x'] = self.ids.gen6_x.text
-            self.sp['alphasapphire'] = self.ids.gen6_alphasapphire.text
-            self.sp['sun'] = self.ids.gen7_sun.text
-            self.sp['usun'] = self.ids.gen7_usun.text
+            for _, game_id in self.games.items():
+                sp_key = game_id.split('_', 1)[1]  # z.B. 'gen3_firered' → 'firered'
+                sprite_values[sp_key] = self.ids[game_id].text
 
         if self.ids["obs_games_ausklappen"].state == 'down':
-            self.sp['red_obs'] = self.ids.gen1_red_obs.text
-            self.sp['yellow_obs'] = self.ids.gen1_yellow_obs.text
-            self.sp['silver_obs'] = self.ids.gen2_silver_obs.text
-            self.sp['gold_obs'] = self.ids.gen2_gold_obs.text
-            self.sp['crystal_obs'] = self.ids.gen2_crystal_obs.text
-            self.sp['ruby_obs'] = self.ids.gen3_ruby_obs.text
-            self.sp['emerald_obs'] = self.ids.gen3_emerald_obs.text
-            self.sp['firered_obs'] = self.ids.gen3_firered_obs.text
-            self.sp['diamond_obs'] = self.ids.gen4_diamond_obs.text
-            self.sp['platinum_obs'] = self.ids.gen4_platinum_obs.text
-            self.sp['heartgold_obs'] = self.ids.gen4_heartgold_obs.text
-            self.sp['black_obs'] = self.ids.gen5_black_obs.text
-            self.sp['x_obs'] = self.ids.gen6_x_obs.text
-            self.sp['alphasapphire_obs'] = self.ids.gen6_alphasapphire_obs.text
-            self.sp['sun_obs'] = self.ids.gen7_sun_obs.text
-            self.sp['usun_obs'] = self.ids.gen7_usun_obs.text
-        
-        asyncio.create_task(self.obs_websocket.redraw_obs())
+            for _, game_id in self.games.items():
+                sp_key = game_id.split('_', 1)[1] + '_obs'  # z.B. 'gen3_firered' → 'firered_obs'
+                sprite_values[sp_key] = self.ids[f"{game_id}_obs"].text
 
-        with open(f"{self.configsave}sprites.yml", 'w') as file:
-            yaml.dump(self.sp, file)
+        self.controller.save_sprites(sprite_values)
 
-        self.bh['path'] = self.ids.bizhawk_exe.text
-        self.bh['port'] = self.ids.bizhawk_port.text
+        # BizHawk-Einstellungen sammeln
+        self.controller.save_bizhawk({
+            'path': self.ids.bizhawk_exe.text,
+            'port': self.ids.bizhawk_port.text,
+        })
 
-        self.update_bizhawk()
-        
-        with open(f"{self.configsave}bh_config.yml", 'w') as file:
-            yaml.dump(self.bh, file)
+        # OBS-Einstellungen sammeln
+        self.controller.save_obs({
+            'password': self.ids["obs_password"].text,
+            'host': self.ids["obs_host"].text,
+            'port': self.ids["obs_port"].text,
+        })
 
-        self.obs['password'] = self.ids["obs_password"].text
-        self.obs['host'] = self.ids["obs_host"].text
-        self.obs['port'] = self.ids["obs_port"].text
+        # Remote-Einstellungen sammeln
+        self.controller.save_remote({
+            'client_port': self.ids['port_client'].text,
+            'server_ip_adresse': self.ids['ip_server'].text,
+            'server_port': self.ids['port_server'].text,
+        })
 
-        self.update_obs_websocket()
-        
-        with open(f"{self.configsave}obs_config.yml", 'w') as file:
-            yaml.dump(self.obs, file)
-
-        self.rem['client_port'] = self.ids['port_client'].text
-
-        self.rem['server_ip_adresse'] = self.ids['ip_server'].text
-        self.rem['server_port'] = self.ids['port_server'].text
-
-        self.update_arceus()
-
-        self.update_munchlax()
-
-        with open(f"{self.configsave}remote.yml", 'w') as file:
-            yaml.dump(self.rem, file)
-
-        self.pl["your_name"] = self.ids["your_name"].text
-
+        # Spieler-Einstellungen sammeln
+        player_values = {'your_name': self.ids["your_name"].text}
         if self.ids["player_settings_ausklappen"].state == 'down':
             for i in range(1, self.pl['player_count'] + 1):
-                self.pl[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
-                self.pl[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
+                player_values[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
+                player_values[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
+        self.controller.save_player(player_values)
 
-        with open(f"{self.configsave}player.yml", 'w') as file:
-            yaml.dump(self.pl, file)
-
+        # UI-Aktualisierungen (bleiben in der View)
         main_menu = self.settingsscreen.manager.get_screen("MainMenu")
         main_menu.update_munchlax_connection_circle()
-
         self.update_trainer_boxes()
-
-    def update_bizhawk(self):
-        if not self.bizhawk.server:
-            self.bizhawk.port = self.bh['port']
-
-    def update_obs_websocket(self):
-        if not self.obs_websocket.ws:
-            self.obs_websocket.password = self.obs['password']
-            self.obs_websocket.host = self.obs['host']
-            self.obs_websocket.port = self.obs['port']
-
-    def update_arceus(self):
-        if not self.arceus.server:
-            self.arceus.port = self.rem['client_port']
-
-    def update_munchlax(self):
-        if not self.munchlax.is_connected:
-            self.munchlax.host = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
-            self.munchlax.port = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
-
-    def update_connections(self):
-        self.update_bizhawk()
-        self.update_obs_websocket()
-        self.update_arceus()
-        self.update_munchlax()
 
     def update_trainer_boxes(self):
         main_menu = self.settingsscreen.manager.get_screen("MainMenu")

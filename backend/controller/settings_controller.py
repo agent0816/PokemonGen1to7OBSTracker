@@ -154,3 +154,38 @@ class SettingsController:
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der Spieler-Einstellungen: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
+
+    def save_main_menu_settings(self, values: dict) -> None:
+        """Speichert Anzeigeoptionen und Server-Modus aus dem Hauptmenü.
+
+        Erwartet folgende Keys in values:
+          sprites:  order, animated, show_nicknames, show_items, show_badges
+          bizhawk:  save_automatically
+          remote:   start_server
+        """
+        try:
+            sprite_keys = {'order', 'animated', 'show_nicknames', 'show_items', 'show_badges'}
+            sprite_values = {k: v for k, v in values.items() if k in sprite_keys}
+            if sprite_values:
+                self.sp.update(sprite_values)
+                asyncio.create_task(self.obs_websocket.redraw_obs())
+                with open(f"{self.configsave}sprites.yml", 'w') as file:
+                    yaml.dump(self.sp, file)
+                self.logger.info("sprites.yml (Hauptmenü) gespeichert.")
+
+            if 'save_automatically' in values:
+                self.bh['save_automatically'] = values['save_automatically']
+                with open(f"{self.configsave}bh_config.yml", 'w') as file:
+                    yaml.dump(self.bh, file)
+                self.logger.info("bh_config.yml (Hauptmenü) gespeichert.")
+
+            if 'start_server' in values:
+                self.rem['start_server'] = values['start_server']
+                self._update_munchlax()
+                with open(f"{self.configsave}remote.yml", 'w') as file:
+                    yaml.dump(self.rem, file)
+                self.logger.info("remote.yml (Hauptmenü) gespeichert.")
+
+        except Exception as err:
+            self.logger.error(f"Fehler beim Speichern der Hauptmenü-Einstellungen: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())

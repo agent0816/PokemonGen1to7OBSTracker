@@ -583,10 +583,15 @@ class MainMenu(Screen):
             instance.text = "Server starten"
 
     def init_config(self, initializing=False):
-        self.ids.animated_check.state = "down" if self.sp["animated"] else "normal"
-        self.ids.names_check.state = "down" if self.sp["show_nicknames"] else "normal"
-        self.ids.items_check.state = "down" if self.sp["show_items"] else "normal"
-        if self.pl["session_game"] in ['Sonne', 'Mond','Ultra Sonne', 'Ultra Mond']:
+        sp = self.controller.load_sprites()
+        bh = self.controller.load_bizhawk()
+        rem = self.controller.load_remote()
+        pl = self.controller.load_player()
+
+        self.ids.animated_check.state = "down" if sp["animated"] else "normal"
+        self.ids.names_check.state = "down" if sp["show_nicknames"] else "normal"
+        self.ids.items_check.state = "down" if sp["show_items"] else "normal"
+        if pl["session_game"] in ['Sonne', 'Mond', 'Ultra Sonne', 'Ultra Mond']:
             self.ids.badges_check.disabled = True
             self.ids.badges_check.state = "normal"
             self.ids.bizhawk_check.disabled = True
@@ -594,17 +599,13 @@ class MainMenu(Screen):
             self.sp["show_badges"] = False
         else:
             self.ids.badges_check.disabled = False
-            self.ids.badges_check.state = "down" if self.sp["show_badges"] else "normal"
-        self.ids.bizhawk_check.state = (
-            "down" if self.bh["save_automatically"] else "normal"
-        )
-        self.ids[self.sp["order"]].state = "down"
-        self.ids["start_server"].state = (
-            "down" if self.rem["start_server"] else "normal"
-        )
+            self.ids.badges_check.state = "down" if sp["show_badges"] else "normal"
+        self.ids.bizhawk_check.state = "down" if bh["save_automatically"] else "normal"
+        self.ids[sp["order"]].state = "down"
+        self.ids["start_server"].state = "down" if rem["start_server"] else "normal"
         self.settings.text = f"Einstellungen\n{self.selected_session}"
         self.change_emulator_button()
-        self.emulator_status_box(self.pl["session_game"])
+        self.emulator_status_box(pl["session_game"])
         self.toggle_server_client(
             self.ids["start_server"],
             self.ids["server_client_button"],

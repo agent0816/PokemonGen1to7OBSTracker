@@ -1,5 +1,3 @@
-import os
-import subprocess
 import sys
 import weakref
 import asyncio
@@ -19,6 +17,7 @@ from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 from frontend.widgets.trainerbox import TrainerBox
 from backend.classes.obs import OBS
+from backend.controller.connection_controller import ConnectionController
 from backend.controller.settings_controller import SettingsController
 import frontend.UIFactory as UI
 import logging
@@ -104,6 +103,7 @@ class MainMenu(Screen):
         self.connectors = set()
 
         self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, arceus, bizhawk, munchlax, obs_websocket)
+        self.connection = ConnectionController(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl)
 
         super().__init__(**kwargs)
         self.name = "MainMenu"
@@ -429,33 +429,19 @@ class MainMenu(Screen):
             self.manager.current = "SessionMenu"
 
     def disconnect_all(self):
-        tasks = [
-            asyncio.create_task(self.bizhawk.stop()),
-            asyncio.create_task(self.obs_websocket.disconnect()),
-            asyncio.create_task(self.munchlax.disconnect()),
-            asyncio.create_task(self.arceus.stop()),
-        ]
-        asyncio.create_task(asyncio.wait(tasks, timeout=3))
+        self.connection.disconnect_all()
 
     def toggle_obs(self, instance):
         if instance.text == "OBS verbinden":
-            self.connectOBS()
+            task = self.connection.connect_obs()
+            if task:
+                self.connectors.add(task)
             instance.text = "OBS trennen"
         elif instance.text == "OBS trennen":
-            self.disconnectOBS()
+            task = self.connection.disconnect_obs()
+            if task:
+                self.connectors.add(task)
             instance.text = "OBS verbinden"
-
-    def connectOBS(self, *args):
-        if not self.obs_websocket.is_connected:
-            task = asyncio.create_task(self.obs_websocket.load_obsws())
-            self.connectors.add(task)
-            logger.info("OBS connected.")
-
-    def disconnectOBS(self, *args):
-        if self.obs_websocket.is_connected:
-            task = asyncio.create_task(self.obs_websocket.disconnect())
-            self.connectors.add(task)
-            logger.info("OBS disconnected.")
 
     def launchbh(self, instance):
         bizhawk_path = Path(self.bh["path"])
@@ -466,30 +452,13 @@ class MainMenu(Screen):
         ):
             self.emulator.disabled = True
             if self.emulator.text == "Bizhawk starten":
-                if not self.bizhawk.server:
-                    task = asyncio.create_task(self.bizhawk.start(self.munchlax))
-                    self.connectors.add(task)
-                for i in range(self.pl["player_count"]):
-                    if not self.pl[f"remote_{i+1}"]:
-                        process = subprocess.Popen(
-                            [
-                                self.bh["path"],
-                                f'--lua={os.path.abspath(f"./backend/lua/Player{i+1}.lua")}',
-                                f'--socket_ip={self.bh["host"]}',
-                                f'--socket_port={self.bh["port"]}',
-                                # f'--chromeless',
-                            ]
-                        )
-                        self.bizhawk_instances.append(process)
+                self.connection.start_bizhawk()
                 self.emulator.text = "Bizhawk beenden"
             elif self.emulator.text == "Bizhawk beenden":
                 popup = BizhawkSavePopup(self.bizhawk_instances, self.emulator, self.bizhawk)
                 popup.open()
 
-        def enable_button(button):
-            button.disabled = False
-
-        Clock.schedule_once(lambda dt: enable_button(self.emulator), 5)
+        Clock.schedule_once(lambda dt: setattr(self.emulator, 'disabled', False), 5)
 
     def connect_citra(self, instance):
         if not self.citra.started:
@@ -530,8 +499,7 @@ class MainMenu(Screen):
             if not initializing and self.clear_button in self.ids["buttons_box"].children:
                 self.ids["buttons_box"].remove_widget(self.clear_button)
             if self.rem["start_server"]:
-                asyncio.create_task(self.munchlax.disconnect())
-                asyncio.create_task(self.arceus.stop())
+                self.connection.stop_server()
         if not initializing:
             self.save_changes(instance)
 
@@ -557,26 +525,24 @@ class MainMenu(Screen):
 
     def connect_client(self, instance, *args):
         if instance.text.endswith("starten"):
-            if not self.munchlax.is_connected:
-                task = asyncio.create_task(self.munchlax.connect())
+            task = self.connection.connect_client()
+            if task:
                 self.connectors.add(task)
             if instance.text == "Client starten":
                 instance.text = "Client beenden"
         elif instance.text == "Client beenden":
-            if self.munchlax.is_connected:
-                asyncio.create_task(self.munchlax.disconnect())
+            self.connection.disconnect_client()
             instance.text = "Client starten"
 
     def launchserver(self, instance, *args):
         if instance.text == "Server starten":
-            if not self.arceus.server:
-                asyncio.create_task(self.arceus.start())
+            task = self.connection.start_server()
+            if task:
+                self.connectors.add(task)
             self.connect_client(instance)
             instance.text = "Server beenden"
         elif instance.text == "Server beenden":
-            if self.arceus.server:
-                asyncio.create_task(self.munchlax.disconnect())
-                asyncio.create_task(self.arceus.stop())
+            self.connection.stop_server()
             instance.text = "Server starten"
 
     def init_config(self, initializing=False):

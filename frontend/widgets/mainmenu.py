@@ -20,6 +20,7 @@ from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 from frontend.widgets.trainerbox import TrainerBox
 from backend.classes.obs import OBS
+from backend.controller.settings_controller import SettingsController
 import frontend.UIFactory as UI
 import logging
 
@@ -104,6 +105,8 @@ class MainMenu(Screen):
         self.selected_session = ""
         self.app_version = app_version
         self.connectors = set()
+
+        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, arceus, bizhawk, munchlax, obs_websocket)
 
         super().__init__(**kwargs)
         self.name = "MainMenu"

@@ -2,7 +2,6 @@ import os
 import subprocess
 import sys
 import weakref
-import yaml
 import asyncio
 from pathlib import Path
 from kivy.clock import Clock
@@ -96,10 +95,8 @@ class MainMenu(Screen):
         self.bizhawk_instances = bizhawk_instances
         self.munchlax = munchlax
         self.obs_websocket: OBS = obs_websocket
-        self.configsave = configsave
         self.sp = sp
         self.rem = rem
-        self.obs = obs
         self.bh = bh
         self.pl = pl
         self.selected_session = ""

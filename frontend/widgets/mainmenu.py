@@ -616,32 +616,22 @@ class MainMenu(Screen):
     def save_changes(self, instance):
         sorts = {"DexNr.": "dexnr", "Team": "team", "Level": "lvl", "Route": "route"}
         toggle_widgets = ToggleButton.get_widgets("sort")
-        for button in toggle_widgets:
-            if button.state == "down":
-                self.sp["order"] = sorts[button.text]
-
+        order = next((sorts[b.text] for b in toggle_widgets if b.state == "down"), None)
         del toggle_widgets
 
-        self.sp["animated"] = self.ids.animated_check.state == "down"
-        self.sp["show_nicknames"] = self.ids.names_check.state == "down"
-        self.sp["show_items"] = self.ids.items_check.state == "down"
-        self.sp["show_badges"] = self.ids.badges_check.state == "down"
+        values = {
+            'animated': self.ids.animated_check.state == "down",
+            'show_nicknames': self.ids.names_check.state == "down",
+            'show_items': self.ids.items_check.state == "down",
+            'show_badges': self.ids.badges_check.state == "down",
+            'save_automatically': self.ids.bizhawk_check.state == "down",
+            'start_server': self.ids["start_server"].state == "down",
+        }
+        if order:
+            values['order'] = order
+
         self.munchlax.change_order()
-        asyncio.create_task(self.obs_websocket.redraw_obs())
-        with open(f"{self.configsave}sprites.yml", "w") as file:
-            yaml.dump(self.sp, file)
-
-        self.bh["save_automatically"] = self.ids.bizhawk_check.state == "down"
-
-        with open(f"{self.configsave}bh_config.yml", "w") as file:
-            yaml.dump(self.bh, file)
-
-        self.rem["start_server"] = self.ids["start_server"].state == "down"
-
-        self.update_munchlax_connections()
-
-        with open(f"{self.configsave}remote.yml", "w") as file:
-            yaml.dump(self.rem, file)
+        self.controller.save_main_menu_settings(values)
 
     def update_munchlax_connection_circle(self):
         client_id = self.munchlax.client_id

@@ -145,6 +145,9 @@ class MainMenu(Screen):
         change_session = Button(text="Session wechseln", on_press=self.change_session)
         logo_settings.add_widget(change_session)
 
+        pokedex_button = Button(text="Pokedex", on_press=self.switch_to_pokedex)
+        logo_settings.add_widget(pokedex_button)
+
         control_frame.add_widget(logo_settings)
 
         connections = BoxLayout(orientation="horizontal")
@@ -628,6 +631,9 @@ class MainMenu(Screen):
             if not self.rem["start_server"]:
                 asyncio.create_task(self.munchlax.disconnect())
                 asyncio.create_task(self.arceus.stop())
+
+    def switch_to_pokedex(self, instance):
+        self.manager.current = "PokedexMenu"
 
     def switch_to_settings(self, instance):
         settings_menu = self.manager.get_screen("SettingsMenu")

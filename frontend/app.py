@@ -6,6 +6,7 @@ import yaml
 import requests
 import logging
 from frontend.widgets.mainmenu import MainMenu
+from frontend.widgets.pokedexmenu import PokedexMenu
 from frontend.widgets.sessionsmenu import SessionMenu
 from frontend.widgets.settingsmenu import SettingsMenu
 from frontend.widgets.updatemenu import Update
@@ -65,6 +66,8 @@ class Screens(ScreenManager):
         self.add_widget(settings_menu)
         session_menu = SessionMenu(session_list, main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, APP_VERSION)
         self.add_widget(session_menu)
+        pokedex_menu = PokedexMenu(configsave, APP_VERSION)
+        self.add_widget(pokedex_menu)
         self.current = "Update"
         update_menu.check_for_update()
 

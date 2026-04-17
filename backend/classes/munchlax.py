@@ -4,12 +4,14 @@ import hashlib
 import logging
 import sys
 import pickle
+from pathlib import Path
 from pickle import UnpicklingError
 import traceback
 from backend.classes.obs import OBS
+from backend.classes.pokedex_db import PokedexDB
 
 class Munchlax:
-    def __init__(self, host, port, rem, sp, pl):
+    def __init__(self, host, port, rem, sp, pl, configsave=None):
         self.client_id = rem.get("client_id")
         if self.client_id == 0:
             self.client_id = self.generate_hashed_id()
@@ -23,6 +25,8 @@ class Munchlax:
         self.rem = rem
         self.sp = sp
         self.pl = pl
+        self.configsave = configsave
+        self.pokedex_db: PokedexDB | None = None
         self.host = host
         self.port = port
         self.is_connected = False
@@ -72,6 +76,7 @@ class Munchlax:
                         self.logger.info(f"{self.badges[player]=}")
                         if self.obs and self.obs.is_connected:
                             await self.obs.change_badges(player)
+                await self._persist_teams(self.unsorted_teams)
                 if new_teams != self.sorted_teams or not self.initialized:
                     for player in new_teams:
                         if player not in self.sorted_teams or not self.initialized:
@@ -104,6 +109,42 @@ class Munchlax:
                 break
 
         await self.disconnect()
+
+    def _ensure_pokedex_db(self):
+        if self.configsave is None:
+            return
+        try:
+            current_path = Path(str(self.configsave)).resolve()
+            if self.pokedex_db is None or self.pokedex_db.session_path.resolve() != current_path:
+                if self.pokedex_db is not None:
+                    self.pokedex_db.close()
+                self.pokedex_db = PokedexDB(current_path)
+                self.pokedex_db.connect()
+        except Exception as err:
+            self.logger.error(f"_ensure_pokedex_db failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+
+    async def _persist_teams(self, teams):
+        try:
+            self._ensure_pokedex_db()
+            if self.pokedex_db is None or self.pokedex_db.connection is None:
+                return
+            loop = asyncio.get_event_loop()
+            for player, team_data in teams.items():
+                # team_data hat die Form [p1..p6, badges, edition]
+                pokemons = team_data[:6]
+                edition = team_data[7] if len(team_data) > 7 else self.editions.get(player)
+                owner = str(player)
+                await loop.run_in_executor(
+                    None,
+                    self.pokedex_db.upsert_team,
+                    owner,
+                    edition,
+                    pokemons,
+                )
+        except Exception as err:
+            self.logger.error(f"_persist_teams failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
 
     def logging_teams(self, teams: dict, dictname: str):
         self.logger.info(dictname)
@@ -189,6 +230,10 @@ class Munchlax:
                 self.writer.close()
                 await self.writer.wait_closed()
                 self.logger.info(f"Client {self.client_id} hat sich disconnectet.")
+
+                if self.pokedex_db is not None:
+                    self.pokedex_db.close()
+                    self.pokedex_db = None
 
                 self.host = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
                 self.port = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]

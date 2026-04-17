@@ -266,7 +266,7 @@ def pokemon3(data, edition):
             nickname += gen3charset[char]
         if char == 0xFF:
             break
-    result = Pokemon(species, not shiny_value > 8, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated, experience_points=experience_points, nature=nature, evs=evs, moves=moves, ivs=ivs, battle_stats=battle_stats, status=status)
+    result = Pokemon(species, not shiny_value > 8, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated, experience_points=experience_points, nature=nature, evs=evs, moves=moves, ivs=ivs, battle_stats=battle_stats, status=status, personality=personality)
     return result
 
 
@@ -357,7 +357,7 @@ def pokemon45(data, gen):
         else:
             form = ""
         dexnr = "egg"
-    return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated, experience_points=experience_points, ability=ability, nature=nature, evs=evs, moves=moves, ivs=ivs, battle_stats=battle_stats, status=status)  # type: ignore
+    return Pokemon(dexnr, shiny_value < 9, female, form=form, lvl=lvl, item=item, nickname=nickname, route=met_location, cur_hp=cur_hp, max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated, experience_points=experience_points, ability=ability, nature=nature, evs=evs, moves=moves, ivs=ivs, battle_stats=battle_stats, status=status, personality=personality)  # type: ignore
 
 
 def pokemon67(data, gen):
@@ -418,7 +418,7 @@ def pokemon67(data, gen):
         else:
             form = form = get_form(unshuffled_bytes[0x15], dexnr, gen)
         dexnr = "egg"
-    return Pokemon(dexnr,shiny_value < 17,female,item=item,form=form,lvl=lvl,nickname=nickname,route=met_location,cur_hp=cur_hp,max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated, experience_points=experience_points, ability=ability, nature=nature, evs=evs, moves=moves, ivs=ivs, battle_stats=battle_stats, status=status)
+    return Pokemon(dexnr,shiny_value < 17,female,item=item,form=form,lvl=lvl,nickname=nickname,route=met_location,cur_hp=cur_hp,max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated, experience_points=experience_points, ability=ability, nature=nature, evs=evs, moves=moves, ivs=ivs, battle_stats=battle_stats, status=status, personality=personality)
 
 
 def team(data, edition):

@@ -505,7 +505,6 @@ class SessionMenu(Screen):
             self.settings_menu.scrollview.hide_extras()
             if not default:
                 self.settings_menu.scrollview.ids["your_name"].disabled = False
-                self.settings_menu.scrollview.update_connections()
                 self.settings_menu.scrollview.update_trainer_boxes()
                 self.main_menu.pokemon_frame.clear_widgets()
                 self.main_menu.create_pokemon_frame()

@@ -1,3 +1,12 @@
+import os
+import sys
+
+# Bei kompilierter Onefile-EXE liegt das cwd nicht zwingend neben der EXE.
+# Damit relative Pfade zu backend/data, backend/config und logs portabel funktionieren,
+# wechseln wir ins Verzeichnis der EXE.
+if "__compiled__" in dir():
+    os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
+
 import initialize_tree as init
 init.init_logging_folder()
 import logging

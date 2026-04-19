@@ -597,8 +597,8 @@ class MainMenu(Screen):
         if order:
             values['order'] = order
 
-        self.munchlax.change_order()
         self.controller.save_main_menu_settings(values)
+        self.munchlax.change_order()
 
     def update_munchlax_connection_circle(self):
         client_id = self.munchlax.client_id

@@ -5,6 +5,7 @@ import traceback
 from backend.classes.munchlax import Munchlax
 from backend.classes.Pokemon import Pokemon
 import backend.pokedecoder as pokedecoder
+import backend.bh_pointers as bh_pointers
 
 class Bizhawk:
     def __init__(self, host, port, bh):
@@ -90,7 +91,18 @@ class Bizhawk:
 
             # edition_length = int((await reader.read(2)).decode())
             edition = int((await self.receive_messages(reader)).decode())
+            language = int((await self.receive_messages(reader)).decode())
             player = int(client_id[7:])
+
+            # Pointer-Satz aus YAML bestimmen und an Lua zurückschicken (Phase 3)
+            pointers = bh_pointers.get_pointers(edition, language if language else None)
+            if not pointers:
+                self.logger.error(
+                    f"Keine Pointer für edition={edition}, language={language} in YAML — Lua erhält leere Konfig"
+                )
+            pointer_str = ";".join(f"{k}={hex(v)}" for k, v in pointers.items())
+            await self.send_messages(writer, pointer_str)
+            self.logger.info(f"Pointer-Satz an {client_id} (edition={edition}, language={language}): {pointer_str}")
 
             msg = (await self.receive_messages(reader)).decode()
             if msg != "Aufgabe":

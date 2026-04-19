@@ -412,7 +412,7 @@ class MainMenu(Screen):
     def change_session(self, instance):
         popup = BizhawkSavePopup(
             self.bizhawk_instances,
-            instance,
+            self.emulator,
             self.bizhawk,
             on_dismiss=lambda popup: self.session_popup(popup),
         )

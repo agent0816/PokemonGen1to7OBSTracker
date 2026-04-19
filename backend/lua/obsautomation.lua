@@ -16,111 +16,31 @@ function main()
     -- wie viele Sekunden zwischen den Updates
     local INTERVAL = 1
 
-    -- Pointer getestet auf deutschen ROMs, bei englischen ROMs, Romhacks oder Randomizern sind vielleicht andere Offsets nötig    
-    local RB = 0xD170 -- Rot/Blau
-    local G = 0xD16F -- Gelb
-    local NRBG = 0xF2B9 -- Nicknames Rot/Blau/Gelb
-
-    local GS = 0xFA2A -- Gold/Silber
-    local Kr = 0xFCDF -- Kristall 9EAD0A2B6300
-    local NGS = 0xFB8C -- Nicknames Gold/Silber
-    local EGS = 0xFA23 -- Eier Gold/Silber
-    local NKr = 0xDE41 -- Nicknames Kristall
-    local EKr = 0xDCD8 -- Eier Kristall
-
-    local FrLg = 0x2024284 -- Feuerrot/Blattgrün
-    local RS = 0x3004370 -- Rubin/Saphir
-    local E = 0x20244EC -- Smaragd
-
-    local DP = 0x26D7EC -- Diamant/Perl
-    local DPBattlePlayer = 0x2B9D18
-    local DPBattleOpponent = 0x2BA2C8
-    local DPBattleOpponentID = 0x2AFFCE -- (u_le_16 0x0 = wild | > 0x0 ist Trainer ID)
-    local DPinBattle = DPBattlePlayer - 0x8
-    -- local DPinBattle = 0x23BBDF -- (u_le_8 0x21 = true, 0x20 = false) 0xA7 Unterschied zu Englisch
-    -- 0x27E358
-    local Pl = 0x27E40C -- Platin
-    local PlBattlePlayer = 0x2C9C04
-    local PlBattleOpponent = 0x2CA1B4
-    local PlBattleOpponentID = 0x2BFBF6 -- (u_le_16 0x0 = wild | > 0x0 ist Trainer ID)
-    local PlinBattle = PlBattlePlayer - 0x8
-    -- local PlinBattle = 0x24A71A -- (u_le_8 0x10 = true, 0x00 = false)
-    local HgSs = 0x27C310 -- HeartGold/SoulSilver
-    local HgSsBattlePlayer = 0x0
-    local HgSsBattleOpponent = 0x0
-    local HgSsBattleOpponentID = 0x0
-    local HgSsinBattle = HgSsBattlePlayer - 0x8
-
-    -- 0x240 Unterschied Deutsch Englisch
-
-    local S = 0x022348F4 -- Schwarz Offset 0xC0 zu englisch
-    local SBattlePlayer = 0x0226A6D4
-    local ScurHPinBattle = 0x0226D5F4 -- u_le_16 548 Byte für jedes Pokemon 0x224 | Level: addr + 0x8 u_16_le % 256
-    local SBattleOpponent = 0x0226B194 
-    local SBattleOpponentID = 0x022696FE -- (u_le_16 0x0 = wild | > 0x0 ist Trainer ID)
-    local SinBattle = SBattlePlayer - 0x8 -- (u_le_32 0x6 | addr + 0x4 ; 0x1 <= u_le_32 <= 0x6)
-    -- local SinBattle = 0x21D077E
-    
-    local W = 0x022349D4 -- Weiß
-    local WBattlePlayer = 0x0226A7B4
-    local WcurHPinBattle = 0x0226D6D4
-    local WBattleOpponent = 0x0226B274
-    local WBattleOpponentID = 0x022697DE
-    local WinBattle = WBattlePlayer - 0x8
-    
-    local S2 = 0x0221E32C -- Schwarz 2
-    local S2BattlePlayer = 0x02258214
-    local S2curHPinBattle = 0x0225B134
-    local S2BattleOpponent = 0x02258774
-    local S2BattleOpponentID = 0x02257232
-    local S2inBattle = S2BattlePlayer - 0x8
-    
-    local W2 = 0x0221E34C -- Weiß 2
-    local W2BattlePlayer = 0x0221E2CC
-    local W2curHPinBattle = 0x0225B154
-    local W2BattleOpponent = 0x02258714
-    local W2BattleOpponentID = 0x022571D2
-    local W2inBattle = W2BattlePlayer - 0x8
+    -- Pointer werden seit Phase 3 von Python aus backend/data/pointer_gen*.yml geliefert.
+    -- length und domain bleiben hier systemabhängig, gameversion und language werden lokal
+    -- aus ROM-Headern gelesen und dann an Python geschickt.
 
     local length = 0
     local gameversion = ''
+    language = 0
 
     if emu.getsystemid() == 'GBC' or emu.getsystemid() == 'GB' then
         gameversion = memory.read_u24_be(0x13c, 'ROM')
         if gameversion == 5391684 then
-            pointer = RB
             gameversion = 11
-            badgepointer = 0xD35B
         elseif gameversion == 4344917 then
-            pointer = RB
             gameversion = 12
-            badgepointer = 0xD35B
         elseif gameversion == 5850444 then
-            pointer = G
             gameversion = 13
-            badgepointer = 0xD35A
         elseif gameversion == 4672580 then
-            pointer = GS
             gameversion = 21
-            namepointer = NGS
-            eggpointer = EGS
-            badgepointer = 0xD57C
         elseif gameversion == 5459030 then
-            pointer = GS
             gameversion = 22
-            namepointer = NGS
-            eggpointer = EGS
-            badgepointer = 0xD57C
         elseif gameversion == 4279296 then
-            pointer = Kr
             gameversion = 23
-            namepointer = NKr
-            eggpointer = EKr
-            badgepointer = 0xD857
         end
         if gameversion < 20 then
             length = 264
-            namepointer = NRBG
         else
             length = 288
         end
@@ -131,96 +51,38 @@ function main()
         gameversion = memory.read_u24_be(0xa8, 'ROM')
         language = memory.read_u32_be(0xac, 'ROM')
         if gameversion == 5395778 then
-            pointer = RS
             gameversion = 31
-            if language == 1096308292 then
-                badgepointer = 0x2026a54
-            end
         elseif gameversion == 5456208 then
-            pointer = RS
             gameversion = 32
-            if language == 1096306756 then 
-                badgepointer = 0x2026a54
-            end
         elseif gameversion == 4541765 then
-            pointer = E
             gameversion = 33
-            if language == 1112556868 then
-                badgepointer = 0x03005d8c
-            end
         elseif gameversion == 4606290 then
-            pointer = FrLg
             gameversion = 34
-            if language == 1112560197 then
-                badgepointer = 0x3005008
-            elseif language == 1112560196 then
-                badgepointer = 0x3004F58
-            end
         elseif gameversion == 4998465 then
-            pointer = FrLg
             gameversion = 35
-            if language == 1112557380 then 
-                badgepointer = 0x3004F58
-            end
         end
         domain = 'System Bus'
 
     elseif emu.getsystemid() == 'NDS' then
         gameversion = memory.read_u16_be(0x23FFE08, 'ARM9 System Bus')
         if gameversion == 17408 then
-            pointer = DP
-            battlepointer = DPBattlePlayer
             gameversion = 41
-            badgepointer = 0xB70
-            badgeoffset = 0x292
         elseif gameversion == 20480 then
-            pointer = DP
-            battlepointer = DPBattlePlayer
             gameversion = 42
-            badgepointer = 0xB70
-            badgeoffset = 0x292
         elseif gameversion == 20556 then
-            pointer = Pl
-            battlepointer = PlBattlePlayer
             gameversion = 43
-            badgepointer = 0xBA8
-            badgeoffset = 0x96
         elseif gameversion == 18503 then
-            pointer = HgSs
-            battlepointer = HgSsBattlePlayer
             gameversion = 44
-            badgepointer = 0xBA8
-            badgeoffset = 0x8E
         elseif gameversion == 21331 then
-            pointer = HgSs
-            battlepointer = HgSsBattlePlayer
             gameversion = 45
-            badgepointer = 0xBA8
-            badgeoffset = 0x8E
         elseif gameversion == 16896 then
-            pointer = S
-            battlepointer = SBattlePlayer
-            curHPinBattlepointer = ScurHPinBattle
             gameversion = 51
-            badgepointer = 0x23CCF0
         elseif gameversion == 22272 then
-            pointer = W
-            battlepointer = WBattlePlayer
-            curHPinBattlepointer = WcurHPinBattle
             gameversion = 52
-            badgepointer = 0x23CDD0 -- offset 0xC0 zu englisch
         elseif gameversion == 16946 then
-            pointer = S2
-            battlepointer = S2BattlePlayer
-            curHPinBattlepointer = S2curHPinBattle
             gameversion = 53
-            badgepointer = 0x226628
         elseif gameversion == 22322 then
-            pointer = W2
-            battlepointer = W2BattlePlayer
-            curHPinBattlepointer = W2curHPinBattle
             gameversion = 54
-            badgepointer = 0x226648
         end
 
         if gameversion < 50 then
@@ -234,6 +96,30 @@ function main()
 
     comm.socketServerSend(tostring(gameversion))
     logging.info("registered game " .. tostring(gameversion) .. " for Munchlax")
+    comm.socketServerSend(tostring(language))
+
+    -- Pointer-Satz von Python empfangen (Format: "key=0xHEX;key=0xHEX;...")
+    pointer = nil
+    namepointer = nil
+    eggpointer = nil
+    badgepointer = nil
+    badgeoffset = nil
+    battlepointer = nil
+    curHPinBattlepointer = nil
+    battleopponentpointer = nil
+    battleopponentidpointer = nil
+    local pointer_config = comm.socketServerResponse()
+    logging.info("received pointer config: " .. tostring(pointer_config))
+    if pointer_config and pointer_config ~= "" then
+        for pair in string.gmatch(pointer_config, "[^;]+") do
+            local k, v = string.match(pair, "([^=]+)=(.+)")
+            if k and v then
+                _G[k] = tonumber(v)
+            end
+        end
+    else
+        logging.error("Leere Pointer-Konfig von Python — ROM nicht erkannt?")
+    end
 
     local msg = ''
     -- local lastTime = os.time()

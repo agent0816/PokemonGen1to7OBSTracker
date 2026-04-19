@@ -1,28 +1,42 @@
 # Gen 4 (NDS) — BizHawk-Pointer
 # gameversion 41/42 = Diamant/Perl, 43 = Platin, 44 = HeartGold, 45 = SoulSilver
 # Pointer auf deutschen ROMs getestet
+#
+# battleopponentpointer / battleopponentidpointer sind noch nicht in Benutzung,
+# aber reserviert für zukünftige Features (Gegner-Team, Trainer-ID lesen).
+# battleopponentidpointer: u_le_16; 0x0 = wildes Pokemon, > 0x0 = Trainer-ID
 41:
   pointer: 0x26D7EC
   battlepointer: 0x2B9D18
+  battleopponentpointer: 0x2BA2C8
+  battleopponentidpointer: 0x2AFFCE
   badgepointer: 0xB70
   badgeoffset: 0x292
 42:
   pointer: 0x26D7EC
   battlepointer: 0x2B9D18
+  battleopponentpointer: 0x2BA2C8
+  battleopponentidpointer: 0x2AFFCE
   badgepointer: 0xB70
   badgeoffset: 0x292
 43:
   pointer: 0x27E40C
   battlepointer: 0x2C9C04
+  battleopponentpointer: 0x2CA1B4
+  battleopponentidpointer: 0x2BFBF6
   badgepointer: 0xBA8
   badgeoffset: 0x96
 44:
   pointer: 0x27C310
-  battlepointer: 0x0
+  battlepointer: 0x2CAD00
+  battleopponentpointer: 0x2CB2D0
+  battleopponentidpointer: 0x0
   badgepointer: 0xBA8
   badgeoffset: 0x8E
 45:
   pointer: 0x27C310
-  battlepointer: 0x0
+  battlepointer: 0x2CAD00
+  battleopponentpointer: 0x2CB2D0
+  battleopponentidpointer: 0x0
   badgepointer: 0xBA8
   badgeoffset: 0x8E

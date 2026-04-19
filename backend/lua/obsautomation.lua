@@ -6,23 +6,21 @@ end
 
 gui.clearGraphics()
 
-comm.socketServerSend("player" .. string.format("%03d", PLAYER))
-logging.info("registered " .. "player" .. string.format("%03d", PLAYER) .. " for Munchlax")
-
 local save_msg = 0
 local fluct_init = false
 
-function main()
-    -- wie viele Sekunden zwischen den Updates
-    local INTERVAL = 1
+-- Spieler-Registrierung beim Munchlax-Server
+comm.socketServerSend("player" .. string.format("%03d", PLAYER))
+logging.info("registered " .. "player" .. string.format("%03d", PLAYER) .. " for Munchlax")
 
-    -- Pointer werden seit Phase 3 von Python aus backend/data/pointer_gen*.yml geliefert.
-    -- length und domain bleiben hier systemabhängig, gameversion und language werden lokal
-    -- aus ROM-Headern gelesen und dann an Python geschickt.
-
+-- Pointer werden seit Phase 3 von Python aus backend/data/pointer_gen*.yml geliefert.
+-- length und domain bleiben hier systemabhängig, gameversion und language werden lokal
+-- aus ROM-Headern gelesen und dann an Python geschickt.
+local function detect_game()
     local length = 0
     local gameversion = ''
-    language = 0
+    local language = 0
+    local domain = ''
 
     if emu.getsystemid() == 'GBC' or emu.getsystemid() == 'GB' then
         gameversion = memory.read_u24_be(0x13c, 'ROM')
@@ -94,11 +92,17 @@ function main()
         end
     end
 
+    return gameversion, language, length, domain
+end
+
+local function send_game_info(gameversion, language)
     comm.socketServerSend(tostring(gameversion))
     logging.info("registered game " .. tostring(gameversion) .. " for Munchlax")
     comm.socketServerSend(tostring(language))
+end
 
-    -- Pointer-Satz von Python empfangen (Format: "key=0xHEX;key=0xHEX;...")
+-- Pointer-Satz von Python empfangen (Format: "key=0xHEX;key=0xHEX;...")
+local function receive_pointer_config()
     pointer = nil
     namepointer = nil
     eggpointer = nil
@@ -120,202 +124,234 @@ function main()
     else
         logging.error("Leere Pointer-Konfig von Python — ROM nicht erkannt?")
     end
+end
 
-    local msg = ''
-    -- local lastTime = os.time()
-    local currTime = 0
-    local lastTeam = {}
-    local fluctcount = 0
-    old_pointer = pointer
-
-    local function areTablesEqual(t1, t2)
-        for i = 1, #t1 do
-            if t1[i] ~= t2[i] then
-                return false
-            end
+local function areTablesEqual(t1, t2)
+    for i = 1, #t1 do
+        if t1[i] ~= t2[i] then
+            return false
         end
-
-        return true
     end
+    return true
+end
 
-    local max_team_player = 0
-    local cur_team_player = 0
-    local in_battle = false
-    local battle_msg = ''
-    team = {}
-    
+local function init_state(gameversion, length, domain)
+    local state = {
+        gameversion = gameversion,
+        length = length,
+        domain = domain,
+        max_team_player = 0,
+        cur_team_player = 0,
+        in_battle = false,
+        battle_msg = 'false',
+        team = {},
+        lastTeam = {},
+        fluctcount = 0,
+        old_names = {},
+        old_eggs = {},
+        old_badges_johto = 0,
+        old_badges_kanto = 0,
+        old_pointer = pointer,
+    }
+
     for i = 1, length, 1 do
-        team[i] = 0
-        lastTeam[i] = 0
+        state.team[i] = 0
+        state.lastTeam[i] = 0
     end
-    
-    local old_names = {}
 
     for i = 1, 66 do
-        old_names[i] = 0
+        state.old_names[i] = 0
     end
-
-    local old_eggs = {}
 
     for i = 1, 6 do
-        old_eggs[i] = 0
+        state.old_eggs[i] = 0
     end
 
-    local old_badges_johto = 0
-    local old_badges_kanto = 0
+    return state
+end
+
+local function check_battle(state)
+    if state.gameversion > 40 then
+        state.max_team_player = memory.read_u32_le(battlepointer - 0x8, state.domain)
+        state.cur_team_player = memory.read_u32_le(battlepointer - 0x4, state.domain)
+    elseif state.gameversion == 23 then
+        state.cur_team_player = memory.readbyte(0xFCD7)
+    end
+
+    if state.max_team_player == 6 and state.cur_team_player > 0 and state.cur_team_player <= 7 then
+        pointer = battlepointer
+        state.in_battle = true
+        state.battle_msg = 'true'
+    else
+        pointer = state.old_pointer
+        state.in_battle = false
+        state.battle_msg = 'false'
+    end
+end
+
+local function read_team_bytes(state)
+    if state.gameversion == 23 then
+        if state.cur_team_player > 0 and state.cur_team_player <= 7 then
+            state.team = memory.read_bytes_as_array(pointer, state.length, state.domain)
+        end
+    else
+        state.team = memory.read_bytes_as_array(pointer, state.length, state.domain)
+    end
+end
+
+local function check_fluctuation(state)
+    if areTablesEqual(state.team, state.lastTeam) then
+        if state.fluctcount % 30 == 0 then
+        end
+        state.fluctcount = state.fluctcount + 1
+    else
+        state.fluctcount = 0
+        state.lastTeam = state.team
+    end
+end
+
+local function build_msg(state)
+    local msg = {table.unpack(state.team)}
+    if state.gameversion == 23 then
+        local names = memory.read_bytes_as_array(namepointer, 66, state.domain)
+        local eggs = memory.read_bytes_as_array(eggpointer, 6, state.domain)
+        if state.cur_team_player > 0 and state.cur_team_player <= 7 then
+            state.old_names = names
+            for i = 1, 66 do
+                msg[#msg + 1] = names[i]
+            end
+            state.old_eggs = eggs
+            for i = 1, 6 do
+                msg[#msg + 1] = eggs[i]
+            end
+        else
+            for i = 1, 66 do
+                msg[#msg + 1] = state.old_names[i]
+            end
+            for i = 1, 6 do
+                msg[#msg + 1] = state.old_eggs[i]
+            end
+        end
+    elseif state.gameversion < 30 then
+        for i = 0, 65 do
+            msg[#msg + 1] = memory.readbyte(namepointer + i, state.domain)
+        end
+        if state.gameversion > 20 then
+            for i = 0, 5 do
+                msg[#msg + 1] = memory.readbyte(eggpointer + i, state.domain)
+            end
+        end
+    end
+    return msg
+end
+
+local function append_badges(msg, state)
+    local badges_johto = memory.readbyte(badgepointer, state.domain)
+    local badges_kanto = memory.readbyte(badgepointer + 1, state.domain)
+    if state.gameversion == 23 then
+        if state.cur_team_player > 0 and state.cur_team_player <= 7 then
+            state.old_badges_johto = badges_johto
+            state.old_badges_kanto = badges_kanto
+            msg[#msg + 1] = badges_johto
+            msg[#msg + 1] = badges_kanto
+        else
+            msg[#msg + 1] = state.old_badges_johto
+            msg[#msg + 1] = state.old_badges_kanto
+        end
+    elseif state.gameversion < 30 then
+        msg[#msg + 1] = badges_johto
+        if state.gameversion > 20 then
+            msg[#msg + 1] = badges_kanto
+        end
+    end
+    if state.gameversion > 30 and state.gameversion < 40 then
+        local badges
+        if state.gameversion < 33 then
+            badges = memory.read_u16_le(badgepointer, state.domain)
+            badges = badges >> 7
+            msg[#msg + 1] = badges & 0xFFFFFFFF
+        elseif state.gameversion == 33 then
+            badges = memory.read_u32_le(badgepointer, state.domain) + 0x137C
+            badges = memory.read_u16_le(badges, state.domain)
+            badges = badges >> 7
+            msg[#msg + 1] = badges & 0xFFFFFFFF
+        elseif state.gameversion > 33 then
+            badges = memory.read_u32_le(badgepointer, state.domain) + 0xFE4
+            badges = memory.readbyte(badges, state.domain)
+            msg[#msg + 1] = badges
+        end
+    end
+    if state.gameversion > 40 and state.gameversion < 50 then
+        local badges = (memory.read_u32_le(badgepointer, state.domain) & 0xFFFFFF) + 0x20
+        badges = (memory.read_u32_le(badges, state.domain) & 0xFFFFFF) + badgeoffset
+        msg[#msg + 1] = memory.readbyte(badges, state.domain)
+        if state.gameversion > 43 then
+            msg[#msg + 1] = memory.readbyte(badges + 0x5, state.domain)
+        end
+    end
+    if state.gameversion > 50 then
+        msg[#msg + 1] = memory.readbyte(badgepointer, 'Main RAM')
+    end
+end
+
+local function compute_battle_stats(state)
+    local battle_stats = ''
+    for pokemon = 1, state.cur_team_player, 1 do
+        local hp = memory.read_u16_le(curHPinBattlepointer + (pokemon - 1) * 0x224, state.domain)
+        battle_stats = battle_stats .. hp
+        if pokemon < state.cur_team_player then
+            battle_stats = battle_stats .. ","
+        end
+    end
+    return battle_stats
+end
+
+local function handle_protocol_step(msg, battle_stats, state)
+    if state.fluctcount > 3 then
+        save_msg = msg
+        fluct_init = true
+    end
+
+    local check_msg = "Aufgabe"
+    comm.socketServerSend(check_msg)
+    local response = comm.socketServerResponse()
+    if response == "team" then
+        if fluct_init then
+            comm.socketServerSendBytes(save_msg)
+        else
+            comm.socketServerSendBytes(msg)
+        end
+    end
+    if response == "saveRAM" then
+        client.saveram()
+        check_msg = "saveRAM erfolgreich"
+        comm.socketServerSend(check_msg)
+    end
+    if response == "in_battle" then
+        comm.socketServerSend(state.battle_msg)
+    end
+    if response == "stat_aktualisieren" then
+        comm.socketServerSend(battle_stats)
+    end
+end
+
+function main()
+    local gameversion, language, length, domain = detect_game()
+    send_game_info(gameversion, language)
+    receive_pointer_config()
+    local state = init_state(gameversion, length, domain)
 
     while true do
-        if gameversion > 40 then
-            max_team_player = memory.read_u32_le(battlepointer - 0x8, domain)
-            cur_team_player = memory.read_u32_le(battlepointer - 0x4, domain)
-        elseif gameversion == 23 then
-            cur_team_player = memory.readbyte(0xFCD7)
-        end
-        
-        if max_team_player == 6 and cur_team_player > 0 and cur_team_player <= 7 then
-            pointer = battlepointer
-            in_battle = true
-            battle_msg = 'true'
-        else
-            pointer = old_pointer
-            in_battle = false
-            battle_msg = 'false'
-        end
-        
-        if gameversion == 23 then
-            if cur_team_player > 0 and cur_team_player <= 7 then
-                team = memory.read_bytes_as_array(pointer, length, domain)
-            end
-        else
-            team = memory.read_bytes_as_array(pointer, length, domain)
-        end
-        if areTablesEqual(team, lastTeam) then
-            if fluctcount % 30 == 0 then
-            end
-            fluctcount = fluctcount + 1
-        else
-            fluctcount = 0
-            lastTeam = team
-        end
-
-        msg = {table.unpack(team)}
-        if gameversion == 23 then
-            local names = memory.read_bytes_as_array(namepointer, 66, domain)
-            local eggs = memory.read_bytes_as_array(eggpointer, 6, domain)
-            if cur_team_player > 0 and cur_team_player <= 7 then
-                old_names = names
-                for i = 1, 66 do
-                    msg[#msg + 1] = names[i]
-                end
-                old_eggs = eggs
-                for i = 1, 6 do
-                    msg[#msg + 1] = eggs[i]
-                end
-            else
-                for i = 1, 66 do
-                    msg[#msg + 1] = old_names[i]
-                end
-                for i = 1, 6 do
-                    msg[#msg + 1] = old_eggs[i]
-                end
-            end
-        elseif gameversion < 30 then
-            for i = 0, 65 do
-                msg[#msg + 1] = memory.readbyte(namepointer + i, domain)
-            end
-            if gameversion > 20 then
-                for i = 0, 5 do
-                    msg[#msg + 1] = memory.readbyte(eggpointer + i, domain)
-                end
-            end
-        end
-        -- Orden
-        local badges_johto = memory.readbyte(badgepointer, domain)
-        local badges_kanto = memory.readbyte(badgepointer + 1, domain)
-        if gameversion == 23 then
-            if cur_team_player > 0 and cur_team_player <= 7 then
-                old_badges_johto = badges_johto
-                old_badges_kanto = badges_kanto
-                msg[#msg + 1] = badges_johto
-                msg[#msg + 1] = badges_kanto
-            else
-                msg[#msg + 1] = old_badges_johto
-                msg[#msg + 1] = old_badges_kanto
-            end 
-        elseif gameversion < 30 then
-            msg[#msg + 1] = badges_johto
-            if gameversion > 20 then
-                msg[#msg + 1] = badges_kanto
-            end
-        end
-        if gameversion > 30 and gameversion < 40 then
-            if gameversion < 33 then
-                badges = memory.read_u16_le(badgepointer, domain)
-                -- badges = bit.rshift(badges, 7)
-                badges = badges >> 7
-                msg[#msg + 1] = badges & 0xFFFFFFFF
-            elseif gameversion == 33 then
-                badges = memory.read_u32_le(badgepointer, domain) + 0x137C
-                badges = memory.read_u16_le(badges, domain)
-                -- badges = bit.rshift(badges, 7)
-                badges = badges >> 7
-                msg[#msg + 1] = badges & 0xFFFFFFFF
-            elseif gameversion > 33 then
-                badges = memory.read_u32_le(badgepointer, domain) + 0xFE4
-                badges = memory.readbyte(badges, domain)
-                msg[#msg + 1] = badges
-            end
-        end
-        if gameversion > 40 and gameversion < 50 then
-            badges = (memory.read_u32_le(badgepointer, domain) & 0xFFFFFF) + 0x20
-            badges = (memory.read_u32_le(badges, domain) & 0xFFFFFF) + badgeoffset
-            msg[#msg + 1] = memory.readbyte(badges, domain)
-            if gameversion > 43 then
-                msg[#msg + 1] = memory.readbyte(badges + 0x5, domain)
-            end
-        end
-        if gameversion > 50 then
-            msg[#msg + 1] = memory.readbyte(badgepointer, 'Main RAM')
-        end
-
+        check_battle(state)
+        read_team_bytes(state)
+        check_fluctuation(state)
+        local msg = build_msg(state)
+        append_badges(msg, state)
         local battle_stats = ''
-
-        if in_battle and gameversion > 50 then
-            for pokemon = 1 , cur_team_player, 1 do
-                local hp = memory.read_u16_le(curHPinBattlepointer + (pokemon - 1) * 0x224, domain)
-                battle_stats = battle_stats .. hp
-                if pokemon < cur_team_player then
-                    battle_stats = battle_stats .. ","
-                end
-            end
+        if state.in_battle and state.gameversion > 50 then
+            battle_stats = compute_battle_stats(state)
         end
-
-        if fluctcount > 3 then
-            save_msg = msg
-            fluct_init = true
-        end
-
-        local check_msg = "Aufgabe"
-        comm.socketServerSend(check_msg)
-        local response = comm.socketServerResponse()
-        if response == "team" then
-            if fluct_init then
-                comm.socketServerSendBytes(save_msg)
-            else
-                comm.socketServerSendBytes(msg)
-            end
-        end
-        if response == "saveRAM" then
-            client.saveram()
-            check_msg = "saveRAM erfolgreich"
-            comm.socketServerSend(check_msg)
-        end
-        if response == "in_battle" then
-            comm.socketServerSend(battle_msg)
-        end
-        if response == "stat_aktualisieren" then
-            comm.socketServerSend(battle_stats)
-        end
+        handle_protocol_step(msg, battle_stats, state)
         emu.frameadvance()
     end
 end

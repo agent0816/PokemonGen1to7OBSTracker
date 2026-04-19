@@ -132,7 +132,7 @@ class Bizhawk:
                         await self.send_messages(writer, "in_battle")
                         data = (await self.receive_messages(reader)).decode()
                         in_battle = data == "true"
-                    elif counter % 60 == 3 and in_battle: 
+                    elif counter % 60 == 3 and in_battle and edition > 50:
                         await self.send_messages(writer, "stat_aktualisieren")
                         data = (await self.receive_messages(reader)).decode()
                         in_battle = False

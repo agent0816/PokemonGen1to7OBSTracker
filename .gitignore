@@ -26,3 +26,4 @@ nuitka-out/
 nuitka_build.ps1
 tufup_publish.ps1
 version.py
+release_to_github.ps1

@@ -1,0 +1,30 @@
+# Gen 3 (GBA) — BizHawk-Pointer
+# gameversion 31 = Rubin, 32 = Saphir, 33 = Smaragd, 34 = Feuerrot, 35 = Blattgrün
+# badgepointer ist sprach-spezifisch (language-Wert aus ROM 0xAC)
+31:
+  pointer: 0x3004370
+  languages:
+    1096308292:
+      badgepointer: 0x2026a54
+32:
+  pointer: 0x3004370
+  languages:
+    1096306756:
+      badgepointer: 0x2026a54
+33:
+  pointer: 0x20244EC
+  languages:
+    1112556868:
+      badgepointer: 0x03005d8c
+34:
+  pointer: 0x2024284
+  languages:
+    1112560197:
+      badgepointer: 0x3005008
+    1112560196:
+      badgepointer: 0x3004F58
+35:
+  pointer: 0x2024284
+  languages:
+    1112557380:
+      badgepointer: 0x3004F58

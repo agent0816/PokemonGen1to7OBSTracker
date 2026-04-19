@@ -1,0 +1,23 @@
+# Gen 5 (NDS) — BizHawk-Pointer
+# gameversion 51 = Schwarz, 52 = Weiß, 53 = Schwarz 2, 54 = Weiß 2
+# Pointer auf deutschen ROMs getestet (Offsets weichen bei englischen Versionen ab)
+51:
+  pointer: 0x022348F4
+  battlepointer: 0x0226A6D4
+  curHPinBattlepointer: 0x0226D5F4
+  badgepointer: 0x23CCF0
+52:
+  pointer: 0x022349D4
+  battlepointer: 0x0226A7B4
+  curHPinBattlepointer: 0x0226D6D4
+  badgepointer: 0x23CDD0
+53:
+  pointer: 0x0221E32C
+  battlepointer: 0x02258214
+  curHPinBattlepointer: 0x0225B134
+  badgepointer: 0x226628
+54:
+  pointer: 0x0221E34C
+  battlepointer: 0x0221E2CC
+  curHPinBattlepointer: 0x0225B154
+  badgepointer: 0x226648

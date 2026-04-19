@@ -1,0 +1,18 @@
+# Gen 2 (GBC) — BizHawk-Pointer
+# gameversion 21/22 = Gold/Silber (zwei ROM-Checksummen), 23 = Kristall
+# Pointer auf deutschen ROMs getestet
+21:
+  pointer: 0xFA2A
+  namepointer: 0xFB8C
+  eggpointer: 0xFA23
+  badgepointer: 0xD57C
+22:
+  pointer: 0xFA2A
+  namepointer: 0xFB8C
+  eggpointer: 0xFA23
+  badgepointer: 0xD57C
+23:
+  pointer: 0xFCDF
+  namepointer: 0xDE41
+  eggpointer: 0xDCD8
+  badgepointer: 0xD857

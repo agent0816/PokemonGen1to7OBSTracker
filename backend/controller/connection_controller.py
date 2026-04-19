@@ -87,12 +87,14 @@ class ConnectionController:
 
             for i in range(self.pl["player_count"]):
                 if not self.pl[f"remote_{i+1}"]:
+                    env = os.environ.copy()
+                    env["TRACKER_PLAYER"] = str(i + 1)
                     process = subprocess.Popen([
                         self.bh["path"],
-                        f'--lua={os.path.abspath(f"./backend/lua/Player{i+1}.lua")}',
+                        f'--lua={os.path.abspath("./backend/lua/tracker.lua")}',
                         f'--socket_ip={self.bh["host"]}',
                         f'--socket_port={self.bh["port"]}',
-                    ])
+                    ], env=env)
                     self.bizhawk_instances.append(process)
                     self.logger.info(f"BizHawk-Prozess für Spieler {i+1} gestartet (PID {process.pid}).")
         except Exception as err:

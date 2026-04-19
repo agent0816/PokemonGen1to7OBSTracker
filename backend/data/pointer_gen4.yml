@@ -1,0 +1,28 @@
+# Gen 4 (NDS) — BizHawk-Pointer
+# gameversion 41/42 = Diamant/Perl, 43 = Platin, 44 = HeartGold, 45 = SoulSilver
+# Pointer auf deutschen ROMs getestet
+41:
+  pointer: 0x26D7EC
+  battlepointer: 0x2B9D18
+  badgepointer: 0xB70
+  badgeoffset: 0x292
+42:
+  pointer: 0x26D7EC
+  battlepointer: 0x2B9D18
+  badgepointer: 0xB70
+  badgeoffset: 0x292
+43:
+  pointer: 0x27E40C
+  battlepointer: 0x2C9C04
+  badgepointer: 0xBA8
+  badgeoffset: 0x96
+44:
+  pointer: 0x27C310
+  battlepointer: 0x0
+  badgepointer: 0xBA8
+  badgeoffset: 0x8E
+45:
+  pointer: 0x27C310
+  battlepointer: 0x0
+  badgepointer: 0xBA8
+  badgeoffset: 0x8E

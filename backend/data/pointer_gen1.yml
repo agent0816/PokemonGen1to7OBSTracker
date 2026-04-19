@@ -1,0 +1,15 @@
+# Gen 1 (GBC/GB) — BizHawk-Pointer
+# gameversion 11/12 = Rot/Blau (zwei ROM-Checksummen), 13 = Gelb
+# Pointer auf deutschen ROMs getestet
+11:
+  pointer: 0xD170
+  namepointer: 0xF2B9
+  badgepointer: 0xD35B
+12:
+  pointer: 0xD170
+  namepointer: 0xF2B9
+  badgepointer: 0xD35B
+13:
+  pointer: 0xD16F
+  namepointer: 0xF2B9
+  badgepointer: 0xD35A

@@ -25,3 +25,4 @@ CLAUDE.md
 nuitka-out/
 nuitka_build.ps1
 tufup_publish.ps1
+version.py

@@ -21,6 +21,14 @@ class Bizhawk:
         self.about_to_exit = False
         self.save_automatically = True
 
+        # Pro Client gepflegt, damit read_all_boxes() nach dem Handshake Zugriff
+        # auf edition/language und damit auf die Box-Layouts hat.
+        self.edition_per_client: dict[str, int] = {}
+        self.language_per_client: dict[str, int] = {}
+        # Jeder Eintrag ist (cart_offset, size, future) — der Haupt-Loop
+        # arbeitet die Queue im else-Zweig ab, ein Request pro Frame.
+        self.box_request_queues: dict[str, list] = {}
+
         self.logger = self.init_logging()
 
     def init_logging(self):
@@ -94,13 +102,22 @@ class Bizhawk:
             language = int((await self.receive_messages(reader)).decode())
             player = int(client_id[7:])
 
+            # Edition/Language merken, damit read_all_boxes() das Box-Layout
+            # aus der YAML ermitteln kann, ohne es selbst zu cachen.
+            self.edition_per_client[client_id] = edition
+            self.language_per_client[client_id] = language
+
             # Pointer-Satz aus YAML bestimmen und an Lua zurückschicken (Phase 3)
             pointers = bh_pointers.get_pointers(edition, language if language else None)
             if not pointers:
                 self.logger.error(
                     f"Keine Pointer für edition={edition}, language={language} in YAML — Lua erhält leere Konfig"
                 )
-            pointer_str = ";".join(f"{k}={hex(v)}" for k, v in pointers.items())
+            # Nur skalare Int-Pointer an Lua senden; box_sram_layout & Co. sind Listen
+            # und bleiben Python-seitig, weil Lua die Box-Offsets nicht selbst braucht.
+            pointer_str = ";".join(
+                f"{k}={hex(v)}" for k, v in pointers.items() if isinstance(v, int)
+            )
             await self.send_messages(writer, pointer_str)
             self.logger.info(f"Pointer-Satz an {client_id} (edition={edition}, language={language}): {pointer_str}")
 
@@ -138,7 +155,20 @@ class Bizhawk:
                         in_battle = False
                         update_stats(data)
                     else:
-                        await self.send_messages(writer, data)
+                        queue = self.box_request_queues.get(client_id)
+                        if queue:
+                            offset, size, fut = queue.pop(0)
+                            try:
+                                await self.send_messages(writer, f"box {offset:X} {size:X}")
+                                box_bytes = await reader.readexactly(size)
+                                if not fut.done():
+                                    fut.set_result(box_bytes)
+                            except Exception as err:
+                                if not fut.done():
+                                    fut.set_exception(err)
+                                raise
+                        else:
+                            await self.send_messages(writer, data)
 
                     counter += 1
                 except Exception as err:
@@ -151,7 +181,70 @@ class Bizhawk:
 
         await self.disconnect(client_id)
 
+    async def read_all_boxes(self, client_id: str) -> list[bytes]:
+        """Liest alle PC-Boxen des Clients aus dem CartRAM der Emulation.
+
+        Python berechnet pro Box den linearen CartRAM-Offset aus dem
+        box_sram_layout der YAML (Bank N beginnt bei N * 0x2000, Startadresse
+        wird relativ zur Bank-Basis 0xA000 gerechnet). Die Kommandos werden
+        frame-weise vom Main-Loop an Lua gesendet; diese Methode bündelt die
+        Futures und liefert die rohen Box-Bytes in Layout-Reihenfolge zurück.
+        """
+        edition = self.edition_per_client.get(client_id)
+        if edition is None:
+            raise RuntimeError(f"Client {client_id} ist nicht (mehr) registriert.")
+        language = self.language_per_client.get(client_id)
+
+        pointers = bh_pointers.get_pointers(edition, language if language else None)
+        layout = pointers.get("box_sram_layout")
+        stride = pointers.get("box_stride")
+        if not layout or not stride:
+            raise RuntimeError(
+                f"Kein box_sram_layout/box_stride für edition={edition} — "
+                f"ist die YAML für diese Generation aktuell?"
+            )
+
+        loop = asyncio.get_event_loop()
+        futures: list[asyncio.Future] = []
+        queue = self.box_request_queues.setdefault(client_id, [])
+        for bank_cfg in layout:
+            bank = bank_cfg["bank"]
+            start = bank_cfg["start"]
+            count = bank_cfg["count"]
+            # CartRAM ist eine lineare Sicht auf alle SRAM-Banks.
+            # Bank N startet im Domain bei N * 0x2000; start ist die Adresse
+            # im GB-Speicherbereich 0xA000..0xBFFF.
+            base = bank * 0x2000 + (start - 0xA000)
+            for i in range(count):
+                offset = base + i * stride
+                fut = loop.create_future()
+                queue.append((offset, stride, fut))
+                futures.append(fut)
+
+        return await asyncio.gather(*futures)
+
+    async def read_and_decode_boxes(self, client_id: str) -> list[list]:
+        """Liest alle Boxen vom Emulator und dekodiert sie.
+
+        Rückgabe: Liste (Box-Index → Liste von Pokemon|None je Slot).
+        """
+        edition = self.edition_per_client.get(client_id)
+        if edition is None:
+            raise RuntimeError(f"Client {client_id} ist nicht (mehr) registriert.")
+        raw_boxes = await self.read_all_boxes(client_id)
+        return [pokedecoder.decode_box(box_bytes, edition) for box_bytes in raw_boxes]
+
     async def disconnect(self, client_id):
+        # Noch offene Box-Futures mit Fehler beenden, damit read_all_boxes()
+        # nicht ewig hängt, wenn der Emulator während der Abfrage wegbricht.
+        queue = self.box_request_queues.pop(client_id, None)
+        if queue:
+            for _, _, fut in queue:
+                if not fut.done():
+                    fut.set_exception(ConnectionError(f"Emulator {client_id} disconnected"))
+        self.edition_per_client.pop(client_id, None)
+        self.language_per_client.pop(client_id, None)
+
         if client_id in self.bizhawks:
             self.bizhawks[client_id] = None
             self.bizhawks_status[client_id] = False

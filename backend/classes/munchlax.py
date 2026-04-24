@@ -21,6 +21,10 @@ class Munchlax:
         self.unsorted_teams = {}
         self.badges = {}
         self.editions = {}
+        # PC-Boxen pro Spieler: dict[player_id, list[list[Pokemon|None]]].
+        # Wird nur auf Anforderung (BoxMenu-Refresh) vom Emulator gelesen,
+        # nicht im Tick-Loop — deshalb kein Auto-Update.
+        self.boxes: dict[int, list] = {}
         self.initialized = False
         self.rem = rem
         self.sp = sp
@@ -58,6 +62,7 @@ class Munchlax:
         self.unsorted_teams = {}
         self.badges = {}
         self.editions = {}
+        self.boxes = {}
         self.initialized = False
 
     async def alter_teams(self):

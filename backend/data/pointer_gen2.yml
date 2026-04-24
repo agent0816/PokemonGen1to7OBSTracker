@@ -1,18 +1,38 @@
 # Gen 2 (GBC) — BizHawk-Pointer
 # gameversion 21/22 = Gold/Silber (zwei ROM-Checksummen), 23 = Kristall
 # Pointer auf deutschen ROMs getestet
+#
+# PC-Boxen:
+#   - Gen 2 haelt keine aktive Box im WRAM - alle 14 Boxen liegen in SRAM
+#   - Pro Bank 7 Boxen ab 0xA000, Stride 1104 B (1102 + 2 B Alignment)
+#   - box_sram_layout beschreibt die SRAM-Banks; Lua liest via CartRAM-Domain
 21:
   pointer: 0xFA2A
   namepointer: 0xFB8C
   eggpointer: 0xFA23
   badgepointer: 0xD57C
+  box_count: 14
+  box_stride: 0x450
+  box_sram_layout:
+    - {bank: 2, start: 0xA000, count: 7}
+    - {bank: 3, start: 0xA000, count: 7}
 22:
   pointer: 0xFA2A
   namepointer: 0xFB8C
   eggpointer: 0xFA23
   badgepointer: 0xD57C
+  box_count: 14
+  box_stride: 0x450
+  box_sram_layout:
+    - {bank: 2, start: 0xA000, count: 7}
+    - {bank: 3, start: 0xA000, count: 7}
 23:
   pointer: 0xFCDF
   namepointer: 0xDE41
   eggpointer: 0xDCD8
   badgepointer: 0xD857
+  box_count: 14
+  box_stride: 0x450
+  box_sram_layout:
+    - {bank: 2, start: 0xA000, count: 7}
+    - {bank: 3, start: 0xA000, count: 7}

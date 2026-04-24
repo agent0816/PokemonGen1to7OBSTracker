@@ -1,6 +1,8 @@
 badges: 0x08c6a6a0
 battle_kind: 0x08203e9c
 box_beginning: 0x08c861b8
+box_count: 31
+box_stride: 6960
 in_battle_stat_offset: 0x244
 kampf_trainer: 0x082059e0
 kampf_wild: 0x08203ed0

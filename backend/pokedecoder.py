@@ -421,6 +421,513 @@ def pokemon67(data, gen):
     return Pokemon(dexnr,shiny_value < 17,female,item=item,form=form,lvl=lvl,nickname=nickname,route=met_location,cur_hp=cur_hp,max_hp=max_hp, checksum_given=checksum_given, checksum_calculated=checksum_calculated, experience_points=experience_points, ability=ability, nature=nature, evs=evs, moves=moves, ivs=ivs, battle_stats=battle_stats, status=status, personality=personality)
 
 
+# ============================================================================
+# Box-Dekoder (Phase 1)
+# ============================================================================
+# Box-Pokemon unterscheiden sich von Team-Pokemon primär dadurch, dass
+# - kein Battle-Stats-Block existiert (cur_hp/max_hp/Status fehlen),
+# - kein Level-Byte gespeichert ist (ab Gen 3 — Level wird aus XP abgeleitet),
+# - bei Gen 1/2 Nickname und OT-Name in separaten Arrays außerhalb des
+#   33-/32-Byte-Slot-Structs liegen.
+# Die Decryption-Logik für Gen 3+ ist identisch zum Team (decryptpokemon*).
+
+def xp_to_level_mediumfast(xp: int) -> int:
+    """Näherung Level aus XP via Medium-Fast-Wachstumskurve (lvl = xp^(1/3)).
+
+    Exakt für Medium-Fast-Pokemon (häufigste Wachstumsgruppe).
+    Weicht bei Fast/Slow/Erratic/Fluctuating um 1–3 Level ab —
+    genau genug für UI-Anzeige, bis eine Wachstumsraten-LUT pro Spezies ergänzt wird.
+    """
+    if xp <= 0:
+        return 1
+    lvl = round(xp ** (1 / 3))
+    return max(1, min(100, int(lvl)))
+
+
+def _decode_gen3_string(raw: bytes) -> str:
+    """Dekodiert einen Gen-3-String (Nickname/OT), bricht bei 0xFF ab."""
+    result = ""
+    for char in raw:
+        if char == 0xFF:
+            break
+        if char in gen3charset:
+            result += gen3charset[char]
+    return result
+
+
+def _decode_gen4_string(raw: bytes) -> str:
+    """Dekodiert einen Gen-4-String (Nickname/OT), bricht bei 0xFF ab.
+
+    Mirror der Logik in pokemon45() — byte-weise mit gen4charset.
+    """
+    result = ""
+    for char in raw:
+        if char == 0xFF:
+            break
+        if char in gen4charset:
+            result += gen4charset[char]
+    return result
+
+
+def _decode_gen5_string(raw: bytes) -> str:
+    """Dekodiert einen Gen-5-String (UTF-16-LE, Terminator 0xFFFF)."""
+    result = b""
+    for i in range(0, len(raw) - 1, 2):
+        if raw[i] == 0xFF and raw[i + 1] == 0xFF:
+            break
+        result += raw[i:i + 2]
+    return result.decode("iso-8859-1", errors="ignore").replace("\u0000", "")
+
+
+def _decode_gen67_string(raw: bytes) -> str:
+    """Dekodiert einen Gen-6/7-String (UTF-16-LE, Terminator 0x0000)."""
+    return raw.decode("iso-8859-1", errors="ignore").split("\u0000\u0000")[0].replace("\u0000", "")
+
+
+def _is_empty_gen3plus_slot(data: bytes) -> bool:
+    """Leerer Box-Slot: PID und OTID beide 0 (Gen 3+)."""
+    if len(data) < 8:
+        return True
+    pid = int.from_bytes(data[:4], "little")
+    otid = int.from_bytes(data[4:8], "little")
+    return pid == 0 and otid == 0
+
+
+def box_pokemon3(data: bytes, edition: int):
+    """Dekodiert ein Gen-3-Box-Pokemon (80 Bytes).
+
+    Struktur identisch zu den ersten 0x50 Bytes eines Team-Pokemon — nur der
+    Battle-Stats-Block (ab 0x50) fehlt. Level wird aus XP abgeleitet.
+    """
+    if _is_empty_gen3plus_slot(data):
+        return None
+
+    personality = int.from_bytes(data[:4], "little")
+    otid_full = int.from_bytes(data[4:8], "little")
+    ot_id = otid_full & 0xFFFF
+    ot_secret_id = otid_full >> 16
+
+    unshuffled_bytes, shiny_value = decryptpokemon3(data)
+
+    species = int.from_bytes(unshuffled_bytes[0:2], "little")
+    item = int.from_bytes(unshuffled_bytes[2:4], "little")
+    experience_points = int.from_bytes(unshuffled_bytes[4:8], "little")
+
+    ev_names = ["hp", "attack", "defense", "speed", "special_attack", "special_defense"]
+    evs = {ev_names[i]: int(b) for i, b in enumerate(unshuffled_bytes[0x19:0x1E])}
+
+    move_bytes = unshuffled_bytes[0x0D:0x15]
+    pp_bytes = unshuffled_bytes[0x15:0x19]
+    moves = [{"id": int.from_bytes(move_bytes[2 * i:2 * i + 2], "little"), "pp": int(b)}
+             for i, b in enumerate(pp_bytes)]
+
+    iv_base = int.from_bytes(unshuffled_bytes[0x29:0x2D], "little")
+    ivs = {ev_names[i]: ((iv_base >> (i * 5)) & 0x1F) for i in range(6)}
+
+    checksum_given = int.from_bytes(data[0x1C:0x1E], "little")
+    checksum_calculated = calculate_checksum(unshuffled_bytes)
+
+    egg = data[19] == 6
+    form = ""
+
+    if species in range(277, 440):
+        species = species3_lut[species]
+        if isinstance(species, str):
+            form = species[3:]
+            species = int(species[:3])
+        if species == 386:
+            form = {34: "-attack", 35: "-defense", 33: "-speed"}.get(edition, "")
+
+    if item in items3:
+        item = items3[item]
+
+    female = False
+    if species in gender_lut:
+        female = personality % 256 < gender_lut[species]
+
+    if egg:
+        species = "egg"
+        form = ""
+
+    nature = personality % 25
+    lvl = xp_to_level_mediumfast(experience_points)
+    met_location = int.from_bytes(unshuffled_bytes[37:38], "little")
+
+    nickname = _decode_gen3_string(data[8:18])
+    ot_name = _decode_gen3_string(data[0x14:0x1B])
+
+    return Pokemon(
+        species, not shiny_value > 8, female, form=form,
+        lvl=lvl, item=item, nickname=nickname, route=met_location,
+        cur_hp=0, max_hp=0,
+        checksum_given=checksum_given, checksum_calculated=checksum_calculated,
+        experience_points=experience_points, nature=nature,
+        evs=evs, moves=moves, ivs=ivs,
+        personality=personality, ot_id=ot_id, ot_secret_id=ot_secret_id,
+        ot_name=ot_name, is_boxed=True,
+    )
+
+
+def box_pokemon45(data: bytes, gen: int):
+    """Dekodiert ein Gen-4/5-Box-Pokemon (136 Bytes).
+
+    decryptpokemon(data, "45") liefert unshuffled_bytes (128 B) und einen leeren
+    battle-stats-Block — da data exakt bei Cutoff 136 endet.
+    """
+    if _is_empty_gen3plus_slot(data):
+        return None
+
+    items = items4 if gen == 4 else items5
+    unshuffled_bytes, _, shiny_value, personality = decryptpokemon(data, "45")
+
+    dexnr = int.from_bytes(unshuffled_bytes[0:2], "little")
+    item = int.from_bytes(unshuffled_bytes[2:4], "little")
+    ot_id = int.from_bytes(unshuffled_bytes[0x04:0x06], "little")
+    ot_secret_id = int.from_bytes(unshuffled_bytes[0x06:0x08], "little")
+    experience_points = int.from_bytes(unshuffled_bytes[0x08:0x0C], "little")
+    ability = int.from_bytes(unshuffled_bytes[0x0D:0x0E])
+
+    if gen == 5:
+        nature = int.from_bytes(unshuffled_bytes[0x41:0x42])
+    else:
+        nature = personality % 25
+
+    ev_names = ["hp", "attack", "defense", "speed", "special_attack", "special_defense"]
+    evs = {ev_names[i]: int(b) for i, b in enumerate(unshuffled_bytes[0x10:0x16])}
+
+    move_bytes = unshuffled_bytes[0x20:0x28]
+    pp_bytes = unshuffled_bytes[0x28:0x2C]
+    moves = [{"id": int.from_bytes(move_bytes[2 * i:2 * i + 2], "little"), "pp": int(b)}
+             for i, b in enumerate(pp_bytes)]
+
+    iv_base = int.from_bytes(unshuffled_bytes[0x38:0x3C], "little")
+    ivs = {ev_names[i]: ((iv_base >> (i * 5)) & 0x1F) for i in range(6)}
+
+    checksum_given = int.from_bytes(data[0x06:0x08], "little")
+    checksum_calculated = calculate_checksum(unshuffled_bytes)
+
+    if dexnr >= 650:
+        return Pokemon(0, item="-", nickname="", lvl=1, is_boxed=True)
+
+    item_name = items.get(item, "-") if item in items else "-"
+
+    met_location = int.from_bytes(unshuffled_bytes[0x46:0x48], "little")
+    if met_location == 0:
+        met_location = int.from_bytes(unshuffled_bytes[0x7A:0x7C], "little") if len(unshuffled_bytes) >= 0x7C else 0
+
+    female = False
+    if dexnr in range(650):
+        female = personality % 256 < gender_lut[dexnr]
+
+    if gen == 4:
+        nickname = _decode_gen4_string(unshuffled_bytes[0x48:0x5E])
+        ot_name = _decode_gen4_string(unshuffled_bytes[0x68:0x78])
+    else:
+        nickname = _decode_gen5_string(unshuffled_bytes[0x48:0x5E])
+        ot_name = _decode_gen5_string(unshuffled_bytes[0x68:0x78])
+
+    form = get_form(unshuffled_bytes[0x40], dexnr, gen)
+
+    egg_flag = bool(unshuffled_bytes[0x3B] & 0x40)
+    if egg_flag and dexnr != 0:
+        if dexnr == 490:
+            form = "-manaphy"
+        else:
+            form = ""
+        dexnr = "egg"
+
+    lvl = xp_to_level_mediumfast(experience_points)
+
+    return Pokemon(
+        dexnr, shiny_value < 9, female, form=form,
+        lvl=lvl, item=item_name, nickname=nickname, route=met_location,
+        cur_hp=0, max_hp=0,
+        checksum_given=checksum_given, checksum_calculated=checksum_calculated,
+        experience_points=experience_points, ability=ability, nature=nature,
+        evs=evs, moves=moves, ivs=ivs,
+        personality=personality, ot_id=ot_id, ot_secret_id=ot_secret_id,
+        ot_name=ot_name, is_boxed=True,
+    )
+
+
+def box_pokemon67(data: bytes, gen: int):
+    """Dekodiert ein Gen-6/7-Box-Pokemon (232 Bytes)."""
+    if _is_empty_gen3plus_slot(data):
+        return None
+
+    unshuffled_bytes, _, shiny_value, _ = decryptpokemon(data, "67")
+
+    checksum_given = int.from_bytes(data[0x06:0x08], "little")
+    checksum_calculated = calculate_checksum(unshuffled_bytes)
+
+    dexnr = int.from_bytes(unshuffled_bytes[:2], "little")
+    item = int.from_bytes(unshuffled_bytes[2:4], "little")
+    ot_id = int.from_bytes(unshuffled_bytes[0x0C:0x0E], "little")
+    ot_secret_id = int.from_bytes(unshuffled_bytes[0x0E:0x10], "little")
+    experience_points = int.from_bytes(unshuffled_bytes[0x10:0x14], "little")
+    ability = int.from_bytes(unshuffled_bytes[0x14:0x15])
+    personality = int.from_bytes(unshuffled_bytes[0x18:0x1C], "little")
+    nature = int.from_bytes(unshuffled_bytes[0x1C:0x1D])
+
+    ev_names = ["hp", "attack", "defense", "speed", "special_attack", "special_defense"]
+    evs = {ev_names[i]: int(b) for i, b in enumerate(unshuffled_bytes[0x1E:0x24])}
+
+    move_bytes = unshuffled_bytes[0x5A:0x62]
+    pp_bytes = unshuffled_bytes[0x62:0x66]
+    moves = [{"id": int.from_bytes(move_bytes[2 * i:2 * i + 2], "little"), "pp": int(b)}
+             for i, b in enumerate(pp_bytes)]
+
+    iv_base = int.from_bytes(unshuffled_bytes[0x74:0x78], "little")
+    ivs = {ev_names[i]: ((iv_base >> (i * 5)) & 0x1F) for i in range(6)}
+
+    female = False
+    if dexnr in gender_lut:
+        female = personality % 256 < gender_lut[dexnr]
+
+    if item in items6plus:
+        item = items6plus[item]
+    else:
+        item = "-"
+
+    met_location = int.from_bytes(unshuffled_bytes[0xDA:0xDC], "little") if len(unshuffled_bytes) >= 0xDC else 0
+    nickname = _decode_gen67_string(unshuffled_bytes[0x40:0x59])
+    ot_name = _decode_gen67_string(unshuffled_bytes[0xB0:0xC9]) if len(unshuffled_bytes) >= 0xC9 else ""
+    form = get_form(unshuffled_bytes[0x1D], dexnr, gen)
+
+    if dexnr not in range(810):
+        dexnr = 0
+        nickname = ""
+
+    egg_flag = bool(unshuffled_bytes[0x77] & 0x40)
+    if egg_flag and dexnr != 0:
+        if dexnr == 490:
+            form = "-manaphy"
+        dexnr = "egg"
+
+    lvl = xp_to_level_mediumfast(experience_points)
+
+    return Pokemon(
+        dexnr, shiny_value < 17, female, item=item, form=form,
+        lvl=lvl, nickname=nickname, route=met_location,
+        cur_hp=0, max_hp=0,
+        checksum_given=checksum_given, checksum_calculated=checksum_calculated,
+        experience_points=experience_points, ability=ability, nature=nature,
+        evs=evs, moves=moves, ivs=ivs,
+        personality=personality, ot_id=ot_id, ot_secret_id=ot_secret_id,
+        ot_name=ot_name, is_boxed=True,
+    )
+
+
+def _decode_gen1_string(raw: bytes) -> str:
+    """Dekodiert einen Gen-1-String (Nickname/OT), bricht bei 0x50 ab."""
+    result = ""
+    for char in raw:
+        if char == 0x50:
+            break
+        if char in gen1charset:
+            result += gen1charset[char]
+    return result
+
+
+def box_pokemon1(data: bytes, ot_name_bytes: bytes = b"", nickname_bytes: bytes = b""):
+    """Dekodiert ein Gen-1-Box-Pokemon (33-Byte-Struct).
+
+    Nickname und OT-Name liegen in Gen 1/2 nicht im Slot, sondern in separaten
+    Arrays pro Box — deshalb als extra Parameter.
+    """
+    if len(data) < 33 or data[0] == 0 or data[0] == 0xFF:
+        return None
+
+    dexnr = data[0]
+    if dexnr in species1_lut:
+        dexnr = species1_lut.get(dexnr)
+
+    cur_hp = int.from_bytes(data[0x01:0x03], "big")
+    lvl = data[0x03]
+    ot_id = int.from_bytes(data[0x0C:0x0E], "big")
+    experience_points = int.from_bytes(data[0x0E:0x11], "big")
+
+    ev_names = ["hp", "attack", "defense", "speed", "special"]
+    evs = {name: int.from_bytes(data[0x11 + 2 * i:0x13 + 2 * i], "big") for i, name in enumerate(ev_names)}
+
+    iv_byte1, iv_byte2 = data[0x1B], data[0x1C]
+    ivs = {
+        "attack": iv_byte1 >> 4,
+        "defense": iv_byte1 & 0x0F,
+        "speed": iv_byte2 >> 4,
+        "special": iv_byte2 & 0x0F,
+    }
+
+    move_ids = list(data[0x08:0x0C])
+    pp_values = list(data[0x1D:0x21])
+    moves = [{"id": mid, "pp": pp} for mid, pp in zip(move_ids, pp_values)]
+
+    nickname = _decode_gen1_string(nickname_bytes)
+    ot_name = _decode_gen1_string(ot_name_bytes)
+
+    return Pokemon(
+        dexnr, False,
+        lvl=lvl, nickname=nickname, cur_hp=cur_hp, max_hp=cur_hp,
+        experience_points=experience_points, evs=evs, ivs=ivs, moves=moves,
+        ot_id=ot_id, ot_name=ot_name, is_boxed=True,
+    )
+
+
+def box_pokemon2(data: bytes, ot_name_bytes: bytes = b"", nickname_bytes: bytes = b""):
+    """Dekodiert ein Gen-2-Box-Pokemon (32-Byte-Struct)."""
+    unown_letter = ["-a","-b","-c","-d","-e","-f","-g","-h","-i","-j","-k","-l","-m",
+                    "-n","-o","-p","-q","-r","-s","-t","-u","-v","-w","-x","-y","-z"]
+    if len(data) < 32 or data[0] == 0 or data[0] == 0xFF:
+        return None
+
+    dexnr = data[0]
+    item = data[1]
+    if item in items2:
+        item = items2[item]
+    lvl = data[0x1F]
+    ot_id = int.from_bytes(data[0x06:0x08], "big")
+    experience_points = int.from_bytes(data[0x08:0x0B], "big")
+
+    ev_names = ["hp", "attack", "defense", "speed", "special"]
+    evs = {name: int.from_bytes(data[0x0B + 2 * i:0x0D + 2 * i], "big") for i, name in enumerate(ev_names)}
+
+    iv_byte1, iv_byte2 = data[0x15], data[0x16]
+    ivs = {
+        "attack": iv_byte1 >> 4,
+        "defense": iv_byte1 & 0x0F,
+        "speed": iv_byte2 >> 4,
+        "special": iv_byte2 & 0x0F,
+    }
+
+    move_ids = list(data[0x02:0x06])
+    pp_values = list(data[0x17:0x1B])
+    moves = [{"id": mid, "pp": pp} for mid, pp in zip(move_ids, pp_values)]
+
+    form = ""
+    if dexnr == 201:
+        letter = (
+            (((ivs["attack"] >> 1) % 4) << 6)
+            + (((ivs["defense"] >> 1) % 4) << 4)
+            + (((ivs["speed"] >> 1) % 4) << 2)
+            + ((ivs["special"] >> 1) % 4)
+        )
+        form = unown_letter[letter // 10]
+
+    nickname = _decode_gen1_string(nickname_bytes)
+    ot_name = _decode_gen1_string(ot_name_bytes)
+
+    return Pokemon(
+        dexnr, False, form=form,
+        lvl=lvl, nickname=nickname, item=item,
+        experience_points=experience_points, evs=evs, ivs=ivs, moves=moves,
+        ot_id=ot_id, ot_name=ot_name, is_boxed=True,
+    )
+
+
+# ---------- Box-Level-Parser (eine ganze Box → Liste von Pokemon|None) -------
+
+def decode_gen1_box(box_bytes: bytes) -> list:
+    """Parst eine Gen-1-Box (1122 Bytes) in 20 Slots.
+
+    Layout: count(1) + species_list(21) + 20×struct(33) + 20×OT(11) + 20×nick(11).
+    """
+    count = box_bytes[0]
+    poke_start = 0x16
+    ot_start = poke_start + 20 * 33
+    nick_start = ot_start + 20 * 11
+
+    slots = []
+    for slot in range(20):
+        if slot >= count:
+            slots.append(None)
+            continue
+        poke = box_bytes[poke_start + slot * 33:poke_start + (slot + 1) * 33]
+        ot = box_bytes[ot_start + slot * 11:ot_start + (slot + 1) * 11]
+        nick = box_bytes[nick_start + slot * 11:nick_start + (slot + 1) * 11]
+        slots.append(box_pokemon1(poke, ot, nick))
+    return slots
+
+
+def decode_gen2_box(box_bytes: bytes) -> list:
+    """Parst eine Gen-2-Box (1104 Bytes) in 20 Slots.
+
+    Layout: count(1) + species_list(21) + 20×struct(32) + 20×OT(11) + 20×nick(11).
+    """
+    count = box_bytes[0]
+    poke_start = 0x16
+    ot_start = poke_start + 20 * 32
+    nick_start = ot_start + 20 * 11
+
+    slots = []
+    for slot in range(20):
+        if slot >= count:
+            slots.append(None)
+            continue
+        poke = box_bytes[poke_start + slot * 32:poke_start + (slot + 1) * 32]
+        ot = box_bytes[ot_start + slot * 11:ot_start + (slot + 1) * 11]
+        nick = box_bytes[nick_start + slot * 11:nick_start + (slot + 1) * 11]
+        slots.append(box_pokemon2(poke, ot, nick))
+    return slots
+
+
+def decode_gen3_box(box_bytes: bytes, edition: int, slots_per_box: int = 30) -> list:
+    """Parst eine Gen-3-Box (Array aus 80-Byte-Slots)."""
+    return [box_pokemon3(box_bytes[i * 80:(i + 1) * 80], edition) for i in range(slots_per_box)]
+
+
+def decode_gen45_box(box_bytes: bytes, gen: int, slots_per_box: int = 30) -> list:
+    """Parst eine Gen-4/5-Box (Array aus 136-Byte-Slots)."""
+    return [box_pokemon45(box_bytes[i * 136:(i + 1) * 136], gen) for i in range(slots_per_box)]
+
+
+def decode_gen67_box(box_bytes: bytes, gen: int, slots_per_box: int = 30) -> list:
+    """Parst eine Gen-6/7-Box (Array aus 232-Byte-Slots)."""
+    return [box_pokemon67(box_bytes[i * 232:(i + 1) * 232], gen) for i in range(slots_per_box)]
+
+
+def decode_box(box_bytes: bytes, edition: int) -> list:
+    """Dispatcher: dekodiert eine Box anhand der Edition zur passenden Gen-Funktion.
+
+    Gibt eine Liste von Pokemon|None zurück (Länge = Slots pro Box;
+    Gen 1/2 = 20, Gen 3+ = 30). Box-Bytes müssen das komplette rohe Box-Layout
+    der Edition enthalten (Gen 1/2 inkl. OT- und Nickname-Arrays).
+    """
+    gen = edition // 10
+    if gen == 1:
+        return decode_gen1_box(box_bytes)
+    if gen == 2:
+        return decode_gen2_box(box_bytes)
+    if gen == 3:
+        return decode_gen3_box(box_bytes, edition)
+    if gen in (4, 5):
+        return decode_gen45_box(box_bytes, gen)
+    if gen in (6, 7):
+        return decode_gen67_box(box_bytes, gen)
+    raise ValueError(f"Unbekannte Generation für edition={edition} (gen={gen})")
+
+
+def decode_box_name(raw: bytes, gen: int) -> str:
+    """Dekodiert einen Box-Namen gemäß der Generation."""
+    if gen == 1:
+        return ""
+    if gen == 2:
+        return _decode_gen1_string(raw)
+    if gen == 3:
+        return _decode_gen3_string(raw)
+    if gen == 4:
+        return _decode_gen4_string(raw)
+    if gen == 5:
+        return _decode_gen5_string(raw)
+    if gen in (6, 7):
+        return _decode_gen67_string(raw)
+    return ""
+
+
+# ============================================================================
+# Ende Box-Dekoder
+# ============================================================================
+
+
 def team(data, edition):
     length = len(data) // 6
     liste = []

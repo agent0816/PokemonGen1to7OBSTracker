@@ -180,6 +180,36 @@ class CitraHandler:
             result = self.citra_instance.read_memory(read_address, 1)
         return result
 
+    def read_all_boxes(self) -> list[bytes]:
+        """Liest alle PC-Boxen der aktuellen Edition aus dem Citra-Speicher.
+
+        Pro Box 30 Slots à 232 B = 6960 B; Adresse startet bei
+        pointer["box_beginning"], Anzahl und Stride kommen aus der YAML
+        (box_count, box_stride). Blockierend — für 31-32 Boxen sind das
+        ca. 6700-6900 UDP-Roundtrips, also lieber nicht im Tick-Loop aufrufen.
+        """
+        box_start = self.pointer["box_beginning"]
+        box_count = self.pointer.get("box_count", 31)
+        box_stride = self.pointer.get("box_stride", 30 * SLOT_DATA_SIZE)
+        box_size = 30 * SLOT_DATA_SIZE
+        boxes = []
+        for i in range(box_count):
+            box_bytes = self.citra_instance.read_memory(box_start + i * box_stride, box_size)
+            if box_bytes is None:
+                raise RuntimeError(f"Citra-Read gescheitert für Box {i} (Adresse "
+                                   f"0x{box_start + i * box_stride:08X})")
+            boxes.append(box_bytes)
+        return boxes
+
+    async def read_and_decode_boxes(self) -> list[list]:
+        """Liest alle Boxen und dekodiert sie zu Pokemon-Listen.
+
+        read_memory ist blockierend (synchrone UDP-Requests), deshalb in einen
+        Thread ausgelagert — sonst friert der Event-Loop für mehrere Sekunden ein.
+        """
+        raw_boxes = await asyncio.to_thread(self.read_all_boxes)
+        return [pokedecoder.decode_box(b, self.edition) for b in raw_boxes]
+
     async def start(self, munchlax, button):
         self.munchlax: Munchlax = munchlax
         self.logger.info("Citra verbunden.")

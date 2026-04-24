@@ -5,8 +5,10 @@
 # battleopponentpointer / battleopponentidpointer sind noch nicht in Benutzung,
 # aber reserviert für zukünftige Features (Gegner-Team, Trainer-ID lesen).
 # battleopponentidpointer: u_le_16; 0x0 = wildes Pokemon, > 0x0 = Trainer-ID
+# box_pointer zeigt auf die erste PC-Box (18 Boxen, je 30 Slots à 136 Bytes, Abstand 3944 B)
 41:
   pointer: 0x26D7EC
+  box_pointer: 0x279858
   battlepointer: 0x2B9D18
   battleopponentpointer: 0x2BA2C8
   battleopponentidpointer: 0x2AFFCE
@@ -14,6 +16,7 @@
   badgeoffset: 0x292
 42:
   pointer: 0x26D7EC
+  box_pointer: 0x279858
   battlepointer: 0x2B9D18
   battleopponentpointer: 0x2BA2C8
   battleopponentidpointer: 0x2AFFCE
@@ -21,6 +24,7 @@
   badgeoffset: 0x292
 43:
   pointer: 0x27E40C
+  box_pointer: 0x28B29C
   battlepointer: 0x2C9C04
   battleopponentpointer: 0x2CA1B4
   battleopponentidpointer: 0x2BFBF6
@@ -28,6 +32,7 @@
   badgeoffset: 0x96
 44:
   pointer: 0x27C310
+  box_pointer: 0x28B978
   battlepointer: 0x2CAD00
   battleopponentpointer: 0x2CB2D0
   battleopponentidpointer: 0x0
@@ -35,6 +40,7 @@
   badgeoffset: 0x8E
 45:
   pointer: 0x27C310
+  box_pointer: 0x28B978
   battlepointer: 0x2CAD00
   battleopponentpointer: 0x2CB2D0
   battleopponentidpointer: 0x0

@@ -148,6 +148,9 @@ class MainMenu(Screen):
         pokedex_button = Button(text="Pokedex", on_press=self.switch_to_pokedex)
         logo_settings.add_widget(pokedex_button)
 
+        box_button = Button(text="PC-Boxen", on_press=self.switch_to_boxes)
+        logo_settings.add_widget(box_button)
+
         control_frame.add_widget(logo_settings)
 
         connections = BoxLayout(orientation="horizontal")
@@ -634,6 +637,9 @@ class MainMenu(Screen):
 
     def switch_to_pokedex(self, instance):
         self.manager.current = "PokedexMenu"
+
+    def switch_to_boxes(self, instance):
+        self.manager.current = "BoxMenu"
 
     def switch_to_settings(self, instance):
         settings_menu = self.manager.get_screen("SettingsMenu")

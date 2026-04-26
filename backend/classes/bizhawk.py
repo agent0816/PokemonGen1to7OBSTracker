@@ -70,6 +70,13 @@ class Bizhawk:
             def update_teams(msg):
                 team: list[Pokemon] = pokedecoder.team(msg, edition)
                 teams = self.munchlax.bizhawk_teams
+                # Vor dem Update den alten Dex-Stand merken — wenn sich die
+                # Tupel-Identität ändert (Pokemon ins/aus PC verschoben,
+                # Tausch, Fang, Evolution), triggern wir später einen
+                # gedrosselten Auto-Box-Refresh.
+                old_team = teams.get(player)
+                # team-Liste enthält am Ende badges/edition-Ints — nur Slot 0..5 sind Pokemon.
+                old_dexnrs = tuple(p.dexnr for p in old_team[:6]) if old_team else None
                 if player in teams:
                     if teams[player] == team:
                         return
@@ -86,6 +93,13 @@ class Bizhawk:
                     else:
                         teams[player][index] = team[index]
                         self.munchlax.unsorted_teams[player][index] = team[index]
+                new_dexnrs = tuple(p.dexnr for p in team[:6])
+                # Erstladung (old_dexnrs is None) triggert ebenfalls — so füllt
+                # sich der Box-Cache automatisch nach dem Verbinden, ohne dass
+                # der User "Aktualisieren" klicken muss.
+                if old_dexnrs != new_dexnrs and self.munchlax.should_auto_refresh_boxes(player):
+                    self.munchlax.mark_box_refresh(player)
+                    asyncio.create_task(self._auto_refresh_boxes(client_id, player))
 
             def update_stats(stats):
                 team = self.munchlax.bizhawk_teams[player]
@@ -198,6 +212,12 @@ class Bizhawk:
             Box i liegt bei box_pointer + i * box_stride in der System-Domain
             (System Bus für GBA, Main RAM / ARM9 System Bus für NDS).
             Lua-Kommando: 'boxw <offset> <size>' (state.domain).
+          - Smaragd-Sonderfall: statt box_pointer setzt die YAML
+            box_pointer_indirect (feste IWRAM-Adresse des 4-Byte-LE-Pointers
+            auf gPokemonStorage) und box_pointer_offset (Header-Skip). Wir
+            lesen erst diese 4 Byte, dereferenzieren und nutzen das Ergebnis
+            als Box-Basis. Eine zusätzliche Lua-Roundtrip ~16 ms vor den
+            Box-Reads.
 
         Die Kommandos werden frame-weise vom Main-Loop an Lua gesendet; diese
         Methode bündelt die Futures und liefert die rohen Box-Bytes in
@@ -215,6 +235,8 @@ class Bizhawk:
         box_count = pointers.get("box_count")
         active_box_pointer = pointers.get("box_active_pointer")
         active_index_pointer = pointers.get("box_active_index_pointer")
+        indirect_addr = pointers.get("box_pointer_indirect")
+        indirect_offset = pointers.get("box_pointer_offset", 0)
 
         loop = asyncio.get_event_loop()
         futures: list[asyncio.Future] = []
@@ -258,13 +280,29 @@ class Bizhawk:
                         f"— SRAM-Boxen unverändert gelassen."
                     )
             return list(sram_boxes)
-        elif box_pointer and box_count and stride:
-            # Gen 3/4/5: kontinuierlicher WRAM-Block, je Box stride Bytes
+        elif box_count and stride and (box_pointer or indirect_addr):
+            # Gen 3/4/5: kontinuierlicher WRAM-Block, je Box stride Bytes.
+            # Smaragd nutzt Indirektion (box_pointer_indirect) — wir lesen erst
+            # 4 Byte an der festen IWRAM-Adresse, addieren box_pointer_offset
+            # und nehmen das Ergebnis als Box-Basis.
+            if indirect_addr:
+                ptr_fut = loop.create_future()
+                queue.append(("boxw", indirect_addr, 4, ptr_fut))
+                ptr_bytes = await ptr_fut
+                deref = int.from_bytes(ptr_bytes, "little")
+                effective_base = deref + indirect_offset
+                self.logger.info(
+                    f"Indirekter Box-Pointer edition={edition}: "
+                    f"*0x{indirect_addr:08X}=0x{deref:08X} +0x{indirect_offset:X} "
+                    f"-> Box-Basis 0x{effective_base:08X}"
+                )
+            else:
+                effective_base = box_pointer
             slot_size = pokedecoder.box_slot_size(edition)
             slots_per_box = pokedecoder.slots_per_box(edition)
             box_size = slot_size * slots_per_box
             for i in range(box_count):
-                offset = box_pointer + i * stride
+                offset = effective_base + i * stride
                 fut = loop.create_future()
                 queue.append(("boxw", offset, box_size, fut))
                 futures.append(fut)
@@ -273,7 +311,7 @@ class Bizhawk:
             raise RuntimeError(
                 f"Kein gültiges Box-Layout für edition={edition} — "
                 f"YAML braucht entweder box_sram_layout+box_stride (Gen 1/2) "
-                f"oder box_pointer+box_count+box_stride (Gen 3/4/5)."
+                f"oder (box_pointer | box_pointer_indirect)+box_count+box_stride (Gen 3/4/5)."
             )
 
     async def read_and_decode_boxes(self, client_id: str) -> list[list]:
@@ -286,6 +324,16 @@ class Bizhawk:
             raise RuntimeError(f"Client {client_id} ist nicht (mehr) registriert.")
         raw_boxes = await self.read_all_boxes(client_id)
         return [pokedecoder.decode_box(box_bytes, edition) for box_bytes in raw_boxes]
+
+    async def _auto_refresh_boxes(self, client_id: str, player: int):
+        """Box-Read als Reaktion auf Team-Änderung. Cache + Push via Munchlax."""
+        try:
+            boxes = await self.read_and_decode_boxes(client_id)
+            await self.munchlax.update_boxes(player, boxes)
+            self.logger.info(f"Auto-Box-Refresh player={player}: {len(boxes)} Boxen aktualisiert.")
+        except Exception as err:
+            self.logger.warning(f"Auto-Box-Refresh player={player} fehlgeschlagen: {type(err)},{err}")
+            self.logger.warning(f"{traceback.format_exc()}")
 
     async def disconnect(self, client_id):
         # Noch offene Box-Futures mit Fehler beenden, damit read_all_boxes()

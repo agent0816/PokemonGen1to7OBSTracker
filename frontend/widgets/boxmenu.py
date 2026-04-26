@@ -148,7 +148,20 @@ class BoxMenu(Screen):
         self.add_widget(root)
 
     def on_pre_enter(self, *args):
+        # Spieleranzahl kann sich seit Konstruktion geändert haben (Session-
+        # Wechsel, Settings) — Spinner deshalb bei jedem Öffnen neu aufbauen.
+        self._refresh_player_spinner_values()
         self._render_current_box()
+
+    def _refresh_player_spinner_values(self):
+        player_count = max(1, int(self.pl.get("player_count", 1)))
+        values = [str(i) for i in range(1, player_count + 1)]
+        self.player_spinner.values = values
+        # Falls der zuletzt gewählte Spieler nicht mehr existiert, auf 1 fallen.
+        if self.current_player > player_count:
+            self.current_player = 1
+            self.current_box_index = 0
+        self.player_spinner.text = str(self.current_player)
 
     def _back(self, instance):
         self.manager.current = "MainMenu"
@@ -198,7 +211,9 @@ class BoxMenu(Screen):
             boxes = await self._read_boxes_for_player(player)
             if boxes is None:
                 return
-            self.munchlax.boxes[player] = boxes
+            # update_boxes cached lokal und pusht (falls verbunden) an Arceus,
+            # damit Remote-Munchlaxes automatisch nachgezogen werden.
+            await self.munchlax.update_boxes(player, boxes)
             self.current_box_index = 0
             # Kivy-Widgets nur im Main-Thread updaten: Clock.schedule_once().
             Clock.schedule_once(lambda dt: self._after_refresh(player, len(boxes)), 0)

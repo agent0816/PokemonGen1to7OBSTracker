@@ -4,6 +4,17 @@
 # box_pointer zeigt auf den ersten Slot der ersten PC-Box im EWRAM.
 # 14 Boxen je 30 Slots à 80 Bytes (= 2400 B), kein Padding zwischen Boxen.
 # Box-Pointer & Strides per tools/find_pointers.py auf deutschen ROMs verifiziert.
+#
+# Smaragd / Feuerrot / Blattgrün-Sonderfall: gPokemonStoragePtr wird beim
+# Spielstart in einen randomisierten EWRAM-Bereich relocated (Anti-Cheat).
+# Statt eines festen box_pointer steht hier box_pointer_indirect (= feste
+# IWRAM-Adresse des 4-Byte-LE-Pointers) plus box_pointer_offset (= u8
+# currentBox + Padding, also 4 Bytes vor dem ersten Box-Slot). Verifiziert
+# mit jeweils zwei Sessions via tools/find_storage_ptr.py:
+#   Smaragd:    *0x03005D94 + 4 = Box-Basis
+#   Feuerrot:   *0x03004F60 + 4 = Box-Basis
+#   Blattgrün:  *0x03004F60 + 4 = Box-Basis (FR/BG teilen Code-Basis)
+# Rubin/Saphir nutzen statische Pointer (keine Saveblock-Relocation).
 31:
   pointer: 0x3004370
   box_pointer: 0x20300A4
@@ -22,7 +33,8 @@
       badgepointer: 0x2026a54
 33:
   pointer: 0x20244EC
-  box_pointer: 0x2029820
+  box_pointer_indirect: 0x03005D94
+  box_pointer_offset: 0x4
   box_count: 14
   box_stride: 0x960
   languages:
@@ -30,7 +42,8 @@
       badgepointer: 0x03005d8c
 34:
   pointer: 0x2024284
-  box_pointer: 0x2029350
+  box_pointer_indirect: 0x03004F60
+  box_pointer_offset: 0x4
   box_count: 14
   box_stride: 0x960
   languages:
@@ -40,7 +53,8 @@
       badgepointer: 0x3004F58
 35:
   pointer: 0x2024284
-  box_pointer: 0x202936C
+  box_pointer_indirect: 0x03004F60
+  box_pointer_offset: 0x4
   box_count: 14
   box_stride: 0x960
   languages:

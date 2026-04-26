@@ -182,6 +182,34 @@ class PokedexDB:
                 written += 1
         return written
 
+    def get_lvls_by_personalities(self, personalities: list[int]) -> dict[int, int]:
+        """Liefert pro PV das zuletzt gespeicherte Level (last_seen DESC).
+
+        Wird vom Munchlax beim Box-Refresh genutzt, um die XP-Approximation
+        des Decoders durch echte Team-Level zu ersetzen — sofern dasselbe
+        Pokemon (per PV) schon mal im Team war. Gen 1/2 hat keine PV und
+        landet ohnehin nie in der pokemon.db (siehe upsert_pokemon).
+        """
+        if self.connection is None or not personalities:
+            return {}
+        result: dict[int, int] = {}
+        try:
+            cursor = self.connection.cursor()
+            for pv in set(personalities):
+                cursor.execute(
+                    "SELECT lvl FROM pokemon WHERE personality = ? "
+                    "AND lvl IS NOT NULL ORDER BY last_seen DESC LIMIT 1",
+                    (int(pv),),
+                )
+                row = cursor.fetchone()
+                if row and row["lvl"] is not None:
+                    result[int(pv)] = row["lvl"]
+            return result
+        except Exception as err:
+            self.logger.warning(f"get_lvls_by_personalities failed: {type(err)},{err}")
+            self.logger.warning(f"{traceback.format_exc()}")
+            return result
+
     def get_all(self, owner: str | None = None, edition=None, shiny_only: bool = False):
         if self.connection is None:
             return []

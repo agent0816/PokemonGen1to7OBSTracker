@@ -4,15 +4,20 @@ import hashlib
 import logging
 import sys
 import pickle
+import time
 from pathlib import Path
 from pickle import UnpicklingError
 import traceback
 from backend.classes.obs import OBS
 from backend.classes.pokedex_db import PokedexDB
 
+# Mindestabstand zwischen automatischen Box-Refreshs pro Spieler.
+# Verhindert Box-Read-Stürme z.B. bei Team-Reorder-Spam oder Evolutionen.
+BOX_REFRESH_THROTTLE_SECONDS = 5.0
+
 class Munchlax:
     def __init__(self, host, port, rem, sp, pl, configsave=None):
-        self.client_id = rem.get("client_id")
+        self.client_id = rem.get("client_id", 0)
         if self.client_id == 0:
             self.client_id = self.generate_hashed_id()
             rem["client_id"] = self.client_id
@@ -22,9 +27,15 @@ class Munchlax:
         self.badges = {}
         self.editions = {}
         # PC-Boxen pro Spieler: dict[player_id, list[list[Pokemon|None]]].
-        # Wird nur auf Anforderung (BoxMenu-Refresh) vom Emulator gelesen,
-        # nicht im Tick-Loop — deshalb kein Auto-Update.
+        # Auto-Refresh läuft, wenn sich das Team eines lokal bedienten
+        # Spielers ändert — gedrosselt via BOX_REFRESH_THROTTLE_SECONDS,
+        # sonst weiter on-demand vom BoxMenu.
         self.boxes: dict[int, list] = {}
+        # Letzter erfolgreicher (oder gestarteter) Auto-Refresh-Zeitpunkt
+        # pro Spieler. Wird vor dem Box-Read gesetzt — fehlgeschlagene Reads
+        # sperren den Trigger ebenfalls für die Throttle-Dauer, das ist hier
+        # bewusst, um Spam bei dauerhaftem Fehler zu verhindern.
+        self.last_box_refresh_at: dict[int, float] = {}
         self.initialized = False
         self.rem = rem
         self.sp = sp
@@ -65,10 +76,97 @@ class Munchlax:
         self.boxes = {}
         self.initialized = False
 
+    def should_auto_refresh_boxes(self, player_id: int) -> bool:
+        """True wenn die Throttle-Drosselung einen automatischen Refresh erlaubt."""
+        last = self.last_box_refresh_at.get(player_id, 0.0)
+        return (time.time() - last) >= BOX_REFRESH_THROTTLE_SECONDS
+
+    def mark_box_refresh(self, player_id: int):
+        """Throttle-Zeitstempel setzen (vor dem eigentlichen Box-Read aufrufen)."""
+        self.last_box_refresh_at[player_id] = time.time()
+
+    async def update_boxes(self, player_id: int, boxes: list):
+        """Lokal cachen + (falls verbunden) an Arceus pushen.
+
+        Arceus verteilt das Update an alle anderen Munchlaxes, sodass
+        BoxMenüs auf Remote-Clients automatisch frische Daten bekommen.
+        """
+        await self._enrich_box_levels(boxes)
+        self.boxes[player_id] = boxes
+        if not self.is_connected:
+            return
+        try:
+            async with self.writer_lock:
+                await self.send_message({
+                    "type": "boxes_update",
+                    "player_id": player_id,
+                    "boxes": boxes,
+                })
+        except Exception as err:
+            self.logger.warning(f"boxes_update an Arceus senden failed: {type(err)},{err}")
+            self.logger.warning(f"{traceback.format_exc()}")
+
+    async def _enrich_box_levels(self, boxes: list):
+        """Ersetzt berechnete Box-Pokemon-Level durch DB-Werte (per PV).
+
+        Box-Pokemon haben ab Gen 3 kein gespeichertes Level — der pokedecoder
+        nutzt deshalb eine Medium-Fast-Approximation, die bei Fast/Slow/
+        Erratic/Fluctuating-Spezies bis zu mehrere Level daneben liegen kann.
+        Wenn dasselbe Pokemon (per PV) schon mal im Team war, kennen wir das
+        echte Level aus pokemon.db und nehmen es bevorzugt.
+
+        Gen 1/2 wird automatisch übersprungen: dort kommen Box-Pokemon ohne
+        Personality-Attribut, das Memory-Level steht direkt im Slot.
+        """
+        self._ensure_pokedex_db()
+        if self.pokedex_db is None or self.pokedex_db.connection is None:
+            return
+        slots_by_pv: dict[int, list] = {}
+        for box in boxes:
+            for slot in box:
+                if slot is None:
+                    continue
+                pv = getattr(slot, "personality", None)
+                if pv is None:
+                    continue
+                slots_by_pv.setdefault(int(pv), []).append(slot)
+        if not slots_by_pv:
+            return
+        try:
+            loop = asyncio.get_event_loop()
+            levels = await loop.run_in_executor(
+                None,
+                self.pokedex_db.get_lvls_by_personalities,
+                list(slots_by_pv.keys()),
+            )
+            for pv, lvl in levels.items():
+                for slot in slots_by_pv.get(pv, []):
+                    slot.lvl = lvl
+        except Exception as err:
+            self.logger.warning(f"Box-Level-Enrichment failed: {type(err)},{err}")
+            self.logger.warning(f"{traceback.format_exc()}")
+
     async def alter_teams(self):
         while True:
             try:
-                self.unsorted_teams = await self.receive_message()
+                data = await self.receive_message()
+                # Getypte Server-Push-Nachrichten: separater Pfad, damit die
+                # Teams-Logik darunter nicht versehentlich ein {"type": ...}-
+                # Dict als Player-Map behandelt.
+                if isinstance(data, dict) and "type" in data:
+                    if data.get("type") == "boxes_update":
+                        player_id = data.get("player_id")
+                        boxes = data.get("boxes")
+                        if player_id is not None and boxes is not None:
+                            self.boxes[player_id] = boxes
+                            self.logger.info(
+                                f"boxes_update empfangen: player={player_id}, "
+                                f"box_count={len(boxes)}"
+                            )
+                    else:
+                        self.logger.warning(f"Unbekannter Message-Typ vom Server: {data.get('type')}")
+                    continue
+                self.unsorted_teams = data
                 new_teams = self.unsorted_teams.copy()
                 self.logging_teams(self.unsorted_teams, "unsorted teams received")
                 for player in new_teams:

@@ -147,6 +147,11 @@ class CitraHandler:
     def update_teams(self, team):
         team: list[Pokemon] = pokedecoder.team(team, self.edition)
         teams = self.munchlax.bizhawk_teams
+        # Vor dem Update den alten Dex-Stand merken — bei Tupel-Änderung
+        # triggern wir später einen gedrosselten Auto-Box-Refresh.
+        old_team = teams.get(self.player_number)
+        # team-Liste enthält am Ende badges/edition-Ints — nur Slot 0..5 sind Pokemon.
+        old_dexnrs = tuple(p.dexnr for p in old_team[:6]) if old_team else None
         if self.player_number in teams:
             if teams[self.player_number] == team:
                 return
@@ -163,6 +168,10 @@ class CitraHandler:
             else:
                 teams[self.player_number][index] = team[index]
                 self.munchlax.unsorted_teams[self.player_number][index] = team[index]
+        new_dexnrs = tuple(p.dexnr for p in team[:6])
+        if old_dexnrs != new_dexnrs and self.munchlax.should_auto_refresh_boxes(self.player_number):
+            self.munchlax.mark_box_refresh(self.player_number)
+            asyncio.create_task(self._auto_refresh_boxes())
 
     def update_stats(self, stats: dict):
         if stats:
@@ -252,6 +261,16 @@ class CitraHandler:
         for fut in futures:
             raw_boxes.append(await fut)
         return [pokedecoder.decode_box(b, self.edition) for b in raw_boxes]
+
+    async def _auto_refresh_boxes(self):
+        """Box-Read als Reaktion auf Team-Änderung. Cache + Push via Munchlax."""
+        try:
+            boxes = await self.read_and_decode_boxes()
+            await self.munchlax.update_boxes(self.player_number, boxes)
+            self.logger.info(f"Auto-Box-Refresh player={self.player_number}: {len(boxes)} Boxen aktualisiert.")
+        except Exception as err:
+            self.logger.warning(f"Auto-Box-Refresh player={self.player_number} fehlgeschlagen: {type(err)},{err}")
+            self.logger.warning(f"{traceback.format_exc()}")
 
     async def start(self, munchlax, button):
         self.munchlax: Munchlax = munchlax

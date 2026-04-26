@@ -17,6 +17,13 @@ class Arceus:
         self.munchlax_heartbeats = {}
         self.heartbeat_counts = {}
         self.teams = {}
+        # Box-Cache analog zu self.teams: dict[player_id, list[list[Pokemon|None]]].
+        # Wird vom besitzenden Munchlax per "boxes_update" gefüllt und bei
+        # neuen Verbindungen einmalig an den Client gepusht.
+        self.boxes = {}
+        # Pro Client ein Lock, damit gleichzeitige Sender (update_all_clients +
+        # broadcast_boxes_update) sich nicht in den chunked-Stream funken.
+        self.writer_locks = {}
         self.server = None
         self.is_connected = False
         self.disconnect_lock = asyncio.Lock()
@@ -49,9 +56,10 @@ class Arceus:
         self.munchlax_names[client_id] = client_name
         self.munchlax_status[client_id] = 'connected'
         self.heartbeat_counts[client_id] = 0
+        self.writer_locks[client_id] = asyncio.Lock()
         self.logger.info(f"Client {client_id} connected and registered.")
 
-        asyncio.create_task(self.update_all_clients(writer))
+        asyncio.create_task(self.update_all_clients(client_id))
 
         while True:
             try:
@@ -60,6 +68,14 @@ class Arceus:
                     break
                 if data == 'heartbeat':
                     self.munchlax_heartbeats[client_id] = time.time()
+                elif isinstance(data, dict) and data.get("type") == "boxes_update":
+                    player_id = data.get("player_id")
+                    boxes = data.get("boxes")
+                    if player_id is None or boxes is None:
+                        self.logger.warning(f"boxes_update ohne player_id/boxes von {client_id}: {data!r}")
+                    else:
+                        self.boxes[player_id] = boxes
+                        asyncio.create_task(self.broadcast_boxes_update(client_id, player_id, boxes))
                 else:
                     for player, team in data.items(): #type: ignore
                         if player not in self.teams or self.teams[player] != team:
@@ -76,21 +92,51 @@ class Arceus:
         
         await self.disconnect_client(client_id)
 
-    async def update_all_clients(self, writer):
+    async def update_all_clients(self, client_id):
         old_teams = self.teams.copy()
         self.logger.info(f"Arceus: {self.teams}")
-        await self.send_message(writer, self.teams)
+        await self.send_to_client(client_id, self.teams)
+
+        # Box-Stand einmal an den frisch verbundenen Client schicken, damit
+        # remote betrachtete BoxMenüs sofort den letzten bekannten Cache haben.
+        for player_id, boxes in list(self.boxes.items()):
+            await self.send_to_client(client_id, {
+                "type": "boxes_update",
+                "player_id": player_id,
+                "boxes": boxes,
+            })
 
         while True:
             try:
                 if old_teams != self.teams:
                     old_teams = self.teams.copy()
-                    await self.send_message(writer, self.teams)
+                    await self.send_to_client(client_id, self.teams)
                 await asyncio.sleep(1)
             except Exception as exc:
                 self.logger.error(f"update_all_clients abgebrochen:{type(exc)},{exc}")
                 self.logger.error(f"{traceback.format_exc()}")
                 break
+
+    async def send_to_client(self, client_id, message):
+        """Sendet eine Nachricht an genau einen Client; serialisiert pro Writer."""
+        writer = self.munchlaxes.get(client_id)
+        lock = self.writer_locks.get(client_id)
+        if writer is None or lock is None:
+            return
+        async with lock:
+            await self.send_message(writer, message)
+
+    async def broadcast_boxes_update(self, sender_id, player_id, boxes):
+        """Verteilt einen Box-Update an alle Clients außer dem Absender."""
+        message = {"type": "boxes_update", "player_id": player_id, "boxes": boxes}
+        for client_id in list(self.munchlaxes.keys()):
+            if client_id == sender_id:
+                continue
+            try:
+                await self.send_to_client(client_id, message)
+            except Exception as exc:
+                self.logger.error(f"broadcast_boxes_update an {client_id} failed: {type(exc)},{exc}")
+                self.logger.error(f"{traceback.format_exc()}")
     
     async def disconnect_client(self, client_id):
         async with self.disconnect_lock:
@@ -104,6 +150,7 @@ class Arceus:
                 del self.munchlax_status[client_id]
                 del self.munchlax_heartbeats[client_id]
                 del self.heartbeat_counts[client_id]
+                self.writer_locks.pop(client_id, None)
 
     # async def send_message(self, writer, message):
     #     serialized_message = pickle.dumps(message)

@@ -580,6 +580,8 @@ def box_pokemon45(data: bytes, gen: int):
     items = items4 if gen == 4 else items5
     unshuffled_bytes, _, shiny_value, personality = decryptpokemon(data, "45")
 
+    # Offsets sind 1:1 dieselben wie in pokemon45() — unshuffled_bytes startet
+    # bei raw 0x08, daher subtrahiert sich der 8-Byte-Header bereits.
     dexnr = int.from_bytes(unshuffled_bytes[0:2], "little")
     item = int.from_bytes(unshuffled_bytes[2:4], "little")
     ot_id = int.from_bytes(unshuffled_bytes[0x04:0x06], "little")
@@ -588,7 +590,7 @@ def box_pokemon45(data: bytes, gen: int):
     ability = int.from_bytes(unshuffled_bytes[0x0D:0x0E])
 
     if gen == 5:
-        nature = int.from_bytes(unshuffled_bytes[0x41:0x42])
+        nature = int.from_bytes(unshuffled_bytes[0x39:0x3A])
     else:
         nature = personality % 25
 
@@ -600,7 +602,7 @@ def box_pokemon45(data: bytes, gen: int):
     moves = [{"id": int.from_bytes(move_bytes[2 * i:2 * i + 2], "little"), "pp": int(b)}
              for i, b in enumerate(pp_bytes)]
 
-    iv_base = int.from_bytes(unshuffled_bytes[0x38:0x3C], "little")
+    iv_base = int.from_bytes(unshuffled_bytes[0x30:0x34], "little")
     ivs = {ev_names[i]: ((iv_base >> (i * 5)) & 0x1F) for i in range(6)}
 
     checksum_given = int.from_bytes(data[0x06:0x08], "little")
@@ -611,24 +613,24 @@ def box_pokemon45(data: bytes, gen: int):
 
     item_name = items.get(item, "-") if item in items else "-"
 
-    met_location = int.from_bytes(unshuffled_bytes[0x46:0x48], "little")
+    met_location = int.from_bytes(unshuffled_bytes[0x3E:0x40], "little")
     if met_location == 0:
-        met_location = int.from_bytes(unshuffled_bytes[0x7A:0x7C], "little") if len(unshuffled_bytes) >= 0x7C else 0
+        met_location = int.from_bytes(unshuffled_bytes[0x78:0x7A], "little") if len(unshuffled_bytes) >= 0x7A else 0
 
     female = False
     if dexnr in range(650):
         female = personality % 256 < gender_lut[dexnr]
 
     if gen == 4:
-        nickname = _decode_gen4_string(unshuffled_bytes[0x48:0x5E])
-        ot_name = _decode_gen4_string(unshuffled_bytes[0x68:0x78])
+        nickname = _decode_gen4_string(unshuffled_bytes[0x40:0x56])
+        ot_name = _decode_gen4_string(unshuffled_bytes[0x60:0x70])
     else:
-        nickname = _decode_gen5_string(unshuffled_bytes[0x48:0x5E])
-        ot_name = _decode_gen5_string(unshuffled_bytes[0x68:0x78])
+        nickname = _decode_gen5_string(unshuffled_bytes[0x40:0x56])
+        ot_name = _decode_gen5_string(unshuffled_bytes[0x60:0x70])
 
-    form = get_form(unshuffled_bytes[0x40], dexnr, gen)
+    form = get_form(unshuffled_bytes[0x38], dexnr, gen)
 
-    egg_flag = bool(unshuffled_bytes[0x3B] & 0x40)
+    egg_flag = bool(unshuffled_bytes[0x33] & 0x40)
     if egg_flag and dexnr != 0:
         if dexnr == 490:
             form = "-manaphy"
@@ -660,24 +662,26 @@ def box_pokemon67(data: bytes, gen: int):
     checksum_given = int.from_bytes(data[0x06:0x08], "little")
     checksum_calculated = calculate_checksum(unshuffled_bytes)
 
+    # Offsets sind 1:1 dieselben wie in pokemon67() — unshuffled_bytes startet
+    # bei raw 0x08, daher subtrahiert sich der 8-Byte-Header bereits.
     dexnr = int.from_bytes(unshuffled_bytes[:2], "little")
     item = int.from_bytes(unshuffled_bytes[2:4], "little")
-    ot_id = int.from_bytes(unshuffled_bytes[0x0C:0x0E], "little")
-    ot_secret_id = int.from_bytes(unshuffled_bytes[0x0E:0x10], "little")
-    experience_points = int.from_bytes(unshuffled_bytes[0x10:0x14], "little")
-    ability = int.from_bytes(unshuffled_bytes[0x14:0x15])
-    personality = int.from_bytes(unshuffled_bytes[0x18:0x1C], "little")
-    nature = int.from_bytes(unshuffled_bytes[0x1C:0x1D])
+    ot_id = int.from_bytes(unshuffled_bytes[0x04:0x06], "little")
+    ot_secret_id = int.from_bytes(unshuffled_bytes[0x06:0x08], "little")
+    experience_points = int.from_bytes(unshuffled_bytes[0x08:0x0C], "little")
+    ability = int.from_bytes(unshuffled_bytes[0x0C:0x0D])
+    personality = int.from_bytes(unshuffled_bytes[0x10:0x14], "little")
+    nature = int.from_bytes(unshuffled_bytes[0x14:0x15])
 
     ev_names = ["hp", "attack", "defense", "speed", "special_attack", "special_defense"]
-    evs = {ev_names[i]: int(b) for i, b in enumerate(unshuffled_bytes[0x1E:0x24])}
+    evs = {ev_names[i]: int(b) for i, b in enumerate(unshuffled_bytes[0x16:0x1C])}
 
-    move_bytes = unshuffled_bytes[0x5A:0x62]
-    pp_bytes = unshuffled_bytes[0x62:0x66]
+    move_bytes = unshuffled_bytes[0x52:0x5A]
+    pp_bytes = unshuffled_bytes[0x5A:0x5E]
     moves = [{"id": int.from_bytes(move_bytes[2 * i:2 * i + 2], "little"), "pp": int(b)}
              for i, b in enumerate(pp_bytes)]
 
-    iv_base = int.from_bytes(unshuffled_bytes[0x74:0x78], "little")
+    iv_base = int.from_bytes(unshuffled_bytes[0x6C:0x70], "little")
     ivs = {ev_names[i]: ((iv_base >> (i * 5)) & 0x1F) for i in range(6)}
 
     female = False
@@ -689,16 +693,16 @@ def box_pokemon67(data: bytes, gen: int):
     else:
         item = "-"
 
-    met_location = int.from_bytes(unshuffled_bytes[0xDA:0xDC], "little") if len(unshuffled_bytes) >= 0xDC else 0
-    nickname = _decode_gen67_string(unshuffled_bytes[0x40:0x59])
-    ot_name = _decode_gen67_string(unshuffled_bytes[0xB0:0xC9]) if len(unshuffled_bytes) >= 0xC9 else ""
-    form = get_form(unshuffled_bytes[0x1D], dexnr, gen)
+    met_location = int.from_bytes(unshuffled_bytes[0xD2:0xD4], "little") if len(unshuffled_bytes) >= 0xD4 else 0
+    nickname = _decode_gen67_string(unshuffled_bytes[0x38:0x51])
+    ot_name = _decode_gen67_string(unshuffled_bytes[0xA8:0xC0]) if len(unshuffled_bytes) >= 0xC0 else ""
+    form = get_form(unshuffled_bytes[0x15], dexnr, gen)
 
     if dexnr not in range(810):
         dexnr = 0
         nickname = ""
 
-    egg_flag = bool(unshuffled_bytes[0x77] & 0x40)
+    egg_flag = bool(unshuffled_bytes[0x6F] & 0x40)
     if egg_flag and dexnr != 0:
         if dexnr == 490:
             form = "-manaphy"

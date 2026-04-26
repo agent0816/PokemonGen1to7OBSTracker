@@ -22,6 +22,11 @@ class CitraHandler:
         self.is_connected = False
         self.player_number = None
         self.started = False
+        # Ausstehende Box-Read-Anfragen: (absolute_adresse, Future).
+        # Wird vom handle_citra-Tick eine Box pro Iteration abgearbeitet,
+        # damit Team-/Badge-Reads dazwischen durchkommen und nicht auf einen
+        # vom Worker-Thread okkupierten UDP-Socket treffen.
+        self.box_request_queue: list[tuple[int, "asyncio.Future[bytes]"]] = []
 
         with open("backend/data/pointer_xy.yml") as file:
             pointer_xy = yaml.safe_load(file)
@@ -89,7 +94,13 @@ class CitraHandler:
 
                 self.update_teams(new_data)
                 self.update_stats(update_data)
-                await asyncio.sleep(1)
+
+                # Pro Tick genau EINE Box aus der Queue verarbeiten,
+                # damit Team-Reads dazwischen durchkommen.
+                self._drain_box_queue_step()
+
+                # Wenn Boxen ausstehen: schneller pollen, sonst normaler 1s-Tick.
+                await asyncio.sleep(0.05 if self.box_request_queue else 1)
             except ConnectionResetError:
                 self.is_connected = False
             except Exception as err:
@@ -97,11 +108,41 @@ class CitraHandler:
                 self.logger.error(f"{traceback.format_exc()}")
                 self.is_connected = False
 
+        self._fail_pending_box_requests("Citra-Verbindung verloren")
+
         self.logger.info("Citra getrennt.")
         if self.started:
             self.start_button.trigger_action(0)
 
         self.player_number = None
+
+    def _drain_box_queue_step(self):
+        """Verarbeitet höchstens EINE ausstehende Box-Anfrage.
+
+        Wir bleiben im Event-Loop-Thread, damit der UDP-Socket nie parallel
+        zum synchronen read_team/read_badges/read_in_battle_stats benutzt wird.
+        Bereits aufgelöste (z.B. gecancelte) Futures werden übersprungen und
+        zählen nicht als abgearbeitete Box.
+        """
+        while self.box_request_queue:
+            addr, fut = self.box_request_queue.pop(0)
+            if fut.done():
+                continue
+            try:
+                box_bytes = self.citra_instance.read_memory(addr, 30 * SLOT_DATA_SIZE)
+                if box_bytes is None:
+                    raise RuntimeError(f"Citra-Read für 0x{addr:08X} gab None zurück")
+                fut.set_result(box_bytes)
+            except Exception as err:
+                if not fut.done():
+                    fut.set_exception(err)
+            return
+
+    def _fail_pending_box_requests(self, reason: str):
+        for _, fut in self.box_request_queue:
+            if not fut.done():
+                fut.set_exception(RuntimeError(reason))
+        self.box_request_queue.clear()
 
     def update_teams(self, team):
         team: list[Pokemon] = pokedecoder.team(team, self.edition)
@@ -180,34 +221,36 @@ class CitraHandler:
             result = self.citra_instance.read_memory(read_address, 1)
         return result
 
-    def read_all_boxes(self) -> list[bytes]:
-        """Liest alle PC-Boxen der aktuellen Edition aus dem Citra-Speicher.
+    async def read_and_decode_boxes(self) -> list[list]:
+        """Reiht alle Box-Adressen als Futures in die CitraHandler-Queue ein
+        und wartet auf deren Auflösung durch den handle_citra-Tick.
 
-        Pro Box 30 Slots à 232 B = 6960 B; Adresse startet bei
-        pointer["box_beginning"], Anzahl und Stride kommen aus der YAML
-        (box_count, box_stride). Blockierend — für 31-32 Boxen sind das
-        ca. 6700-6900 UDP-Roundtrips, also lieber nicht im Tick-Loop aufrufen.
+        Warum nicht direkt lesen oder via to_thread? Der UDP-Socket in
+        ``Citra`` ist nicht thread-safe — wenn read_team (Event-Loop-Thread)
+        und ein Worker-Thread gleichzeitig sendto/recv machen, werden
+        Responses vertauscht und das Team wird als leer dekodiert. Stattdessen
+        landen hier alle Box-Adressen in der Queue, und der tick-loop
+        arbeitet sie eine pro Iteration ab — dadurch läuft zwischen jeder
+        Box ein vollständiger read_team/read_badges-Zyklus und das Team
+        bleibt durchgängig befüllt.
         """
+        if not self.started or not self.is_connected:
+            raise RuntimeError("Citra ist nicht verbunden")
+
         box_start = self.pointer["box_beginning"]
         box_count = self.pointer.get("box_count", 31)
         box_stride = self.pointer.get("box_stride", 30 * SLOT_DATA_SIZE)
-        box_size = 30 * SLOT_DATA_SIZE
-        boxes = []
+
+        loop = asyncio.get_running_loop()
+        futures: list[asyncio.Future] = []
         for i in range(box_count):
-            box_bytes = self.citra_instance.read_memory(box_start + i * box_stride, box_size)
-            if box_bytes is None:
-                raise RuntimeError(f"Citra-Read gescheitert für Box {i} (Adresse "
-                                   f"0x{box_start + i * box_stride:08X})")
-            boxes.append(box_bytes)
-        return boxes
+            fut = loop.create_future()
+            self.box_request_queue.append((box_start + i * box_stride, fut))
+            futures.append(fut)
 
-    async def read_and_decode_boxes(self) -> list[list]:
-        """Liest alle Boxen und dekodiert sie zu Pokemon-Listen.
-
-        read_memory ist blockierend (synchrone UDP-Requests), deshalb in einen
-        Thread ausgelagert — sonst friert der Event-Loop für mehrere Sekunden ein.
-        """
-        raw_boxes = await asyncio.to_thread(self.read_all_boxes)
+        raw_boxes = []
+        for fut in futures:
+            raw_boxes.append(await fut)
         return [pokedecoder.decode_box(b, self.edition) for b in raw_boxes]
 
     async def start(self, munchlax, button):

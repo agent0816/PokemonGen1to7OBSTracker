@@ -1,29 +1,38 @@
 # Gen 3 (GBA) — BizHawk-Pointer
 # gameversion 31 = Rubin, 32 = Saphir, 33 = Smaragd, 34 = Feuerrot, 35 = Blattgrün
 # badgepointer ist sprach-spezifisch (language-Wert aus ROM 0xAC)
-# box_pointer zeigt auf die erste PC-Box (14 Boxen, je 30 Slots à 80 Bytes, Abstand 2320 B)
-# Box-Pointer auf deutschen ROMs getestet
+# box_pointer zeigt auf den ersten Slot der ersten PC-Box im EWRAM.
+# 14 Boxen je 30 Slots à 80 Bytes (= 2400 B), kein Padding zwischen Boxen.
+# Box-Pointer & Strides per tools/find_pointers.py auf deutschen ROMs verifiziert.
 31:
   pointer: 0x3004370
   box_pointer: 0x20300A4
+  box_count: 14
+  box_stride: 0x960
   languages:
     1096308292:
       badgepointer: 0x2026a54
 32:
   pointer: 0x3004370
   box_pointer: 0x20300A4
+  box_count: 14
+  box_stride: 0x960
   languages:
     1096306756:
       badgepointer: 0x2026a54
 33:
   pointer: 0x20244EC
   box_pointer: 0x2029820
+  box_count: 14
+  box_stride: 0x960
   languages:
     1112556868:
       badgepointer: 0x03005d8c
 34:
   pointer: 0x2024284
-  box_pointer: 0x200B3B0
+  box_pointer: 0x2029350
+  box_count: 14
+  box_stride: 0x960
   languages:
     1112560197:
       badgepointer: 0x3005008
@@ -31,7 +40,9 @@
       badgepointer: 0x3004F58
 35:
   pointer: 0x2024284
-  box_pointer: 0x200B3B0
+  box_pointer: 0x202936C
+  box_count: 14
+  box_stride: 0x960
   languages:
     1112557380:
       badgepointer: 0x3004F58

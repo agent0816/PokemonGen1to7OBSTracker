@@ -889,6 +889,37 @@ def decode_gen67_box(box_bytes: bytes, gen: int, slots_per_box: int = 30) -> lis
     return [box_pokemon67(box_bytes[i * 232:(i + 1) * 232], gen) for i in range(slots_per_box)]
 
 
+def box_slot_size(edition: int) -> int:
+    """Größe eines Box-Slots in Bytes für die jeweilige Edition.
+
+    Gen 1: 33 B (Box-Pokemon-Struct, ohne Nickname/OT-Array).
+    Gen 2: 32 B.
+    Gen 3: 80 B (verschlüsselt, inkl. Header + 4 Datenblöcke).
+    Gen 4/5: 136 B (verschlüsselt, ohne Battle-Stats).
+    Gen 6/7: 232 B.
+    """
+    gen = edition // 10
+    if gen == 1:
+        return 33
+    if gen == 2:
+        return 32
+    if gen == 3:
+        return 80
+    if gen in (4, 5):
+        return 136
+    if gen in (6, 7):
+        return 232
+    raise ValueError(f"Unbekannte Generation für edition={edition} (gen={gen})")
+
+
+def slots_per_box(edition: int) -> int:
+    """Anzahl Slots pro PC-Box (Gen 1/2: 20, Gen 3+: 30)."""
+    gen = edition // 10
+    if gen in (1, 2):
+        return 20
+    return 30
+
+
 def decode_box(box_bytes: bytes, edition: int) -> list:
     """Dispatcher: dekodiert eine Box anhand der Edition zur passenden Gen-Funktion.
 

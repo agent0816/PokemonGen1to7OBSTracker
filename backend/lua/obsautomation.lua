@@ -336,6 +336,7 @@ local function handle_protocol_step(msg, battle_stats, state)
     -- box <cart_offset_hex> <size_hex>: Python fragt eine PC-Box aus dem
     -- CartRAM (lineare Sicht auf alle SRAM-Banks) an. Offset & Größe werden
     -- Python-seitig aus dem box_sram_layout berechnet, Lua liest nur stur.
+    -- Wird für Gen 1/2 verwendet (Boxen liegen im SRAM).
     if response and response:sub(1, 4) == "box " then
         local off_s, size_s = string.match(response:sub(5), "^(%x+)%s+(%x+)$")
         if off_s and size_s then
@@ -345,6 +346,20 @@ local function handle_protocol_step(msg, battle_stats, state)
             comm.socketServerSendBytes(bytes)
         else
             logging.error("Ungültiges box-Kommando: " .. tostring(response))
+        end
+    end
+    -- boxw <wram_offset_hex> <size_hex>: wie 'box', aber liest aus der
+    -- System-Domain (System Bus für GBA, Main RAM / ARM9 System Bus für NDS).
+    -- Wird für Gen 3/4/5 verwendet (Boxen liegen im WRAM ab box_pointer).
+    if response and response:sub(1, 5) == "boxw " then
+        local off_s, size_s = string.match(response:sub(6), "^(%x+)%s+(%x+)$")
+        if off_s and size_s then
+            local offset = tonumber(off_s, 16)
+            local size = tonumber(size_s, 16)
+            local bytes = memory.read_bytes_as_array(offset, size, state.domain)
+            comm.socketServerSendBytes(bytes)
+        else
+            logging.error("Ungültiges boxw-Kommando: " .. tostring(response))
         end
     end
 end

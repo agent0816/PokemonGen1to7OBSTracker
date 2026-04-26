@@ -25,8 +25,9 @@ class Bizhawk:
         # auf edition/language und damit auf die Box-Layouts hat.
         self.edition_per_client: dict[str, int] = {}
         self.language_per_client: dict[str, int] = {}
-        # Jeder Eintrag ist (cart_offset, size, future) — der Haupt-Loop
-        # arbeitet die Queue im else-Zweig ab, ein Request pro Frame.
+        # Jeder Eintrag ist (cmd, offset, size, future) — cmd = "box" (CartRAM,
+        # Gen 1/2 SRAM) oder "boxw" (System-Domain, Gen 3/4/5 WRAM). Der
+        # Haupt-Loop arbeitet die Queue im else-Zweig ab, ein Request pro Frame.
         self.box_request_queues: dict[str, list] = {}
 
         self.logger = self.init_logging()
@@ -157,9 +158,9 @@ class Bizhawk:
                     else:
                         queue = self.box_request_queues.get(client_id)
                         if queue:
-                            offset, size, fut = queue.pop(0)
+                            cmd, offset, size, fut = queue.pop(0)
                             try:
-                                await self.send_messages(writer, f"box {offset:X} {size:X}")
+                                await self.send_messages(writer, f"{cmd} {offset:X} {size:X}")
                                 box_bytes = await reader.readexactly(size)
                                 if not fut.done():
                                     fut.set_result(box_bytes)
@@ -182,13 +183,25 @@ class Bizhawk:
         await self.disconnect(client_id)
 
     async def read_all_boxes(self, client_id: str) -> list[bytes]:
-        """Liest alle PC-Boxen des Clients aus dem CartRAM der Emulation.
+        """Liest alle PC-Boxen des Clients aus dem Emulator-Speicher.
 
-        Python berechnet pro Box den linearen CartRAM-Offset aus dem
-        box_sram_layout der YAML (Bank N beginnt bei N * 0x2000, Startadresse
-        wird relativ zur Bank-Basis 0xA000 gerechnet). Die Kommandos werden
-        frame-weise vom Main-Loop an Lua gesendet; diese Methode bündelt die
-        Futures und liefert die rohen Box-Bytes in Layout-Reihenfolge zurück.
+        Zwei Layouts:
+          - Gen 1/2 (SRAM via CartRAM): YAML liefert box_sram_layout (Liste aus
+            Bank/Start/Count) und box_stride. Python berechnet den linearen
+            CartRAM-Offset (Bank N bei N * 0x2000, Start relativ zu 0xA000).
+            Lua-Kommando: 'box <offset> <size>' (CartRAM-Domain).
+            Bei Gen 1 wird zusätzlich die aktive Box aus dem WRAM gelesen
+            (box_active_pointer + box_active_index_pointer) und in der Liste
+            am aktuellen Box-Index ersetzt — die SRAM-Kopie ist bis zum
+            nächsten In-Game-Save veraltet.
+          - Gen 3/4/5 (WRAM): YAML liefert box_pointer + box_count + box_stride.
+            Box i liegt bei box_pointer + i * box_stride in der System-Domain
+            (System Bus für GBA, Main RAM / ARM9 System Bus für NDS).
+            Lua-Kommando: 'boxw <offset> <size>' (state.domain).
+
+        Die Kommandos werden frame-weise vom Main-Loop an Lua gesendet; diese
+        Methode bündelt die Futures und liefert die rohen Box-Bytes in
+        Layout-Reihenfolge zurück.
         """
         edition = self.edition_per_client.get(client_id)
         if edition is None:
@@ -198,30 +211,70 @@ class Bizhawk:
         pointers = bh_pointers.get_pointers(edition, language if language else None)
         layout = pointers.get("box_sram_layout")
         stride = pointers.get("box_stride")
-        if not layout or not stride:
-            raise RuntimeError(
-                f"Kein box_sram_layout/box_stride für edition={edition} — "
-                f"ist die YAML für diese Generation aktuell?"
-            )
+        box_pointer = pointers.get("box_pointer")
+        box_count = pointers.get("box_count")
+        active_box_pointer = pointers.get("box_active_pointer")
+        active_index_pointer = pointers.get("box_active_index_pointer")
 
         loop = asyncio.get_event_loop()
         futures: list[asyncio.Future] = []
         queue = self.box_request_queues.setdefault(client_id, [])
-        for bank_cfg in layout:
-            bank = bank_cfg["bank"]
-            start = bank_cfg["start"]
-            count = bank_cfg["count"]
-            # CartRAM ist eine lineare Sicht auf alle SRAM-Banks.
-            # Bank N startet im Domain bei N * 0x2000; start ist die Adresse
-            # im GB-Speicherbereich 0xA000..0xBFFF.
-            base = bank * 0x2000 + (start - 0xA000)
-            for i in range(count):
-                offset = base + i * stride
-                fut = loop.create_future()
-                queue.append((offset, stride, fut))
-                futures.append(fut)
 
-        return await asyncio.gather(*futures)
+        if layout and stride:
+            # Gen 1/2: SRAM-Bank-Layout via CartRAM
+            for bank_cfg in layout:
+                bank = bank_cfg["bank"]
+                start = bank_cfg["start"]
+                count = bank_cfg["count"]
+                base = bank * 0x2000 + (start - 0xA000)
+                for i in range(count):
+                    offset = base + i * stride
+                    fut = loop.create_future()
+                    queue.append(("box", offset, stride, fut))
+                    futures.append(fut)
+            # Gen 1 hat zusätzlich eine aktive Box im WRAM, die in SRAM erst
+            # nach In-Game-Save gespiegelt wird. Anhängen und in der Antwort
+            # an die richtige Stelle einsortieren.
+            active_index_fut = None
+            active_box_fut = None
+            if active_box_pointer and active_index_pointer:
+                active_index_fut = loop.create_future()
+                queue.append(("boxw", active_index_pointer, 1, active_index_fut))
+                active_box_fut = loop.create_future()
+                queue.append(("boxw", active_box_pointer, stride, active_box_fut))
+
+            sram_boxes = await asyncio.gather(*futures)
+            if active_index_fut and active_box_fut:
+                idx_byte, active_box = await asyncio.gather(active_index_fut, active_box_fut)
+                # Bit 7 ist das Modified-Flag, low 7 Bits = Index 0..(box_count-1)
+                active_idx = idx_byte[0] & 0x7F
+                if 0 <= active_idx < len(sram_boxes):
+                    boxes = list(sram_boxes)
+                    boxes[active_idx] = active_box
+                    return boxes
+                else:
+                    self.logger.warning(
+                        f"Aktiver Box-Index {active_idx} außerhalb 0..{len(sram_boxes)-1} "
+                        f"— SRAM-Boxen unverändert gelassen."
+                    )
+            return list(sram_boxes)
+        elif box_pointer and box_count and stride:
+            # Gen 3/4/5: kontinuierlicher WRAM-Block, je Box stride Bytes
+            slot_size = pokedecoder.box_slot_size(edition)
+            slots_per_box = pokedecoder.slots_per_box(edition)
+            box_size = slot_size * slots_per_box
+            for i in range(box_count):
+                offset = box_pointer + i * stride
+                fut = loop.create_future()
+                queue.append(("boxw", offset, box_size, fut))
+                futures.append(fut)
+            return await asyncio.gather(*futures)
+        else:
+            raise RuntimeError(
+                f"Kein gültiges Box-Layout für edition={edition} — "
+                f"YAML braucht entweder box_sram_layout+box_stride (Gen 1/2) "
+                f"oder box_pointer+box_count+box_stride (Gen 3/4/5)."
+            )
 
     async def read_and_decode_boxes(self, client_id: str) -> list[list]:
         """Liest alle Boxen vom Emulator und dekodiert sie.
@@ -239,7 +292,7 @@ class Bizhawk:
         # nicht ewig hängt, wenn der Emulator während der Abfrage wegbricht.
         queue = self.box_request_queues.pop(client_id, None)
         if queue:
-            for _, _, fut in queue:
+            for _, _, _, fut in queue:
                 if not fut.done():
                     fut.set_exception(ConnectionError(f"Emulator {client_id} disconnected"))
         self.edition_per_client.pop(client_id, None)

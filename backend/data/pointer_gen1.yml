@@ -4,13 +4,21 @@
 #
 # PC-Boxen:
 #   - box_active_pointer: aktive Box (wBoxCount) im WRAM
+#   - box_active_index_pointer: Byte mit aktuellem Box-Index (low 7 Bits, Bit 7 = Modified-Flag)
 #   - Inaktive Boxen liegen in SRAM, pro Bank 6 Boxen ab 0xA000, Stride 1122 B
 #   - box_sram_layout beschreibt die SRAM-Banks; Lua liest diese via CartRAM-Domain
+#   - Aktive Box wird per boxw aus System Bus gelesen und in der Liste an
+#     index = box_active_index ersetzt
+#
+# namepointer: Echo-RAM-Mirror (0xE000-0xFDFF mirrors 0xC000-0xDDFF)
+#   - Rot/Blau (DE): wPartyMonNicks @ 0xD2BA  →  0xF2BA
+#   - Gelb (DE):     wPartyMonNicks @ 0xD2B9  →  0xF2B9
 11:
   pointer: 0xD170
-  namepointer: 0xF2B9
+  namepointer: 0xF2BA
   badgepointer: 0xD35B
   box_active_pointer: 0xDA85
+  box_active_index_pointer: 0xD5A5
   box_count: 12
   box_stride: 0x462
   box_sram_layout:
@@ -18,9 +26,10 @@
     - {bank: 3, start: 0xA000, count: 6}
 12:
   pointer: 0xD170
-  namepointer: 0xF2B9
+  namepointer: 0xF2BA
   badgepointer: 0xD35B
   box_active_pointer: 0xDA85
+  box_active_index_pointer: 0xD5A5
   box_count: 12
   box_stride: 0x462
   box_sram_layout:
@@ -31,6 +40,7 @@
   namepointer: 0xF2B9
   badgepointer: 0xD35A
   box_active_pointer: 0xDA84
+  box_active_index_pointer: 0xD5A4
   box_count: 12
   box_stride: 0x462
   box_sram_layout:

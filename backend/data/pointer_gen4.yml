@@ -5,10 +5,17 @@
 # battleopponentpointer / battleopponentidpointer sind noch nicht in Benutzung,
 # aber reserviert für zukünftige Features (Gegner-Team, Trainer-ID lesen).
 # battleopponentidpointer: u_le_16; 0x0 = wildes Pokemon, > 0x0 = Trainer-ID
-# box_pointer zeigt auf die erste PC-Box (18 Boxen, je 30 Slots à 136 Bytes, Abstand 3944 B)
+#
+# box_pointer zeigt auf den ersten Slot der ersten PC-Box im Main RAM (NDS).
+# 18 Boxen je 30 Slots à 136 Bytes (= 4080 B). Stride:
+#   - DPPt (41/42/43): 0xFF0  (kontinuierlich, kein Padding)
+#   - HG/SS (44/45):    0x1000 (16 B Padding pro Box)
+# Box-Pointer & Strides per tools/find_pointers.py auf deutschen ROMs verifiziert.
 41:
   pointer: 0x26D7EC
   box_pointer: 0x279858
+  box_count: 18
+  box_stride: 0xFF0
   battlepointer: 0x2B9D18
   battleopponentpointer: 0x2BA2C8
   battleopponentidpointer: 0x2AFFCE
@@ -17,6 +24,8 @@
 42:
   pointer: 0x26D7EC
   box_pointer: 0x279858
+  box_count: 18
+  box_stride: 0xFF0
   battlepointer: 0x2B9D18
   battleopponentpointer: 0x2BA2C8
   battleopponentidpointer: 0x2AFFCE
@@ -25,6 +34,8 @@
 43:
   pointer: 0x27E40C
   box_pointer: 0x28B29C
+  box_count: 18
+  box_stride: 0xFF0
   battlepointer: 0x2C9C04
   battleopponentpointer: 0x2CA1B4
   battleopponentidpointer: 0x2BFBF6
@@ -33,6 +44,8 @@
 44:
   pointer: 0x27C310
   box_pointer: 0x28B978
+  box_count: 18
+  box_stride: 0x1000
   battlepointer: 0x2CAD00
   battleopponentpointer: 0x2CB2D0
   battleopponentidpointer: 0x0
@@ -41,6 +54,8 @@
 45:
   pointer: 0x27C310
   box_pointer: 0x28B978
+  box_count: 18
+  box_stride: 0x1000
   battlepointer: 0x2CAD00
   battleopponentpointer: 0x2CB2D0
   battleopponentidpointer: 0x0

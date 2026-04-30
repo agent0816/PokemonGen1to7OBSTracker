@@ -11,6 +11,12 @@
 #   - DPPt (41/42/43): 0xFF0  (kontinuierlich, kein Padding)
 #   - HG/SS (44/45):    0x1000 (16 B Padding pro Box)
 # Box-Pointer & Strides per tools/find_pointers.py auf deutschen ROMs verifiziert.
+#
+# bag_* zeigen auf den ersten Slot der jeweiligen Tasche-Pocket im Main RAM.
+# Slot-Format: u16 LE id + u16 LE qty = 4 B/Slot, leere Slots = 0x00000000.
+# bag_mailitems: 12 Slots à 4 B (id+qty). Die Mail-Body-Daten (Sender, Text)
+# liegen separat in einem anderen SaveBlock-Bereich und sind hier nicht erfasst.
+# Pointer per tools/find_bag_ptr.py auf deutschen ROMs verifiziert.
 41:
   pointer: 0x26D7EC
   box_pointer: 0x279858
@@ -21,6 +27,14 @@
   battleopponentidpointer: 0x2AFFCE
   badgepointer: 0xB70
   badgeoffset: 0x292
+  bag_items: 0x0026DD78
+  bag_keyitems: 0x0026E00C
+  bag_tmvm: 0x0026E0D4
+  bag_mailitems: 0x0026E264
+  bag_medizin: 0x0026E294
+  bag_beeren: 0x0026E334
+  bag_baelle: 0x0026E434
+  bag_kampfitems: 0x0026E470
 42:
   pointer: 0x26D7EC
   box_pointer: 0x279858
@@ -31,6 +45,14 @@
   battleopponentidpointer: 0x2AFFCE
   badgepointer: 0xB70
   badgeoffset: 0x292
+  bag_items: 0x0026DD78
+  bag_keyitems: 0x0026E00C
+  bag_tmvm: 0x0026E0D4
+  bag_mailitems: 0x0026E264
+  bag_medizin: 0x0026E294
+  bag_beeren: 0x0026E334
+  bag_baelle: 0x0026E434
+  bag_kampfitems: 0x0026E470
 43:
   pointer: 0x27E40C
   box_pointer: 0x28B29C
@@ -41,6 +63,14 @@
   battleopponentidpointer: 0x2BFBF6
   badgepointer: 0xBA8
   badgeoffset: 0x96
+  bag_items: 0x0027E99C
+  bag_keyitems: 0x0027EC30
+  bag_tmvm: 0x0027ECF8
+  bag_mailitems: 0x0027EE88
+  bag_medizin: 0x0027EEB8
+  bag_beeren: 0x0027EF58
+  bag_baelle: 0x0027F058
+  bag_kampfitems: 0x0027F094
 44:
   pointer: 0x27C310
   box_pointer: 0x28B978
@@ -51,6 +81,14 @@
   battleopponentidpointer: 0x0
   badgepointer: 0xBA8
   badgeoffset: 0x8E
+  bag_items: 0x0027C8BC
+  bag_keyitems: 0x0027CB50
+  bag_tmvm: 0x0027CC18
+  bag_mailitems: 0x0027CDAC
+  bag_medizin: 0x0027CDDC
+  bag_beeren: 0x0027CE7C
+  bag_baelle: 0x0027CF7C
+  bag_kampfitems: 0x0027CFDC
 45:
   pointer: 0x27C310
   box_pointer: 0x28B978
@@ -61,3 +99,11 @@
   battleopponentidpointer: 0x0
   badgepointer: 0xBA8
   badgeoffset: 0x8E
+  bag_items: 0x0027C8BC
+  bag_keyitems: 0x0027CB50
+  bag_tmvm: 0x0027CC18
+  bag_mailitems: 0x0027CDAC
+  bag_medizin: 0x0027CDDC
+  bag_beeren: 0x0027CE7C
+  bag_baelle: 0x0027CF7C
+  bag_kampfitems: 0x0027CFDC

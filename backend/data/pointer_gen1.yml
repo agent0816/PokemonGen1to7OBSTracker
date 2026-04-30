@@ -13,6 +13,14 @@
 # namepointer: Echo-RAM-Mirror (0xE000-0xFDFF mirrors 0xC000-0xDDFF)
 #   - Rot/Blau (DE): wPartyMonNicks @ 0xD2BA  →  0xF2BA
 #   - Gelb (DE):     wPartyMonNicks @ 0xD2B9  →  0xF2B9
+#
+# Bag-Pockets liegen im WRAM. Layout pro Pocket:
+#   [count : u8][id : u8, qty : u8][...][0xFF terminator] in einem fixen Buffer.
+#   bag_*-Adressen zeigen auf den ersten Slot, count-Byte ist bei -1.
+# bag_tasche: 42 B Buffer (max 20 Items).
+# bag_pc:     102 B Buffer (max 50 Items).
+# Gelb-Adressen liegen 1 B vor Rot/Blau (siehe Hauptpointer).
+# Pointer per tools/find_bag_ptr.py auf deutschen ROMs verifiziert.
 11:
   pointer: 0xD170
   namepointer: 0xF2BA
@@ -24,6 +32,8 @@
   box_sram_layout:
     - {bank: 2, start: 0xA000, count: 6}
     - {bank: 3, start: 0xA000, count: 6}
+  bag_tasche: 0xD323
+  bag_pc: 0xD540
 12:
   pointer: 0xD170
   namepointer: 0xF2BA
@@ -35,6 +45,8 @@
   box_sram_layout:
     - {bank: 2, start: 0xA000, count: 6}
     - {bank: 3, start: 0xA000, count: 6}
+  bag_tasche: 0xD323
+  bag_pc: 0xD540
 13:
   pointer: 0xD16F
   namepointer: 0xF2B9
@@ -46,3 +58,5 @@
   box_sram_layout:
     - {bank: 2, start: 0xA000, count: 6}
     - {bank: 3, start: 0xA000, count: 6}
+  bag_tasche: 0xD322
+  bag_pc: 0xD53F

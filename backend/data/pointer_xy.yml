@@ -12,3 +12,10 @@ trainer_name: 0x08c79c73
 trainer_name_in_fight: 0x08203e80
 trainer_value: 0x0030
 wild_value: 0x0234
+# Bag-Pockets (slot_size = 4 B, u16 LE id + u16 LE qty), per tools/find_bag_ptr.py
+# verifiziert. X und Y teilen den ROM-Code, identische Adressen.
+bag_items: 0x08c67554
+bag_keyitems: 0x08c67b94
+bag_tmvm: 0x08c67d14
+bag_medizin: 0x08c67ebc
+bag_beeren: 0x08c67fbc

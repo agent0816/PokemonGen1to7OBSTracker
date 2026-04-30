@@ -6,6 +6,22 @@
 #   - Gen 2 haelt keine aktive Box im WRAM - alle 14 Boxen liegen in SRAM
 #   - Pro Bank 7 Boxen ab 0xA000, Stride 1104 B (1102 + 2 B Alignment)
 #   - box_sram_layout beschreibt die SRAM-Banks; Lua liest via CartRAM-Domain
+#
+# Bag-Pockets liegen im WRAM (System-Bus). Layout pro Pocket:
+#   bag_items, bag_keyitems, bag_baelle, bag_pc:
+#     [count : u8][slots ...][0xFF terminator] in einem fixen Buffer.
+#     bag_*-Adressen zeigen auf den ersten Slot (count-Byte ist bei -1).
+#   Slot-Format:
+#     bag_items / bag_baelle / bag_pc: 2 B/Slot (u8 id, u8 qty), 20/12/50 Slots max.
+#     bag_keyitems:                    1 B/Slot (u8 id, kein qty), 25 Slots max.
+#   Pocket-Spacing zwischen den count-Bytes: Items->KeyItems = 42 B (1+40+1),
+#   KeyItems->Baelle = 27 B (1+25+1).
+#
+# bag_tmvm: 57-Byte-Array, qty-only an festen Indizes (kein id+qty Format).
+#   Layout: bag_tmvm[0..49] = qty fuer TM01..TM50 (item-id 191..240),
+#           bag_tmvm[50..56] = qty fuer HM01..HM07 (item-id 243..249).
+#   Slot ist 0 = nicht besessen, sonst Anzahl. Kein Count-Prefix, kein Terminator.
+# Pointer per tools/find_bag_ptr.py auf deutschen ROMs verifiziert.
 21:
   pointer: 0xFA2A
   namepointer: 0xFB8C
@@ -16,6 +32,11 @@
   box_sram_layout:
     - {bank: 2, start: 0xA000, count: 7}
     - {bank: 3, start: 0xA000, count: 7}
+  bag_tmvm: 0xD57E
+  bag_items: 0xD5B8
+  bag_keyitems: 0xD5E2
+  bag_baelle: 0xD5FD
+  bag_pc: 0xD617
 22:
   pointer: 0xFA2A
   namepointer: 0xFB8C
@@ -26,6 +47,11 @@
   box_sram_layout:
     - {bank: 2, start: 0xA000, count: 7}
     - {bank: 3, start: 0xA000, count: 7}
+  bag_tmvm: 0xD57E
+  bag_items: 0xD5B8
+  bag_keyitems: 0xD5E2
+  bag_baelle: 0xD5FD
+  bag_pc: 0xD617
 23:
   pointer: 0xFCDF
   namepointer: 0xDE41
@@ -36,3 +62,8 @@
   box_sram_layout:
     - {bank: 2, start: 0xA000, count: 7}
     - {bank: 3, start: 0xA000, count: 7}
+  bag_tmvm: 0xD859
+  bag_items: 0xD893
+  bag_keyitems: 0xD8BD
+  bag_baelle: 0xD8D8
+  bag_pc: 0xD8F2

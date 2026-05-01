@@ -12,3 +12,14 @@ trainer_name: 0x330d6807
 trainer_name_in_fight: False
 trainer_value: 0x0320
 wild_value: 0x0320
+# Bag-Pockets (Gen 7 packed slot, u32 LE bit-gepackt: 10b id + 10b qty + 10b
+# freespace + 2b flags). Per tools/find_bag_ptr.py auf deutschen ROMs verifiziert.
+# Sonne und Mond teilen den ROM-Code, identische Adressen.
+# Z-Kristalle haendisch via Hex-Dump verifiziert (set-Items.yml IDs stimmen
+# nicht mit dem realen Save ueberein, daher kein Auto-Match).
+bag_items: 0x330d5934
+bag_keyitems: 0x330d5fec
+bag_tmvm: 0x330d62cc
+bag_medizin: 0x330d647c
+bag_beeren: 0x330d657c
+bag_zkristalle: 0x330d669c

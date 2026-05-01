@@ -12,3 +12,14 @@ trainer_name: 0x3301543c
 trainer_name_in_fight: False
 trainer_value: 0x0320
 wild_value: 0x0320
+# Bag-Pockets (Gen 7 packed slot, u32 LE bit-gepackt: 10b id + 10b qty + 10b
+# freespace + 2b flags). Per tools/find_bag_ptr.py auf deutschen ROMs verifiziert.
+# Ultra Sonne und Ultra Mond teilen den ROM-Code, identische Adressen.
+# Z-Kristalle haendisch via Hex-Dump verifiziert.
+bag_items: 0x33011934
+bag_keyitems: 0x33011fe0
+bag_tmvm: 0x330122f8
+bag_medizin: 0x330124a8
+bag_beeren: 0x33012598
+bag_zkristalle: 0x330126a4
+bag_kampfitems: 0x33012730

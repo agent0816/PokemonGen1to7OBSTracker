@@ -370,6 +370,18 @@ class Bizhawk:
             queue.append(("bag", indirect_addr, 4, ptr_fut))
             ptr_bytes = await ptr_fut
             bag_basis = int.from_bytes(ptr_bytes, "little")
+            # Beim Titelbildschirm / Continue-Auswahl ist gPokemonStoragePtr noch
+            # uninitialisiert (0 oder Garbage). Mit den negativen bag_*_offset
+            # waeren Pocket-Adressen negativ — Lua's Hex-Regex matcht nicht und
+            # der Loop deadlocked, weil Lua keine Bytes zurueckschickt. SaveBlock1
+            # liegt im EWRAM (0x02000000-0x0203FFFF), also gegen den Bereich pruefen.
+            if not (0x02000000 <= bag_basis < 0x02040000):
+                self.logger.debug(
+                    f"Gen 3 bag_basis 0x{bag_basis:08X} ausserhalb EWRAM "
+                    f"(edition={edition}) — Save vermutlich noch nicht geladen, "
+                    f"ueberspringe Bag-Refresh."
+                )
+                return {}
             for key in bag_decoder.KNOWN_POCKET_KEYS:
                 offset = pointers.get(f"bag_{key}_offset")
                 if offset is not None:

@@ -26,6 +26,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 
+from backend.bag_decoder import POCKET_MAX_SLOTS
 from backend.classes.pokedex_db import PokedexDB
 
 
@@ -187,12 +188,13 @@ class BagMenu(Screen):
         filter_bar.add_widget(Label(text="Spieler:", size_hint_x=0.07))
         player_values = ["alle"] + [str(i) for i in range(1, max(1, self.pl.get("player_count", 1)) + 1)]
         self.player_spinner = Spinner(text="alle", values=player_values, size_hint_x=0.08)
-        self.player_spinner.bind(text=lambda _i, _v: self._apply_filters())
+        self.player_spinner.bind(text=lambda _i, _v: self._on_player_change())
         filter_bar.add_widget(self.player_spinner)
 
         filter_bar.add_widget(Label(text="Pocket:", size_hint_x=0.07))
-        pocket_values = ["alle"] + [POCKET_LABEL.get(p, p) for p in _POCKET_ORDER]
-        self.pocket_spinner = Spinner(text="alle", values=pocket_values, size_hint_x=0.13)
+        # Werte werden nach jedem _reload() / Spielerwechsel auf die fuer die
+        # tatsaechlich vorhandenen Editionen relevanten Pockets eingeschraenkt.
+        self.pocket_spinner = Spinner(text="alle", values=["alle"], size_hint_x=0.13)
         self.pocket_spinner.bind(text=lambda _i, _v: self._apply_filters())
         filter_bar.add_widget(self.pocket_spinner)
 
@@ -245,7 +247,48 @@ class BagMenu(Screen):
 
     def _reload(self):
         self._all_rows = self._load_from_db()
+        self._update_pocket_spinner_values()
         self._apply_filters()
+
+    def _on_player_change(self):
+        # Spielerwechsel kann andere Editionen sichtbar machen — Pocket-Spinner
+        # neu befuellen. Falls der bisher gewaehlte Pocket fuer die neue
+        # Spieler-Edition gar nicht existiert, faellt _update_pocket_spinner_values
+        # auf "alle" zurueck.
+        self._update_pocket_spinner_values()
+        self._apply_filters()
+
+    def _editions_for_player(self, player_filter: str) -> set[int]:
+        editions: set[int] = set()
+        for row in self._all_rows:
+            if player_filter != "alle" and str(row.get("owner", "")) != player_filter:
+                continue
+            try:
+                editions.add(int(row.get("edition")))
+            except (TypeError, ValueError):
+                continue
+        return editions
+
+    def _update_pocket_spinner_values(self):
+        """Beschraenkt die Pocket-Auswahl auf das, was die aktiven Editionen
+        ueberhaupt unterstuetzen. Quelle ist POCKET_MAX_SLOTS aus dem Decoder —
+        damit ist die UI synchron zur Decoder-Realitaet (z.B. Gen 1 nur 'tasche'
+        und 'pc', Gen 5 keine 'baelle'-Pocket).
+        """
+        player_filter = (self.player_spinner.text or "alle").strip()
+        editions = self._editions_for_player(player_filter)
+        if editions:
+            keys: set[str] = set()
+            for ed in editions:
+                keys.update(POCKET_MAX_SLOTS.get(ed, {}).keys())
+            ordered = sorted(keys, key=lambda k: _POCKET_INDEX.get(k, 99))
+            labels = ["alle"] + [POCKET_LABEL.get(k, k) for k in ordered]
+        else:
+            # Noch keine DB-Daten fuer diesen Spieler -> nur "alle" anbieten.
+            labels = ["alle"]
+        self.pocket_spinner.values = labels
+        if self.pocket_spinner.text not in labels:
+            self.pocket_spinner.text = "alle"
 
     def _load_from_db(self) -> list[dict]:
         """Liest bag_inventory + bag_first_seen und joint sie pro

@@ -1,12 +1,14 @@
 import asyncio
 import logging
 import sys
+import time
 import traceback
 import yaml
 from backend.classes.citra import Citra
 from backend.classes.munchlax import Munchlax
 from backend.classes.Pokemon import Pokemon
 import backend.pokedecoder as pokedecoder
+import backend.bag_decoder as bag_decoder
 
 BLOCK_SIZE = 56
 SLOT_OFFSET = 484
@@ -27,6 +29,12 @@ class CitraHandler:
         # damit Team-/Badge-Reads dazwischen durchkommen und nicht auf einen
         # vom Worker-Thread okkupierten UDP-Socket treffen.
         self.box_request_queue: list[tuple[int, "asyncio.Future[bytes]"]] = []
+        # Analog fuer Bag-Pockets: (absolute_adresse, size, Future). Wird
+        # periodisch (alle 5s) vom Tick-Loop befuellt und eine Pocket pro Tick
+        # abgearbeitet — gleiche Thread-Safety-Begruendung wie box_request_queue.
+        self.bag_request_queue: list[tuple[int, int, "asyncio.Future[bytes]"]] = []
+        self._last_bag_refresh: float = 0.0
+        self._bag_refresh_inflight: bool = False
 
         with open("backend/data/pointer_xy.yml") as file:
             pointer_xy = yaml.safe_load(file)
@@ -95,12 +103,24 @@ class CitraHandler:
                 self.update_teams(new_data)
                 self.update_stats(update_data)
 
-                # Pro Tick genau EINE Box aus der Queue verarbeiten,
-                # damit Team-Reads dazwischen durchkommen.
-                self._drain_box_queue_step()
+                # Periodischer Bag-Refresh alle 5 s. Der eigentliche Read
+                # laeuft als Background-Task, der Pockets in bag_request_queue
+                # einreiht — die Pocket-Reads werden hier im Tick abgearbeitet.
+                now = time.monotonic()
+                if (now - self._last_bag_refresh >= 5.0
+                        and not self._bag_refresh_inflight):
+                    self._last_bag_refresh = now
+                    asyncio.create_task(self._auto_refresh_bag())
 
-                # Wenn Boxen ausstehen: schneller pollen, sonst normaler 1s-Tick.
-                await asyncio.sleep(0.05 if self.box_request_queue else 1)
+                # Pro Tick je EINE Box und EINE Bag-Pocket aus der jeweiligen
+                # Queue verarbeiten, damit Team-Reads dazwischen durchkommen.
+                self._drain_box_queue_step()
+                self._drain_bag_queue_step()
+
+                # Wenn Boxen oder Bag-Pockets ausstehen: schneller pollen,
+                # sonst normaler 1s-Tick.
+                have_pending = bool(self.box_request_queue or self.bag_request_queue)
+                await asyncio.sleep(0.05 if have_pending else 1)
             except ConnectionResetError:
                 self.is_connected = False
             except Exception as err:
@@ -143,6 +163,30 @@ class CitraHandler:
             if not fut.done():
                 fut.set_exception(RuntimeError(reason))
         self.box_request_queue.clear()
+        for _, _, fut in self.bag_request_queue:
+            if not fut.done():
+                fut.set_exception(RuntimeError(reason))
+        self.bag_request_queue.clear()
+
+    def _drain_bag_queue_step(self):
+        """Verarbeitet hoechstens EINE ausstehende Bag-Pocket-Anfrage.
+
+        Wie _drain_box_queue_step im Event-Loop-Thread, damit der UDP-Socket
+        nie parallel zu read_team/read_badges/read_in_battle_stats benutzt wird.
+        """
+        while self.bag_request_queue:
+            addr, size, fut = self.bag_request_queue.pop(0)
+            if fut.done():
+                continue
+            try:
+                pocket_bytes = self.citra_instance.read_memory(addr, size)
+                if pocket_bytes is None:
+                    raise RuntimeError(f"Citra-Read fuer Bag 0x{addr:08X} gab None zurueck")
+                fut.set_result(pocket_bytes)
+            except Exception as err:
+                if not fut.done():
+                    fut.set_exception(err)
+            return
 
     def update_teams(self, team):
         team: list[Pokemon] = pokedecoder.team(team, self.edition)
@@ -271,6 +315,81 @@ class CitraHandler:
         except Exception as err:
             self.logger.warning(f"Auto-Box-Refresh player={self.player_number} fehlgeschlagen: {type(err)},{err}")
             self.logger.warning(f"{traceback.format_exc()}")
+
+    async def read_bag_pockets(self) -> dict[str, bytes]:
+        """Reiht alle definierten bag_*-Pockets der aktuellen Edition als
+        Futures in die bag_request_queue ein und liefert {pocket_key: raw_bytes}.
+
+        Gen 6/7 brauchen keine Indirect-Aufloesung — alle bag_*-Adressen im
+        pointer_xy/oras/sm/usum.yml sind direkte RAM-Pointer.
+        """
+        if not self.started or not self.is_connected:
+            raise RuntimeError("Citra ist nicht verbunden")
+
+        loop = asyncio.get_running_loop()
+        futures: dict[str, asyncio.Future] = {}
+        for key in bag_decoder.KNOWN_POCKET_KEYS:
+            addr = self.pointer.get(f"bag_{key}")
+            if not isinstance(addr, int):
+                continue
+            start, size = bag_decoder.pocket_window(addr, self.edition, key)
+            fut = loop.create_future()
+            self.bag_request_queue.append((start, size, fut))
+            futures[key] = fut
+
+        results: dict[str, bytes] = {}
+        for key, fut in futures.items():
+            try:
+                results[key] = await fut
+            except Exception as err:
+                self.logger.warning(
+                    f"Bag-Read fehlgeschlagen edition={self.edition} pocket={key}: "
+                    f"{type(err)},{err}"
+                )
+        return results
+
+    async def read_and_decode_bag(self) -> dict[str, list]:
+        """Liest und dekodiert alle Bag-Pockets. {pocket_key: list[BagItem]}."""
+        raw_pockets = await self.read_bag_pockets()
+        if not raw_pockets:
+            return {}
+        decoded: dict[str, list] = {}
+        for pocket_key, raw_bytes in raw_pockets.items():
+            try:
+                decoded[pocket_key] = bag_decoder.decode_pocket(
+                    self.edition, pocket_key, raw_bytes,
+                )
+            except Exception as err:
+                self.logger.warning(
+                    f"decode_pocket fehlgeschlagen edition={self.edition} "
+                    f"pocket={pocket_key}: {type(err)},{err}"
+                )
+        return decoded
+
+    async def _auto_refresh_bag(self):
+        """Periodischer Bag-Read; persistiert Pockets in PokedexDB via Munchlax."""
+        if self._bag_refresh_inflight:
+            return
+        self._bag_refresh_inflight = True
+        try:
+            if not self.started or not self.is_connected:
+                return
+            pockets = await self.read_and_decode_bag()
+            if not pockets:
+                return
+            await self.munchlax.update_bag(self.player_number, self.edition, pockets)
+            self.logger.debug(
+                f"Auto-Bag-Refresh player={self.player_number}: "
+                f"{', '.join(f'{k}={len(v)}' for k, v in pockets.items())}"
+            )
+        except Exception as err:
+            self.logger.warning(
+                f"Auto-Bag-Refresh player={self.player_number} fehlgeschlagen: "
+                f"{type(err)},{err}"
+            )
+            self.logger.warning(f"{traceback.format_exc()}")
+        finally:
+            self._bag_refresh_inflight = False
 
     async def start(self, munchlax, button):
         self.munchlax: Munchlax = munchlax

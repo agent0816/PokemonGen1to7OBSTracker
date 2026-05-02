@@ -6,6 +6,7 @@ from backend.classes.munchlax import Munchlax
 from backend.classes.Pokemon import Pokemon
 import backend.pokedecoder as pokedecoder
 import backend.bh_pointers as bh_pointers
+import backend.bag_decoder as bag_decoder
 
 class Bizhawk:
     def __init__(self, host, port, bh):
@@ -26,9 +27,12 @@ class Bizhawk:
         self.edition_per_client: dict[str, int] = {}
         self.language_per_client: dict[str, int] = {}
         # Jeder Eintrag ist (cmd, offset, size, future) — cmd = "box" (CartRAM,
-        # Gen 1/2 SRAM) oder "boxw" (System-Domain, Gen 3/4/5 WRAM). Der
-        # Haupt-Loop arbeitet die Queue im else-Zweig ab, ein Request pro Frame.
+        # Gen 1/2 SRAM) oder "boxw" (System-Domain, Gen 3/4/5 WRAM) oder "bag"
+        # (Bag-Pockets, ebenfalls System-Domain). Der Haupt-Loop arbeitet die
+        # Queue im else-Zweig ab, ein Request pro Frame.
         self.box_request_queues: dict[str, list] = {}
+        # Verhindert ueberlappende Bag-Refreshs pro Client.
+        self._bag_refresh_inflight: dict[str, bool] = {}
 
         self.logger = self.init_logging()
 
@@ -169,6 +173,14 @@ class Bizhawk:
                         data = (await self.receive_messages(reader)).decode()
                         in_battle = False
                         update_stats(data)
+                    elif counter % 300 == 30:
+                        # Periodischer Bag-Refresh: alle 5 s einen async Task
+                        # starten. Der Task fuellt die queue mit "bag"-Reads,
+                        # die der Main-Loop in Folge-Frames abarbeitet — daher
+                        # blockiert nichts. _bag_refresh_inflight verhindert
+                        # Ueberlappung, falls die Reads laenger als 5 s brauchen.
+                        asyncio.create_task(self._auto_refresh_bag(client_id, player))
+                        await self.send_messages(writer, data)
                     else:
                         queue = self.box_request_queues.get(client_id)
                         if queue:
@@ -314,6 +326,124 @@ class Bizhawk:
                 f"oder (box_pointer | box_pointer_indirect)+box_count+box_stride (Gen 3/4/5)."
             )
 
+    async def read_bag_pockets(self, client_id: str) -> dict[str, bytes]:
+        """Liest alle definierten Bag-Pockets und liefert {pocket_key: raw_bytes}.
+
+        Auflist-Logik:
+          - Gen 1/2: Pointer-YAML enthaelt 'bag_<key>' Adressen, die auf den
+            ersten Slot zeigen. Das count-Byte liegt 1 B davor, deshalb lesen
+            wir ab addr - 1 mit der Window-Groesse aus
+            bag_decoder.pocket_window_size().
+          - Gen 3 R/S: statische 'bag_<key>' Adressen, kein count-Prefix.
+          - Gen 3 E/FR/BG: 'bag_qty_xor_encrypted'==True. Wir lesen erst die
+            4 Pointer-Bytes an box_pointer_indirect, addieren KEIN
+            box_pointer_offset (das gilt nur fuer Boxen, nicht Bags), und
+            berechnen pro Pocket bag_basis + 'bag_<key>_offset'.
+          - Gen 4/5: statische 'bag_<key>' Adressen, kein Prefix.
+
+        Liefert die rohen Bytes — Dekodierung uebernimmt der Caller via
+        bag_decoder.decode_pocket(). Dadurch kann der Caller den security_key
+        aus dem TMVM-Window selbst ableiten.
+        """
+        edition = self.edition_per_client.get(client_id)
+        if edition is None:
+            raise RuntimeError(f"Client {client_id} ist nicht (mehr) registriert.")
+        language = self.language_per_client.get(client_id)
+        pointers = bh_pointers.get_pointers(edition, language if language else None)
+
+        gen = bag_decoder.edition_to_gen(edition)
+        loop = asyncio.get_event_loop()
+        queue = self.box_request_queues.setdefault(client_id, [])
+
+        # Pocket-Adressen pro Edition ermitteln. Fehlende Pockets ueberspringen.
+        addrs: dict[str, int] = {}
+        gen3_indirect = (gen == 3 and bool(pointers.get("bag_qty_xor_encrypted")))
+        if gen3_indirect:
+            indirect_addr = pointers.get("box_pointer_indirect")
+            if indirect_addr is None:
+                self.logger.error(
+                    f"Gen 3 indirect Bag fuer edition={edition}, aber kein "
+                    f"box_pointer_indirect im Pointer-YAML."
+                )
+                return {}
+            ptr_fut = loop.create_future()
+            queue.append(("bag", indirect_addr, 4, ptr_fut))
+            ptr_bytes = await ptr_fut
+            bag_basis = int.from_bytes(ptr_bytes, "little")
+            for key in bag_decoder.KNOWN_POCKET_KEYS:
+                offset = pointers.get(f"bag_{key}_offset")
+                if offset is not None:
+                    addrs[key] = bag_basis + offset
+        else:
+            for key in bag_decoder.KNOWN_POCKET_KEYS:
+                addr = pointers.get(f"bag_{key}")
+                if isinstance(addr, int):
+                    addrs[key] = addr
+
+        if not addrs:
+            return {}
+
+        # bag_decoder.pocket_window kuemmert sich um die generationenabhaengige
+        # Start-Offset-Logik (Gen 1/2 lesen ab addr-1, damit das count-Byte
+        # enthalten ist; Gen 2 TMVM und Gen 3+ ab addr).
+        futures: dict[str, asyncio.Future] = {}
+        for key, addr in addrs.items():
+            start, size = bag_decoder.pocket_window(addr, edition, key)
+            fut = loop.create_future()
+            queue.append(("bag", start, size, fut))
+            futures[key] = fut
+
+        results: dict[str, bytes] = {}
+        for key, fut in futures.items():
+            try:
+                results[key] = await fut
+            except Exception as err:
+                self.logger.warning(
+                    f"Bag-Read fehlgeschlagen edition={edition} pocket={key}: "
+                    f"{type(err)},{err}"
+                )
+        return results
+
+    async def read_and_decode_bag(self, client_id: str) -> dict[str, list]:
+        """Liest und dekodiert alle Bag-Pockets. Liefert {pocket_key: list[BagItem]}.
+
+        Bei Gen 3 E/FR/BG wird der security_key automatisch aus dem TMVM-Window
+        abgeleitet (erstes leeres Slot enthaelt qty_raw == key).
+        """
+        edition = self.edition_per_client.get(client_id)
+        if edition is None:
+            raise RuntimeError(f"Client {client_id} ist nicht (mehr) registriert.")
+        raw_pockets = await self.read_bag_pockets(client_id)
+        if not raw_pockets:
+            return {}
+
+        security_key: int | None = None
+        gen = bag_decoder.edition_to_gen(edition)
+        if gen == 3 and edition >= 33:
+            tmvm_raw = raw_pockets.get("tmvm")
+            if tmvm_raw:
+                security_key = bag_decoder.derive_security_key_from_tmvm(tmvm_raw)
+            if security_key is None:
+                self.logger.warning(
+                    f"Gen 3 edition={edition}: konnte security_key nicht aus "
+                    f"TMVM-Window ableiten — Pocket war moeglicherweise voll."
+                )
+                return {}
+
+        decoded: dict[str, list] = {}
+        for pocket_key, raw_bytes in raw_pockets.items():
+            try:
+                decoded[pocket_key] = bag_decoder.decode_pocket(
+                    edition, pocket_key, raw_bytes,
+                    item_lut=None, security_key=security_key,
+                )
+            except Exception as err:
+                self.logger.warning(
+                    f"decode_pocket fehlgeschlagen edition={edition} "
+                    f"pocket={pocket_key}: {type(err)},{err}"
+                )
+        return decoded
+
     async def read_and_decode_boxes(self, client_id: str) -> list[list]:
         """Liest alle Boxen vom Emulator und dekodiert sie.
 
@@ -334,6 +464,35 @@ class Bizhawk:
         except Exception as err:
             self.logger.warning(f"Auto-Box-Refresh player={player} fehlgeschlagen: {type(err)},{err}")
             self.logger.warning(f"{traceback.format_exc()}")
+
+    async def _auto_refresh_bag(self, client_id: str, player: int):
+        """Bag-Read als periodischer Tick. Persistiert Pockets in PokedexDB.
+
+        Mehrfache Aufrufe ueberschneiden sich nicht (Lock pro Client) — bei 5
+        Pockets a 1 Frame Roundtrip dauert ein Refresh ca. 100 ms; das
+        Polling-Intervall liegt bei 5 s, also ist die Ueberlappung
+        unwahrscheinlich, der Lock ist trotzdem ein Sicherheitsnetz.
+        """
+        if self._bag_refresh_inflight.get(client_id):
+            return
+        self._bag_refresh_inflight[client_id] = True
+        try:
+            edition = self.edition_per_client.get(client_id)
+            if edition is None:
+                return
+            pockets = await self.read_and_decode_bag(client_id)
+            if not pockets:
+                return
+            await self.munchlax.update_bag(player, edition, pockets)
+            self.logger.debug(
+                f"Auto-Bag-Refresh player={player}: "
+                f"{', '.join(f'{k}={len(v)}' for k, v in pockets.items())}"
+            )
+        except Exception as err:
+            self.logger.warning(f"Auto-Bag-Refresh player={player} fehlgeschlagen: {type(err)},{err}")
+            self.logger.warning(f"{traceback.format_exc()}")
+        finally:
+            self._bag_refresh_inflight[client_id] = False
 
     async def disconnect(self, client_id):
         # Noch offene Box-Futures mit Fehler beenden, damit read_all_boxes()

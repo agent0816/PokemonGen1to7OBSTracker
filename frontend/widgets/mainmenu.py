@@ -151,6 +151,9 @@ class MainMenu(Screen):
         box_button = Button(text="PC-Boxen", on_press=self.switch_to_boxes)
         logo_settings.add_widget(box_button)
 
+        bag_button = Button(text="Tasche", on_press=self.switch_to_bag)
+        logo_settings.add_widget(bag_button)
+
         control_frame.add_widget(logo_settings)
 
         connections = BoxLayout(orientation="horizontal")
@@ -640,6 +643,9 @@ class MainMenu(Screen):
 
     def switch_to_boxes(self, instance):
         self.manager.current = "BoxMenu"
+
+    def switch_to_bag(self, instance):
+        self.manager.current = "BagMenu"
 
     def switch_to_settings(self, instance):
         settings_menu = self.manager.get_screen("SettingsMenu")

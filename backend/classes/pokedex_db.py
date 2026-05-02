@@ -6,10 +6,11 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
+from backend.bag_decoder import BagItem
 from backend.classes.Pokemon import Pokemon
 
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 class PokedexDB:
@@ -71,6 +72,8 @@ class PokedexDB:
 
         if current_version < 1:
             self._apply_v1(cursor)
+        if current_version < 2:
+            self._apply_v2(cursor)
 
         self.connection.commit()
 
@@ -104,6 +107,40 @@ class PokedexDB:
             (1, datetime.now(timezone.utc).isoformat()),
         )
         self.logger.info("PokedexDB Schema v1 angewendet")
+
+    def _apply_v2(self, cursor):
+        # bag_inventory: aktueller Bestand pro Pocket. Wird bei jedem Bag-Read
+        # vollstaendig fuer (owner, edition, pocket) ueberschrieben — verlorene
+        # Items verschwinden also auch wieder.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bag_inventory (
+                owner       TEXT    NOT NULL,
+                edition     TEXT    NOT NULL,
+                pocket      TEXT    NOT NULL,
+                item_id     INTEGER NOT NULL,
+                qty         INTEGER NOT NULL,
+                last_seen   TEXT    NOT NULL,
+                PRIMARY KEY (owner, edition, pocket, item_id)
+            )
+        """)
+        # bag_first_seen: zeitstempel des ersten Auftretens pro Item-ID. Wird
+        # NIE geloescht oder ueberschrieben — Treiber fuer die Nuzlocke-Regel
+        # "Run startet bei Erhalt jeder Ball-Art".
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bag_first_seen (
+                owner       TEXT    NOT NULL,
+                edition     TEXT    NOT NULL,
+                item_id     INTEGER NOT NULL,
+                pocket      TEXT,
+                first_seen  TEXT    NOT NULL,
+                PRIMARY KEY (owner, edition, item_id)
+            )
+        """)
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (2, datetime.now(timezone.utc).isoformat()),
+        )
+        self.logger.info("PokedexDB Schema v2 angewendet (bag_inventory + bag_first_seen)")
 
     @staticmethod
     def build_owner(your_name: str, client_id: str) -> str:
@@ -232,3 +269,98 @@ class PokedexDB:
             self.logger.error(f"get_all failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
             return []
+
+    # -- Bag (Schema v2) -----------------------------------------------------
+
+    def upsert_bag_pocket(self, owner: str, edition, pocket: str,
+                          items: list[BagItem]) -> bool:
+        """Synchronisiert eine Pocket vollstaendig: ersetzt den bisherigen
+        Bestand fuer (owner, edition, pocket) durch die uebergebene Liste
+        und pflegt parallel bag_first_seen (INSERT OR IGNORE pro Item).
+
+        Items mit qty == 0 werden uebersprungen (im Speicher koennen leere
+        Slots als id=0/qty=0 erscheinen — die filtert der Decoder zwar schon,
+        aber wir sind hier defensiv).
+        """
+        if self.connection is None:
+            return False
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            edition_str = str(edition) if edition is not None else ""
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "DELETE FROM bag_inventory WHERE owner = ? AND edition = ? AND pocket = ?",
+                (owner, edition_str, pocket),
+            )
+            for it in items:
+                if it.id == 0 or it.qty == 0:
+                    continue
+                cursor.execute(
+                    """
+                    INSERT INTO bag_inventory (owner, edition, pocket, item_id, qty, last_seen)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(owner, edition, pocket, item_id) DO UPDATE SET
+                        qty       = excluded.qty,
+                        last_seen = excluded.last_seen
+                    """,
+                    (owner, edition_str, pocket, int(it.id), int(it.qty), now),
+                )
+                cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO bag_first_seen
+                        (owner, edition, item_id, pocket, first_seen)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (owner, edition_str, int(it.id), pocket, now),
+                )
+            self.connection.commit()
+            return True
+        except Exception as err:
+            self.logger.error(f"upsert_bag_pocket failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    def get_bag_inventory(self, owner: str, edition=None,
+                          pocket: str | None = None) -> list[dict]:
+        if self.connection is None:
+            return []
+        try:
+            query = "SELECT * FROM bag_inventory WHERE owner = ?"
+            params: list = [owner]
+            if edition is not None:
+                query += " AND edition = ?"
+                params.append(str(edition))
+            if pocket is not None:
+                query += " AND pocket = ?"
+                params.append(pocket)
+            query += " ORDER BY pocket, item_id"
+            cursor = self.connection.cursor()
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as err:
+            self.logger.error(f"get_bag_inventory failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return []
+
+    def get_bag_first_seen(self, owner: str, edition=None) -> dict[int, str]:
+        """Liefert {item_id: first_seen_iso} fuer (owner, edition).
+
+        Wird vom Nuzlocke-Regelmodul genutzt, um zu pruefen, ob ein bestimmter
+        Ball/Item schonmal in der Tasche war.
+        """
+        if self.connection is None:
+            return {}
+        try:
+            query = "SELECT item_id, first_seen FROM bag_first_seen WHERE owner = ?"
+            params: list = [owner]
+            if edition is not None:
+                query += " AND edition = ?"
+                params.append(str(edition))
+            cursor = self.connection.cursor()
+            cursor.execute(query, params)
+            return {int(row["item_id"]): row["first_seen"]
+                    for row in cursor.fetchall()}
+        except Exception as err:
+            self.logger.error(f"get_bag_first_seen failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return {}

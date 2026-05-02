@@ -227,6 +227,38 @@ class Munchlax:
             self.logger.error(f"_ensure_pokedex_db failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
 
+    async def update_bag(self, player, edition, pockets):
+        """Persistiert die ausgelesenen Bag-Pockets pro Player in die PokedexDB.
+
+        ``pockets`` ist ein Dict {pocket_key: list[BagItem]}. Pro Pocket
+        ueberschreibt die DB den bisherigen Bestand fuer (owner, edition, pocket)
+        komplett — verlorene Items verschwinden also auch wieder. Parallel
+        pflegt upsert_bag_pocket die bag_first_seen-Tabelle (Nuzlocke-Marker),
+        die NIE ueberschrieben wird.
+
+        Anders als _persist_teams wird hier nicht aus self.unsorted_teams gelesen,
+        sondern direkt vom Bizhawk-Reader uebergeben — der Bag laeuft auf einem
+        eigenen Polling-Intervall und ist von der Team-Tick-Logik entkoppelt.
+        """
+        try:
+            self._ensure_pokedex_db()
+            if self.pokedex_db is None or self.pokedex_db.connection is None:
+                return
+            owner = str(player)
+            loop = asyncio.get_event_loop()
+            for pocket_key, items in pockets.items():
+                await loop.run_in_executor(
+                    None,
+                    self.pokedex_db.upsert_bag_pocket,
+                    owner,
+                    edition,
+                    pocket_key,
+                    items,
+                )
+        except Exception as err:
+            self.logger.error(f"update_bag failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+
     async def _persist_teams(self, teams):
         try:
             self._ensure_pokedex_db()

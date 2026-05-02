@@ -362,6 +362,22 @@ local function handle_protocol_step(msg, battle_stats, state)
             logging.error("Ungültiges boxw-Kommando: " .. tostring(response))
         end
     end
+    -- bag <addr_hex> <size_hex>: liest aus state.domain (System Bus / Main RAM /
+    -- ARM9 System Bus je nach Gen). Generisch fuer alle Bag-Pockets der Gens 1-5.
+    -- Bei Gen 3 E/FR/BG (Saveblock-Relocation) holt Python zuerst die 4 Pointer-
+    -- Bytes per 'bag', rechnet die effektive Adresse aus und ruft 'bag' erneut
+    -- mit der absoluten Pocket-Adresse — Lua bleibt zustandslos.
+    if response and response:sub(1, 4) == "bag " then
+        local off_s, size_s = string.match(response:sub(5), "^(%x+)%s+(%x+)$")
+        if off_s and size_s then
+            local offset = tonumber(off_s, 16)
+            local size = tonumber(size_s, 16)
+            local bytes = memory.read_bytes_as_array(offset, size, state.domain)
+            comm.socketServerSendBytes(bytes)
+        else
+            logging.error("Ungültiges bag-Kommando: " .. tostring(response))
+        end
+    end
 end
 
 function main()

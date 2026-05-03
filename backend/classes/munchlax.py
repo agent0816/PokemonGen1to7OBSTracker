@@ -395,12 +395,16 @@ class Munchlax:
 
     async def receive_message(self):
         reader = self.reader
-        total_length = int.from_bytes(await reader.read(4), 'big')
+        # readexactly statt read — siehe Begruendung in arceus.receive_message:
+        # read(N) ist nicht-deterministisch bei fragmentierten TCP-Paketen,
+        # was bei den ~210 KB Gen 6/7 Boxes-Updates zu UnpicklingError und
+        # Stream-Desynchronisation fuehrt.
+        total_length = int.from_bytes(await reader.readexactly(4), 'big')
         message = b''
 
         while len(message) < total_length:
-            chunk_length = int.from_bytes(await reader.read(4), 'big')
-            chunk = await reader.read(chunk_length)
+            chunk_length = int.from_bytes(await reader.readexactly(4), 'big')
+            chunk = await reader.readexactly(chunk_length)
             message += chunk
 
         return pickle.loads(message)

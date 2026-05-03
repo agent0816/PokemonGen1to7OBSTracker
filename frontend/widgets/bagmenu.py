@@ -175,7 +175,7 @@ def pretty_iso(ts: str | None) -> str:
 
 
 class BagMenu(Screen):
-    def __init__(self, configsave, pl, sp, bizhawk, app_version, **kwargs):
+    def __init__(self, configsave, pl, sp, bizhawk, citra, app_version, **kwargs):
         super().__init__(**kwargs)
         self.name = "BagMenu"
         self.configsave = configsave
@@ -184,10 +184,12 @@ class BagMenu(Screen):
         # items_path. Items-Icons sind '<slug>.png' im konfigurierten
         # Verzeichnis. Leerer Pfad -> Icons werden weggelassen.
         self.sp = sp
-        # Bizhawk-Server-Referenz fuer den Sonderbonbon-Schreibknopf. Nur
-        # lokale Spieler bekommen den Knopf; remote angebundene Spieler haben
-        # eigene Bizhawk-Instanzen, an die wir nicht herankommen.
+        # Bizhawk-Server (Gen 1-5) und Citra-Handler (Gen 6/7) fuer den
+        # Sonderbonbon-Schreibknopf. Nur lokale Spieler bekommen den Knopf;
+        # remote angebundene Spieler haben eigene Backend-Instanzen auf der
+        # anderen Maschine, an die wir nicht herankommen.
         self.bizhawk = bizhawk
+        self.citra = citra
         self.app_version = app_version
 
         # Cache aller Zeilen aus der DB; Filter werden in-memory angewendet.
@@ -525,13 +527,10 @@ class BagMenu(Screen):
         """True, wenn dieser Spieler einen Sonderbonbon-Knopf bekommt.
 
         Bedingungen:
-          - bizhawk-Server ist initialisiert
           - Spieler ist nicht remote (pl[remote_N] != True)
-          - Edition ist BizHawk-faehig (Gen 1-5). Gen 6/7 laeuft ueber Citra
-            und ist hier noch nicht implementiert.
+          - Passende Backend-Instanz ist initialisiert: BizHawk fuer Edition
+            < 60 (Gen 1-5), Citra fuer Edition >= 60 (Gen 6/7).
         """
-        if self.bizhawk is None:
-            return False
         try:
             owner_int = int(owner)
             edition_int = int(edition)
@@ -539,7 +538,15 @@ class BagMenu(Screen):
             return False
         if self.pl.get(f"remote_{owner_int}", False):
             return False
-        return edition_int < 60
+        if edition_int < 60:
+            return self.bizhawk is not None
+        return self.citra is not None
+
+    def _is_citra_edition(self, edition: str) -> bool:
+        try:
+            return int(edition) >= 60
+        except (TypeError, ValueError):
+            return False
 
     def _build_candy_controls(self, owner: str, edition: str) -> BoxLayout:
         bar = BoxLayout(orientation="horizontal", size_hint_x=None,
@@ -571,25 +578,51 @@ class BagMenu(Screen):
         if count <= 0:
             self.count_label.text = "Anzahl muss > 0 sein."
             return
-        client_id = f"player{int(owner):03d}"
-        asyncio.create_task(self._do_add_rare_candies(client_id, count))
+        if self._is_citra_edition(edition):
+            # Citra hat genau einen lokalen Spieler (player_number); pruefen,
+            # ob dieser Section-Owner damit uebereinstimmt.
+            if self.citra is None or self.citra.player_number != int(owner):
+                self.count_label.text = "Citra-Spieler nicht aktiv."
+                return
+            asyncio.create_task(self._do_add_rare_candies_citra(count))
+        else:
+            client_id = f"player{int(owner):03d}"
+            asyncio.create_task(self._do_add_rare_candies_bizhawk(client_id, count))
 
-    async def _do_add_rare_candies(self, client_id: str, count: int):
+    async def _do_add_rare_candies_bizhawk(self, client_id: str, count: int):
         try:
             success, msg = await self.bizhawk.add_rare_candies(client_id, count)
         except Exception as err:
-            logger.error(f"add_rare_candies failed: {type(err)},{err}")
+            logger.error(f"add_rare_candies (bizhawk) failed: {type(err)},{err}")
             logger.error(traceback.format_exc())
             self.count_label.text = "Schreiben fehlgeschlagen — Logs pruefen."
             return
         logger.info(
-            f"add_rare_candies({client_id}, +{count}): success={success}, msg={msg}"
+            f"add_rare_candies bizhawk({client_id}, +{count}): "
+            f"success={success}, msg={msg}"
         )
+        self._after_write(success, msg)
+
+    async def _do_add_rare_candies_citra(self, count: int):
+        try:
+            success, msg = await self.citra.add_rare_candies(count)
+        except Exception as err:
+            logger.error(f"add_rare_candies (citra) failed: {type(err)},{err}")
+            logger.error(traceback.format_exc())
+            self.count_label.text = "Schreiben fehlgeschlagen — Logs pruefen."
+            return
+        logger.info(
+            f"add_rare_candies citra(+{count}): success={success}, msg={msg}"
+        )
+        self._after_write(success, msg)
+
+    def _after_write(self, success: bool, msg: str):
         self.count_label.text = msg
         if success:
-            # Nicht direkt _reload() — der Bag-Reader-Tick im BizhawkServer
-            # braucht ggf. einen Frame, bis das geschriebene Pocket auch in
-            # der DB landet. Kurz warten, dann reload.
+            # Nicht direkt _reload() — der Bag-Reader-Tick (5s im BizhawkServer
+            # bzw. CitraHandler) braucht ggf. einen Moment, bis das
+            # geschriebene Pocket auch in der DB landet. Kurz warten, dann
+            # neu laden.
             Clock.schedule_once(lambda _dt: self._reload(), 0.5)
 
     def _back(self, instance):

@@ -383,6 +383,8 @@ RARE_CANDY_POCKET: dict[int, str] = {
     3: "items",
     4: "items",
     5: "medizin",
+    6: "medizin",
+    7: "medizin",
 }
 
 
@@ -454,6 +456,31 @@ def _gen12_find_or_alloc(pocket_bytes: bytes, item_id: int, max_slots: int):
     return (count, 0, True, count + 1)
 
 
+def _gen7_find_or_alloc(pocket_bytes: bytes, item_id: int, max_slots: int):
+    """Liefert (slot_idx, current_qty, current_word, is_new_slot) oder None.
+
+    Format: u32 LE bit-gepackt — Bits 0..9=id, 10..19=qty, 20..29=freespace
+    (vom Spieler reordbare Position im Menue), Bit 30=NewFlag, Bit 31=reserviert.
+    Beim Update eines existierenden Slots geben wir das current_word zurueck,
+    damit der Caller die freespace+flag-Bits unangetastet lassen kann.
+    """
+    n = min(len(pocket_bytes) // 4, max_slots)
+    first_empty = None
+    for i in range(n):
+        word = int.from_bytes(pocket_bytes[i * 4:i * 4 + 4], "little")
+        sid = word & 0x3FF
+        qty = (word >> 10) & 0x3FF
+        if sid == 0:
+            if first_empty is None:
+                first_empty = (i, word)
+            continue
+        if sid == item_id:
+            return (i, qty, word, False)
+    if first_empty is None:
+        return None
+    return (first_empty[0], 0, first_empty[1], True)
+
+
 def _gen3plus_find_or_alloc(pocket_bytes: bytes, item_id: int, max_slots: int,
                             security_key: int | None, encrypted: bool):
     """Liefert (slot_idx, current_qty, is_new_slot) oder None.
@@ -518,6 +545,24 @@ def plan_bag_write(edition: int, pocket_key: str, pocket_bytes: bytes,
         slot_bytes = bytes([item_id, new_qty, 0xFF])
         return BagWritePlan(
             writes=((0, bytes([count_after])), (slot_offset, slot_bytes)),
+            new_qty=new_qty, status="ok",
+        )
+
+    if gen == 7:
+        result = _gen7_find_or_alloc(pocket_bytes, item_id, max_slots)
+        if result is None:
+            return BagWritePlan(writes=(), new_qty=0, status="full")
+        slot_idx, cur_qty, cur_word, is_new = result
+        new_qty = min(cur_qty + delta, cap)
+        if not is_new:
+            # Nur die qty-Bits (10..19) ueberschreiben — id, freespace und
+            # NewFlag bleiben so erhalten, wie das Spiel sie gesetzt hat.
+            new_word = (cur_word & ~(0x3FF << 10)) | ((new_qty & 0x3FF) << 10)
+        else:
+            # Neuer Slot: id + qty, freespace=0, flags=0 (kein Glow-Effekt).
+            new_word = (item_id & 0x3FF) | ((new_qty & 0x3FF) << 10)
+        return BagWritePlan(
+            writes=((slot_idx * 4, new_word.to_bytes(4, "little")),),
             new_qty=new_qty, status="ok",
         )
 

@@ -190,12 +190,17 @@ class Arceus:
     #     return pickle.loads(message)
 
     async def receive_message(self, reader):
-        total_length = int.from_bytes(await reader.read(4), 'big')
+        # readexactly statt read: read(N) liefert nur "bis zu" N Bytes — bei
+        # grossen Pickles (z.B. Gen 6/7 Boxes-Update ~210 KB in 500-Byte-Chunks)
+        # werden TCP-Pakete fragmentiert, der Stream desynchronisiert sich und
+        # das Pickle bricht mit "invalid load key". readexactly garantiert
+        # genau N Bytes oder wirft IncompleteReadError (vom Caller gefangen).
+        total_length = int.from_bytes(await reader.readexactly(4), 'big')
         message = b''
 
         while len(message) < total_length:
-            chunk_length = int.from_bytes(await reader.read(4), 'big')
-            chunk = await reader.read(chunk_length)
+            chunk_length = int.from_bytes(await reader.readexactly(4), 'big')
+            chunk = await reader.readexactly(chunk_length)
             message += chunk
 
         return pickle.loads(message)

@@ -33,8 +33,15 @@ class CitraHandler:
         # periodisch (alle 5s) vom Tick-Loop befuellt und eine Pocket pro Tick
         # abgearbeitet — gleiche Thread-Safety-Begruendung wie box_request_queue.
         self.bag_request_queue: list[tuple[int, int, "asyncio.Future[bytes]"]] = []
+        # Write-Queue fuer Sonderbonbon-Schreibvorgaenge. Eintrag: (addr, bytes,
+        # future). Wird wie die Read-Queue im Tick-Loop abgearbeitet, damit der
+        # UDP-Socket nie parallel zu read_team genutzt wird.
+        self.bag_write_queue: list[tuple[int, bytes, "asyncio.Future[bool]"]] = []
         self._last_bag_refresh: float = 0.0
         self._bag_refresh_inflight: bool = False
+        # Serialisiert add_rare_candies-Aufrufe gegen sich selbst — verhindert,
+        # dass schnelle Doppelklicks den selben leeren Slot doppelt allokieren.
+        self._bag_io_lock: asyncio.Lock = asyncio.Lock()
 
         with open("backend/data/pointer_xy.yml") as file:
             pointer_xy = yaml.safe_load(file)
@@ -112,14 +119,18 @@ class CitraHandler:
                     self._last_bag_refresh = now
                     asyncio.create_task(self._auto_refresh_bag())
 
-                # Pro Tick je EINE Box und EINE Bag-Pocket aus der jeweiligen
-                # Queue verarbeiten, damit Team-Reads dazwischen durchkommen.
+                # Pro Tick je EINE Box, EINE Bag-Pocket und EINEN Bag-Write
+                # aus der jeweiligen Queue verarbeiten, damit Team-Reads
+                # dazwischen durchkommen.
                 self._drain_box_queue_step()
                 self._drain_bag_queue_step()
+                self._drain_bag_write_queue_step()
 
-                # Wenn Boxen oder Bag-Pockets ausstehen: schneller pollen,
-                # sonst normaler 1s-Tick.
-                have_pending = bool(self.box_request_queue or self.bag_request_queue)
+                # Wenn Boxen, Bag-Pockets oder Bag-Writes ausstehen: schneller
+                # pollen, sonst normaler 1s-Tick.
+                have_pending = bool(self.box_request_queue
+                                    or self.bag_request_queue
+                                    or self.bag_write_queue)
                 await asyncio.sleep(0.05 if have_pending else 1)
             except ConnectionResetError:
                 self.is_connected = False
@@ -167,6 +178,10 @@ class CitraHandler:
             if not fut.done():
                 fut.set_exception(RuntimeError(reason))
         self.bag_request_queue.clear()
+        for _, _, fut in self.bag_write_queue:
+            if not fut.done():
+                fut.set_exception(RuntimeError(reason))
+        self.bag_write_queue.clear()
 
     def _drain_bag_queue_step(self):
         """Verarbeitet hoechstens EINE ausstehende Bag-Pocket-Anfrage.
@@ -183,6 +198,24 @@ class CitraHandler:
                 if pocket_bytes is None:
                     raise RuntimeError(f"Citra-Read fuer Bag 0x{addr:08X} gab None zurueck")
                 fut.set_result(pocket_bytes)
+            except Exception as err:
+                if not fut.done():
+                    fut.set_exception(err)
+            return
+
+    def _drain_bag_write_queue_step(self):
+        """Verarbeitet hoechstens EINEN ausstehenden Bag-Write.
+
+        Selbe Thread-Safety-Begruendung wie die Read-Drain-Steps. write_memory
+        liefert True/False; das Future bekommt diesen Bool.
+        """
+        while self.bag_write_queue:
+            addr, data, fut = self.bag_write_queue.pop(0)
+            if fut.done():
+                continue
+            try:
+                ok = self.citra_instance.write_memory(addr, data)
+                fut.set_result(bool(ok))
             except Exception as err:
                 if not fut.done():
                     fut.set_exception(err)
@@ -365,6 +398,81 @@ class CitraHandler:
                     f"pocket={pocket_key}: {type(err)},{err}"
                 )
         return decoded
+
+    async def add_rare_candies(self, count: int) -> tuple[bool, str]:
+        """Pendant zu Bizhawk.add_rare_candies fuer Gen 6/7 ueber Citra UDP.
+
+        Read-Modify-Write:
+          1. Pocket frisch lesen (geht durch bag_request_queue, damit der
+             UDP-Socket nicht mit read_team kollidiert).
+          2. plan_bag_write() berechnet die Bytes — Gen 6 = u16+u16, Gen 7 =
+             packed10 (qty wird in-place ersetzt, freespace+flags bleiben).
+          3. Schreiben ueber bag_write_queue, damit auch der Write im
+             Event-Loop-Thread sequentialisiert wird.
+        """
+        if not self.started or not self.is_connected:
+            return False, "Citra ist nicht verbunden."
+        if count <= 0:
+            return False, "Anzahl muss > 0 sein."
+
+        edition = self.edition
+        gen = bag_decoder.edition_to_gen(edition)
+        pocket_key = bag_decoder.RARE_CANDY_POCKET.get(gen)
+        if pocket_key is None:
+            return False, f"Sonderbonbon-Pocket fuer Gen {gen} nicht definiert."
+        item_id = bag_decoder.find_rare_candy_id(edition)
+        if item_id is None:
+            return False, f"Keine Sonderbonbon-ID fuer Edition {edition}."
+
+        async with self._bag_io_lock:
+            try:
+                raw_pockets = await self.read_bag_pockets()
+            except Exception as err:
+                self.logger.error(
+                    f"add_rare_candies: read_bag_pockets fehlgeschlagen: "
+                    f"{type(err)},{err}"
+                )
+                return False, "Lesen der Tasche fehlgeschlagen."
+            if not raw_pockets:
+                return False, "Tasche nicht erreichbar — Save geladen?"
+            pocket_bytes = raw_pockets.get(pocket_key)
+            if pocket_bytes is None:
+                return False, f"Pocket '{pocket_key}' fuer Edition {edition} nicht gelesen."
+
+            try:
+                plan = bag_decoder.plan_bag_write(
+                    edition, pocket_key, pocket_bytes, item_id, count,
+                )
+            except Exception as err:
+                self.logger.error(
+                    f"plan_bag_write fehlgeschlagen edition={edition} "
+                    f"pocket={pocket_key}: {type(err)},{err}"
+                )
+                return False, "Schreibplan konnte nicht erstellt werden."
+            if plan.status == "full":
+                return False, f"Pocket '{pocket_key}' ist voll."
+            if plan.status == "noop" or not plan.writes:
+                return False, "Nichts zu schreiben."
+
+            yaml_addr = self.pointer.get(f"bag_{pocket_key}")
+            if not isinstance(yaml_addr, int):
+                return False, f"bag_{pocket_key} fehlt in Pointer-YAML."
+            base, _ = bag_decoder.pocket_window(yaml_addr, edition, pocket_key)
+
+            loop = asyncio.get_running_loop()
+            futures: list[asyncio.Future] = []
+            for offset, data in plan.writes:
+                fut = loop.create_future()
+                self.bag_write_queue.append((base + offset, data, fut))
+                futures.append(fut)
+            results = await asyncio.gather(*futures, return_exceptions=True)
+            if not all(r is True for r in results):
+                self.logger.warning(
+                    f"add_rare_candies: write_memory teilweise fehlgeschlagen: {results}"
+                )
+                return False, "Schreiben in den Memory fehlgeschlagen."
+
+            return True, f"+{count} Sonderbonbon{'s' if count > 1 else ''} (jetzt {plan.new_qty})"
 
     async def _auto_refresh_bag(self):
         """Periodischer Bag-Read; persistiert Pockets in PokedexDB via Munchlax."""

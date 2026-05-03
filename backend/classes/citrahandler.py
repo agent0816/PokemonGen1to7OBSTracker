@@ -5,6 +5,7 @@ import time
 import traceback
 import yaml
 from backend.classes.citra import Citra
+from backend.classes.azahar_writer import AzaharWriter
 from backend.classes.munchlax import Munchlax
 from backend.classes.Pokemon import Pokemon
 import backend.pokedecoder as pokedecoder
@@ -42,6 +43,9 @@ class CitraHandler:
         # Serialisiert add_rare_candies-Aufrufe gegen sich selbst — verhindert,
         # dass schnelle Doppelklicks den selben leeren Slot doppelt allokieren.
         self._bag_io_lock: asyncio.Lock = asyncio.Lock()
+        # Workaround: Azahars RPC-Whitelist fehlt NEW_LINEAR_HEAP_VADDR
+        # (0x30000000+). Fuer Gen 7 schreiben wir direkt in den Host-Prozess.
+        self._azahar_writer = AzaharWriter()
 
         with open("backend/data/pointer_xy.yml") as file:
             pointer_xy = yaml.safe_load(file)
@@ -97,6 +101,33 @@ class CitraHandler:
             self.is_connected = True
         except ConnectionResetError:
             self.is_connected = False
+
+    def _select_game_process(self):
+        """Waehlt den Spielprozess in Azahars RPC-Server aus.
+
+        Ohne explizite Prozess-Selektion nutzt Azahar den alten Fallback-Pfad,
+        der Writes im LINEAR-Heap (0x30000000+, Gen 7) nicht unterstuetzt.
+        """
+        try:
+            procs = self.citra_instance.process_list()
+        except Exception as err:
+            self.logger.warning(f"process_list fehlgeschlagen: {type(err)},{err}")
+            return
+        if not procs:
+            self.logger.warning("Keine Prozesse von Azahar erhalten.")
+            return
+        # Typischerweise laeuft genau ein Spiel. Falls mehrere: den ersten
+        # waehlen, der nicht "menu" o.ae. heisst.
+        pid = next(iter(procs))
+        title_id, name = procs[pid]
+        try:
+            self.citra_instance.set_process(pid)
+            self.logger.info(
+                f"Azahar-Prozess gesetzt: PID={pid} title_id=0x{title_id:016X} "
+                f"name={name}"
+            )
+        except Exception as err:
+            self.logger.warning(f"set_process({pid}) fehlgeschlagen: {type(err)},{err}")
 
     async def handle_citra(self):
         while self.started and self.is_connected:
@@ -459,6 +490,12 @@ class CitraHandler:
                 return False, f"bag_{pocket_key} fehlt in Pointer-YAML."
             base, _ = bag_decoder.pocket_window(yaml_addr, edition, pocket_key)
 
+            if base >= 0x30000000:
+                ok, msg = self._write_via_host(base, pocket_bytes, plan)
+                if not ok:
+                    return False, msg
+                return True, f"+{count} Sonderbonbon{'s' if count > 1 else ''} (jetzt {plan.new_qty})"
+
             loop = asyncio.get_running_loop()
             futures: list[asyncio.Future] = []
             for offset, data in plan.writes:
@@ -473,6 +510,30 @@ class CitraHandler:
                 return False, "Schreiben in den Memory fehlgeschlagen."
 
             return True, f"+{count} Sonderbonbon{'s' if count > 1 else ''} (jetzt {plan.new_qty})"
+
+    def _write_via_host(
+        self,
+        base: int,
+        pocket_bytes: bytes,
+        plan: bag_decoder.BagWritePlan,
+    ) -> tuple[bool, str]:
+        """Schreibt plan.writes via WriteProcessMemory in Azahars FCRAM.
+
+        Workaround fuer fehlende NEW_LINEAR_HEAP_VADDR-Whitelist in Azahars
+        RPC-Server. Kalibriert beim ersten Aufruf anhand der soeben gelesenen
+        pocket_bytes.
+        """
+        w = self._azahar_writer
+        if not w.is_calibrated:
+            if not w.calibrate(base, pocket_bytes[:16]):
+                return False, (
+                    "Host-Write konnte nicht kalibriert werden "
+                    "(Azahar-Prozess nicht gefunden oder FCRAM-Muster fehlt)."
+                )
+        for offset, data in plan.writes:
+            if not w.write_memory(base + offset, data):
+                return False, "Host-Write fehlgeschlagen."
+        return True, ""
 
     async def _auto_refresh_bag(self):
         """Periodischer Bag-Read; persistiert Pockets in PokedexDB via Munchlax."""
@@ -506,6 +567,7 @@ class CitraHandler:
 
         self.start_button = button
 
+        self._select_game_process()
         self.set_pointer()
         self.set_player_number()
         if not self.player_number:
@@ -527,6 +589,7 @@ class CitraHandler:
     async def stop(self):
         self.started = False
         self.is_connected = False
+        self._azahar_writer.close()
         
 if __name__ == "__main__":
     pass

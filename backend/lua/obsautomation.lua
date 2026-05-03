@@ -378,6 +378,36 @@ local function handle_protocol_step(msg, battle_stats, state)
             logging.error("Ungültiges bag-Kommando: " .. tostring(response))
         end
     end
+    -- bagw <addr_hex> <hex_bytes_payload>: schreibt die Bytes (hex-codiert,
+    -- gerade Laenge) ab addr in state.domain. Antwortet IMMER mit einem Byte
+    -- (0x01 = OK, 0x00 = ERR), damit der Python-Reader nicht in readexactly()
+    -- haengt — derselbe Stolperstein wie bei "bag" mit ungueltiger Adresse.
+    if response and response:sub(1, 5) == "bagw " then
+        local off_s, hex_s = string.match(response:sub(6), "^(%x+)%s+(%x+)$")
+        local ok = false
+        if off_s and hex_s and (#hex_s % 2 == 0) then
+            local addr = tonumber(off_s, 16)
+            ok = true
+            local k = 0
+            for i = 1, #hex_s, 2 do
+                local byte = tonumber(hex_s:sub(i, i + 1), 16)
+                if byte then
+                    memory.writebyte(addr + k, byte, state.domain)
+                    k = k + 1
+                else
+                    ok = false
+                    break
+                end
+            end
+        else
+            logging.error("Ungültiges bagw-Kommando: " .. tostring(response))
+        end
+        if ok then
+            comm.socketServerSendBytes({0x01})
+        else
+            comm.socketServerSendBytes({0x00})
+        end
+    end
 end
 
 function main()

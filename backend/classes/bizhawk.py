@@ -26,13 +26,20 @@ class Bizhawk:
         # auf edition/language und damit auf die Box-Layouts hat.
         self.edition_per_client: dict[str, int] = {}
         self.language_per_client: dict[str, int] = {}
-        # Jeder Eintrag ist (cmd, offset, size, future) — cmd = "box" (CartRAM,
-        # Gen 1/2 SRAM) oder "boxw" (System-Domain, Gen 3/4/5 WRAM) oder "bag"
-        # (Bag-Pockets, ebenfalls System-Domain). Der Haupt-Loop arbeitet die
-        # Queue im else-Zweig ab, ein Request pro Frame.
+        # Jeder Eintrag ist (cmd, offset, size, future, payload_hex) —
+        # cmd = "box" (CartRAM, Gen 1/2 SRAM) oder "boxw" (System-Domain, Gen
+        # 3/4/5 WRAM) oder "bag" (Bag-Pockets, ebenfalls System-Domain) oder
+        # "bagw" (Bag schreiben — payload_hex enthaelt die Bytes hex-codiert,
+        # size ist immer 1 fuer das ACK-Byte). Bei Read-Befehlen ist
+        # payload_hex == "". Der Haupt-Loop arbeitet die Queue im else-Zweig ab,
+        # ein Request pro Frame.
         self.box_request_queues: dict[str, list] = {}
         # Verhindert ueberlappende Bag-Refreshs pro Client.
         self._bag_refresh_inflight: dict[str, bool] = {}
+        # Serialisiert Bag-IO pro Client — Reads und Schreibvorgaenge duerfen
+        # sich nicht ueberschneiden, sonst lesen wir ein halb-geschriebenes
+        # Pocket oder allokieren denselben leeren Slot doppelt.
+        self._bag_io_locks: dict[str, asyncio.Lock] = {}
 
         self.logger = self.init_logging()
 
@@ -184,12 +191,22 @@ class Bizhawk:
                     else:
                         queue = self.box_request_queues.get(client_id)
                         if queue:
-                            cmd, offset, size, fut = queue.pop(0)
+                            cmd, offset, size, fut, payload_hex = queue.pop(0)
                             try:
-                                await self.send_messages(writer, f"{cmd} {offset:X} {size:X}")
-                                box_bytes = await reader.readexactly(size)
-                                if not fut.done():
-                                    fut.set_result(box_bytes)
+                                if cmd == "bagw":
+                                    await self.send_messages(
+                                        writer, f"bagw {offset:X} {payload_hex}"
+                                    )
+                                    ack = await reader.readexactly(1)
+                                    if not fut.done():
+                                        fut.set_result(ack[0] == 0x01)
+                                else:
+                                    await self.send_messages(
+                                        writer, f"{cmd} {offset:X} {size:X}"
+                                    )
+                                    box_bytes = await reader.readexactly(size)
+                                    if not fut.done():
+                                        fut.set_result(box_bytes)
                             except Exception as err:
                                 if not fut.done():
                                     fut.set_exception(err)
@@ -264,7 +281,7 @@ class Bizhawk:
                 for i in range(count):
                     offset = base + i * stride
                     fut = loop.create_future()
-                    queue.append(("box", offset, stride, fut))
+                    queue.append(("box", offset, stride, fut, ""))
                     futures.append(fut)
             # Gen 1 hat zusätzlich eine aktive Box im WRAM, die in SRAM erst
             # nach In-Game-Save gespiegelt wird. Anhängen und in der Antwort
@@ -273,9 +290,9 @@ class Bizhawk:
             active_box_fut = None
             if active_box_pointer and active_index_pointer:
                 active_index_fut = loop.create_future()
-                queue.append(("boxw", active_index_pointer, 1, active_index_fut))
+                queue.append(("boxw", active_index_pointer, 1, active_index_fut, ""))
                 active_box_fut = loop.create_future()
-                queue.append(("boxw", active_box_pointer, stride, active_box_fut))
+                queue.append(("boxw", active_box_pointer, stride, active_box_fut, ""))
 
             sram_boxes = await asyncio.gather(*futures)
             if active_index_fut and active_box_fut:
@@ -299,7 +316,7 @@ class Bizhawk:
             # und nehmen das Ergebnis als Box-Basis.
             if indirect_addr:
                 ptr_fut = loop.create_future()
-                queue.append(("boxw", indirect_addr, 4, ptr_fut))
+                queue.append(("boxw", indirect_addr, 4, ptr_fut, ""))
                 ptr_bytes = await ptr_fut
                 deref = int.from_bytes(ptr_bytes, "little")
                 effective_base = deref + indirect_offset
@@ -316,7 +333,7 @@ class Bizhawk:
             for i in range(box_count):
                 offset = effective_base + i * stride
                 fut = loop.create_future()
-                queue.append(("boxw", offset, box_size, fut))
+                queue.append(("boxw", offset, box_size, fut, ""))
                 futures.append(fut)
             return await asyncio.gather(*futures)
         else:
@@ -367,7 +384,7 @@ class Bizhawk:
                 )
                 return {}
             ptr_fut = loop.create_future()
-            queue.append(("bag", indirect_addr, 4, ptr_fut))
+            queue.append(("bag", indirect_addr, 4, ptr_fut, ""))
             ptr_bytes = await ptr_fut
             bag_basis = int.from_bytes(ptr_bytes, "little")
             # Beim Titelbildschirm / Continue-Auswahl ist gPokemonStoragePtr noch
@@ -402,7 +419,7 @@ class Bizhawk:
         for key, addr in addrs.items():
             start, size = bag_decoder.pocket_window(addr, edition, key)
             fut = loop.create_future()
-            queue.append(("bag", start, size, fut))
+            queue.append(("bag", start, size, fut, ""))
             futures[key] = fut
 
         results: dict[str, bytes] = {}
@@ -415,6 +432,142 @@ class Bizhawk:
                     f"{type(err)},{err}"
                 )
         return results
+
+    async def add_rare_candies(self, client_id: str, count: int) -> tuple[bool, str]:
+        """Schreibt 'count' Sonderbonbons in die korrekte Pocket des Clients.
+
+        Read-Modify-Write:
+          1. Aktuelle Pocket frisch lesen (mit derselben Logik wie der Reader,
+             damit XOR-Encryption + Gen 3 Indirection korrekt aufgeloest werden).
+          2. plan_bag_write() entscheidet, ob ein bestehender Slot upgedatet
+             oder ein neuer angelegt wird.
+          3. Geplante Bytes ueber 'bagw'-Lua-Kommandos rausschicken.
+
+        Liefert (success, status_message). Die Message ist UI-tauglich (z.B.
+        "Tasche voll" oder "+5 Sonderbonbons (jetzt 12)").
+        """
+        edition = self.edition_per_client.get(client_id)
+        if edition is None:
+            return False, "Spieler nicht verbunden."
+        if count <= 0:
+            return False, "Anzahl muss > 0 sein."
+
+        gen = bag_decoder.edition_to_gen(edition)
+        pocket_key = bag_decoder.RARE_CANDY_POCKET.get(gen)
+        if pocket_key is None:
+            return False, f"Sonderbonbon-Pocket fuer Gen {gen} nicht definiert."
+        item_id = bag_decoder.find_rare_candy_id(edition)
+        if item_id is None:
+            return False, f"Keine Sonderbonbon-ID fuer Edition {edition}."
+
+        lock = self._bag_io_locks.setdefault(client_id, asyncio.Lock())
+        async with lock:
+            try:
+                raw_pockets = await self.read_bag_pockets(client_id)
+            except Exception as err:
+                self.logger.error(
+                    f"add_rare_candies: read_bag_pockets fehlgeschlagen "
+                    f"client={client_id}: {type(err)},{err}"
+                )
+                return False, "Lesen der Tasche fehlgeschlagen."
+            if not raw_pockets:
+                return False, "Save noch nicht geladen — Tasche nicht erreichbar."
+            pocket_bytes = raw_pockets.get(pocket_key)
+            if pocket_bytes is None:
+                return False, f"Pocket '{pocket_key}' fuer Edition {edition} nicht gelesen."
+
+            # Gen 3 E/FR/BG braucht den security_key; gleiche Ableitung wie
+            # in read_and_decode_bag.
+            security_key: int | None = None
+            if gen == 3 and edition >= 33:
+                tmvm_raw = raw_pockets.get("tmvm")
+                if tmvm_raw:
+                    security_key = bag_decoder.derive_security_key_from_tmvm(tmvm_raw)
+                if security_key is None:
+                    return False, "security_key konnte nicht abgeleitet werden."
+
+            try:
+                plan = bag_decoder.plan_bag_write(
+                    edition, pocket_key, pocket_bytes, item_id, count,
+                    security_key=security_key,
+                )
+            except Exception as err:
+                self.logger.error(
+                    f"plan_bag_write fehlgeschlagen edition={edition} "
+                    f"pocket={pocket_key}: {type(err)},{err}"
+                )
+                return False, "Schreibplan konnte nicht erstellt werden."
+            if plan.status == "full":
+                return False, f"Pocket '{pocket_key}' ist voll."
+            if plan.status == "noop" or not plan.writes:
+                return False, "Nichts zu schreiben."
+
+            pocket_addr = await self._resolve_pocket_addr_async(
+                client_id, edition, pocket_key,
+            )
+            if pocket_addr is None:
+                return False, "Pocket-Adresse konnte nicht berechnet werden."
+            # Offsets im Plan sind relativ zum pocket_window — also inklusive
+            # des -1 Shift fuer Gen 1/2 (count-Byte). pocket_addr ist daher die
+            # Window-Start-Adresse, nicht die YAML-Adresse.
+            ok = await self._send_bag_writes(client_id, pocket_addr, plan.writes)
+            if not ok:
+                return False, "Lua hat das Schreiben mit ERR quittiert."
+            return True, f"+{count} Sonderbonbon{'s' if count > 1 else ''} (jetzt {plan.new_qty})"
+
+    async def _resolve_pocket_addr_async(self, client_id: str, edition: int,
+                                          pocket_key: str) -> int | None:
+        """Async-Variante von _resolve_pocket_write_base, die fuer Gen 3 indirect
+        die SaveBlock-Pointer-Auflesung im Lua-Roundtrip mitmacht. Liefert die
+        Window-Start-Adresse (also pocket_window().start).
+        """
+        language = self.language_per_client.get(client_id)
+        pointers = bh_pointers.get_pointers(edition, language if language else None)
+        gen = bag_decoder.edition_to_gen(edition)
+
+        if gen == 3 and bool(pointers.get("bag_qty_xor_encrypted")):
+            indirect_addr = pointers.get("box_pointer_indirect")
+            if indirect_addr is None:
+                return None
+            loop = asyncio.get_event_loop()
+            queue = self.box_request_queues.setdefault(client_id, [])
+            ptr_fut = loop.create_future()
+            queue.append(("bag", indirect_addr, 4, ptr_fut, ""))
+            try:
+                ptr_bytes = await ptr_fut
+            except Exception:
+                return None
+            bag_basis = int.from_bytes(ptr_bytes, "little")
+            if not (0x02000000 <= bag_basis < 0x02040000):
+                return None
+            offset = pointers.get(f"bag_{pocket_key}_offset")
+            if offset is None:
+                return None
+            yaml_addr = bag_basis + offset
+        else:
+            yaml_addr = pointers.get(f"bag_{pocket_key}")
+            if not isinstance(yaml_addr, int):
+                return None
+        start, _ = bag_decoder.pocket_window(yaml_addr, edition, pocket_key)
+        return start
+
+    async def _send_bag_writes(self, client_id: str, base_addr: int,
+                                writes: tuple) -> bool:
+        """Setzt die geplanten Schreibvorgaenge in einzelne 'bagw'-Kommandos um.
+
+        writes sind Tupel (offset_relativ, bytes) — wir addieren base_addr drauf
+        und schicken pro Eintrag ein bagw-Kommando in die Lua-Queue.
+        """
+        loop = asyncio.get_event_loop()
+        queue = self.box_request_queues.setdefault(client_id, [])
+        futures: list[asyncio.Future] = []
+        for offset, data in writes:
+            payload_hex = data.hex().upper()
+            fut = loop.create_future()
+            queue.append(("bagw", base_addr + offset, 1, fut, payload_hex))
+            futures.append(fut)
+        results = await asyncio.gather(*futures, return_exceptions=True)
+        return all(r is True for r in results)
 
     async def read_and_decode_bag(self, client_id: str) -> dict[str, list]:
         """Liest und dekodiert alle Bag-Pockets. Liefert {pocket_key: list[BagItem]}.

@@ -9,6 +9,7 @@ Datenquelle ist die DB — die Tabelle aktualisiert sich beim Wechsel auf den
 Screen oder per "Aktualisieren"-Button. Live-Updates folgen automatisch durch
 den BizHawk/Citra-Bag-Refresh-Tick (alle 5 s schreibt der Reader in die DB).
 """
+import asyncio
 import logging
 import sys
 import traceback
@@ -16,10 +17,12 @@ from pathlib import Path
 
 import yaml
 from kivy.clock import Clock
+from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.gridlayout import GridLayout
+from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
@@ -104,16 +107,26 @@ _POCKET_ORDER = [
 _POCKET_INDEX = {p: i for i, p in enumerate(_POCKET_ORDER)}
 
 
-COLUMNS = [
-    ("Spieler", 0.06),
-    ("Edition", 0.07),
-    ("Pocket", 0.12),
-    ("ID", 0.05),
-    ("Name", 0.26),
-    ("Anzahl", 0.07),
-    ("Erstmalig", 0.18),
-    ("Zuletzt", 0.18),
-]
+# Edition-Nummer -> Anzeigename. Quellen: edition_lut in trainerbox.py (Gen 1-6)
+# und citrahandler.py (Gen 6/7). Wenn eine Edition fehlt, wird im Section-Titel
+# nur die Nummer angezeigt.
+_EDITION_NAME = {
+    11: "Rot", 12: "Blau", 13: "Gelb",
+    21: "Gold", 22: "Silber", 23: "Kristall",
+    31: "Rubin", 32: "Saphir", 33: "Smaragd", 34: "Feuerrot", 35: "Blattgrün",
+    41: "Diamant", 42: "Perl", 43: "Platin", 44: "Herzgold", 45: "Seelensilber",
+    51: "Schwarz", 52: "Weiß", 53: "Schwarz 2", 54: "Weiß 2",
+    61: "X", 62: "Y", 63: "Omega Rubin", 64: "Alpha Saphir",
+    71: "Sonne", 72: "Mond", 73: "Ultra Sonne", 74: "Ultra Mond",
+}
+
+
+# Layout-Konstanten fuer die Section-Berechnung (size_hint_y=None braucht
+# explizite Heights, weil die Sections in einer ScrollView haengen).
+_SECTION_TITLE_H = dp(28)
+_POCKET_HEADER_H = dp(28)
+_ITEM_ROW_H = dp(34)
+_SECTION_GAP = dp(12)
 
 
 def edition_to_gen(edition_str: str) -> int | None:
@@ -162,15 +175,27 @@ def pretty_iso(ts: str | None) -> str:
 
 
 class BagMenu(Screen):
-    def __init__(self, configsave, pl, app_version, **kwargs):
+    def __init__(self, configsave, pl, sp, bizhawk, app_version, **kwargs):
         super().__init__(**kwargs)
         self.name = "BagMenu"
         self.configsave = configsave
         self.pl = pl
+        # sp = sprites-Config; gleiche Quelle wie obs.py / trainerbox.py fuer
+        # items_path. Items-Icons sind '<slug>.png' im konfigurierten
+        # Verzeichnis. Leerer Pfad -> Icons werden weggelassen.
+        self.sp = sp
+        # Bizhawk-Server-Referenz fuer den Sonderbonbon-Schreibknopf. Nur
+        # lokale Spieler bekommen den Knopf; remote angebundene Spieler haben
+        # eigene Bizhawk-Instanzen, an die wir nicht herankommen.
+        self.bizhawk = bizhawk
         self.app_version = app_version
 
         # Cache aller Zeilen aus der DB; Filter werden in-memory angewendet.
         self._all_rows: list[dict] = []
+        # Sonderbonbon-Anzahl pro (owner, edition). Ueberlebt das 5s-Reload,
+        # das sonst das TextInput zerstoeren und den Wert auf "1" zuruecksetzen
+        # wuerde — der Nutzer haette nur waehrend des Tippens 5 s Zeit.
+        self._candy_count_per_section: dict[tuple[str, str], str] = {}
 
         root = BoxLayout(orientation="vertical", padding=("10dp", "10dp"), spacing="5dp")
 
@@ -215,16 +240,14 @@ class BagMenu(Screen):
         filter_bar.add_widget(self.count_label)
         root.add_widget(filter_bar)
 
-        header_row = GridLayout(cols=len(COLUMNS), size_hint_y=None, height="30dp")
-        for title, width in COLUMNS:
-            header_row.add_widget(Label(text=f"[b]{title}[/b]", markup=True, size_hint_x=width))
-        root.add_widget(header_row)
-
+        # Sections (eine pro Spieler+Edition) in vertikaler BoxLayout, alles
+        # in einer ScrollView. Pockets innerhalb einer Section liegen
+        # nebeneinander (siehe _build_section).
         scroll = ScrollView(do_scroll_x=False, do_scroll_y=True)
-        self.rows_grid = GridLayout(cols=len(COLUMNS), size_hint_y=None,
-                                    row_default_height="26dp", row_force_default=True)
-        self.rows_grid.bind(minimum_height=self.rows_grid.setter("height"))
-        scroll.add_widget(self.rows_grid)
+        self.content_box = BoxLayout(orientation="vertical", size_hint_y=None,
+                                     spacing="10dp", padding=(0, "5dp"))
+        self.content_box.bind(minimum_height=self.content_box.setter("height"))
+        scroll.add_widget(self.content_box)
         root.add_widget(scroll)
 
         self.add_widget(root)
@@ -393,26 +416,188 @@ class BagMenu(Screen):
         ))
 
         self.count_label.text = f"{len(filtered)} Einträge"
-        self._render_rows(filtered)
+        self._render_groups(filtered)
 
-    def _render_rows(self, rows: list[dict]):
-        self.rows_grid.clear_widgets()
+    def _render_groups(self, rows: list[dict]):
+        """Gruppiert nach (Spieler, Edition) und baut pro Gruppe eine Section
+        mit Pockets nebeneinander auf. Leere Pockets (nach Filter) werden
+        weggelassen, damit die Spalten nicht unnoetig breit werden.
+        """
+        self.content_box.clear_widgets()
+
+        groups: dict[tuple[str, str], dict[str, list[dict]]] = {}
         for row in rows:
-            edition_str = row.get("edition") or ""
-            item_id = int(row.get("item_id") or 0)
-            self.rows_grid.add_widget(Label(text=str(row.get("owner") or ""), size_hint_x=COLUMNS[0][1]))
-            self.rows_grid.add_widget(Label(text=edition_str, size_hint_x=COLUMNS[1][1]))
-            pocket_key = row.get("pocket") or ""
-            self.rows_grid.add_widget(Label(text=POCKET_LABEL.get(pocket_key, pocket_key),
-                                            size_hint_x=COLUMNS[2][1]))
-            self.rows_grid.add_widget(Label(text=str(item_id), size_hint_x=COLUMNS[3][1]))
-            self.rows_grid.add_widget(Label(text=item_display_name(edition_str, item_id),
-                                            size_hint_x=COLUMNS[4][1]))
-            self.rows_grid.add_widget(Label(text=str(row.get("qty") or ""), size_hint_x=COLUMNS[5][1]))
-            self.rows_grid.add_widget(Label(text=pretty_iso(row.get("first_seen")),
-                                            size_hint_x=COLUMNS[6][1]))
-            self.rows_grid.add_widget(Label(text=pretty_iso(row.get("last_seen")),
-                                            size_hint_x=COLUMNS[7][1]))
+            key = (str(row.get("owner") or ""), str(row.get("edition") or ""))
+            pocket = str(row.get("pocket") or "")
+            groups.setdefault(key, {}).setdefault(pocket, []).append(row)
+
+        for owner, edition in sorted(groups.keys()):
+            section = self._build_section(owner, edition, groups[(owner, edition)])
+            self.content_box.add_widget(section)
+
+    def _build_section(self, owner: str, edition: str,
+                       pockets: dict[str, list[dict]]) -> BoxLayout:
+        # Sortierte Pockets gemaess der spielmenue-Reihenfolge.
+        pocket_keys = sorted(pockets.keys(), key=lambda k: _POCKET_INDEX.get(k, 99))
+        max_items = max((len(items) for items in pockets.values()), default=0)
+
+        # Hoehe der Section vorab ausrechnen — size_hint_y=None braucht das.
+        section_height = (
+            _SECTION_TITLE_H + _POCKET_HEADER_H
+            + max_items * _ITEM_ROW_H + _SECTION_GAP
+        )
+        section = BoxLayout(orientation="vertical", size_hint_y=None,
+                            height=section_height, spacing="2dp")
+
+        edition_name = _EDITION_NAME.get(_safe_int(edition))
+        title_text = f"[b]Spieler {owner} — Edition {edition}"
+        if edition_name:
+            title_text += f" ({edition_name})"
+        title_text += "[/b]"
+
+        title_bar = BoxLayout(orientation="horizontal", size_hint_y=None,
+                              height=_SECTION_TITLE_H, spacing="6dp")
+        title_bar.add_widget(Label(
+            text=title_text, markup=True,
+            halign="left", valign="middle",
+        ))
+        if self._can_write_for_owner(owner, edition):
+            title_bar.add_widget(self._build_candy_controls(owner, edition))
+        section.add_widget(title_bar)
+
+        if not pocket_keys:
+            return section
+
+        grid = GridLayout(
+            cols=len(pocket_keys), size_hint_y=None, spacing=("4dp", "2dp"),
+        )
+        grid.bind(minimum_height=grid.setter("height"))
+
+        # Header-Zeile mit Pocket-Bezeichnungen.
+        for pk in pocket_keys:
+            grid.add_widget(Label(
+                text=f"[b]{POCKET_LABEL.get(pk, pk)}[/b]",
+                markup=True, size_hint_y=None, height=_POCKET_HEADER_H,
+            ))
+
+        # Item-Zeilen — pro "Reihe" geht's quer durch alle Pockets. Kuerzere
+        # Pockets werden mit leeren Labels aufgefuellt, damit die Spalten
+        # vertikal ausgerichtet bleiben.
+        for i in range(max_items):
+            for pk in pocket_keys:
+                items = pockets[pk]
+                if i < len(items):
+                    grid.add_widget(self._make_item_cell(edition, items[i]))
+                else:
+                    grid.add_widget(Label(text="", size_hint_y=None,
+                                          height=_ITEM_ROW_H))
+
+        section.add_widget(grid)
+        return section
+
+    def _make_item_cell(self, edition: str, row: dict) -> BoxLayout:
+        cell = BoxLayout(orientation="horizontal", size_hint_y=None,
+                         height=_ITEM_ROW_H, spacing="4dp")
+        item_id = int(row.get("item_id") or 0)
+        qty = int(row.get("qty") or 0)
+        items_path = (self.sp.get("items_path") if self.sp else "") or ""
+
+        # Aktuelle Namenskonvention: '<slug>.png' (z.B. 'master-ball.png') aus
+        # items*.yml. Wenn kein Slug auffindbar ist (unbekannte ID) -> kein Icon.
+        slug = item_slug(edition, item_id) if items_path else None
+        if slug:
+            cell.add_widget(Image(
+                source=f"{items_path}/{slug}.png",
+                size_hint_x=None, width=dp(28),
+                fit_mode="contain", allow_stretch=True,
+            ))
+
+        name = item_display_name(edition, item_id)
+        label_text = f"{name}  ×{qty}" if qty > 1 else name
+        cell.add_widget(Label(
+            text=label_text, halign="left", valign="middle",
+            shorten=True, shorten_from="right",
+            text_size=(None, _ITEM_ROW_H),
+        ))
+        return cell
+
+    def _can_write_for_owner(self, owner: str, edition: str) -> bool:
+        """True, wenn dieser Spieler einen Sonderbonbon-Knopf bekommt.
+
+        Bedingungen:
+          - bizhawk-Server ist initialisiert
+          - Spieler ist nicht remote (pl[remote_N] != True)
+          - Edition ist BizHawk-faehig (Gen 1-5). Gen 6/7 laeuft ueber Citra
+            und ist hier noch nicht implementiert.
+        """
+        if self.bizhawk is None:
+            return False
+        try:
+            owner_int = int(owner)
+            edition_int = int(edition)
+        except (TypeError, ValueError):
+            return False
+        if self.pl.get(f"remote_{owner_int}", False):
+            return False
+        return edition_int < 60
+
+    def _build_candy_controls(self, owner: str, edition: str) -> BoxLayout:
+        bar = BoxLayout(orientation="horizontal", size_hint_x=None,
+                        width=dp(220), spacing="4dp")
+        bar.add_widget(Label(text="Sonderbonbons:", size_hint_x=None,
+                             width=dp(110), halign="right", valign="middle"))
+        key = (owner, edition)
+        initial = self._candy_count_per_section.get(key, "1")
+        count_input = TextInput(text=initial, multiline=False, input_filter="int",
+                                size_hint_x=None, width=dp(45))
+        # Tipp-Stand zwischen Auto-Reloads konservieren.
+        count_input.bind(
+            text=lambda _i, v: self._candy_count_per_section.__setitem__(key, v),
+        )
+        bar.add_widget(count_input)
+        btn = Button(text="+", size_hint_x=None, width=dp(50))
+        btn.bind(on_press=lambda _i: self._on_add_rare_candies(
+            owner, edition, count_input,
+        ))
+        bar.add_widget(btn)
+        return bar
+
+    def _on_add_rare_candies(self, owner: str, edition: str,
+                             count_input: TextInput):
+        try:
+            count = int((count_input.text or "0").strip())
+        except ValueError:
+            count = 0
+        if count <= 0:
+            self.count_label.text = "Anzahl muss > 0 sein."
+            return
+        client_id = f"player{int(owner):03d}"
+        asyncio.create_task(self._do_add_rare_candies(client_id, count))
+
+    async def _do_add_rare_candies(self, client_id: str, count: int):
+        try:
+            success, msg = await self.bizhawk.add_rare_candies(client_id, count)
+        except Exception as err:
+            logger.error(f"add_rare_candies failed: {type(err)},{err}")
+            logger.error(traceback.format_exc())
+            self.count_label.text = "Schreiben fehlgeschlagen — Logs pruefen."
+            return
+        logger.info(
+            f"add_rare_candies({client_id}, +{count}): success={success}, msg={msg}"
+        )
+        self.count_label.text = msg
+        if success:
+            # Nicht direkt _reload() — der Bag-Reader-Tick im BizhawkServer
+            # braucht ggf. einen Frame, bis das geschriebene Pocket auch in
+            # der DB landet. Kurz warten, dann reload.
+            Clock.schedule_once(lambda _dt: self._reload(), 0.5)
 
     def _back(self, instance):
         self.manager.current = "MainMenu"
+
+
+def _safe_int(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0

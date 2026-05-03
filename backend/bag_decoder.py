@@ -362,6 +362,190 @@ def decode_pocket(edition: int, pocket_key: str, raw: bytes,
     raise NotImplementedError(f"Gen {gen} (edition={edition}) nicht unterstuetzt")
 
 
+# ---------------------------------------------------------------------------
+# Sonderbonbon-Schreibsupport
+# ---------------------------------------------------------------------------
+
+# Slug ist in allen items*.yml-Dateien einheitlich. Die ID variiert pro Gen.
+RARE_CANDY_SLUG = "rare-candy"
+
+# Item-IDs aus den items*.yml verifiziert. Schnelle Lookup-Konstante, damit
+# der Write-Pfad nicht jedes Mal die YAMLs laden muss.
+RARE_CANDY_ID_PER_GEN: dict[int, int] = {
+    1: 40, 2: 32, 3: 68, 4: 50, 5: 50, 6: 50, 7: 50,
+}
+
+# Pocket, in dem das Spiel das Sonderbonbon ablegt — Quelle: Pokewiki.
+# Achtung: ab Gen 5 ist das die *Medizin*-Tasche, nicht mehr Items.
+RARE_CANDY_POCKET: dict[int, str] = {
+    1: "tasche",
+    2: "items",
+    3: "items",
+    4: "items",
+    5: "medizin",
+}
+
+
+def find_rare_candy_id(edition: int, item_lut: dict | None = None) -> int | None:
+    """Liefert die Sonderbonbon-ID fuer die Edition.
+
+    Bevorzugt die fixe Gen-Konstante (RARE_CANDY_ID_PER_GEN, aus den
+    items*.yml verifiziert). Faellt nur dann auf einen Slug-Lookup im
+    optional uebergebenen item_lut zurueck, wenn die Konstante fehlt — z.B.
+    bei zukuenftigen Editionen, die noch nicht im Mapping eingetragen sind.
+    """
+    gen = edition_to_gen(edition)
+    fixed = RARE_CANDY_ID_PER_GEN.get(gen)
+    if fixed is not None:
+        return fixed
+    if not item_lut:
+        return None
+    for item_id, slug in item_lut.items():
+        if slug == RARE_CANDY_SLUG:
+            return int(item_id)
+    return None
+
+
+def rare_candy_pocket_for_edition(edition: int) -> str | None:
+    return RARE_CANDY_POCKET.get(edition_to_gen(edition))
+
+
+# Spiel-Caps fuer item-quantity. Gen 1/2: 1 Byte qty (max 99). Gen 3+: u16,
+# Spiel-cap ist 999. Storage erlaubt formal bis 0xFFFF, aber 999 ist die
+# Grenze, die das Spielmenue anzeigt — daruebermitschreiben fuehrt zu
+# Anzeige-Glitches.
+QTY_CAP_PER_GEN = {1: 99, 2: 99, 3: 999, 4: 999, 5: 999, 6: 999, 7: 999}
+
+
+@dataclass(frozen=True)
+class BagWritePlan:
+    """Was und wo geschrieben werden muss, um delta Items hinzuzufuegen.
+
+    writes: Tuple aus (offset_relativ_zum_pocket_window, bytes_to_write).
+            Mehrere Writes z.B. bei Gen 1/2 fuer neuen Slot (count-Byte +
+            id/qty/Terminator).
+    new_qty: Anzahl im Slot NACH dem Schreiben (vor dem Schreiben + delta,
+             auf cap geclampt).
+    status:  'ok' | 'full' | 'noop'.
+    """
+    writes: tuple[tuple[int, bytes], ...]
+    new_qty: int
+    status: str
+
+
+def _gen12_find_or_alloc(pocket_bytes: bytes, item_id: int, max_slots: int):
+    """Liefert (slot_idx, current_qty, is_new_slot, count_after) oder None.
+
+    Format: raw[0] = count, danach count*(id, qty), dann 0xFF Terminator.
+    Existierender Slot -> qty wird upgedated; sonst neuer Slot am Ende, count
+    erhoeht. None heisst: Tasche voll.
+    """
+    if not pocket_bytes:
+        return None
+    count = pocket_bytes[0]
+    for i in range(min(count, max_slots)):
+        sid = pocket_bytes[1 + i * 2]
+        if sid == 0xFF:
+            break
+        if sid == item_id:
+            return (i, pocket_bytes[2 + i * 2], False, count)
+    if count >= max_slots:
+        return None
+    return (count, 0, True, count + 1)
+
+
+def _gen3plus_find_or_alloc(pocket_bytes: bytes, item_id: int, max_slots: int,
+                            security_key: int | None, encrypted: bool):
+    """Liefert (slot_idx, current_qty, is_new_slot) oder None.
+
+    Format: u16 LE id + u16 LE qty pro Slot. Bei encrypted ist qty XOR
+    security_key gespeichert. Erster Slot mit (id=0, qty=0) ist die
+    Allokations-Position fuer neue Items; existierende Slots werden bevorzugt
+    geupdatet.
+    """
+    key = (security_key & 0xFFFF) if (encrypted and security_key is not None) else 0
+    n = min(len(pocket_bytes) // 4, max_slots)
+    first_empty = None
+    for i in range(n):
+        sid = int.from_bytes(pocket_bytes[i * 4:i * 4 + 2], "little")
+        qty_raw = int.from_bytes(pocket_bytes[i * 4 + 2:i * 4 + 4], "little")
+        qty = qty_raw ^ key if encrypted else qty_raw
+        # Im Spiel sind leere Slots bei XOR-Pockets als id=0, qty_raw=key
+        # gespeichert (decoded qty=0). Bei frisch null-initialisiertem Speicher
+        # waeren es 0,0 — auch das als leer erkennen, sonst wuerden wir das
+        # Pocket faelschlich als "voll" melden.
+        if sid == 0 and (qty == 0 or (encrypted and qty_raw == 0)):
+            if first_empty is None:
+                first_empty = i
+            continue
+        if sid == item_id:
+            return (i, qty, False)
+    if first_empty is None:
+        return None
+    return (first_empty, 0, True)
+
+
+def plan_bag_write(edition: int, pocket_key: str, pocket_bytes: bytes,
+                   item_id: int, delta: int,
+                   *, security_key: int | None = None) -> BagWritePlan:
+    """Plant einen Bag-Schreibvorgang fuer (item_id, delta) in der angegebenen
+    Pocket einer Edition.
+
+    pocket_bytes muss exakt das von pocket_window() definierte Lese-Fenster
+    sein (inkl. count-Byte bei Gen 1/2). Offsets in plan.writes sind relativ
+    zum Anfang dieses Fensters — der Caller addiert die Pocket-Start-Adresse
+    drauf.
+    """
+    if delta <= 0:
+        return BagWritePlan(writes=(), new_qty=0, status="noop")
+
+    gen = edition_to_gen(edition)
+    cap = QTY_CAP_PER_GEN.get(gen, 999)
+    max_slots = POCKET_MAX_SLOTS.get(edition, {}).get(pocket_key, 64)
+
+    if gen in (1, 2):
+        result = _gen12_find_or_alloc(pocket_bytes, item_id, max_slots)
+        if result is None:
+            return BagWritePlan(writes=(), new_qty=0, status="full")
+        slot_idx, cur_qty, is_new, count_after = result
+        new_qty = min(cur_qty + delta, cap)
+        if not is_new:
+            offset = 1 + slot_idx * 2 + 1  # qty-Byte hinter id
+            return BagWritePlan(writes=((offset, bytes([new_qty])),),
+                                new_qty=new_qty, status="ok")
+        # Neuer Slot: count-Byte + (id, qty, neuer Terminator) als zwei Writes.
+        slot_offset = 1 + slot_idx * 2
+        slot_bytes = bytes([item_id, new_qty, 0xFF])
+        return BagWritePlan(
+            writes=((0, bytes([count_after])), (slot_offset, slot_bytes)),
+            new_qty=new_qty, status="ok",
+        )
+
+    if gen in (3, 4, 5, 6):
+        encrypted = (gen == 3 and edition >= 33 and pocket_key in GEN3_XOR_POCKETS)
+        if encrypted and security_key is None:
+            raise ValueError(
+                f"security_key fehlt fuer Gen 3 edition={edition} pocket={pocket_key}"
+            )
+        result = _gen3plus_find_or_alloc(pocket_bytes, item_id, max_slots,
+                                         security_key, encrypted)
+        if result is None:
+            return BagWritePlan(writes=(), new_qty=0, status="full")
+        slot_idx, cur_qty, is_new = result
+        new_qty = min(cur_qty + delta, cap)
+        key = (security_key & 0xFFFF) if encrypted else 0
+        qty_bytes = (new_qty ^ key).to_bytes(2, "little")
+        if not is_new:
+            offset = slot_idx * 4 + 2
+            return BagWritePlan(writes=((offset, qty_bytes),),
+                                new_qty=new_qty, status="ok")
+        slot_bytes = item_id.to_bytes(2, "little") + qty_bytes
+        return BagWritePlan(writes=((slot_idx * 4, slot_bytes),),
+                            new_qty=new_qty, status="ok")
+
+    raise NotImplementedError(f"Bag-Write fuer Gen {gen} nicht implementiert")
+
+
 def derive_security_key_from_tmvm(raw_tmvm: bytes) -> int | None:
     """Liefert den 16-Bit Security-Key aus dem ersten leeren TMVM-Slot.
 

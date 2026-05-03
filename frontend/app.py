@@ -74,7 +74,7 @@ class Screens(ScreenManager):
         self.add_widget(pokedex_menu)
         box_menu = BoxMenu(bizhawk, citra, munchlax, obs_websocket, pl)
         self.add_widget(box_menu)
-        bag_menu = BagMenu(configsave, pl, APP_VERSION)
+        bag_menu = BagMenu(configsave, pl, sp, bizhawk, APP_VERSION)
         self.add_widget(bag_menu)
         self.current = "Update"
         update_menu.check_for_update()

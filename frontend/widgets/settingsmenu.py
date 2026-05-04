@@ -352,9 +352,15 @@ class ScrollSettings(ScrollView):
             text_id_name="settings_rnqs_path", text_validate_function=None,
             browse_function=self.browse, browse_modus='file')
 
-        open_gui_button = Button(text="Randomizer-GUI öffnen", size_hint=(None, None), size=("200dp", "30dp"),
-            pos_hint={"center_x": .5}, on_press=lambda inst: self.open_randomizer_gui())
-        randomizer_box.add_widget(open_gui_button)
+        rnd_button_row = BoxLayout(orientation='horizontal', size_hint=(None, None),
+            size=("420dp", "30dp"), pos_hint={"center_x": .5}, spacing="20dp")
+        open_gui_button = Button(text="Randomizer-GUI öffnen", size_hint=(1, 1),
+            on_press=lambda inst: self.open_randomizer_gui())
+        rnd_button_row.add_widget(open_gui_button)
+        import_log_button = Button(text="Log importieren", size_hint=(1, 1),
+            on_press=lambda inst: self.import_randomizer_log())
+        rnd_button_row.add_widget(import_log_button)
+        randomizer_box.add_widget(rnd_button_row)
 
         UI.create_text_and_browse_button(randomizer_box, self.ids,
             box_id_name='rom_path_box', label_text='ROM-Datei',
@@ -594,6 +600,24 @@ class ScrollSettings(ScrollView):
             popup = Popup(title='Fehler', content=box, size_hint=(None, None), size=(500, 200))
             btn.bind(on_release=popup.dismiss)
             popup.open()
+
+    def import_randomizer_log(self):
+        log_path = fd.askopenfilename(
+            title="Randomizer-Log importieren",
+            filetypes=[("Log-Dateien", "*.log"), ("Alle Dateien", "*.*")]
+        )
+        if not log_path:
+            return
+        main_menu = self.settingsscreen.manager.get_screen("MainMenu")
+        success, msg = main_menu.randomizer.parse_log(log_path)
+        box = BoxLayout(orientation='vertical')
+        box.add_widget(Label(text=msg))
+        btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
+        box.add_widget(btn)
+        title = 'Log importiert' if success else 'Fehler'
+        popup = Popup(title=title, content=box, size_hint=(None, None), size=(500, 200))
+        btn.bind(on_release=popup.dismiss)
+        popup.open()
 
     def clipboard(self, instance, *args):
         result = (instance.text).split(']')[1].split('[')[0]

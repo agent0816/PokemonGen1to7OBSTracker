@@ -5,6 +5,8 @@ import logging
 import traceback
 from pathlib import Path
 
+from backend.controller.randomizer_log_parser import RandomizerLogParser, RandomizerLogData
+
 
 class RandomizerController:
     def __init__(self, rnd: dict, pl: dict):
@@ -12,6 +14,7 @@ class RandomizerController:
         self.pl = pl
         self.logger = self._init_logging()
         self._process: asyncio.subprocess.Process | None = None
+        self.log_parser = RandomizerLogParser()
 
     def _init_logging(self) -> logging.Logger:
         logger = logging.getLogger(__name__)
@@ -88,6 +91,31 @@ class RandomizerController:
             self.logger.error(traceback.format_exc())
             return False, msg
 
+    def find_log_path(self) -> str | None:
+        rom = self.rnd.get("rom_path", "")
+        if not rom:
+            return None
+        output_dir = self.rnd.get("output_path", "") or str(Path(rom).parent)
+        rom_stem = Path(rom).stem
+        pattern = f"{rom_stem}_randomized*.log"
+        matches = sorted(Path(output_dir).glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+        if matches:
+            return str(matches[0])
+        return None
+
+    def parse_log(self, log_path: str = None) -> tuple[bool, str]:
+        if not log_path:
+            log_path = self.find_log_path()
+        if not log_path:
+            return False, "Keine Log-Datei gefunden."
+        data = self.log_parser.parse(log_path)
+        if data:
+            return True, f"Log geparst: {len(data.pokemon)} Pokemon, {len(data.trainers)} Trainer, {len(data.wild_areas)} Wild-Gebiete"
+        return False, "Fehler beim Parsen der Log-Datei."
+
+    def get_log_data(self) -> RandomizerLogData | None:
+        return self.log_parser.get_data()
+
     async def randomize(self) -> tuple[bool, str]:
         args, cwd, error = self._build_command()
         if error:
@@ -109,6 +137,11 @@ class RandomizerController:
                 self.logger.info(msg)
                 if stdout:
                     self.logger.info(f"stdout: {stdout.decode(errors='replace').strip()}")
+                log_path = self.find_log_path()
+                if log_path:
+                    log_ok, log_msg = self.parse_log(log_path)
+                    if log_ok:
+                        msg += f"\n{log_msg}"
                 return True, msg
             else:
                 error_msg = stderr.decode(errors="replace").strip()

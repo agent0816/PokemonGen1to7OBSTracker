@@ -198,6 +198,26 @@ def update_session(sessionpath, default=False):
         else:
             new_rem=Path(f"{sessionpath}/default/remote.yml")
             load_config(remote, rem, new_path=new_rem)
+    randomizer = Path(f'{sessionpath}/randomizer.yml')
+    rnd = {
+        "jar_path": '',
+        "java_path": '',
+        "settings_path": '',
+        "rom_path": '',
+        "output_path": '',
+    }
+    if not randomizer.exists():
+        if not default:
+            save_config(randomizer, rnd)
+        else:
+            new_rnd=Path(f"{sessionpath}/default/randomizer.yml")
+            save_config(new_rnd, rnd)
+    else:
+        if not default:
+            load_config(randomizer, rnd)
+        else:
+            new_rnd=Path(f"{sessionpath}/default/randomizer.yml")
+            load_config(randomizer, rnd, new_path=new_rnd)
 
 if __name__ == '__main__':
     init_config_folder()

@@ -45,7 +45,7 @@ APP_VERSION = VERSION
 
 
 class Screens(ScreenManager):
-    def __init__(self,arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,session_list,**kwargs,):
+    def __init__(self,arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,rnd,session_list,**kwargs,):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
         update_menu = Update(APP_NAME, APP_VERSION)
@@ -63,12 +63,13 @@ class Screens(ScreenManager):
             obs,
             bh,
             pl,
+            rnd,
             APP_VERSION,
         )
         self.add_widget(main_menu)
-        settings_menu = SettingsMenu(arceus,bizhawk,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,APP_VERSION,)
+        settings_menu = SettingsMenu(arceus,bizhawk,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,rnd,APP_VERSION,)
         self.add_widget(settings_menu)
-        session_menu = SessionMenu(session_list, main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, APP_VERSION)
+        session_menu = SessionMenu(session_list, main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, rnd, APP_VERSION)
         self.add_widget(session_menu)
         pokedex_menu = PokedexMenu(configsave, APP_VERSION)
         self.add_widget(pokedex_menu)
@@ -122,6 +123,9 @@ class TrackerApp(App):
         self.rem = {}
         with open(f"{self.configsave}remote.yml") as file:
             self.rem = yaml.safe_load(file)
+        self.rnd = {}
+        with open(f"{self.configsave}randomizer.yml") as file:
+            self.rnd = yaml.safe_load(file)
         self.session_list = []
         with open(f"{self.configsave}../session_list.yml") as file:
             self.session_list = yaml.safe_load(file)
@@ -165,6 +169,7 @@ class TrackerApp(App):
             self.obs,
             self.bh,
             self.pl,
+            self.rnd,
             self.session_list,
         ]
 
@@ -176,6 +181,7 @@ class TrackerApp(App):
         self.save_config(f"{self.configsave}sprites.yml", self.sp)
         self.save_config(f"{self.configsave}player.yml", self.pl)
         self.save_config(f"{self.configsave}remote.yml", self.rem)
+        self.save_config(f"{self.configsave}randomizer.yml", self.rnd)
 
         for bizhawk in self.bizhawk_instances:
             bizhawk.terminate()

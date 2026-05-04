@@ -6,13 +6,14 @@ import yaml
 
 
 class SettingsController:
-    def __init__(self, configsave, sp, rem, obs, bh, pl, arceus, bizhawk, munchlax, obs_websocket):
+    def __init__(self, configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket):
         self.configsave = configsave
         self.sp = sp
         self.rem = rem
         self.obs = obs
         self.bh = bh
         self.pl = pl
+        self.rnd = rnd
         self.arceus = arceus
         self.bizhawk = bizhawk
         self.munchlax = munchlax
@@ -52,6 +53,9 @@ class SettingsController:
 
     def load_player(self) -> dict:
         return self.pl.copy()
+
+    def load_randomizer(self) -> dict:
+        return self.rnd.copy()
 
     # --- Private Update-Methoden: synchronisieren Backend-Objekte mit den aktuellen Config-Werten ---
     # Werden nur aufgerufen, wenn das jeweilige Backend noch nicht verbunden ist.
@@ -153,6 +157,17 @@ class SettingsController:
             self.logger.info("player.yml gespeichert.")
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der Spieler-Einstellungen: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())
+
+    def save_randomizer(self, values: dict) -> None:
+        """Aktualisiert rnd-Dict und speichert randomizer.yml."""
+        try:
+            self.rnd.update(values)
+            with open(f"{self.configsave}randomizer.yml", 'w') as file:
+                yaml.dump(self.rnd, file)
+            self.logger.info("randomizer.yml gespeichert.")
+        except Exception as err:
+            self.logger.error(f"Fehler beim Speichern der Randomizer-Einstellungen: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
 
     def save_main_menu_settings(self, values: dict) -> None:

@@ -1,4 +1,5 @@
 import sys
+import traceback
 import weakref
 import asyncio
 from pathlib import Path
@@ -18,6 +19,7 @@ from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 from frontend.widgets.trainerbox import TrainerBox
 from backend.classes.obs import OBS
 from backend.controller.connection_controller import ConnectionController
+from backend.controller.randomizer_controller import RandomizerController
 from backend.controller.settings_controller import SettingsController
 import frontend.UIFactory as UI
 import logging
@@ -85,6 +87,7 @@ class MainMenu(Screen):
         obs,
         bh,
         pl,
+        rnd,
         app_version,
         **kwargs,
     ):
@@ -98,12 +101,14 @@ class MainMenu(Screen):
         self.rem = rem
         self.bh = bh
         self.pl = pl
+        self.rnd = rnd
         self.selected_session = ""
         self.app_version = app_version
         self.connectors = set()
 
-        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, arceus, bizhawk, munchlax, obs_websocket)
+        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket)
         self.connection = ConnectionController(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl)
+        self.randomizer = RandomizerController(rnd, pl)
 
         super().__init__(**kwargs)
         self.name = "MainMenu"
@@ -153,6 +158,9 @@ class MainMenu(Screen):
 
         bag_button = Button(text="Tasche", on_press=self.switch_to_bag)
         logo_settings.add_widget(bag_button)
+
+        self.randomize_button = Button(text="Randomisieren", on_press=self.start_randomization)
+        logo_settings.add_widget(self.randomize_button)
 
         control_frame.add_widget(logo_settings)
 
@@ -490,6 +498,31 @@ class MainMenu(Screen):
                 btn.bind(on_release=popup.dismiss, on_press=self.switch_to_settings)
                 popup.open()
             asyncio.create_task(self.citra.stop())
+
+    def start_randomization(self, instance):
+        self.randomize_button.disabled = True
+        self.randomize_button.text = "Randomisierung..."
+        task = asyncio.create_task(self._run_randomization())
+        self.connectors.add(task)
+
+    async def _run_randomization(self):
+        try:
+            success, message = await self.randomizer.randomize()
+            title = "Randomisierung" if success else "Fehler"
+
+            box = BoxLayout(orientation='vertical')
+            box.add_widget(Label(text=message))
+            btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
+            box.add_widget(btn)
+            popup = Popup(title=title, content=box, size_hint=(None, None), size=(500, 300))
+            btn.bind(on_release=popup.dismiss)
+            popup.open()
+        except Exception as err:
+            logger.error(f"Fehler bei der Randomisierung: {type(err)}, {err}")
+            logger.error(traceback.format_exc())
+        finally:
+            self.randomize_button.disabled = False
+            self.randomize_button.text = "Randomisieren"
 
     def toggle_server_client(self, instance, button, initializing=False):
         if instance.state == "down":

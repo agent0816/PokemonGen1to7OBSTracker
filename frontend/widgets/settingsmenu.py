@@ -30,7 +30,7 @@ stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
 class SettingsMenu(Screen):
-    def __init__(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, app_version, **kwargs):
+    def __init__(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, app_version, **kwargs):
         super().__init__(**kwargs)
 
         self.name = "SettingsMenu"
@@ -53,14 +53,15 @@ class SettingsMenu(Screen):
         layout = GridLayout(cols=2, size_hint_y=.85)
 
         button_box = BoxLayout(orientation="vertical", size_hint=(0.15, 1), pos_hint={"top": 0})
-        self.scrollview = ScrollSettings(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl)
+        self.scrollview = ScrollSettings(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd)
 
         settings_buttons = [
             ("Sprite\nPfade", 'sprite'),
             ("Bizhawk", 'bizhawk'),
             ("OBS", 'obs'),
             ("Remote", 'remote'),
-            ("Spieler", 'player')
+            ("Spieler", 'player'),
+            ("Randomizer", 'randomizer'),
         ]
 
         for text, screen_name in settings_buttons:
@@ -88,7 +89,7 @@ class SettingsMenu(Screen):
         
         if jump_id == "sprite":
             scrolling = 1
-        elif jump_id == "player":
+        elif jump_id in ("player", "randomizer"):
             scrolling = 0
         else:
             scrolling = new_scrollheight / scroll_max_height
@@ -96,9 +97,10 @@ class SettingsMenu(Screen):
         scrollview.scroll_y = scrolling
 
 class ScrollSettings(ScrollView):
-    def __init__(self, settingsscreen, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, **kwargs):
+    def __init__(self, settingsscreen, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, **kwargs):
         super().__init__(**kwargs)
-        
+
+        self.rnd = rnd
         self.settingsscreen = settingsscreen
         self.arceus = arceus
         self.bizhawk = bizhawk
@@ -113,7 +115,7 @@ class ScrollSettings(ScrollView):
         self.bh = bh
         self.pl = pl
 
-        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, arceus, bizhawk, munchlax, obs_websocket)
+        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket)
 
         self.games={
             'Rot und Blau':'gen1_red','Gelb':'gen1_yellow',
@@ -327,7 +329,45 @@ class ScrollSettings(ScrollView):
         player_box.add_widget(player_count_box)
 
         box.add_widget(player_box)
-        
+
+        randomizer_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing="20dp")
+        randomizer_box.bind(minimum_height=randomizer_box.setter('height'))  # type: ignore
+        self.ids["randomizer"] = weakref.proxy(randomizer_box)
+
+        ueberschrift_randomizer = Label(text="Randomizer", size_hint=(1, None), size=(0, "20dp"), font_size="20sp")
+        randomizer_box.add_widget(ueberschrift_randomizer)
+
+        UI.create_text_and_browse_button(randomizer_box, self.ids,
+            box_id_name='jar_path_box', label_text='Pfad zur\nPokeRandoZX.jar',
+            text_id_name="jar_path", text_validate_function=None,
+            browse_function=self.browse, browse_modus='file')
+
+        UI.create_text_and_browse_button(randomizer_box, self.ids,
+            box_id_name='java_path_box', label_text='Java-Pfad\n(leer = auto)',
+            text_id_name="java_path", text_validate_function=None,
+            browse_function=self.browse, browse_modus='file')
+
+        UI.create_text_and_browse_button(randomizer_box, self.ids,
+            box_id_name='settings_rnqs_path_box', label_text='Einstellungsdatei\n(.rnqs)',
+            text_id_name="settings_rnqs_path", text_validate_function=None,
+            browse_function=self.browse, browse_modus='file')
+
+        open_gui_button = Button(text="Randomizer-GUI öffnen", size_hint=(None, None), size=("200dp", "30dp"),
+            pos_hint={"center_x": .5}, on_press=lambda inst: self.open_randomizer_gui())
+        randomizer_box.add_widget(open_gui_button)
+
+        UI.create_text_and_browse_button(randomizer_box, self.ids,
+            box_id_name='rom_path_box', label_text='ROM-Datei',
+            text_id_name="rom_path", text_validate_function=None,
+            browse_function=self.browse, browse_modus='file')
+
+        UI.create_text_and_browse_button(randomizer_box, self.ids,
+            box_id_name='output_path_box', label_text='Ausgabe-Ordner\n(leer = ROM-Ordner)',
+            text_id_name="output_path", text_validate_function=None,
+            browse_function=self.browse)
+
+        box.add_widget(randomizer_box)
+
         self.add_widget(box)
 
         self.obs_2_pcs_setup(obs_sprites_checkbox, initializing=True)
@@ -541,6 +581,20 @@ class ScrollSettings(ScrollView):
                 button.state = 'normal'
                 button.disabled = was_disabled 
 
+    def open_randomizer_gui(self):
+        from backend.controller.randomizer_controller import RandomizerController
+        self.save_changes()
+        rc = RandomizerController(self.rnd, self.pl)
+        success, error = rc.open_gui()
+        if not success:
+            box = BoxLayout(orientation='vertical')
+            box.add_widget(Label(text=error))
+            btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
+            box.add_widget(btn)
+            popup = Popup(title='Fehler', content=box, size_hint=(None, None), size=(500, 200))
+            btn.bind(on_release=popup.dismiss)
+            popup.open()
+
     def clipboard(self, instance, *args):
         result = (instance.text).split(']')[1].split('[')[0]
         Clipboard.copy(result)
@@ -608,6 +662,13 @@ class ScrollSettings(ScrollView):
         self.ids["session_game"].text = pl.get('session_game', '')
         self.ids[f"player_count_{pl['player_count']}"].state = "down"
 
+        rnd = self.controller.load_randomizer()
+        self.ids.jar_path.text = rnd.get('jar_path', '')
+        self.ids.java_path.text = rnd.get('java_path', '')
+        self.ids.settings_rnqs_path.text = rnd.get('settings_path', '')
+        self.ids.rom_path.text = rnd.get('rom_path', '')
+        self.ids.output_path.text = rnd.get('output_path', '')
+
     def load_game_sprites_config(self):
         sp = self.controller.load_sprites()
         for _, game_id in self.games.items():
@@ -673,6 +734,15 @@ class ScrollSettings(ScrollView):
                 player_values[f"remote_{i}"] = self.ids[f"remote_player_{i}"].state == "down"
                 player_values[f"obs_{i}"] = self.ids[f"obs_player_{i}"].state == "down"
         self.controller.save_player(player_values)
+
+        # Randomizer-Einstellungen sammeln
+        self.controller.save_randomizer({
+            'jar_path': self.ids.jar_path.text,
+            'java_path': self.ids.java_path.text,
+            'settings_path': self.ids.settings_rnqs_path.text,
+            'rom_path': self.ids.rom_path.text,
+            'output_path': self.ids.output_path.text,
+        })
 
         # UI-Aktualisierungen (bleiben in der View)
         main_menu = self.settingsscreen.manager.get_screen("MainMenu")

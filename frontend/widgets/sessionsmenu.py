@@ -374,7 +374,7 @@ class SessionList(ScrollView):
             self.session_box.add_widget(session_selector)
 
 class SessionMenu(Screen):
-    def __init__(self, session_list_names, main_menu, settings_menu, configsave, sp, rem, obs, bh, pl, app_version, **kwargs):
+    def __init__(self, session_list_names, main_menu, settings_menu, configsave, sp, rem, obs, bh, pl, rnd, app_version, **kwargs):
         super().__init__(**kwargs)
 
         self.name = "SessionMenu"
@@ -387,6 +387,7 @@ class SessionMenu(Screen):
         self.obs = obs
         self.bh = bh
         self.pl = pl
+        self.rnd = rnd
         self.app_version = app_version
 
         self.session_list_names = session_list_names
@@ -479,6 +480,9 @@ class SessionMenu(Screen):
         with open(f"{new_session}/player.yml", 'w') as file:
             yaml.dump(self.pl, file)
 
+        with open(f"{new_session}/randomizer.yml", 'w') as file:
+            yaml.dump(self.rnd, file)
+
     def select_session(self, instance, default=False):
         if not default:
             selected_session = self.get_selected_session()
@@ -544,6 +548,14 @@ class SessionMenu(Screen):
 
         for key, value in new_pl.items():
             self.pl[key] = value
+
+        randomizer_path = Path(f"{self.configsave}randomizer.yml")
+        if randomizer_path.exists():
+            with open(randomizer_path, 'r') as file:
+                new_rnd = yaml.safe_load(file)
+            if new_rnd:
+                for key, value in new_rnd.items():
+                    self.rnd[key] = value
 
     def delete_session(self, instance):
         session_to_delete = self.get_selected_session()

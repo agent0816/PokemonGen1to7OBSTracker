@@ -208,8 +208,29 @@ def pokemon1(data):
             nickname += gen1charset[char]
         if char == 80:
             break
+
+    ot_id = int.from_bytes(data[0x0C:0x0E], "big")
+    experience_points = int.from_bytes(data[0x0E:0x11], "big")
+
+    ev_names = ["hp", "attack", "defense", "speed", "special"]
+    evs = {name: int.from_bytes(data[0x11 + 2 * i:0x13 + 2 * i], "big") for i, name in enumerate(ev_names)}
+
+    iv_byte1, iv_byte2 = data[0x1B], data[0x1C]
+    ivs = {
+        "attack": iv_byte1 >> 4,
+        "defense": iv_byte1 & 0x0F,
+        "speed": iv_byte2 >> 4,
+        "special": iv_byte2 & 0x0F,
+    }
+
+    move_ids = list(data[0x08:0x0C])
+    pp_values = list(data[0x1D:0x21])
+    moves = [{"id": mid, "pp": pp} for mid, pp in zip(move_ids, pp_values)]
+
     return Pokemon(
-        dexnr, False, lvl=lvl, nickname=nickname, cur_hp=cur_hp, max_hp=max_hp
+        dexnr, False, lvl=lvl, nickname=nickname, cur_hp=cur_hp, max_hp=max_hp,
+        experience_points=experience_points, evs=evs, ivs=ivs, moves=moves,
+        ot_id=ot_id,
     )
 
 
@@ -230,13 +251,31 @@ def pokemon2(data):
             nickname += gen1charset[char]
         if char == 80:
             break
-    ivs = [data[0x15] >> 4, data[0x15] % 16, data[0x16] >> 4, data[0x16] % 16]
+
+    ot_id = int.from_bytes(data[0x06:0x08], "big")
+    experience_points = int.from_bytes(data[0x08:0x0B], "big")
+
+    ev_names = ["hp", "attack", "defense", "speed", "special"]
+    evs = {name: int.from_bytes(data[0x0B + 2 * i:0x0D + 2 * i], "big") for i, name in enumerate(ev_names)}
+
+    iv_byte1, iv_byte2 = data[0x15], data[0x16]
+    ivs = {
+        "attack": iv_byte1 >> 4,
+        "defense": iv_byte1 & 0x0F,
+        "speed": iv_byte2 >> 4,
+        "special": iv_byte2 & 0x0F,
+    }
+
+    move_ids = list(data[0x02:0x06])
+    pp_values = list(data[0x17:0x1B])
+    moves = [{"id": mid, "pp": pp} for mid, pp in zip(move_ids, pp_values)]
+
     if dexnr == 201:
         letter = (
-            (((ivs[0] >> 1) % 4) << 6)
-            + (((ivs[1] >> 1) % 4) << 4)
-            + (((ivs[2] >> 1) % 4) << 2)
-            + ((ivs[3] >> 1) % 4)
+            (((ivs["attack"] >> 1) % 4) << 6)
+            + (((ivs["defense"] >> 1) % 4) << 4)
+            + (((ivs["speed"] >> 1) % 4) << 2)
+            + ((ivs["special"] >> 1) % 4)
         )
         letter = letter // 10
         form = unown_letter[letter]
@@ -244,7 +283,12 @@ def pokemon2(data):
         dexnr = "egg"
         form = ""
 
-    return Pokemon(dexnr, False, lvl=lvl, form=form, nickname=nickname, item=item, cur_hp=cur_hp, max_hp=max_hp)  # type: ignore
+    return Pokemon(  # type: ignore
+        dexnr, False, lvl=lvl, form=form, nickname=nickname, item=item,
+        cur_hp=cur_hp, max_hp=max_hp,
+        experience_points=experience_points, evs=evs, ivs=ivs, moves=moves,
+        ot_id=ot_id,
+    )
 
 
 def pokemon3(data, edition, is_boxed=False):

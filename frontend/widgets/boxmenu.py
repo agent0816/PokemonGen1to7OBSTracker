@@ -16,8 +16,11 @@ from kivy.uix.button import Button
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.image import Image
 from kivy.uix.label import Label
-from kivy.uix.screenmanager import Screen
+from kivy.uix.behaviors import ButtonBehavior
+from kivy.uix.screenmanager import Screen, ScreenManager, NoTransition
 from kivy.uix.spinner import Spinner
+
+from frontend.widgets.pokemon_detail import PokemonDetailScreen
 
 
 GAMES_CITRA = {"X", "Y", "Omega Rubin", "Alpha Saphir",
@@ -48,7 +51,7 @@ def _init_logging():
 logger = _init_logging()
 
 
-class BoxSlotWidget(BoxLayout):
+class BoxSlotWidget(ButtonBehavior, BoxLayout):
     """Ein einzelner Slot im Box-Grid: Sprite + Nickname + Level."""
 
     def __init__(self, obs_websocket, **kwargs):
@@ -136,14 +139,23 @@ class BoxMenu(Screen):
         nav.add_widget(self.status_label)
         root.add_widget(nav)
 
-        # Slot-Grid (5 Zeilen × 6 Spalten)
+        # Slot-Grid (5 Zeilen × 6 Spalten), gewrappt in nested ScreenManager
         self.grid = GridLayout(cols=GRID_COLS, rows=GRID_ROWS, spacing="5dp")
         self.slot_widgets: list[BoxSlotWidget] = []
-        for _ in range(GRID_COLS * GRID_ROWS):
+        for i in range(GRID_COLS * GRID_ROWS):
             slot = BoxSlotWidget(self.obs_websocket)
+            slot.bind(on_press=lambda instance, idx=i: self._show_slot_detail(idx))
             self.slot_widgets.append(slot)
             self.grid.add_widget(slot)
-        root.add_widget(self.grid)
+
+        grid_screen = Screen(name="BoxGrid")
+        grid_screen.add_widget(self.grid)
+        self.box_detail_screen = PokemonDetailScreen(self.obs_websocket)
+        self.box_sm = ScreenManager(transition=NoTransition())
+        self.box_sm.add_widget(grid_screen)
+        self.box_sm.add_widget(self.box_detail_screen)
+
+        root.add_widget(self.box_sm)
 
         self.add_widget(root)
 
@@ -152,6 +164,7 @@ class BoxMenu(Screen):
         # Wechsel, Settings) — Spinner deshalb bei jedem Öffnen neu aufbauen.
         self._refresh_player_spinner_values()
         self._render_current_box()
+        self.box_sm.current = "BoxGrid"
 
     def _refresh_player_spinner_values(self):
         player_count = max(1, int(self.pl.get("player_count", 1)))
@@ -259,6 +272,29 @@ class BoxMenu(Screen):
         values = [f"Box {i + 1}" for i in range(len(boxes))] or ["Box 1"]
         self.box_spinner.values = values
         self.box_spinner.text = f"Box {self.current_box_index + 1}"
+
+    def _show_slot_detail(self, slot_index):
+        boxes = self.munchlax.boxes.get(self.current_player, [])
+        if not boxes:
+            return
+        index = max(0, min(self.current_box_index, len(boxes) - 1))
+        box = boxes[index]
+        if slot_index >= len(box):
+            return
+        pokemon = box[slot_index]
+        if pokemon is None:
+            return
+        edition = self.munchlax.editions.get(self.current_player, 0)
+        rando_data = None
+        if self.manager:
+            main_menu = self.manager.get_screen("MainMenu")
+            if hasattr(main_menu, 'randomizer'):
+                rando_data = main_menu.randomizer.get_log_data()
+        self.box_detail_screen.show(
+            pokemon, edition, rando_data,
+            back_callback=lambda: setattr(self.box_sm, 'current', 'BoxGrid'),
+        )
+        self.box_sm.current = "PokemonDetail"
 
     def _render_current_box(self):
         boxes = self.munchlax.boxes.get(self.current_player, [])

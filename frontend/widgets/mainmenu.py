@@ -11,12 +11,13 @@ from kivy.uix.checkbox import CheckBox
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
-from kivy.uix.screenmanager import Screen
+from kivy.uix.screenmanager import Screen, ScreenManager, NoTransition
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.togglebutton import ToggleButton
 from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 from frontend.widgets.trainerbox import TrainerBox
+from frontend.widgets.pokemon_detail import PokemonDetailScreen
 from backend.classes.obs import OBS
 from backend.controller.connection_controller import ConnectionController
 from backend.controller.randomizer_controller import RandomizerController
@@ -131,7 +132,14 @@ class MainMenu(Screen):
         self.pokemon_frame = ScrollView(do_scroll_y=False, do_scroll_x=True)
         self.create_pokemon_frame()
 
-        frame.add_widget(self.pokemon_frame)
+        team_screen = Screen(name="TeamOverview")
+        team_screen.add_widget(self.pokemon_frame)
+        self.pokemon_detail_screen = PokemonDetailScreen(self.obs_websocket)
+        self.pokemon_sm = ScreenManager(transition=NoTransition())
+        self.pokemon_sm.add_widget(team_screen)
+        self.pokemon_sm.add_widget(self.pokemon_detail_screen)
+
+        frame.add_widget(self.pokemon_sm)
         self.add_widget(frame)
 
     def create_control_frame(self):

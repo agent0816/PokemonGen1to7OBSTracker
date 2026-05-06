@@ -204,11 +204,13 @@ class PokemonDetailScreen(Screen):
         if cur_hp is not None and max_hp is not None:
             info_col.add_widget(self._label(f"KP: {cur_hp}/{max_hp}"))
 
-        # Typen
-        type_strs = self._resolve_types(dexnr, rando_pokemon)
-        if type_strs:
-            prefix = "Typen (Rando): " if rando_pokemon and rando_pokemon.types else "Typen: "
-            info_col.add_widget(self._label(f"{prefix}{' / '.join(type_strs)}"))
+        # Typen — bei Rando Vanilla + Rando nebeneinander
+        vanilla_types = self._resolve_vanilla_types(dexnr)
+        rando_types = _resolve_types_from_rando(rando_pokemon.types) if rando_pokemon and rando_pokemon.types else []
+        if rando_types and rando_types != vanilla_types:
+            info_col.add_widget(self._label(f"Typen: {' / '.join(vanilla_types)}  →  {' / '.join(rando_types)} (Rando)"))
+        elif vanilla_types:
+            info_col.add_widget(self._label(f"Typen: {' / '.join(vanilla_types)}"))
 
         # Item
         item = getattr(pokemon, "item", 0)
@@ -252,17 +254,31 @@ class PokemonDetailScreen(Screen):
                 moves_grid.add_widget(self._label(f"AP: {pp}", size_hint_y=None, height=25))
             self._add_section(moves_grid)
 
-        # -- Basiswerte --
-        base_stats = self._resolve_base_stats(dexnr, rando_pokemon)
-        if base_stats:
-            is_rando = rando_pokemon and rando_pokemon.stats
-            label = "Basiswerte (Rando)" if is_rando else "Basiswerte"
-            self._add_separator(label)
-            stats_grid = GridLayout(cols=6, size_hint_y=None, height="50dp", spacing="2dp")
+        # -- Basiswerte —— bei Rando beide Zeilen + Delta --
+        vanilla_stats = self._resolve_vanilla_stats(dexnr)
+        rando_stats = [rando_pokemon.stats.get(k, 0) for k in STAT_KEYS_RANDO] if rando_pokemon and rando_pokemon.stats else []
+        has_rando_stats = rando_stats and rando_stats != vanilla_stats
+        if vanilla_stats or rando_stats:
+            self._add_separator("Basiswerte")
+            display_stats = rando_stats if rando_stats else vanilla_stats
+            rows = 2 if has_rando_stats else 1
+            stats_grid = GridLayout(cols=7, size_hint_y=None, height=f"{25 * (rows + 1)}dp", spacing="2dp")
+            stats_grid.add_widget(self._label("", font_size="11sp", size_hint_y=None, height=25))
             for lbl in STAT_LABELS:
                 stats_grid.add_widget(self._label(lbl, bold=True, font_size="11sp", size_hint_y=None, height=25))
-            for val in base_stats:
-                stats_grid.add_widget(self._label(str(val), font_size="11sp", size_hint_y=None, height=25))
+            if has_rando_stats:
+                stats_grid.add_widget(self._label("Vanilla", font_size="10sp", bold=True, size_hint_y=None, height=25))
+                for val in vanilla_stats:
+                    stats_grid.add_widget(self._label(str(val), font_size="11sp", size_hint_y=None, height=25))
+                stats_grid.add_widget(self._label("Rando", font_size="10sp", bold=True, size_hint_y=None, height=25))
+                for i, val in enumerate(rando_stats):
+                    delta = val - vanilla_stats[i] if i < len(vanilla_stats) else 0
+                    delta_str = f" ({'+' if delta > 0 else ''}{delta})" if delta != 0 else ""
+                    stats_grid.add_widget(self._label(f"{val}{delta_str}", font_size="11sp", size_hint_y=None, height=25))
+            else:
+                stats_grid.add_widget(self._label("", font_size="11sp", size_hint_y=None, height=25))
+                for val in display_stats:
+                    stats_grid.add_widget(self._label(str(val), font_size="11sp", size_hint_y=None, height=25))
             self._add_section(stats_grid)
 
         # -- EVs --
@@ -293,10 +309,19 @@ class PokemonDetailScreen(Screen):
             if status:
                 self._add_section(self._label(f"Status: {status}"))
 
-    def _resolve_types(self, dexnr, rando_pokemon) -> list[str]:
-        """Typen aus Rando-Daten oder species_personal auflösen."""
-        if rando_pokemon and rando_pokemon.types:
-            return _resolve_types_from_rando(rando_pokemon.types)
+        # -- Randomizer-Extras --
+        if rando_pokemon:
+            if rando_pokemon.item:
+                self._add_separator("Rando-Item (Spezies)")
+                self._add_section(self._label(rando_pokemon.item))
+            if rando_data and isinstance(dexnr, int) and dexnr in rando_data.evolutions:
+                evos = rando_data.evolutions[dexnr]
+                if evos:
+                    self._add_separator("Entwicklungen (Rando)")
+                    self._add_section(self._label(" → ".join(evos)))
+
+    def _resolve_vanilla_types(self, dexnr) -> list[str]:
+        """Vanilla-Typen aus species_personal auflösen."""
         if isinstance(dexnr, int):
             personal = species_personal.get(dexnr)
             if personal and "types" in personal:
@@ -307,10 +332,8 @@ class PokemonDetailScreen(Screen):
                 return names
         return []
 
-    def _resolve_base_stats(self, dexnr, rando_pokemon) -> list[int]:
-        """Basiswerte aus Rando-Daten oder species_personal.  Reihenfolge: KP,Ang,Ver,SpAng,SpVer,Init."""
-        if rando_pokemon and rando_pokemon.stats:
-            return [rando_pokemon.stats.get(k, 0) for k in STAT_KEYS_RANDO]
+    def _resolve_vanilla_stats(self, dexnr) -> list[int]:
+        """Vanilla-Basiswerte aus species_personal.  Reihenfolge: KP,Ang,Ver,SpAng,SpVer,Init."""
         if isinstance(dexnr, int):
             personal = species_personal.get(dexnr)
             if personal and "stats" in personal:

@@ -2,6 +2,7 @@ import weakref
 from kivy.clock import Clock
 from kivy.graphics import Color
 from kivy.graphics import Rectangle
+from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.image import Image
 from kivy.uix.label import Label
@@ -9,7 +10,7 @@ from kivy.uix.progressbar import ProgressBar
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
 
-class PokemonBox(BoxLayout):
+class PokemonBox(ButtonBehavior, BoxLayout):
     def __init__(self, obs_websocket: OBS, **kwargs):
         super().__init__(**kwargs)
         self.orientation = "horizontal"
@@ -139,10 +140,10 @@ class TrainerBox(BoxLayout):
 
         self.add_widget(Label(text=f"Spieler {self.player_id}", size_hint=(1, 0.3)))
 
-        for pokemon in range(6):
+        for slot in range(6):
             pokemon_box = PokemonBox(self.obs_websocket)
-            self.pokemon_boxes[f"slot{pokemon}"] = pokemon_box
-
+            pokemon_box.bind(on_press=lambda instance, s=slot: self._show_detail(s))
+            self.pokemon_boxes[f"slot{slot}"] = pokemon_box
             self.add_widget(pokemon_box)
 
         badge_box = self.create_badge_box()
@@ -150,6 +151,23 @@ class TrainerBox(BoxLayout):
         self.add_widget(badge_box)
 
         Clock.schedule_interval(self.team_aktualisieren, 1)
+
+    def _show_detail(self, slot):
+        if self.player_id not in self.munchlax.sorted_teams:
+            return
+        team = self.munchlax.sorted_teams[self.player_id]
+        if slot >= len(team):
+            return
+        pokemon = team[slot]
+        edition = self.munchlax.editions.get(self.player_id, 0)
+        rando_data = None
+        if hasattr(self.screen, 'randomizer'):
+            rando_data = self.screen.randomizer.get_log_data()
+        self.screen.pokemon_detail_screen.show(
+            pokemon, edition, rando_data,
+            back_callback=lambda: setattr(self.screen.pokemon_sm, 'current', 'TeamOverview'),
+        )
+        self.screen.pokemon_sm.current = "PokemonDetail"
 
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos

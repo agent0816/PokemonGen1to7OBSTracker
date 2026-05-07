@@ -447,8 +447,8 @@ def pokemon45(data, gen, is_boxed=False):
             form = ""
         dexnr = "egg"
 
+    status = {}
     if not is_boxed:
-        status = {}
         if gen == 4:
             status_bytes = f"{int.from_bytes(decrypted_battle_stats[0:1]):#010b}".replace('0b', '')
             status["sleep"] = int(status_bytes[0:3])
@@ -470,7 +470,6 @@ def pokemon45(data, gen, is_boxed=False):
         max_hp = int.from_bytes(decrypted_battle_stats[8:10], "little")
         battle_stats = {ev_names[index]: int.from_bytes(decrypted_battle_stats[index * 2 + 8:10 + index * 2], "little") for index in range(1, 6)}
     else:
-        status = {}
         lvl = xp_to_level_mediumfast(experience_points)
         cur_hp = 1
         max_hp = 1

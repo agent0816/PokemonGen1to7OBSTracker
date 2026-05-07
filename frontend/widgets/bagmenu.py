@@ -534,7 +534,7 @@ class BagMenu(Screen):
             cell.add_widget(Image(
                 source=f"{items_path}/{slug}.png",
                 size_hint_x=None, width=dp(28),
-                fit_mode="contain", allow_stretch=True,
+                fit_mode="contain", # allow_stretch=True,
             ))
 
         name = item_display_name(edition, item_id)

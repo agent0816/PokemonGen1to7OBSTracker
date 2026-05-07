@@ -83,6 +83,12 @@ class Pokemon:
             return False
         if self.cur_hp != other.cur_hp:
             return False
+        if 'moves' in self.__dict__ and self.moves != other.moves:
+            return False
+        if 'evs' in self.__dict__ and self.evs != other.evs:
+            return False
+        if 'battle_stats' in self.__dict__ and self.battle_stats != other.battle_stats:
+            return False
         return True
 
     def __lt__(self, other):

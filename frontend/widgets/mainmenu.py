@@ -158,18 +158,6 @@ class MainMenu(Screen):
         change_session = Button(text="Session wechseln", on_press=self.change_session)
         logo_settings.add_widget(change_session)
 
-        pokedex_button = Button(text="Pokedex", on_press=self.switch_to_pokedex)
-        logo_settings.add_widget(pokedex_button)
-
-        box_button = Button(text="PC-Boxen", on_press=self.switch_to_boxes)
-        logo_settings.add_widget(box_button)
-
-        bag_button = Button(text="Tasche", on_press=self.switch_to_bag)
-        logo_settings.add_widget(bag_button)
-
-        self.randomize_button = Button(text="Randomisieren", on_press=self.start_randomization)
-        logo_settings.add_widget(self.randomize_button)
-
         control_frame.add_widget(logo_settings)
 
         connections = BoxLayout(orientation="horizontal")
@@ -325,8 +313,6 @@ class MainMenu(Screen):
             self.ids[id] = weakref.proxy(toggler)
             sort_layout.add_widget(toggler)
 
-        showing_frame.add_widget(sort_layout)
-
         checkmarks = (
             ("SaveRAM automatisch", "bizhawk_check"),
             ("Orden anzeigen", "badges_check"),
@@ -337,7 +323,7 @@ class MainMenu(Screen):
         show_layout = GridLayout(cols=2)
 
         for text, id in checkmarks:
-            anchor = AnchorLayout(anchor_x="right", size_hint_x=0.5)
+            anchor = AnchorLayout(anchor_x="right", size_hint_x=0.3)
             checkbox = CheckBox(
                 size_hint=(None, None),
                 size=("20dp", "20dp"),
@@ -350,6 +336,35 @@ class MainMenu(Screen):
 
             label = Label(text=text)
             show_layout.add_widget(label)
+
+        info_buttons = BoxLayout(
+            orientation="vertical", spacing="20dp", padding=("5dp", 0)
+        )
+
+        ueberschrift_info_buttons = Label(
+            text=" Info & Rando",
+            halign="left",
+            size_hint_x=None,
+            width=info_buttons.width,
+            font_size="20sp",
+        )
+        info_buttons.add_widget(ueberschrift_info_buttons)
+
+        pokedex_button = Button(text="Pokedex", on_press=self.switch_to_pokedex)
+        info_buttons.add_widget(pokedex_button)
+
+        box_button = Button(text="PC-Boxen", on_press=self.switch_to_boxes)
+        info_buttons.add_widget(box_button)
+
+        bag_button = Button(text="Tasche", on_press=self.switch_to_bag)
+        info_buttons.add_widget(bag_button)
+
+        self.randomize_button = Button(text="Randomisieren", on_press=self.start_randomization)
+        info_buttons.add_widget(self.randomize_button)
+        
+        showing_frame.add_widget(info_buttons)
+
+        showing_frame.add_widget(sort_layout)
 
         showing_frame.add_widget(show_layout)
 
@@ -621,6 +636,9 @@ class MainMenu(Screen):
             self.ids.bizhawk_check.disabled = True
             self.ids.bizhawk_check.state = "normal"
             self.sp["show_badges"] = False
+        elif pl["session_game"] in ['X','Y','Alpha Saphir', 'Omega Rubin']:
+            self.ids.bizhawk_check.disabled = True
+            self.ids.bizhawk_check.state = "normal"
         else:
             self.ids.badges_check.disabled = False
             self.ids.badges_check.state = "down" if sp["show_badges"] else "normal"

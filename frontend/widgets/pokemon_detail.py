@@ -7,7 +7,6 @@ Randomizer-Log.
 """
 import logging
 import sys
-import traceback
 
 import yaml
 from kivy.uix.boxlayout import BoxLayout

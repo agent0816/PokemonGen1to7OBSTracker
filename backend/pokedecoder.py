@@ -448,14 +448,23 @@ def pokemon45(data, gen, is_boxed=False):
         dexnr = "egg"
 
     if not is_boxed:
-        status_bytes = f"{int.from_bytes(decrypted_battle_stats[0:1]):#010b}".replace('0b', '')
         status = {}
-        status["sleep"] = int(status_bytes[0:3])
-        status["poison"] = int(status_bytes[3])
-        status["burn"] = int(status_bytes[4])
-        status["freeze"] = int(status_bytes[5])
-        status["para"] = int(status_bytes[6])
-        status["toxic"] = int(status_bytes[7])
+        if gen == 4:
+            status_bytes = f"{int.from_bytes(decrypted_battle_stats[0:1]):#010b}".replace('0b', '')
+            status["sleep"] = int(status_bytes[0:3])
+            status["poison"] = int(status_bytes[3])
+            status["burn"] = int(status_bytes[4])
+            status["freeze"] = int(status_bytes[5])
+            status["para"] = int(status_bytes[6])
+            status["toxic"] = int(status_bytes[7])
+        else:
+            status_bytes = int.from_bytes(decrypted_battle_stats[0:1])
+            status["sleep"] = 1 if status_bytes == 2 else 0
+            status["poison"] = 1 if status_bytes == 5 else 0
+            status["burn"] = 1 if status_bytes == 4 else 0
+            status["freeze"] = 1 if status_bytes == 3 else 0
+            status["para"] = 1 if status_bytes == 1 else 0
+            status["toxic"] = 0
         lvl = decrypted_battle_stats[4]
         cur_hp = int.from_bytes(decrypted_battle_stats[6:8], "little")
         max_hp = int.from_bytes(decrypted_battle_stats[8:10], "little")
@@ -533,14 +542,14 @@ def pokemon67(data, gen, is_boxed=False):
         dexnr = "egg"
 
     if not is_boxed:
-        status_bytes = f"{int.from_bytes(decrypted_battle_stats[0:1]):#010b}".replace('0b', '')
+        status_bytes = int.from_bytes(decrypted_battle_stats[0:1])
         status = {}
-        status["sleep"] = int(status_bytes[0:3])
-        status["poison"] = int(status_bytes[3])
-        status["burn"] = int(status_bytes[4])
-        status["freeze"] = int(status_bytes[5])
-        status["para"] = int(status_bytes[6])
-        status["toxic"] = int(status_bytes[7])
+        status["sleep"] = 1 if status_bytes == 2 else 0
+        status["poison"] = 1 if status_bytes == 5 else 0
+        status["burn"] = 1 if status_bytes == 4 else 0
+        status["freeze"] = 1 if status_bytes == 3 else 0
+        status["para"] = 1 if status_bytes == 1 else 0
+        status["toxic"] = 0
         lvl = int(decrypted_battle_stats[4])
         cur_hp = int.from_bytes(decrypted_battle_stats[8:10], "little")
         max_hp = int.from_bytes(decrypted_battle_stats[10:12], "little")

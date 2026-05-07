@@ -516,6 +516,8 @@ class MainMenu(Screen):
     async def _run_randomization(self):
         try:
             success, message = await self.randomizer.randomize()
+            if success:
+                self._sync_rando_to_munchlax()
             title = "Randomisierung" if success else "Fehler"
 
             box = BoxLayout(orientation='vertical')
@@ -531,6 +533,15 @@ class MainMenu(Screen):
         finally:
             self.randomize_button.disabled = False
             self.randomize_button.text = "Randomisieren"
+
+    def _sync_rando_to_munchlax(self):
+        rando_data = self.randomizer.get_log_data()
+        if rando_data:
+            self.munchlax.rando_tm_moves = rando_data.tm_moves or None
+            self.munchlax.rando_hm_moves = rando_data.hm_moves or None
+        else:
+            self.munchlax.rando_tm_moves = None
+            self.munchlax.rando_hm_moves = None
 
     def toggle_server_client(self, instance, button, initializing=False):
         if instance.state == "down":

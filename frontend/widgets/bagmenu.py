@@ -31,6 +31,7 @@ from kivy.uix.textinput import TextInput
 
 from backend.bag_decoder import POCKET_MAX_SLOTS
 from backend.classes.pokedex_db import PokedexDB
+from backend.tm_type_resolver import resolve_tm_hm_sprite
 
 
 def _init_logging():
@@ -80,6 +81,8 @@ def _load_item_luts() -> dict[int, dict]:
 
 
 _ITEM_LUTS = _load_item_luts()
+
+
 
 
 # Pocket-Anzeigenamen (deutsche Bezeichnungen analog zur Pointer-YAML-Struktur).
@@ -191,6 +194,8 @@ class BagMenu(Screen):
         self.bizhawk = bizhawk
         self.citra = citra
         self.app_version = app_version
+        self._rando_tm_moves: dict[int, str] | None = None
+        self._rando_hm_moves: dict[int, str] | None = None
 
         # Cache aller Zeilen aus der DB; Filter werden in-memory angewendet.
         self._all_rows: list[dict] = []
@@ -271,9 +276,23 @@ class BagMenu(Screen):
             self._refresh_event = None
 
     def _reload(self):
+        self._update_rando_data()
         self._all_rows = self._load_from_db()
         self._update_pocket_spinner_values()
         self._apply_filters()
+
+    def _update_rando_data(self):
+        self._rando_tm_moves = None
+        self._rando_hm_moves = None
+        if not self.manager:
+            return
+        main_menu = self.manager.get_screen("MainMenu")
+        if not hasattr(main_menu, 'randomizer'):
+            return
+        rando_data = main_menu.randomizer.get_log_data()
+        if rando_data:
+            self._rando_tm_moves = rando_data.tm_moves or None
+            self._rando_hm_moves = rando_data.hm_moves or None
 
     def _on_player_change(self):
         # Spielerwechsel kann andere Editionen sichtbar machen — Pocket-Spinner
@@ -508,6 +527,10 @@ class BagMenu(Screen):
         # items*.yml. Wenn kein Slug auffindbar ist (unbekannte ID) -> kein Icon.
         slug = item_slug(edition, item_id) if items_path else None
         if slug:
+            slug = resolve_tm_hm_sprite(
+                _safe_int(edition), slug,
+                self._rando_tm_moves, self._rando_hm_moves,
+            )
             cell.add_widget(Image(
                 source=f"{items_path}/{slug}.png",
                 size_hint_x=None, width=dp(28),

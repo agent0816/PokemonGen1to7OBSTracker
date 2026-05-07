@@ -610,6 +610,8 @@ class ScrollSettings(ScrollView):
             return
         main_menu = self.settingsscreen.manager.get_screen("MainMenu")
         success, msg = main_menu.randomizer.parse_log(log_path)
+        if success:
+            main_menu._sync_rando_to_munchlax()
         box = BoxLayout(orientation='vertical')
         box.add_widget(Label(text=msg))
         btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})

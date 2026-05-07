@@ -4,6 +4,8 @@ import sys
 import traceback
 from websockets.exceptions import WebSocketException
 
+from backend.tm_type_resolver import resolve_tm_hm_sprite
+
 class OBS():
     def __init__(self, host, port, password, munchlax, conf, obs):
         self.ws = None
@@ -101,6 +103,12 @@ class OBS():
         if self.conf['show_items'] and edition > 20:
             items_path = self.conf['items_path'] if not self.conf['obs_2_pc'] else self.conf['items_obs_path']
             for slot in slots:
+                item_slug = str(team[slot].item)
+                item_slug = resolve_tm_hm_sprite(
+                    edition, item_slug,
+                    self.munchlax.rando_tm_moves,
+                    self.munchlax.rando_hm_moves,
+                )
                 batch.append(
                     simpleobsws.Request(
                         "SetInputSettings",
@@ -108,7 +116,7 @@ class OBS():
                             "inputName": f"item{slot + 6 * (player - 1) + 1}",
                             "inputSettings": {
                                 "file": items_path + '/'
-                                + str(team[slot].item)
+                                + item_slug
                                 + ".png"
                             },
                         },

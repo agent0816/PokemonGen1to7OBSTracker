@@ -46,6 +46,8 @@ class Munchlax:
         self.port = port
         self.is_connected = False
         self.obs: OBS | None = None
+        self.rando_tm_moves: dict[int, str] | None = None
+        self.rando_hm_moves: dict[int, str] | None = None
         self.writer_lock = asyncio.Lock()
         self.disconnect_lock = asyncio.Lock()
 

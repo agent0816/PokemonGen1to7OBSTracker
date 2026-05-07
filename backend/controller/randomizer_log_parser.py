@@ -56,7 +56,8 @@ class RandomizerLogData:
     pokemon: dict[int, RandoPokemon] = field(default_factory=dict)
     pokemon_name_to_id: dict[str, int] = field(default_factory=dict)
     trainers: dict[int, Trainer] = field(default_factory=dict)
-    tm_moves: list[str] = field(default_factory=list)
+    tm_moves: dict[int, str] = field(default_factory=dict)
+    hm_moves: dict[int, str] = field(default_factory=dict)
     wild_areas: list[WildArea] = field(default_factory=list)
     starters: list[str] = field(default_factory=list)
     evolutions: dict[int, list[str]] = field(default_factory=dict)
@@ -161,7 +162,8 @@ class RandomizerLogParser:
             f"Log geparst: {len(self._data.pokemon)} Pokemon, "
             f"{len(self._data.trainers)} Trainer, "
             f"{len(self._data.wild_areas)} Wild-Gebiete, "
-            f"{len(self._data.tm_moves)} TMs"
+            f"{len(self._data.tm_moves)} TMs, "
+            f"{len(self._data.hm_moves)} VMs"
         )
         return self._data
 
@@ -234,9 +236,15 @@ class RandomizerLogParser:
     def _parse_tm_moves(self, lines: list[str], start: int):
         i = start
         while i < len(lines) and lines[i].strip():
-            match = re.match(r'(?:TM|HM)\d+\s+(.+)', lines[i])
+            match = re.match(r'(TM|HM)(\d+)\s+(.+)', lines[i])
             if match:
-                self._data.tm_moves.append(match.group(1).strip())
+                prefix = match.group(1)
+                number = int(match.group(2))
+                move_name = match.group(3).strip()
+                if prefix == "TM":
+                    self._data.tm_moves[number] = move_name
+                else:
+                    self._data.hm_moves[number] = move_name
             i += 1
 
     def _parse_tm_compatibility(self, lines: list[str], start: int):

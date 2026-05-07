@@ -75,8 +75,12 @@ class Bizhawk:
                     return 362
                 elif edition < 40:
                     return 601
-                else:
+                elif edition < 44:
+                    return 1417
+                elif edition < 50:
                     return 1418
+                else:
+                    return 1321
 
             def update_teams(msg):
                 team: list[Pokemon] = pokedecoder.team(msg, edition)

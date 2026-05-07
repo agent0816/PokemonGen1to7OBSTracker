@@ -313,8 +313,8 @@ def pokemon3(data, edition, is_boxed=False):
     ev_names = ['hp', 'attack', 'defense', 'speed', 'special_attack', 'special_defense']
     evs = {ev_names[index]: int(byte) for index, byte in enumerate(unshuffled_bytes[0x19:0x1E])}
 
-    move_bytes = unshuffled_bytes[0x0D:0x15]
-    pp_bytes = unshuffled_bytes[0x15:0x19]
+    move_bytes = unshuffled_bytes[0x0C:0x14]
+    pp_bytes = unshuffled_bytes[0x14:0x18]
     moves = [{"id": int.from_bytes(move_bytes[2 * i:2 * i + 2], "little"), "pp": int(byte)} for i, byte in enumerate(pp_bytes)]
 
     iv_base = int.from_bytes(unshuffled_bytes[0x29:0x2D], "little")

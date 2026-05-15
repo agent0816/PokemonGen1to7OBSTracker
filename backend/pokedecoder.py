@@ -13,6 +13,32 @@ items4 = yaml.safe_load(open("backend/data/items4.yml"))
 items5 = yaml.safe_load(open("backend/data/items5.yml"))
 items6plus = yaml.safe_load(open("backend/data/items.yml"))
 forms = yaml.safe_load(open("backend/data/forms.yml"))
+abilities_de = yaml.safe_load(open("backend/data/abilities_de.yml"))
+abilities_en_reverse = yaml.safe_load(open("backend/data/abilities_en_reverse.yml"))
+abilities_de_reverse: dict[str, int] = {name.upper(): id for id, name in abilities_de.items()}
+abilities_alt_de: dict[str, int] = {
+    "TEMPOMACHER": 3,
+    "FÄHRTE": 36,
+    "WERTEHALTER": 60,
+}
+gen3_abilities_lut: dict[int, list[int]] = yaml.safe_load(open("backend/data/abilities_gen3.yml")) or {}
+_gen3_abilities_override: dict[int, list[int]] | None = None
+
+
+def set_gen3_abilities(lut: dict[int, list[int]] | None):
+    global _gen3_abilities_override
+    _gen3_abilities_override = lut
+
+
+def resolve_ability_name(name: str) -> int | None:
+    result = abilities_en_reverse.get(name)
+    if result is not None:
+        return result
+    upper = name.upper()
+    result = abilities_de_reverse.get(upper)
+    if result is not None:
+        return result
+    return abilities_alt_de.get(upper)
 
 def decryptpokemon(data, gen):
     def prng(seed):
@@ -319,6 +345,7 @@ def pokemon3(data, edition, is_boxed=False):
 
     iv_base = int.from_bytes(unshuffled_bytes[0x29:0x2D], "little")
     ivs = {ev_names[index]: ((iv_base >> (index * 5)) & 0x1F) for index in range(6)}
+    ability_bit = (iv_base >> 31) & 1
 
     checksum_given = int.from_bytes(data[0x1C:0x1E], "little")
     checksum_calculated = calculate_checksum(unshuffled_bytes)
@@ -336,6 +363,10 @@ def pokemon3(data, edition, is_boxed=False):
 
     if item in items3:
         item = items3[item]
+
+    lut = _gen3_abilities_override or gen3_abilities_lut
+    species_abilities = lut.get(species, [0])
+    ability = species_abilities[min(ability_bit, len(species_abilities) - 1)]
 
     if species in gender_lut:
         female = personality % 256 < gender_lut[species]
@@ -373,7 +404,7 @@ def pokemon3(data, edition, is_boxed=False):
         lvl=lvl, item=item, nickname=nickname, route=met_location,
         cur_hp=cur_hp, max_hp=max_hp,
         checksum_given=checksum_given, checksum_calculated=checksum_calculated,
-        experience_points=experience_points, nature=nature,
+        experience_points=experience_points, ability=ability, nature=nature,
         evs=evs, moves=moves, ivs=ivs, battle_stats=battle_stats, status=status,
         personality=personality, ot_id=ot_id, ot_secret_id=ot_secret_id,
         ot_name=ot_name, is_boxed=is_boxed,

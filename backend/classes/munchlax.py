@@ -48,6 +48,7 @@ class Munchlax:
         self.obs: OBS | None = None
         self.rando_tm_moves: dict[int, str] | None = None
         self.rando_hm_moves: dict[int, str] | None = None
+        self.rando_abilities_gen3: dict[int, list[int]] | None = None
         self.writer_lock = asyncio.Lock()
         self.disconnect_lock = asyncio.Lock()
 

@@ -114,10 +114,11 @@ def _resolve_types_from_rando(rando_types: list[str]) -> list[str]:
 
 
 def _resolve_abilities_from_rando(rando_abilities: list[str]) -> list[str]:
-    """Löst englische Fähigkeitsnamen aus dem Rando-Log in deutsche auf."""
+    """Löst Fähigkeitsnamen (EN oder DE) aus dem Rando-Log in deutsche auf."""
+    from backend.pokedecoder import resolve_ability_name
     result = []
     for a in rando_abilities:
-        ability_id = abilities_en_reverse.get(a)
+        ability_id = resolve_ability_name(a)
         if ability_id is not None:
             result.append(abilities_de.get(ability_id, a))
         else:

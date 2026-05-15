@@ -1,0 +1,388 @@
+# Gen 3 Species -> [Ability1_ID, Ability2_ID]
+# 386 Eintraege
+1: [65]  # Notdünger
+2: [65]  # Notdünger
+3: [65]  # Notdünger
+4: [66]  # Großbrand
+5: [66]  # Großbrand
+6: [66]  # Großbrand
+7: [67]  # Sturzbach
+8: [67]  # Sturzbach
+9: [67]  # Sturzbach
+10: [19]  # Puderabwehr
+11: [61]  # Expidermis
+12: [14]  # Facettenauge
+13: [19]  # Puderabwehr
+14: [61]  # Expidermis
+15: [68]  # Hexaplaga
+16: [51, 77]  # Adlerauge, Taumelschritt
+17: [51, 77]  # Adlerauge, Taumelschritt
+18: [51, 77]  # Adlerauge, Taumelschritt
+19: [50, 62]  # Angsthase, Adrenalin
+20: [50, 62]  # Angsthase, Adrenalin
+21: [51]  # Adlerauge
+22: [51]  # Adlerauge
+23: [22, 61]  # Bedroher, Expidermis
+24: [22, 61]  # Bedroher, Expidermis
+25: [9]  # Statik
+26: [9]  # Statik
+27: [8]  # Sandschleier
+28: [8]  # Sandschleier
+29: [38, 79]  # Giftdorn, Rivalität
+30: [38, 79]  # Giftdorn, Rivalität
+31: [38, 79]  # Giftdorn, Rivalität
+32: [38, 79]  # Giftdorn, Rivalität
+33: [38, 79]  # Giftdorn, Rivalität
+34: [38, 79]  # Giftdorn, Rivalität
+35: [56, 98]  # Charmebolzen, Magieschild
+36: [56, 98]  # Charmebolzen, Magieschild
+37: [18]  # Feuerfänger
+38: [18]  # Feuerfänger
+39: [56, 172]  # Charmebolzen, Unbeugsamkeit
+40: [56, 172]  # Charmebolzen, Unbeugsamkeit
+41: [39]  # Konzentrator
+42: [39]  # Konzentrator
+43: [34]  # Chlorophyll
+44: [34]  # Chlorophyll
+45: [34]  # Chlorophyll
+46: [27, 87]  # Sporenwirt, Trockenheit
+47: [27, 87]  # Sporenwirt, Trockenheit
+48: [14, 110]  # Facettenauge, Aufwertung
+49: [19, 110]  # Puderabwehr, Aufwertung
+50: [8, 71]  # Sandschleier, Ausweglos
+51: [8, 71]  # Sandschleier, Ausweglos
+52: [53, 101]  # Mitnahme, Techniker
+53: [7, 101]  # Flexibilität, Techniker
+54: [6, 13]  # Feuchtigkeit, Wolke Sieben
+55: [6, 13]  # Feuchtigkeit, Wolke Sieben
+56: [72, 83]  # Munterkeit, Kurzschluss
+57: [72, 83]  # Munterkeit, Kurzschluss
+58: [22, 18]  # Bedroher, Feuerfänger
+59: [22, 18]  # Bedroher, Feuerfänger
+60: [11, 6]  # H2O-Absorber, Feuchtigkeit
+61: [11, 6]  # H2O-Absorber, Feuchtigkeit
+62: [11, 6]  # H2O-Absorber, Feuchtigkeit
+63: [28, 39]  # Synchro, Konzentrator
+64: [28, 39]  # Synchro, Konzentrator
+65: [28, 39]  # Synchro, Konzentrator
+66: [62, 99]  # Adrenalin, Schildlos
+67: [62, 99]  # Adrenalin, Schildlos
+68: [62, 99]  # Adrenalin, Schildlos
+69: [34]  # Chlorophyll
+70: [34]  # Chlorophyll
+71: [34]  # Chlorophyll
+72: [29, 64]  # Neutraltorso, Kloakensoße
+73: [29, 64]  # Neutraltorso, Kloakensoße
+74: [69, 5]  # Steinhaupt, Robustheit
+75: [69, 5]  # Steinhaupt, Robustheit
+76: [69, 5]  # Steinhaupt, Robustheit
+77: [50, 18]  # Angsthase, Feuerfänger
+78: [50, 18]  # Angsthase, Feuerfänger
+79: [12, 20]  # Dösigkeit, Gleichmut
+80: [12, 20]  # Dösigkeit, Gleichmut
+81: [42, 5]  # Magnetfalle, Robustheit
+82: [42, 5]  # Magnetfalle, Robustheit
+83: [51, 39]  # Adlerauge, Konzentrator
+84: [50, 48]  # Angsthase, Frühwecker
+85: [50, 48]  # Angsthase, Frühwecker
+86: [47, 93]  # Speckschicht, Hydration
+87: [47, 93]  # Speckschicht, Hydration
+88: [1, 60]  # Duftnote, Klebekörper
+89: [1, 60]  # Duftnote, Klebekörper
+90: [75, 92]  # Panzerhaut, Wertelink
+91: [75, 92]  # Panzerhaut, Wertelink
+92: [26]  # Schwebe
+93: [26]  # Schwebe
+94: [130]  # Tastfluch
+95: [69, 5]  # Steinhaupt, Robustheit
+96: [15, 108]  # Insomnia, Vorwarnung
+97: [15, 108]  # Insomnia, Vorwarnung
+98: [52, 75]  # Scherenmacht, Panzerhaut
+99: [52, 75]  # Scherenmacht, Panzerhaut
+100: [43, 9]  # Lärmschutz, Statik
+101: [43, 9]  # Lärmschutz, Statik
+102: [34]  # Chlorophyll
+103: [34]  # Chlorophyll
+104: [69, 31]  # Steinhaupt, Blitzfänger
+105: [69, 31]  # Steinhaupt, Blitzfänger
+106: [7, 120]  # Flexibilität, Achtlos
+107: [51, 89]  # Adlerauge, Eisenfaust
+108: [20, 12]  # Gleichmut, Dösigkeit
+109: [26, 256]  # Schwebe, Reaktionsgas
+110: [26, 256]  # Schwebe, Reaktionsgas
+111: [31, 69]  # Blitzfänger, Steinhaupt
+112: [31, 69]  # Blitzfänger, Steinhaupt
+113: [30, 32]  # Innere Kraft, Edelmut
+114: [34, 102]  # Chlorophyll, Floraschild
+115: [48, 113]  # Frühwecker, Rauflust
+116: [33, 97]  # Wassertempo, Superschütze
+117: [38, 97]  # Giftdorn, Superschütze
+118: [33, 41]  # Wassertempo, Aquahülle
+119: [33, 41]  # Wassertempo, Aquahülle
+120: [35, 30]  # Erleuchtung, Innere Kraft
+121: [35, 30]  # Erleuchtung, Innere Kraft
+122: [43, 111]  # Lärmschutz, Filter
+123: [68, 101]  # Hexaplaga, Techniker
+124: [12, 108]  # Dösigkeit, Vorwarnung
+125: [9]  # Statik
+126: [49]  # Flammkörper
+127: [52, 104]  # Scherenmacht, Überbrückung
+128: [22, 83]  # Bedroher, Kurzschluss
+129: [33]  # Wassertempo
+130: [22]  # Bedroher
+131: [11, 75]  # H2O-Absorber, Panzerhaut
+132: [7]  # Flexibilität
+133: [50, 91]  # Angsthase, Anpassung
+134: [11]  # H2O-Absorber
+135: [10]  # Voltabsorber
+136: [18]  # Feuerfänger
+137: [36, 88]  # Erfassen, Download
+138: [33, 75]  # Wassertempo, Panzerhaut
+139: [33, 75]  # Wassertempo, Panzerhaut
+140: [33, 4]  # Wassertempo, Kampfpanzer
+141: [33, 4]  # Wassertempo, Kampfpanzer
+142: [69, 46]  # Steinhaupt, Erzwinger
+143: [17, 47]  # Immunität, Speckschicht
+144: [46]  # Erzwinger
+145: [46]  # Erzwinger
+146: [46]  # Erzwinger
+147: [61]  # Expidermis
+148: [61]  # Expidermis
+149: [39]  # Konzentrator
+150: [46]  # Erzwinger
+151: [28]  # Synchro
+152: [65]  # Notdünger
+153: [65]  # Notdünger
+154: [65]  # Notdünger
+155: [66]  # Großbrand
+156: [66]  # Großbrand
+157: [66]  # Großbrand
+158: [67]  # Sturzbach
+159: [67]  # Sturzbach
+160: [67]  # Sturzbach
+161: [50, 51]  # Angsthase, Adlerauge
+162: [50, 51]  # Angsthase, Adlerauge
+163: [15, 51]  # Insomnia, Adlerauge
+164: [15, 51]  # Insomnia, Adlerauge
+165: [68, 48]  # Hexaplaga, Frühwecker
+166: [68, 48]  # Hexaplaga, Frühwecker
+167: [68, 15]  # Hexaplaga, Insomnia
+168: [68, 15]  # Hexaplaga, Insomnia
+169: [39]  # Konzentrator
+170: [10, 35]  # Voltabsorber, Erleuchtung
+171: [10, 35]  # Voltabsorber, Erleuchtung
+172: [9]  # Statik
+173: [56, 98]  # Charmebolzen, Magieschild
+174: [56, 172]  # Charmebolzen, Unbeugsamkeit
+175: [55, 32]  # Übereifer, Edelmut
+176: [55, 32]  # Übereifer, Edelmut
+177: [28, 48]  # Synchro, Frühwecker
+178: [28, 48]  # Synchro, Frühwecker
+179: [9]  # Statik
+180: [9]  # Statik
+181: [9]  # Statik
+182: [34]  # Chlorophyll
+183: [47, 37]  # Speckschicht, Kraftkoloss
+184: [47, 37]  # Speckschicht, Kraftkoloss
+185: [5, 69]  # Robustheit, Steinhaupt
+186: [11, 6]  # H2O-Absorber, Feuchtigkeit
+187: [34, 102]  # Chlorophyll, Floraschild
+188: [34, 102]  # Chlorophyll, Floraschild
+189: [34, 102]  # Chlorophyll, Floraschild
+190: [50, 53]  # Angsthase, Mitnahme
+191: [34, 94]  # Chlorophyll, Solarkraft
+192: [34, 94]  # Chlorophyll, Solarkraft
+193: [3, 14]  # Temposchub, Facettenauge
+194: [6, 11]  # Feuchtigkeit, H2O-Absorber
+195: [6, 11]  # Feuchtigkeit, H2O-Absorber
+196: [28]  # Synchro
+197: [28]  # Synchro
+198: [15, 105]  # Insomnia, Glückspilz
+199: [12, 20]  # Dösigkeit, Gleichmut
+200: [26]  # Schwebe
+201: [26]  # Schwebe
+202: [23]  # Wegsperre
+203: [39, 48]  # Konzentrator, Frühwecker
+204: [5]  # Robustheit
+205: [5]  # Robustheit
+206: [32, 50]  # Edelmut, Angsthase
+207: [52, 8]  # Scherenmacht, Sandschleier
+208: [69, 5]  # Steinhaupt, Robustheit
+209: [22, 50]  # Bedroher, Angsthase
+210: [22, 95]  # Bedroher, Rasanz
+211: [38, 33]  # Giftdorn, Wassertempo
+212: [68, 101]  # Hexaplaga, Techniker
+213: [5, 82]  # Robustheit, Völlerei
+214: [68, 62]  # Hexaplaga, Adrenalin
+215: [39, 51]  # Konzentrator, Adlerauge
+216: [53, 95]  # Mitnahme, Rasanz
+217: [62, 95]  # Adrenalin, Rasanz
+218: [40, 49]  # Magmapanzer, Flammkörper
+219: [40, 49]  # Magmapanzer, Flammkörper
+220: [12, 81]  # Dösigkeit, Schneemantel
+221: [12, 81]  # Dösigkeit, Schneemantel
+222: [55, 30]  # Übereifer, Innere Kraft
+223: [55, 97]  # Übereifer, Superschütze
+224: [21, 97]  # Saugnapf, Superschütze
+225: [72, 55]  # Munterkeit, Übereifer
+226: [33, 11]  # Wassertempo, H2O-Absorber
+227: [51, 5]  # Adlerauge, Robustheit
+228: [48, 18]  # Frühwecker, Feuerfänger
+229: [48, 18]  # Frühwecker, Feuerfänger
+230: [33, 97]  # Wassertempo, Superschütze
+231: [53]  # Mitnahme
+232: [5]  # Robustheit
+233: [36, 88]  # Erfassen, Download
+234: [22, 119]  # Bedroher, Schnüffler
+235: [20, 101]  # Gleichmut, Techniker
+236: [62, 80]  # Adrenalin, Felsenfest
+237: [22, 101]  # Bedroher, Techniker
+238: [12, 108]  # Dösigkeit, Vorwarnung
+239: [9]  # Statik
+240: [49]  # Flammkörper
+241: [47, 113]  # Speckschicht, Rauflust
+242: [30, 32]  # Innere Kraft, Edelmut
+243: [46]  # Erzwinger
+244: [46]  # Erzwinger
+245: [46]  # Erzwinger
+246: [62]  # Adrenalin
+247: [61]  # Expidermis
+248: [45]  # Sandsturm
+249: [46]  # Erzwinger
+250: [46]  # Erzwinger
+251: [30]  # Innere Kraft
+252: [65]  # Notdünger
+253: [65]  # Notdünger
+254: [65]  # Notdünger
+255: [66]  # Großbrand
+256: [66]  # Großbrand
+257: [66]  # Großbrand
+258: [67]  # Sturzbach
+259: [67]  # Sturzbach
+260: [67]  # Sturzbach
+261: [50, 95]  # Angsthase, Rasanz
+262: [22, 95]  # Bedroher, Rasanz
+263: [53, 82]  # Mitnahme, Völlerei
+264: [53, 82]  # Mitnahme, Völlerei
+265: [19]  # Puderabwehr
+266: [61]  # Expidermis
+267: [68]  # Hexaplaga
+268: [61]  # Expidermis
+269: [19]  # Puderabwehr
+270: [33, 44]  # Wassertempo, Regengenuss
+271: [33, 44]  # Wassertempo, Regengenuss
+272: [33, 44]  # Wassertempo, Regengenuss
+273: [34, 48]  # Chlorophyll, Frühwecker
+274: [34, 48]  # Chlorophyll, Frühwecker
+275: [34, 274]  # Chlorophyll, Windreiter
+276: [62]  # Adrenalin
+277: [62]  # Adrenalin
+278: [51, 93]  # Adlerauge, Hydration
+279: [51, 2]  # Adlerauge, Niesel
+280: [28, 36]  # Synchro, Erfassen
+281: [28, 36]  # Synchro, Erfassen
+282: [28, 36]  # Synchro, Erfassen
+283: [33]  # Wassertempo
+284: [22]  # Bedroher
+285: [27, 90]  # Sporenwirt, Giftheilung
+286: [27, 90]  # Sporenwirt, Giftheilung
+287: [54]  # Schnarchnase
+288: [72]  # Munterkeit
+289: [54]  # Schnarchnase
+290: [14]  # Facettenauge
+291: [3]  # Temposchub
+292: [25]  # Wunderwache
+293: [43]  # Lärmschutz
+294: [43]  # Lärmschutz
+295: [43]  # Lärmschutz
+296: [47, 62]  # Speckschicht, Adrenalin
+297: [47, 62]  # Speckschicht, Adrenalin
+298: [47, 37]  # Speckschicht, Kraftkoloss
+299: [5, 42]  # Robustheit, Magnetfalle
+300: [56, 96]  # Charmebolzen, Regulierung
+301: [56, 96]  # Charmebolzen, Regulierung
+302: [51, 100]  # Adlerauge, Zeitspiel
+303: [52, 22]  # Scherenmacht, Bedroher
+304: [5, 69]  # Robustheit, Steinhaupt
+305: [5, 69]  # Robustheit, Steinhaupt
+306: [5, 69]  # Robustheit, Steinhaupt
+307: [74]  # Mentalkraft
+308: [74]  # Mentalkraft
+309: [9, 31]  # Statik, Blitzfänger
+310: [9, 31]  # Statik, Blitzfänger
+311: [57]  # Plus
+312: [58]  # Minus
+313: [35, 68]  # Erleuchtung, Hexaplaga
+314: [12, 110]  # Dösigkeit, Aufwertung
+315: [30, 38]  # Innere Kraft, Giftdorn
+316: [64, 60]  # Kloakensoße, Klebekörper
+317: [64, 60]  # Kloakensoße, Klebekörper
+318: [24]  # Rauhaut
+319: [24]  # Rauhaut
+320: [41, 12]  # Aquahülle, Dösigkeit
+321: [41, 12]  # Aquahülle, Dösigkeit
+322: [12, 86]  # Dösigkeit, Wankelmut
+323: [40, 116]  # Magmapanzer, Felskern
+324: [73, 70]  # Pulverrauch, Dürre
+325: [47, 20]  # Speckschicht, Gleichmut
+326: [47, 20]  # Speckschicht, Gleichmut
+327: [20, 77]  # Gleichmut, Taumelschritt
+328: [52, 71]  # Scherenmacht, Ausweglos
+329: [26]  # Schwebe
+330: [26]  # Schwebe
+331: [8]  # Sandschleier
+332: [8]  # Sandschleier
+333: [30]  # Innere Kraft
+334: [30]  # Innere Kraft
+335: [17]  # Immunität
+336: [61]  # Expidermis
+337: [26]  # Schwebe
+338: [26]  # Schwebe
+339: [12, 107]  # Dösigkeit, Vorahnung
+340: [12, 107]  # Dösigkeit, Vorahnung
+341: [52, 75]  # Scherenmacht, Panzerhaut
+342: [52, 75]  # Scherenmacht, Panzerhaut
+343: [26]  # Schwebe
+344: [26]  # Schwebe
+345: [21]  # Saugnapf
+346: [21]  # Saugnapf
+347: [4]  # Kampfpanzer
+348: [4]  # Kampfpanzer
+349: [33, 12]  # Wassertempo, Dösigkeit
+350: [63, 172]  # Notschutz, Unbeugsamkeit
+351: [59]  # Prognose
+352: [16]  # Farbwechsel
+353: [15, 119]  # Insomnia, Schnüffler
+354: [15, 119]  # Insomnia, Schnüffler
+355: [26]  # Schwebe
+356: [46]  # Erzwinger
+357: [34, 94]  # Chlorophyll, Solarkraft
+358: [26]  # Schwebe
+359: [46, 105]  # Erzwinger, Glückspilz
+360: [23]  # Wegsperre
+361: [39, 115]  # Konzentrator, Eishaut
+362: [39, 115]  # Konzentrator, Eishaut
+363: [47, 115]  # Speckschicht, Eishaut
+364: [47, 115]  # Speckschicht, Eishaut
+365: [47, 115]  # Speckschicht, Eishaut
+366: [75]  # Panzerhaut
+367: [33]  # Wassertempo
+368: [33]  # Wassertempo
+369: [33, 69]  # Wassertempo, Steinhaupt
+370: [33]  # Wassertempo
+371: [69]  # Steinhaupt
+372: [69]  # Steinhaupt
+373: [22]  # Bedroher
+374: [29]  # Neutraltorso
+375: [29]  # Neutraltorso
+376: [29]  # Neutraltorso
+377: [29]  # Neutraltorso
+378: [29]  # Neutraltorso
+379: [29]  # Neutraltorso
+380: [26]  # Schwebe
+381: [26]  # Schwebe
+382: [2]  # Niesel
+383: [70]  # Dürre
+384: [76]  # Klimaschutz
+385: [32]  # Edelmut
+386: [46]  # Erzwinger

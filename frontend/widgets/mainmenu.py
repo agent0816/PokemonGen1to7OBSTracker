@@ -18,6 +18,7 @@ from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 from frontend.widgets.trainerbox import TrainerBox
 from frontend.widgets.pokemon_detail import PokemonDetailScreen
+from backend import pokedecoder
 from backend.classes.obs import OBS
 from backend.controller.connection_controller import ConnectionController
 from backend.controller.randomizer_controller import RandomizerController
@@ -554,9 +555,23 @@ class MainMenu(Screen):
         if rando_data:
             self.munchlax.rando_tm_moves = rando_data.tm_moves or None
             self.munchlax.rando_hm_moves = rando_data.hm_moves or None
+            self._sync_rando_abilities(rando_data)
         else:
             self.munchlax.rando_tm_moves = None
             self.munchlax.rando_hm_moves = None
+            pokedecoder.set_gen3_abilities(None)
+
+    def _sync_rando_abilities(self, rando_data):
+        lut: dict[int, list[int]] = {}
+        for dexnr, poke in rando_data.pokemon.items():
+            ids = []
+            for name in poke.abilities:
+                aid = pokedecoder.resolve_ability_name(name)
+                if aid is not None:
+                    ids.append(aid)
+            if ids:
+                lut[dexnr] = ids
+        pokedecoder.set_gen3_abilities(lut if lut else None)
 
     def toggle_server_client(self, instance, button, initializing=False):
         if instance.state == "down":

@@ -183,7 +183,7 @@ class RandomizerLogParser:
         i = start + 1
         while i < len(lines) and lines[i].strip():
             parts = lines[i].split('|')
-            if len(parts) < 13:
+            if len(parts) < 12:
                 i += 1
                 continue
             try:
@@ -198,8 +198,12 @@ class RandomizerLogParser:
                     'sdef': int(parts[7].strip()),
                     'spd': int(parts[8].strip()),
                 }
-                abilities = [parts[j].strip() for j in range(9, 12) if parts[j].strip()]
-                item = parts[12].strip() if len(parts) > 12 else ''
+                if len(parts) >= 13:
+                    abilities = [parts[j].strip() for j in range(9, 12) if parts[j].strip()]
+                    item = parts[12].strip() if len(parts) > 12 else ''
+                else:
+                    abilities = [parts[j].strip() for j in range(9, 11) if parts[j].strip()]
+                    item = parts[11].strip() if len(parts) > 11 else ''
 
                 self._data.pokemon[dexnr] = RandoPokemon(
                     dexnr=dexnr, name=name, types=types,

@@ -180,30 +180,68 @@ class RandomizerLogParser:
                 self._data.settings_string = line.split(":", 1)[1].strip()
 
     def _parse_pokemon(self, lines: list[str], start: int):
+        header = lines[start] if start < len(lines) else ''
+        header_parts = [h.strip().upper() for h in header.split('|')]
+
+        if 'SPEC' in header_parts:
+            fmt = 'gen1'
+            min_cols = 8
+        elif 'ABILITY1' in header_parts:
+            fmt = 'gen3plus'
+            min_cols = 12
+        else:
+            fmt = 'gen2'
+            min_cols = 9
+
         i = start + 1
         while i < len(lines) and lines[i].strip():
             parts = lines[i].split('|')
-            if len(parts) < 12:
+            if len(parts) < min_cols:
                 i += 1
                 continue
             try:
                 dexnr = int(parts[0].strip())
                 name = parts[1].strip()
                 types = parts[2].strip().split('/')
-                stats = {
-                    'hp': int(parts[3].strip()),
-                    'atk': int(parts[4].strip()),
-                    'def': int(parts[5].strip()),
-                    'satk': int(parts[6].strip()),
-                    'sdef': int(parts[7].strip()),
-                    'spd': int(parts[8].strip()),
-                }
-                if len(parts) >= 13:
-                    abilities = [parts[j].strip() for j in range(9, 12) if parts[j].strip()]
-                    item = parts[12].strip() if len(parts) > 12 else ''
+
+                if fmt == 'gen1':
+                    spec = int(parts[7].strip())
+                    stats = {
+                        'hp': int(parts[3].strip()),
+                        'atk': int(parts[4].strip()),
+                        'def': int(parts[5].strip()),
+                        'satk': spec,
+                        'sdef': spec,
+                        'spd': int(parts[6].strip()),
+                    }
+                    abilities = []
+                    item = ''
+                elif fmt == 'gen2':
+                    stats = {
+                        'hp': int(parts[3].strip()),
+                        'atk': int(parts[4].strip()),
+                        'def': int(parts[5].strip()),
+                        'satk': int(parts[6].strip()),
+                        'sdef': int(parts[7].strip()),
+                        'spd': int(parts[8].strip()),
+                    }
+                    abilities = []
+                    item = parts[9].strip() if len(parts) > 9 else ''
                 else:
-                    abilities = [parts[j].strip() for j in range(9, 11) if parts[j].strip()]
-                    item = parts[11].strip() if len(parts) > 11 else ''
+                    stats = {
+                        'hp': int(parts[3].strip()),
+                        'atk': int(parts[4].strip()),
+                        'def': int(parts[5].strip()),
+                        'satk': int(parts[6].strip()),
+                        'sdef': int(parts[7].strip()),
+                        'spd': int(parts[8].strip()),
+                    }
+                    if len(parts) >= 13:
+                        abilities = [parts[j].strip() for j in range(9, 12) if parts[j].strip()]
+                        item = parts[12].strip() if len(parts) > 12 else ''
+                    else:
+                        abilities = [parts[j].strip() for j in range(9, 11) if parts[j].strip()]
+                        item = parts[11].strip() if len(parts) > 11 else ''
 
                 self._data.pokemon[dexnr] = RandoPokemon(
                     dexnr=dexnr, name=name, types=types,

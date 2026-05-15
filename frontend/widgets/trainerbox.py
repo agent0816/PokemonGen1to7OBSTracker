@@ -161,12 +161,16 @@ class TrainerBox(BoxLayout):
         pokemon = team[slot]
         edition = self.munchlax.editions.get(self.player_id, 0)
         rando_data = None
+        rando_getter = None
         if hasattr(self.screen, 'randomizer'):
             rando_data = self.screen.randomizer.get_log_data()
-        self.screen.pokemon_detail_screen.show(
+            rando_getter = self.screen.randomizer.get_log_data
+        detail = self.screen.pokemon_detail_screen
+        detail.show(
             pokemon, edition, rando_data,
             back_callback=lambda: setattr(self.screen.pokemon_sm, 'current', 'TeamOverview'),
         )
+        detail.set_refresh_source(self.player_id, slot, self.munchlax, rando_getter)
         self.screen.pokemon_sm.current = "PokemonDetail"
 
     def _update_rect(self, instance, value):
@@ -219,6 +223,12 @@ class TrainerBox(BoxLayout):
             slot_box.ids["hp_text"].text = f"{pokemon.cur_hp}/{pokemon.max_hp}"
 
         self.old_team = new_team
+
+        if (hasattr(self.screen, 'pokemon_sm')
+                and self.screen.pokemon_sm.current == "PokemonDetail"
+                and hasattr(self.screen, 'pokemon_detail_screen')
+                and self.screen.pokemon_detail_screen._refresh_player_id == self.player_id):
+            self.screen.pokemon_detail_screen.refresh_if_active()
 
         badges = self.munchlax.badges[self.player_id]
         badge_string = f"{self.obs_websocket.conf['badges_path']}"

@@ -50,7 +50,21 @@ natures_de = _load_yaml("backend/data/natures_de.yml")
 types_de = _load_yaml("backend/data/types_de.yml")
 types_en_reverse = _load_yaml("backend/data/types_en_reverse.yml")
 abilities_en_reverse = _load_yaml("backend/data/abilities_en_reverse.yml")
-species_personal = _load_yaml("backend/data/species_personal.yml")
+species_personal_gen1 = _load_yaml("backend/data/species_personal_gen1.yml")
+species_personal_gen2to5 = _load_yaml("backend/data/species_personal_gen2to5.yml")
+species_personal_gen6 = _load_yaml("backend/data/species_personal_gen6.yml")
+species_personal_gen7 = _load_yaml("backend/data/species_personal_gen7.yml")
+
+
+def _get_species_personal(edition: int) -> dict:
+    """Wählt generationsspezifische Personal-Daten anhand der Edition."""
+    if 11 <= edition <= 13:
+        return species_personal_gen1
+    if 61 <= edition <= 64:
+        return species_personal_gen6
+    if 71 <= edition <= 74:
+        return species_personal_gen7
+    return species_personal_gen2to5
 
 # Wesen-Stat-Modifikatortabelle aus PKHeX NatureAmp.cs.
 # Index = Wesen-ID (0-24), Wert = [ATK, DEF, SPA, SPD, SPE] mit -1/0/+1.
@@ -85,6 +99,10 @@ NATURE_AMPS = [
 STAT_LABELS = ["KP", "Ang", "Ver", "SpAng", "SpVer", "Init"]
 STAT_KEYS_PERSONAL = ["hp", "attack", "defense", "special_attack", "special_defense", "speed"]
 STAT_KEYS_RANDO = ["hp", "atk", "def", "satk", "sdef", "spd"]
+
+STAT_LABELS_GEN1 = ["KP", "Ang", "Ver", "Spez", "Init"]
+STAT_KEYS_PERSONAL_GEN1 = ["hp", "attack", "defense", "special_attack", "speed"]
+STAT_KEYS_RANDO_GEN1 = ["hp", "atk", "def", "satk", "spd"]
 
 
 def _nature_text(nature_id: int) -> str:
@@ -134,6 +152,12 @@ class PokemonDetailScreen(Screen):
         self.name = "PokemonDetail"
         self.obs_websocket = obs_websocket
         self._back_callback = None
+        self._edition = 0
+        self._refresh_player_id = None
+        self._refresh_slot = None
+        self._refresh_munchlax = None
+        self._refresh_rando_getter = None
+        self._last_pokemon = None
 
         self.root_layout = BoxLayout(orientation="vertical", padding="10dp", spacing="5dp")
 
@@ -154,6 +178,10 @@ class PokemonDetailScreen(Screen):
 
         self.add_widget(self.root_layout)
 
+    @property
+    def _is_gen1(self) -> bool:
+        return 11 <= self._edition <= 13
+
     def show(self, pokemon, edition: int, rando_data=None, back_callback=None):
         """Befüllt die Detailansicht mit Pokemon-Daten.
 
@@ -164,6 +192,8 @@ class PokemonDetailScreen(Screen):
             back_callback: Callable für den Zurück-Button.
         """
         self._back_callback = back_callback
+        self._edition = edition
+        self._last_pokemon = pokemon
         self.detail_layout.clear_widgets()
 
         if pokemon is None or getattr(pokemon, "dexnr", 0) in (0, "", None):
@@ -255,16 +285,19 @@ class PokemonDetailScreen(Screen):
             self._add_section(moves_grid)
 
         # -- Basiswerte —— bei Rando beide Zeilen + Delta --
+        stat_labels = STAT_LABELS_GEN1 if self._is_gen1 else STAT_LABELS
+        rando_keys = STAT_KEYS_RANDO_GEN1 if self._is_gen1 else STAT_KEYS_RANDO
         vanilla_stats = self._resolve_vanilla_stats(dexnr)
-        rando_stats = [rando_pokemon.stats.get(k, 0) for k in STAT_KEYS_RANDO] if rando_pokemon and rando_pokemon.stats else []
+        rando_stats = [rando_pokemon.stats.get(k, 0) for k in rando_keys] if rando_pokemon and rando_pokemon.stats else []
         has_rando_stats = rando_stats and rando_stats != vanilla_stats
         if vanilla_stats or rando_stats:
             self._add_separator("Basiswerte")
             display_stats = rando_stats if rando_stats else vanilla_stats
+            num_cols = len(stat_labels) + 1
             rows = 2 if has_rando_stats else 1
-            stats_grid = GridLayout(cols=7, size_hint_y=None, height=f"{25 * (rows + 1)}dp", spacing="2dp")
+            stats_grid = GridLayout(cols=num_cols, size_hint_y=None, height=f"{25 * (rows + 1)}dp", spacing="2dp")
             stats_grid.add_widget(self._label("", font_size="11sp", size_hint_y=None, height=25))
-            for lbl in STAT_LABELS:
+            for lbl in stat_labels:
                 stats_grid.add_widget(self._label(lbl, bold=True, font_size="11sp", size_hint_y=None, height=25))
             if has_rando_stats:
                 stats_grid.add_widget(self._label("Vanilla", font_size="10sp", bold=True, size_hint_y=None, height=25))
@@ -321,9 +354,9 @@ class PokemonDetailScreen(Screen):
                     self._add_section(self._label(" → ".join(evos)))
 
     def _resolve_vanilla_types(self, dexnr) -> list[str]:
-        """Vanilla-Typen aus species_personal auflösen."""
+        """Vanilla-Typen aus generationsspezifischen Personal-Daten auflösen."""
         if isinstance(dexnr, int):
-            personal = species_personal.get(dexnr)
+            personal = _get_species_personal(self._edition).get(dexnr)
             if personal and "types" in personal:
                 type_ids = personal["types"]
                 names = [types_de.get(tid, f"#{tid}") for tid in type_ids]
@@ -333,11 +366,12 @@ class PokemonDetailScreen(Screen):
         return []
 
     def _resolve_vanilla_stats(self, dexnr) -> list[int]:
-        """Vanilla-Basiswerte aus species_personal.  Reihenfolge: KP,Ang,Ver,SpAng,SpVer,Init."""
+        """Vanilla-Basiswerte aus generationsspezifischen Personal-Daten."""
         if isinstance(dexnr, int):
-            personal = species_personal.get(dexnr)
+            personal = _get_species_personal(self._edition).get(dexnr)
             if personal and "stats" in personal:
-                return [personal["stats"].get(k, 0) for k in STAT_KEYS_PERSONAL]
+                keys = STAT_KEYS_PERSONAL_GEN1 if self._is_gen1 else STAT_KEYS_PERSONAL
+                return [personal["stats"].get(k, 0) for k in keys]
         return []
 
     def _stat_row(self, stat_dict: dict) -> GridLayout:
@@ -376,6 +410,29 @@ class PokemonDetailScreen(Screen):
         )
         lbl.bind(size=lbl.setter("text_size"))
         return lbl
+
+    def set_refresh_source(self, player_id: int, slot: int, munchlax, rando_getter=None):
+        """Speichert Refresh-Quelle für automatische Aktualisierung."""
+        self._refresh_player_id = player_id
+        self._refresh_slot = slot
+        self._refresh_munchlax = munchlax
+        self._refresh_rando_getter = rando_getter
+
+    def refresh_if_active(self):
+        """Aktualisiert die Ansicht wenn sich das Pokemon geändert hat."""
+        if self._refresh_munchlax is None or self._refresh_player_id is None:
+            return
+        if self._refresh_player_id not in self._refresh_munchlax.sorted_teams:
+            return
+        team = self._refresh_munchlax.sorted_teams[self._refresh_player_id]
+        if self._refresh_slot >= len(team):
+            return
+        pokemon = team[self._refresh_slot]
+        if self._last_pokemon is not None and pokemon == self._last_pokemon:
+            return
+        edition = self._refresh_munchlax.editions.get(self._refresh_player_id, 0)
+        rando_data = self._refresh_rando_getter() if self._refresh_rando_getter else None
+        self.show(pokemon, edition, rando_data, self._back_callback)
 
     def _on_back(self, instance):
         if self._back_callback:

@@ -1,10 +1,9 @@
 import asyncio
+import os
 from dataclasses import dataclass
-import sys
 import subprocess
 import yaml
 import requests
-import logging
 from frontend.widgets.bagmenu import BagMenu
 from frontend.widgets.boxmenu import BoxMenu
 from frontend.widgets.mainmenu import MainMenu
@@ -13,6 +12,7 @@ from frontend.widgets.sessionsmenu import SessionMenu
 from frontend.widgets.settingsmenu import SettingsMenu
 from frontend.widgets.updatemenu import Update
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.core.window import Window
 
 # from kivy.logger import Logger
@@ -25,18 +25,9 @@ from backend.classes.bizhawk import Bizhawk
 from backend.classes.citrahandler import CitraHandler
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
+from backend.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-logging_formatter = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s")
-
-file_handler = logging.FileHandler("logs/frontend.log", "w")
-file_handler.setFormatter(logging_formatter)
-logger.addHandler(file_handler)
-
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setFormatter(logging_formatter)
-logger.addHandler(stream_handler)
+logger = get_logger(__name__, 'logs/frontend.log')
 
 from version import VERSION
 
@@ -172,6 +163,11 @@ class TrackerApp(App):
             self.rnd,
             self.session_list,
         ]
+
+        crash_log = 'logs/crash_report.log'
+        if os.path.exists(crash_log) and os.path.getsize(crash_log) > 0:
+            from frontend.widgets.mainmenu import CrashReportPopup
+            Clock.schedule_once(lambda dt: CrashReportPopup(crash_log).open(), 2)
 
         return Screens(*arguments)
 

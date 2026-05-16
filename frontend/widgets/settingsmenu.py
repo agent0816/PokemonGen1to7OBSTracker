@@ -1,4 +1,3 @@
-import sys
 import weakref
 from kivy.core.clipboard import Clipboard
 from kivy.uix.boxlayout import BoxLayout
@@ -15,19 +14,9 @@ from backend.controller.settings_controller import SettingsController
 from frontend.widgets.mainmenu import TrainerBox
 import frontend.UIFactory as UI
 import tkinter.filedialog as fd
-import logging
+from backend.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-file_handler = logging.FileHandler('logs/frontend.log', 'w')
-file_handler.setFormatter(logging_formatter)
-logger.addHandler(file_handler)
-
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setFormatter(logging_formatter)
-logger.addHandler(stream_handler)
+logger = get_logger(__name__, 'logs/frontend.log')
 
 class SettingsMenu(Screen):
     def __init__(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, app_version, **kwargs):

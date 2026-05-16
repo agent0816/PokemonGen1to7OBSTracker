@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes as wt
-import logging
+from backend.logging_setup import get_logger
 
 kernel32 = ctypes.windll.kernel32
 
@@ -48,7 +48,7 @@ class AzaharWriter:
         self._fcram_base: int | None = None
         self._linear_offset: int | None = None
         self._calibrated = False
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__, './logs/azahar_writer.log')
 
     def close(self):
         if self._handle:

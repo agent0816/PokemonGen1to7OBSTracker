@@ -10,8 +10,6 @@ Screen oder per "Aktualisieren"-Button. Live-Updates folgen automatisch durch
 den BizHawk/Citra-Bag-Refresh-Tick (alle 5 s schreibt der Reader in die DB).
 """
 import asyncio
-import logging
-import sys
 import traceback
 from pathlib import Path
 
@@ -32,26 +30,10 @@ from kivy.uix.textinput import TextInput
 from backend.bag_decoder import POCKET_MAX_SLOTS
 from backend.classes.pokedex_db import PokedexDB
 from backend.tm_type_resolver import resolve_tm_hm_sprite
+from backend.logging_setup import get_logger
 
 
-def _init_logging():
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-
-    formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-    file_handler = logging.FileHandler('./logs/bagmenu.log', 'w')
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
-
-    return logger
-
-
-logger = _init_logging()
+logger = get_logger(__name__, './logs/bagmenu.log')
 
 
 # Generation -> Item-LUT-Datei. Identisch zur Logik in pokedecoder.py /

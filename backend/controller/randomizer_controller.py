@@ -1,36 +1,19 @@
 import asyncio
 import shutil
-import sys
-import logging
 import traceback
 from pathlib import Path
 
 from backend.controller.randomizer_log_parser import RandomizerLogParser, RandomizerLogData
+from backend.logging_setup import get_logger
 
 
 class RandomizerController:
     def __init__(self, rnd: dict, pl: dict):
         self.rnd = rnd
         self.pl = pl
-        self.logger = self._init_logging()
+        self.logger = get_logger(__name__, './logs/randomizer_controller.log')
         self._process: asyncio.subprocess.Process | None = None
         self.log_parser = RandomizerLogParser()
-
-    def _init_logging(self) -> logging.Logger:
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-
-        logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-        file_handler = logging.FileHandler('./logs/randomizer_controller.log', 'w')
-        file_handler.setFormatter(logging_formatter)
-        logger.addHandler(file_handler)
-
-        stream_handler = logging.StreamHandler(sys.stdout)
-        stream_handler.setFormatter(logging_formatter)
-        logger.addHandler(stream_handler)
-
-        return logger
 
     def _find_java(self) -> str | None:
         if self.rnd.get("java_path"):

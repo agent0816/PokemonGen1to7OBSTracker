@@ -1,5 +1,3 @@
-import logging
-import sys
 import asyncio
 import traceback
 from backend.classes.munchlax import Munchlax
@@ -7,6 +5,7 @@ from backend.classes.Pokemon import Pokemon
 import backend.pokedecoder as pokedecoder
 import backend.bh_pointers as bh_pointers
 import backend.bag_decoder as bag_decoder
+from backend.logging_setup import get_logger
 
 class Bizhawk:
     def __init__(self, host, port, bh):
@@ -41,23 +40,7 @@ class Bizhawk:
         # Pocket oder allokieren denselben leeren Slot doppelt.
         self._bag_io_locks: dict[str, asyncio.Lock] = {}
 
-        self.logger = self.init_logging()
-
-    def init_logging(self):
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-
-        logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-        file_handler = logging.FileHandler('./logs/bizhawk.log', 'w')
-        file_handler.setFormatter(logging_formatter)
-        logger.addHandler(file_handler)
-
-        stream_handler = logging.StreamHandler(sys.stdout)
-        stream_handler.setFormatter(logging_formatter)
-        logger.addHandler(stream_handler)
-
-        return logger
+        self.logger = get_logger(__name__, './logs/bizhawk.log')
     
     async def handle_bizhawk(self, reader, writer):
         client_id = None

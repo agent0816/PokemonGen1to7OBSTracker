@@ -1,4 +1,4 @@
-import sys
+import os
 import traceback
 import weakref
 import asyncio
@@ -24,19 +24,9 @@ from backend.controller.connection_controller import ConnectionController
 from backend.controller.randomizer_controller import RandomizerController
 from backend.controller.settings_controller import SettingsController
 import frontend.UIFactory as UI
-import logging
+from backend.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-logging_formatter = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s")
-
-file_handler = logging.FileHandler("logs/frontend.log", "w")
-file_handler.setFormatter(logging_formatter)
-logger.addHandler(file_handler)
-
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setFormatter(logging_formatter)
-logger.addHandler(stream_handler)
+logger = get_logger(__name__, 'logs/frontend.log')
 
 
 class BizhawkSavePopup(Popup):
@@ -72,6 +62,31 @@ class BizhawkSavePopup(Popup):
     def on_cancel(self, instance):
         self.canceled = True
         self.dismiss()
+
+
+class CrashReportPopup(Popup):
+    def __init__(self, crash_log_path, **kwargs):
+        super().__init__(**kwargs)
+        self.title = "Crash erkannt"
+        self.size_hint = (0.8, 0.4)
+        self.auto_dismiss = False
+
+        layout = BoxLayout(orientation="vertical", spacing="10dp")
+        layout.add_widget(Label(text="Beim letzten Start ist ein Fehler aufgetreten.\nCrash-Log wurde gespeichert."))
+        path_label = Label(text=os.path.abspath(crash_log_path), font_size="12sp")
+        layout.add_widget(path_label)
+
+        btn_layout = BoxLayout(size_hint_y=None, height="50dp", spacing="5dp")
+        btn_copy = Button(text="Pfad kopieren", on_press=lambda _: self._copy_path(crash_log_path))
+        btn_close = Button(text="Schließen", on_press=lambda _: self.dismiss())
+        btn_layout.add_widget(btn_copy)
+        btn_layout.add_widget(btn_close)
+        layout.add_widget(btn_layout)
+        self.content = layout
+
+    def _copy_path(self, path):
+        from kivy.core.clipboard import Clipboard
+        Clipboard.copy(os.path.abspath(path))
 
 
 class MainMenu(Screen):

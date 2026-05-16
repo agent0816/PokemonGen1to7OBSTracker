@@ -6,8 +6,6 @@ bzw. ~220 UDP-Roundtrips über Citra). Nach erfolgreichem Lesen liegen die
 dekodierten Boxen in munchlax.boxes[player].
 """
 import asyncio
-import logging
-import sys
 import traceback
 
 from kivy.clock import Clock
@@ -21,6 +19,7 @@ from kivy.uix.screenmanager import Screen, ScreenManager, NoTransition
 from kivy.uix.spinner import Spinner
 
 from frontend.widgets.pokemon_detail import PokemonDetailScreen
+from backend.logging_setup import get_logger
 
 
 GAMES_CITRA = {"X", "Y", "Omega Rubin", "Alpha Saphir",
@@ -35,20 +34,7 @@ GRID_COLS = 6
 GRID_ROWS = 5
 
 
-def _init_logging():
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-    formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-    file_handler = logging.FileHandler('./logs/boxmenu.log', 'w')
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
-    return logger
-
-
-logger = _init_logging()
+logger = get_logger(__name__, './logs/boxmenu.log')
 
 
 class BoxSlotWidget(ButtonBehavior, BoxLayout):

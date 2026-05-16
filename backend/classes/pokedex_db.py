@@ -1,13 +1,12 @@
 import json
-import logging
 import sqlite3
-import sys
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
 from backend.bag_decoder import BagItem
 from backend.classes.Pokemon import Pokemon
+from backend.logging_setup import get_logger
 
 
 CURRENT_SCHEMA_VERSION = 2
@@ -18,23 +17,7 @@ class PokedexDB:
         self.session_path = Path(session_path)
         self.db_path = self.session_path / "pokemon.db"
         self.connection: sqlite3.Connection | None = None
-        self.logger = self.init_logging()
-
-    def init_logging(self):
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-
-        logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-        file_handler = logging.FileHandler('./logs/pokedex_db.log', 'w')
-        file_handler.setFormatter(logging_formatter)
-        logger.addHandler(file_handler)
-
-        stream_handler = logging.StreamHandler(sys.stdout)
-        stream_handler.setFormatter(logging_formatter)
-        logger.addHandler(stream_handler)
-
-        return logger
+        self.logger = get_logger(__name__, './logs/pokedex_db.log')
 
     def connect(self):
         try:

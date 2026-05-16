@@ -1,6 +1,4 @@
 import json
-import logging
-import sys
 import traceback
 from pathlib import Path
 
@@ -15,26 +13,10 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 
 from backend.classes.pokedex_db import PokedexDB
+from backend.logging_setup import get_logger
 
 
-def _init_logging():
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-
-    formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-    file_handler = logging.FileHandler('./logs/pokedexmenu.log', 'w')
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
-
-    return logger
-
-
-logger = _init_logging()
+logger = get_logger(__name__, './logs/pokedexmenu.log')
 
 
 try:

@@ -1,9 +1,8 @@
-import logging
 import re
-import sys
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
+from backend.logging_setup import get_logger
 
 
 @dataclass
@@ -112,24 +111,8 @@ class RandomizerLogParser:
     ]
 
     def __init__(self):
-        self.logger = self._init_logging()
+        self.logger = get_logger(__name__, './logs/randomizer_log_parser.log')
         self._data: RandomizerLogData | None = None
-
-    def _init_logging(self) -> logging.Logger:
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-
-        logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-        file_handler = logging.FileHandler('./logs/randomizer_log_parser.log', 'w')
-        file_handler.setFormatter(logging_formatter)
-        logger.addHandler(file_handler)
-
-        stream_handler = logging.StreamHandler(sys.stdout)
-        stream_handler.setFormatter(logging_formatter)
-        logger.addHandler(stream_handler)
-
-        return logger
 
     def parse(self, log_path: str) -> RandomizerLogData | None:
         path = Path(log_path)

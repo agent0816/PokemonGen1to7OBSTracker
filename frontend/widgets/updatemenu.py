@@ -1,8 +1,6 @@
 import asyncio
-import logging
 import os
 import shutil
-import sys
 import traceback
 from pathlib import Path
 
@@ -15,18 +13,9 @@ from kivy.uix.popup import Popup
 from kivy.uix.progressbar import ProgressBar
 from kivy.uix.screenmanager import Screen
 from tufup.client import Client
+from backend.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-file_handler = logging.FileHandler('logs/frontend.log', 'w')
-file_handler.setFormatter(logging_formatter)
-logger.addHandler(file_handler)
-
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setFormatter(logging_formatter)
-logger.addHandler(stream_handler)
+logger = get_logger(__name__, 'logs/frontend.log')
 
 # Variante A: alle tufup-Assets (Metadata + Targets) liegen flach im
 # GitHub-Release "latest". GitHub flacht Pfade ab, daher ist die Base-URL

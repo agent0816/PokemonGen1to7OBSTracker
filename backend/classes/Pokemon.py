@@ -1,25 +1,8 @@
 from typing import Literal
-import logging
 import traceback
-import sys
+from backend.logging_setup import get_logger
 
-def init_logging():
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-
-    logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-    file_handler = logging.FileHandler('./logs/PokemonObjects.log', 'w')
-    file_handler.setFormatter(logging_formatter)
-    logger.addHandler(file_handler)
-
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(logging_formatter)
-    logger.addHandler(stream_handler)
-
-    return logger
-
-logger = init_logging()
+logger = get_logger(__name__, './logs/PokemonObjects.log')
 
 class Pokemon:
     def __init__(self, dexnr: int, shiny: bool = False, female = False, form = '', **kwargs):

@@ -1,10 +1,10 @@
-import logging
 import re
 from pathlib import Path
 
 import yaml
+from backend.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__, './logs/tm_type_resolver.log')
 
 _RE_TM_NUM = re.compile(r'^(tm|hm)(\d+)$')
 

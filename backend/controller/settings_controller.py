@@ -1,8 +1,7 @@
 import asyncio
-import sys
-import logging
 import traceback
 import yaml
+from backend.logging_setup import get_logger
 
 
 class SettingsController:
@@ -19,23 +18,7 @@ class SettingsController:
         self.munchlax = munchlax
         self.obs_websocket = obs_websocket
 
-        self.logger = self._init_logging()
-
-    def _init_logging(self):
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-
-        logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-        file_handler = logging.FileHandler('./logs/settings_controller.log', 'w')
-        file_handler.setFormatter(logging_formatter)
-        logger.addHandler(file_handler)
-
-        stream_handler = logging.StreamHandler(sys.stdout)
-        stream_handler.setFormatter(logging_formatter)
-        logger.addHandler(stream_handler)
-
-        return logger
+        self.logger = get_logger(__name__, './logs/settings_controller.log')
 
     # --- Load-Methoden: geben aktuelle Config-Werte zurück, damit die View ihre Felder befüllen kann ---
 

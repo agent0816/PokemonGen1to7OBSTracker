@@ -1,9 +1,8 @@
 import asyncio
 import os
 import subprocess
-import sys
-import logging
 import traceback
+from backend.logging_setup import get_logger
 
 
 class ConnectionController:
@@ -17,23 +16,7 @@ class ConnectionController:
         self.bh = bh
         self.pl = pl
 
-        self.logger = self._init_logging()
-
-    def _init_logging(self):
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-
-        logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-        file_handler = logging.FileHandler('./logs/connection_controller.log', 'w')
-        file_handler.setFormatter(logging_formatter)
-        logger.addHandler(file_handler)
-
-        stream_handler = logging.StreamHandler(sys.stdout)
-        stream_handler.setFormatter(logging_formatter)
-        logger.addHandler(stream_handler)
-
-        return logger
+        self.logger = get_logger(__name__, './logs/connection_controller.log')
 
     # --- OBS ---
 

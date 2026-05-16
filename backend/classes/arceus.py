@@ -1,10 +1,8 @@
 import asyncio
-import sys
 import pickle
-import logging
 import time
-import pickle
 import traceback
+from backend.logging_setup import get_logger
 
 class Arceus:
     def __init__(self, host, port, rem):
@@ -29,23 +27,7 @@ class Arceus:
         self.disconnect_lock = asyncio.Lock()
         self.rem = rem
 
-        self.logger = self.init_logging()
-
-    def init_logging(self):
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-
-        logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-        file_handler = logging.FileHandler('./logs/arceus.log', 'w')
-        file_handler.setFormatter(logging_formatter)
-        logger.addHandler(file_handler)
-
-        stream_handler = logging.StreamHandler(sys.stdout)
-        stream_handler.setFormatter(logging_formatter)
-        logger.addHandler(stream_handler)
-
-        return logger
+        self.logger = get_logger(__name__, './logs/arceus.log')
     
     async def handle_munchlax(self, reader, writer):
 

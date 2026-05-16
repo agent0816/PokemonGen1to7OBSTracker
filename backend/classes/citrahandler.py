@@ -1,6 +1,4 @@
 import asyncio
-import logging
-import sys
 import time
 import traceback
 import yaml
@@ -10,6 +8,7 @@ from backend.classes.munchlax import Munchlax
 from backend.classes.Pokemon import Pokemon
 import backend.pokedecoder as pokedecoder
 import backend.bag_decoder as bag_decoder
+from backend.logging_setup import get_logger
 
 BLOCK_SIZE = 56
 SLOT_OFFSET = 484
@@ -77,23 +76,7 @@ class CitraHandler:
             74: pointer_usum
         }
 
-        self.logger = self.init_logging()
-
-    def init_logging(self):
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-
-        logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-        file_handler = logging.FileHandler('./logs/citra.log', 'w')
-        file_handler.setFormatter(logging_formatter)
-        logger.addHandler(file_handler)
-
-        stream_handler = logging.StreamHandler(sys.stdout)
-        stream_handler.setFormatter(logging_formatter)
-        logger.addHandler(stream_handler)
-
-        return logger
+        self.logger = get_logger(__name__, './logs/citra.log')
     
     def check_connection(self):
         try:

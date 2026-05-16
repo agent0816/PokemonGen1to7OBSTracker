@@ -1,8 +1,6 @@
 import asyncio
 import os
 import hashlib
-import logging
-import sys
 import pickle
 import time
 from pathlib import Path
@@ -10,6 +8,7 @@ from pickle import UnpicklingError
 import traceback
 from backend.classes.obs import OBS
 from backend.classes.pokedex_db import PokedexDB
+from backend.logging_setup import get_logger
 
 # Mindestabstand zwischen automatischen Box-Refreshs pro Spieler.
 # Verhindert Box-Read-Stürme z.B. bei Team-Reorder-Spam oder Evolutionen.
@@ -52,23 +51,7 @@ class Munchlax:
         self.writer_lock = asyncio.Lock()
         self.disconnect_lock = asyncio.Lock()
 
-        self.logger = self.init_logging()
-
-    def init_logging(self):
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-
-        logging_formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-
-        file_handler = logging.FileHandler('./logs/munchlax.log', 'w')
-        file_handler.setFormatter(logging_formatter)
-        logger.addHandler(file_handler)
-
-        stream_handler = logging.StreamHandler(sys.stdout)
-        stream_handler.setFormatter(logging_formatter)
-        logger.addHandler(stream_handler)
-
-        return logger
+        self.logger = get_logger(__name__, './logs/munchlax.log')
 
     def clear_everything(self):
         self.bizhawk_teams = {}

@@ -5,9 +5,6 @@ BoxMenu).  Zeigt alle verfügbaren Attribute eines Pokemon-Objekts aufgelöst
 in menschenlesbare Namen (deutsch).  Optional überlagert mit Daten aus dem
 Randomizer-Log.
 """
-import logging
-import sys
-
 import yaml
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -16,22 +13,10 @@ from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
+from backend.logging_setup import get_logger
 
 
-def _init_logging():
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-    formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-    file_handler = logging.FileHandler('./logs/pokemon_detail.log', 'w')
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
-    return logger
-
-
-logger = _init_logging()
+logger = get_logger(__name__, './logs/pokemon_detail.log')
 
 
 def _load_yaml(path: str) -> dict:

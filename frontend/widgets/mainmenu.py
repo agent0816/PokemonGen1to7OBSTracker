@@ -434,6 +434,20 @@ class MainMenu(Screen):
                 and self.ids["server_client_button"].text != "Client beenden"
             ):
                 self.ids["server_client_button"].text = "Client beenden"
+            for client_id, connected in self.munchlax.remote_connection_status.items():
+                name = self.munchlax.remote_connection_names.get(client_id, client_id[:8])
+                if client_id not in self.ids:
+                    UI.create_connection_status_with_labels(
+                        box,
+                        ValueConnectionStatusCircle,
+                        name,
+                        client_id,
+                        self.munchlax.remote_connection_status,
+                        ids=self.ids,
+                        id=client_id,
+                    )
+                else:
+                    self.update_Munchlax_Connection_Label(client_id, name)
 
     def change_emulator_button(self):
         games_list = ['X','Y','Omega Rubin','Alpha Saphir','Sonne', 'Mond','Ultra Sonne', 'Ultra Mond']

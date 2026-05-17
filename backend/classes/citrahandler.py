@@ -156,10 +156,14 @@ class CitraHandler:
         self._fail_pending_box_requests("Citra-Verbindung verloren")
 
         self.logger.info("Citra getrennt.")
-        if self.started:
-            self.start_button.trigger_action(0)
 
-        self.player_number = None
+        if self.started:
+            reconnected = await self._auto_reconnect()
+            if not reconnected:
+                self.start_button.trigger_action(0)
+                self.player_number = None
+        else:
+            self.player_number = None
 
     def _drain_box_queue_step(self):
         """Verarbeitet höchstens EINE ausstehende Box-Anfrage.
@@ -568,6 +572,25 @@ class CitraHandler:
                 self.player_number = i
         if self.player_number:
             self.munchlax.editions[self.player_number] = self.edition
+            name = self.munchlax.pl.get('your_name', '')
+            if name:
+                self.munchlax.player_names[self.player_number] = name
+
+    async def _auto_reconnect(self) -> bool:
+        delays = [10, 20, 40]
+        for attempt, delay in enumerate(delays, 1):
+            self.logger.info(f"Citra Auto-Reconnect Versuch {attempt}/{len(delays)} in {delay}s...")
+            await asyncio.sleep(delay)
+            if not self.started:
+                return False
+            self.check_connection()
+            if self.is_connected:
+                self.logger.info(f"Citra Auto-Reconnect erfolgreich nach Versuch {attempt}.")
+                self._select_game_process()
+                asyncio.create_task(self.handle_citra())
+                return True
+        self.logger.error("Citra Auto-Reconnect aufgegeben nach 3 Versuchen.")
+        return False
 
     async def stop(self):
         self.started = False

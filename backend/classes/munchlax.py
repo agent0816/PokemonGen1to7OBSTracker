@@ -25,6 +25,9 @@ class Munchlax:
         self.unsorted_teams = {}
         self.badges = {}
         self.editions = {}
+        self.player_names: dict[int, str] = {}
+        self.remote_connection_status: dict[str, str] = {}
+        self.remote_connection_names: dict[str, str] = {}
         # PC-Boxen pro Spieler: dict[player_id, list[list[Pokemon|None]]].
         # Auto-Refresh läuft, wenn sich das Team eines lokal bedienten
         # Spielers ändert — gedrosselt via BOX_REFRESH_THROTTLE_SECONDS,
@@ -60,6 +63,9 @@ class Munchlax:
         self.badges = {}
         self.editions = {}
         self.boxes = {}
+        self.player_names.clear()
+        self.remote_connection_status.clear()
+        self.remote_connection_names.clear()
         self.initialized = False
 
     def should_auto_refresh_boxes(self, player_id: int) -> bool:
@@ -140,7 +146,8 @@ class Munchlax:
                 # Teams-Logik darunter nicht versehentlich ein {"type": ...}-
                 # Dict als Player-Map behandelt.
                 if isinstance(data, dict) and "type" in data:
-                    if data.get("type") == "boxes_update":
+                    msg_type = data.get("type")
+                    if msg_type == "boxes_update":
                         player_id = data.get("player_id")
                         boxes = data.get("boxes")
                         if player_id is not None and boxes is not None:
@@ -149,8 +156,16 @@ class Munchlax:
                                 f"boxes_update empfangen: player={player_id}, "
                                 f"box_count={len(boxes)}"
                             )
+                    elif msg_type == "player_names":
+                        self.player_names = data.get("names", {})
+                        self.logger.info(f"player_names empfangen: {self.player_names}")
+                    elif msg_type == "connection_status":
+                        self.remote_connection_status.clear()
+                        self.remote_connection_status.update(data.get("status", {}))
+                        self.remote_connection_names.clear()
+                        self.remote_connection_names.update(data.get("names", {}))
                     else:
-                        self.logger.warning(f"Unbekannter Message-Typ vom Server: {data.get('type')}")
+                        self.logger.warning(f"Unbekannter Message-Typ vom Server: {msg_type}")
                     continue
                 self.unsorted_teams = data
                 new_teams = self.unsorted_teams.copy()
@@ -197,7 +212,7 @@ class Munchlax:
                 self.logger.error(f"{traceback.format_exc()}")
                 break
 
-        await self.disconnect()
+        await self.disconnect(intentional=False)
 
     def _ensure_pokedex_db(self):
         if self.configsave is None:
@@ -297,8 +312,8 @@ class Munchlax:
                 self.logger.warning(f"Heartbeat failed: {type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")
                 break
-        
-        await self.disconnect() #type: ignore
+
+        await self.disconnect(intentional=False)
 
     async def send_teams(self):
         while True:
@@ -314,8 +329,8 @@ class Munchlax:
                     self.logger.error(f"{traceback.format_exc()}")
                     break
             await asyncio.sleep(1)
-        
-        await self.disconnect() # type:ignore
+
+        await self.disconnect(intentional=False)
     
     async def connect(self):
         self.logger.info(f"trying to connect munchlax to ({self.host}, {self.port})")
@@ -332,24 +347,33 @@ class Munchlax:
         self.send_teams_task = asyncio.create_task(self.send_teams())
         self.alter_teams_task = asyncio.create_task(self.alter_teams())
 
-    async def disconnect(self):
+    async def disconnect(self, intentional=True):
         self.initialized = False
+        should_reconnect = False
         async with self.disconnect_lock:
             if self.is_connected:
-                try:
-                    async with self.writer_lock:
-                        await self.send_message(f"disconnect {self.client_id}")
-                except Exception as err:
-                    self.logger.warning(f"Disconnect Nachricht versenden failed: {err}")
-                
+                if intentional:
+                    try:
+                        async with self.writer_lock:
+                            await self.send_message(f"disconnect {self.client_id}")
+                    except Exception as err:
+                        self.logger.warning(f"Disconnect Nachricht versenden failed: {err}")
+                else:
+                    should_reconnect = True
+
                 self.is_connected = False
+                self.remote_connection_status.clear()
+                self.remote_connection_names.clear()
 
                 self.alter_teams_task.cancel()
                 self.heartbeat_task.cancel()
                 self.send_teams_task.cancel()
 
-                self.writer.close()
-                await self.writer.wait_closed()
+                try:
+                    self.writer.close()
+                    await self.writer.wait_closed()
+                except Exception:
+                    pass
                 self.logger.info(f"Client {self.client_id} hat sich disconnectet.")
 
                 if self.pokedex_db is not None:
@@ -358,6 +382,24 @@ class Munchlax:
 
                 self.host = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
                 self.port = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
+
+        if should_reconnect:
+            asyncio.create_task(self._auto_reconnect())
+
+    async def _auto_reconnect(self):
+        delays = [5, 10, 20]
+        for attempt, delay in enumerate(delays, 1):
+            self.logger.info(f"Auto-Reconnect Versuch {attempt}/{len(delays)} in {delay}s...")
+            await asyncio.sleep(delay)
+            if self.is_connected:
+                return
+            try:
+                await self.connect()
+                self.logger.info(f"Auto-Reconnect erfolgreich nach Versuch {attempt}.")
+                return
+            except Exception as err:
+                self.logger.warning(f"Auto-Reconnect Versuch {attempt} fehlgeschlagen: {err}")
+        self.logger.error("Auto-Reconnect aufgegeben nach 3 Versuchen.")
 
     async def send_message(self, message):
         serialized_message = pickle.dumps(message)

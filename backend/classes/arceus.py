@@ -14,6 +14,7 @@ class Arceus:
         self.munchlax_status = {}
         self.munchlax_heartbeats = {}
         self.heartbeat_counts = {}
+        self.client_player_ids: dict[str, set[int]] = {}
         self.teams = {}
         # Box-Cache analog zu self.teams: dict[player_id, list[list[Pokemon|None]]].
         # Wird vom besitzenden Munchlax per "boxes_update" gefüllt und bei
@@ -31,17 +32,19 @@ class Arceus:
     
     async def handle_munchlax(self, reader, writer):
 
-        client_id_with_name = tuple((await self.receive_message(reader)).split("_"))
-        client_name = client_id_with_name[0]
-        client_id = client_id_with_name[1]
+        raw = await self.receive_message(reader)
+        client_name, client_id = raw.rsplit("_", 1)
         self.munchlaxes[client_id] = writer
         self.munchlax_names[client_id] = client_name
         self.munchlax_status[client_id] = 'connected'
         self.heartbeat_counts[client_id] = 0
+        self.client_player_ids[client_id] = set()
         self.writer_locks[client_id] = asyncio.Lock()
         self.logger.info(f"Client {client_id} connected and registered.")
 
         asyncio.create_task(self.update_all_clients(client_id))
+        asyncio.create_task(self.broadcast_connection_status())
+        asyncio.create_task(self.broadcast_player_names())
 
         while True:
             try:
@@ -62,6 +65,10 @@ class Arceus:
                     for player, team in data.items(): #type: ignore
                         if player not in self.teams or self.teams[player] != team:
                             self.teams[player] = team
+                    new_player_ids = set(data.keys())
+                    if new_player_ids != self.client_player_ids.get(client_id, set()):
+                        self.client_player_ids[client_id] = new_player_ids
+                        asyncio.create_task(self.broadcast_player_names())
             except ConnectionResetError:
                 pass
             except pickle.UnpicklingError as exc:
@@ -133,6 +140,9 @@ class Arceus:
                 del self.munchlax_heartbeats[client_id]
                 del self.heartbeat_counts[client_id]
                 self.writer_locks.pop(client_id, None)
+                self.client_player_ids.pop(client_id, None)
+        asyncio.create_task(self.broadcast_connection_status())
+        asyncio.create_task(self.broadcast_player_names())
 
     # async def send_message(self, writer, message):
     #     serialized_message = pickle.dumps(message)
@@ -187,17 +197,47 @@ class Arceus:
 
         return pickle.loads(message)
     
+    async def broadcast_connection_status(self):
+        status = {cid: self.munchlax_status.get(cid, "connected") for cid in self.munchlaxes}
+        names = dict(self.munchlax_names)
+        message = {"type": "connection_status", "status": status, "names": names}
+        for client_id in list(self.munchlaxes.keys()):
+            try:
+                await self.send_to_client(client_id, message)
+            except Exception as exc:
+                self.logger.error(f"broadcast_connection_status an {client_id} failed: {exc}")
+
+    async def broadcast_player_names(self):
+        names: dict[int, str] = {}
+        for cid, player_ids in self.client_player_ids.items():
+            client_name = self.munchlax_names.get(cid, "")
+            for pid in player_ids:
+                names[pid] = client_name
+        message = {"type": "player_names", "names": names}
+        for client_id in list(self.munchlaxes.keys()):
+            try:
+                await self.send_to_client(client_id, message)
+            except Exception as exc:
+                self.logger.error(f"broadcast_player_names an {client_id} failed: {exc}")
+
     async def check_heartbeats(self):
         while True:
             now = time.time()
-            for client_id, last_heartbeat in self.munchlax_heartbeats.items():
+            to_disconnect = []
+            for client_id, last_heartbeat in list(self.munchlax_heartbeats.items()):
                 if now - last_heartbeat > 5.1:
                     self.logger.warning(f"Client {client_id} hat seit {now - last_heartbeat} Sekunden keinen Heartbeat gesendet!")
                     self.heartbeat_counts[client_id] += 1
                     if self.heartbeat_counts[client_id] > 3:
-                        await self.disconnect_client(client_id)
+                        to_disconnect.append(client_id)
+                    else:
+                        self.munchlax_status[client_id] = "warning"
                 else:
                     self.heartbeat_counts[client_id] = 0
+                    self.munchlax_status[client_id] = "connected"
+            for client_id in to_disconnect:
+                await self.disconnect_client(client_id)
+            await self.broadcast_connection_status()
             await asyncio.sleep(5)
     
     async def start(self):

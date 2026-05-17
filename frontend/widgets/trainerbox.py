@@ -138,7 +138,8 @@ class TrainerBox(BoxLayout):
 
         self.bind(size=self._update_rect, pos=self._update_rect)  # type: ignore
 
-        self.add_widget(Label(text=f"Spieler {self.player_id}", size_hint=(1, 0.3)))
+        self.name_label = Label(text=f"Spieler {self.player_id}", size_hint=(1, 0.3))
+        self.add_widget(self.name_label)
 
         for slot in range(6):
             pokemon_box = PokemonBox(self.obs_websocket)
@@ -200,6 +201,10 @@ class TrainerBox(BoxLayout):
 
 
     def team_aktualisieren(self, instance):
+        display_name = self.munchlax.player_names.get(self.player_id, f"Spieler {self.player_id}")
+        if self.name_label.text != display_name:
+            self.name_label.text = display_name
+
         if self.screen.name == "SessionMenu" or self.player_id not in self.munchlax.sorted_teams or self.player_id not in self.munchlax.editions or self.player_id not in self.munchlax.badges:
             return
         else:

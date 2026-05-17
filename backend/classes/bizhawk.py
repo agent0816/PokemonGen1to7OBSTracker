@@ -115,6 +115,10 @@ class Bizhawk:
             language = int((await self.receive_messages(reader)).decode())
             player = int(client_id[7:])
 
+            name = self.munchlax.pl.get('your_name', '')
+            if name:
+                self.munchlax.player_names[player] = name
+
             # Edition/Language merken, damit read_all_boxes() das Box-Layout
             # aus der YAML ermitteln kann, ohne es selbst zu cachen.
             self.edition_per_client[client_id] = edition

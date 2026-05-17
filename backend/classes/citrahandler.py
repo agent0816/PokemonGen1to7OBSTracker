@@ -113,8 +113,11 @@ class CitraHandler:
             self.logger.warning(f"set_process({pid}) fehlgeschlagen: {type(err)},{err}")
 
     async def handle_citra(self):
+        tick_count = 0
         while self.started and self.is_connected:
             try:
+                tick_count += 1
+                self.logger.debug(f"Citra-Tick {tick_count}: box_queue={len(self.box_request_queue)}, bag_queue={len(self.bag_request_queue)}")
                 new_data = b''
                 new_data += self.read_team()
                 new_data += self.read_badges()
@@ -281,6 +284,7 @@ class CitraHandler:
         result = b''
         # Teamreihenfolge auslesen:
         team_pointer = self.citra_instance.read_memory(self.pointer["team_reihenfolge"], 25)
+        self.logger.debug(f"read_team: team_count={int.from_bytes(team_pointer[24:],'little')}, addr=0x{self.pointer['team_reihenfolge']:08X}")
         self.number_of_team_pokemon = int.from_bytes(team_pointer[24:],'little')
         for i in range(6):
             read_address = int.from_bytes(team_pointer[i*4:i*4 + 4], 'little') + 0x40
@@ -292,6 +296,7 @@ class CitraHandler:
     def read_in_battle_stats(self):
         result = {}
         battle_kind = int.from_bytes(self.citra_instance.read_memory(self.pointer["battle_kind"], 2), 'little')
+        self.logger.debug(f"battle_kind=0x{battle_kind:04X} (trainer=0x{self.pointer['trainer_value']:04X}, wild=0x{self.pointer['wild_value']:04X})")
         if battle_kind == self.pointer["trainer_value"]:
             read_address = self.pointer["kampf_trainer"]
         elif battle_kind == self.pointer["wild_value"]:
@@ -563,8 +568,8 @@ class CitraHandler:
 
     def set_pointer(self):
         self.edition = self.edition_lut.get(self.munchlax.pl["session_game"], 0)
-
         self.pointer = self.pointer_lut[self.edition]
+        self.logger.debug(f"Pointer gesetzt: edition={self.edition}, game={self.munchlax.pl['session_game']}")
 
     def set_player_number(self):
         for i in range(1, self.munchlax.pl['player_count'] + 1):

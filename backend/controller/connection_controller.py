@@ -22,6 +22,7 @@ class ConnectionController:
     # --- OBS ---
 
     def connect_obs(self) -> asyncio.Task:
+        self.logger.debug(f"OBS-Status vor Connect: is_connected={self.obs_websocket.is_connected}")
         task = asyncio.create_task(self.obs_websocket.load_obsws())
         self.logger.info("OBS Verbindung wird aufgebaut.")
         return task
@@ -50,6 +51,7 @@ class ConnectionController:
 
     def connect_client(self) -> asyncio.Task | None:
         """Verbindet den Munchlax-Client, falls noch nicht verbunden."""
+        self.logger.debug(f"Munchlax-Status vor Connect: is_connected={self.munchlax.is_connected}, host={self.munchlax.host}, port={self.munchlax.port}")
         if not self.munchlax.is_connected:
             task = asyncio.create_task(self.munchlax.connect())
             self.logger.info("Munchlax-Client wird verbunden.")
@@ -66,6 +68,7 @@ class ConnectionController:
     def start_bizhawk(self):
         """Startet den BizHawk-Server und spawnt Emulator-Prozesse für lokale Spieler."""
         try:
+            self.logger.debug(f"Bizhawk-Status: server={self.bizhawk.server is not None}, port={self.bizhawk.port}, path={self.bh.get('path')}")
             if not self.bizhawk.server:
                 asyncio.create_task(self.bizhawk.start(self.munchlax))
 

@@ -49,6 +49,8 @@ class Arceus:
         while True:
             try:
                 data = await self.receive_message(reader)
+                msg_desc = data.get("type") if isinstance(data, dict) else (data if isinstance(data, str) else f"{len(data)} Spieler")
+                self.logger.debug(f"Empfangen von {client_id}: {msg_desc}")
                 if type(data) == str and data.startswith("disconnect"): # or not data:
                     break
                 if data == 'heartbeat':
@@ -83,7 +85,7 @@ class Arceus:
 
     async def update_all_clients(self, client_id):
         old_teams = self.teams.copy()
-        self.logger.info(f"Arceus: {self.teams}")
+        self.logger.debug(f"Initiales Team-Update an Client {client_id}: {len(self.teams)} Spieler")
         await self.send_to_client(client_id, self.teams)
 
         # Box-Stand einmal an den frisch verbundenen Client schicken, damit
@@ -157,7 +159,9 @@ class Arceus:
         CHUNK_SIZE = 500  # Die Größe jedes Chunks in Bytes
 
         # Gesamtlänge der Nachricht senden
-        self.logger.info(f"{serialized_message=}")
+        msg_type = message.get("type", "teams") if isinstance(message, dict) else type(message).__name__
+        chunk_count = (len(serialized_message) + CHUNK_SIZE - 1) // CHUNK_SIZE
+        self.logger.debug(f"Sende Nachricht: type={msg_type}, {len(serialized_message)} Bytes, {chunk_count} Chunks")
         length = len(serialized_message).to_bytes(4, 'big')
         writer.write(length)
         await writer.drain()
@@ -165,7 +169,6 @@ class Arceus:
         # Nachricht in Chunks senden
         for i in range(0, len(serialized_message), CHUNK_SIZE):
             chunk = serialized_message[i:i+CHUNK_SIZE]
-            self.logger.info(f"Arceus: {chunk=}")
             # Größe des aktuellen Chunks senden
             chunk_length = len(chunk).to_bytes(4, 'big')
             writer.write(chunk_length)

@@ -35,8 +35,9 @@ def _asyncio_exception_handler(loop, context):
     logger.error(f"Asyncio exception: {context.get('message')}")
 
 
-from backend.logging_setup import get_logger
-logger = get_logger('main', 'logs/main.log')
+from backend.logging_setup import setup_root_logger, get_logger
+setup_root_logger()
+logger = get_logger('main')
 
 from kivy.config import Config
 Config.read("backend/kivy_config/gui.ini")

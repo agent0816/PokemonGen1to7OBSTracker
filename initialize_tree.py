@@ -31,6 +31,9 @@ def init_config_folder():
     config = Path('backend/config')
     if not config.exists():
         config.mkdir(parents=True, exist_ok=True)
+    log_settings = Path('backend/config/log_settings.yml')
+    if not log_settings.exists():
+        save_config(log_settings, {'console_level': 'INFO'})
     files = []
     sessions = []
     default_session = Path('backend/config/default')

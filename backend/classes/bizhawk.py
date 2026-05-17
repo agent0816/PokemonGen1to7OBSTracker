@@ -114,6 +114,7 @@ class Bizhawk:
             edition = int((await self.receive_messages(reader)).decode())
             language = int((await self.receive_messages(reader)).decode())
             player = int(client_id[7:])
+            self.logger.debug(f"Handshake: client={client_id}, edition={edition}, language={language}, player={player}")
 
             name = self.munchlax.pl.get('your_name', '')
             if name:
@@ -152,6 +153,7 @@ class Bizhawk:
                 counter = counter % (60 * 10)
                 try:
                     data = (await self.receive_messages(reader)).decode()
+                    self.logger.debug(f"Tick {counter}: client={client_id}, in_battle={in_battle}, queue_len={len(self.box_request_queues.get(client_id, []))}")
                     if (counter == 1 and self.bh["save_automatically"]) or self.about_to_exit:
                         if self.about_to_exit:
                             self.about_to_exit = False
@@ -311,7 +313,7 @@ class Bizhawk:
                 ptr_bytes = await ptr_fut
                 deref = int.from_bytes(ptr_bytes, "little")
                 effective_base = deref + indirect_offset
-                self.logger.info(
+                self.logger.debug(
                     f"Indirekter Box-Pointer edition={edition}: "
                     f"*0x{indirect_addr:08X}=0x{deref:08X} +0x{indirect_offset:X} "
                     f"-> Box-Basis 0x{effective_base:08X}"

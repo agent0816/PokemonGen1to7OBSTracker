@@ -50,6 +50,7 @@ class SettingsController:
 
     def _update_bizhawk(self):
         try:
+            self.logger.debug(f"_update_bizhawk: server={self.bizhawk.server is not None}, port={self.bh.get('port')}")
             if not self.bizhawk.server:
                 self.bizhawk.port = self.bh['port']
         except Exception as err:
@@ -58,6 +59,7 @@ class SettingsController:
 
     def _update_obs_websocket(self):
         try:
+            self.logger.debug(f"_update_obs: ws={self.obs_websocket.ws is not None}, host={self.obs.get('host')}, port={self.obs.get('port')}")
             if not self.obs_websocket.ws:
                 self.obs_websocket.password = self.obs['password']
                 self.obs_websocket.host = self.obs['host']
@@ -84,6 +86,7 @@ class SettingsController:
 
     def _update_munchlax(self):
         try:
+            self.logger.debug(f"_update_munchlax: connected={self.munchlax.is_connected}, start_server={self.rem.get('start_server')}")
             if not self.munchlax.is_connected:
                 self.munchlax.host = '127.0.0.1' if self.rem['start_server'] else self.rem['server_ip_adresse']
                 self.munchlax.port = self.rem['client_port'] if self.rem['start_server'] else self.rem['server_port']

@@ -291,9 +291,9 @@ class Munchlax:
             self.logger.error(f"{traceback.format_exc()}")
 
     def logging_teams(self, teams: dict, dictname: str):
-        self.logger.info(dictname)
+        self.logger.debug(dictname)
         for player, team in teams.items():
-            self.logger.info(f"logging_teams: \n player {player} \n {team}")
+            self.logger.debug(f"logging_teams: player {player}: {[str(p) for p in team[:6]]}")
     
     def sort(self, liste, key):
         key = key.lower().replace('.', '')
@@ -313,6 +313,7 @@ class Munchlax:
     async def send_heartbeat(self):
         while True:
             try:
+                self.logger.debug("Heartbeat gesendet")
                 async with self.writer_lock:
                     await self.send_message('heartbeat')
                 await asyncio.sleep(5)
@@ -341,9 +342,10 @@ class Munchlax:
         await self.disconnect(intentional=False)
     
     async def connect(self):
-        self.logger.info(f"trying to connect munchlax to ({self.host}, {self.port})")
+        self.logger.info(f"Verbinde Munchlax zu ({self.host}, {self.port})")
         self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
         self.logger.info(f"Munchlax {self.client_id} bei Arceus({self.host},{self.port}) registriert")
+        self.logger.debug(f"Client-ID: {self.client_id}, Start-Server: {self.rem.get('start_server')}")
         
         name = self.pl.get('your_name', '')
 
@@ -413,6 +415,9 @@ class Munchlax:
         serialized_message = pickle.dumps(message)
         CHUNK_SIZE = 500  # Die Größe jedes Chunks in Bytes
 
+        msg_type = message.get("type", "teams") if isinstance(message, dict) else (message if isinstance(message, str) else type(message).__name__)
+        self.logger.debug(f"Sende: type={msg_type}, {len(serialized_message)} Bytes")
+
         # Gesamtlänge der Nachricht senden
         length = len(serialized_message).to_bytes(4, 'big')
         self.writer.write(length)
@@ -443,7 +448,10 @@ class Munchlax:
             chunk = await reader.readexactly(chunk_length)
             message += chunk
 
-        return pickle.loads(message)
+        result = pickle.loads(message)
+        msg_desc = result.get("type", f"{len(result)} Spieler") if isinstance(result, dict) else type(result).__name__
+        self.logger.debug(f"Empfangen: {msg_desc}, {total_length} Bytes")
+        return result
     
     def generate_hashed_id(self):
         random_id = os.urandom(16)

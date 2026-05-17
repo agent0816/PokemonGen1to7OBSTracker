@@ -20,6 +20,7 @@ class OBS():
 
     async def load_obsws(self):
         if not self.ws or not self.ws.is_identified():
+            self.logger.debug(f"Verbinde zu OBS: ws://{self.host}:{self.port}")
             self.ws = simpleobsws.WebSocketClient(url=f'ws://{self.host}:{self.port}', password=self.password, identification_parameters=simpleobsws.IdentificationParameters(ignoreNonFatalRequestChecks=False))
             try:
                 await self.ws.connect()  # type:ignore
@@ -58,7 +59,7 @@ class OBS():
             return
         if not slots:
             return
-        self.logger.info(f"changeSource ausgeführt: Spieler {player} mit Slots {slots}")
+        self.logger.info(f"changeSource: Spieler {player}, Slots {list(slots)}")
         batch = []
         for slot in slots:
             sprite = self.get_sprite(team[slot], self.conf['animated'], edition, two_pc=self.conf['obs_2_pc'])
@@ -242,4 +243,6 @@ class OBS():
             + female
         )
         file = str(pokemon.dexnr) + pokemon.form + filetype
-        return path + file
+        full_path = path + file
+        self.logger.debug(f"Sprite: dex={pokemon.dexnr}, shiny={pokemon.shiny}, path={full_path}")
+        return full_path

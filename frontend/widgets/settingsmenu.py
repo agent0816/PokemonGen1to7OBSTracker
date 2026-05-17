@@ -10,6 +10,7 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.spinner import Spinner
 from kivy.uix.togglebutton import ToggleButton
 from backend.classes.obs import OBS
 from backend.controller.settings_controller import SettingsController
@@ -18,7 +19,7 @@ from frontend.widgets.mainmenu import TrainerBox
 from frontend.widgets.sprite_setup_popup import SpriteSetupPopup
 import frontend.UIFactory as UI
 import tkinter.filedialog as fd
-from backend.logging_setup import get_logger
+from backend.logging_setup import get_logger, set_console_level, get_console_level
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
@@ -56,6 +57,7 @@ class SettingsMenu(Screen):
             ("Remote", 'remote'),
             ("Spieler", 'player'),
             ("Randomizer", 'randomizer'),
+            ("Logging", 'logging'),
         ]
 
         for text, screen_name in settings_buttons:
@@ -83,7 +85,7 @@ class SettingsMenu(Screen):
         
         if jump_id == "sprite":
             scrolling = 1
-        elif jump_id in ("player", "randomizer"):
+        elif jump_id in ("player", "randomizer", "logging"):
             scrolling = 0
         else:
             scrolling = new_scrollheight / scroll_max_height
@@ -421,6 +423,28 @@ class ScrollSettings(ScrollView):
             browse_function=self.browse)
 
         box.add_widget(randomizer_box)
+
+        logging_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing="20dp")
+        logging_box.bind(minimum_height=logging_box.setter('height'))
+        self.ids["logging"] = weakref.proxy(logging_box)
+
+        ueberschrift_logging = Label(text="Logging", size_hint=(1, None), size=(0, "20dp"), font_size="20sp")
+        logging_box.add_widget(ueberschrift_logging)
+
+        log_level_box = BoxLayout(orientation='horizontal', size_hint_y=None, size=(0, "30dp"), padding=("5dp", 0), spacing="5dp")
+        log_level_box.add_widget(Label(text="Konsolen\nLog-Level", size_hint=(.2, 1)))
+        log_level_spinner = Spinner(
+            text=get_console_level(),
+            values=('DEBUG', 'INFO', 'WARNING', 'ERROR'),
+            size_hint=(.2, 1),
+        )
+        log_level_spinner.bind(text=lambda inst, val: set_console_level(val))
+        self.ids["log_level"] = weakref.proxy(log_level_spinner)
+        log_level_box.add_widget(log_level_spinner)
+        log_level_box.add_widget(Label(size_hint_x=.6))
+        logging_box.add_widget(log_level_box)
+
+        box.add_widget(logging_box)
 
         self.add_widget(box)
 

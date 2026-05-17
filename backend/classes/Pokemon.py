@@ -51,6 +51,11 @@ class Pokemon:
             return False
         if self.shiny != other.shiny:
             return False
+        if sp.get("show_hp_bars") and (self.cur_hp != other.cur_hp or self.max_hp != other.max_hp):
+            return False
+        if sp.get("show_status_effects"):
+            if getattr(self, 'status', {}) != getattr(other, 'status', {}):
+                return False
         return True
 
     def __eq__(self, other) -> bool:

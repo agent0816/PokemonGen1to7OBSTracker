@@ -253,10 +253,20 @@ def pokemon1(data):
     pp_values = list(data[0x1D:0x21])
     moves = [{"id": mid, "pp": pp} for mid, pp in zip(move_ids, pp_values)]
 
+    status_byte = data[0x04]
+    status = {
+        "sleep": status_byte & 0x07,
+        "poison": (status_byte >> 3) & 1,
+        "burn": (status_byte >> 4) & 1,
+        "freeze": (status_byte >> 5) & 1,
+        "para": (status_byte >> 6) & 1,
+        "toxic": 0,
+    }
+
     return Pokemon(
         dexnr, False, lvl=lvl, nickname=nickname, cur_hp=cur_hp, max_hp=max_hp,
         experience_points=experience_points, evs=evs, ivs=ivs, moves=moves,
-        ot_id=ot_id,
+        ot_id=ot_id, status=status,
     )
 
 
@@ -305,6 +315,16 @@ def pokemon2(data):
         )
         letter = letter // 10
         form = unown_letter[letter]
+    status_byte = data[0x20]
+    status = {
+        "sleep": status_byte & 0x07,
+        "poison": (status_byte >> 3) & 1,
+        "burn": (status_byte >> 4) & 1,
+        "freeze": (status_byte >> 5) & 1,
+        "para": (status_byte >> 6) & 1,
+        "toxic": 0,
+    }
+
     if egg:
         dexnr = "egg"
         form = ""
@@ -313,7 +333,7 @@ def pokemon2(data):
         dexnr, False, lvl=lvl, form=form, nickname=nickname, item=item,
         cur_hp=cur_hp, max_hp=max_hp,
         experience_points=experience_points, evs=evs, ivs=ivs, moves=moves,
-        ot_id=ot_id,
+        ot_id=ot_id, status=status,
     )
 
 

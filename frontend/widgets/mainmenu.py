@@ -349,6 +349,8 @@ class MainMenu(Screen):
             ("Namen anzeigen", "names_check"),
             ("Items anzeigen", "items_check"),
             ("animierte Sprites", "animated_check"),
+            ("KP-Leiste", "hp_bars_check"),
+            ("Status-Effekte", "status_effects_check"),
         )
         show_layout = GridLayout(cols=2)
 
@@ -700,6 +702,8 @@ class MainMenu(Screen):
         self.ids.animated_check.state = "down" if sp["animated"] else "normal"
         self.ids.names_check.state = "down" if sp["show_nicknames"] else "normal"
         self.ids.items_check.state = "down" if sp["show_items"] else "normal"
+        self.ids.hp_bars_check.state = "down" if sp.get("show_hp_bars") else "normal"
+        self.ids.status_effects_check.state = "down" if sp.get("show_status_effects") else "normal"
         if pl["session_game"] in ['Sonne', 'Mond', 'Ultra Sonne', 'Ultra Mond']:
             self.ids.badges_check.disabled = True
             self.ids.badges_check.state = "normal"
@@ -737,6 +741,8 @@ class MainMenu(Screen):
             'show_nicknames': self.ids.names_check.state == "down",
             'show_items': self.ids.items_check.state == "down",
             'show_badges': self.ids.badges_check.state == "down",
+            'show_hp_bars': self.ids.hp_bars_check.state == "down",
+            'show_status_effects': self.ids.status_effects_check.state == "down",
             'save_automatically': self.ids.bizhawk_check.state == "down",
             'start_server': self.ids["start_server"].state == "down",
         }

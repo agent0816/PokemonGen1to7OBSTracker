@@ -185,12 +185,12 @@ class SettingsController:
         """Speichert Anzeigeoptionen und Server-Modus aus dem Hauptmenü.
 
         Erwartet folgende Keys in values:
-          sprites:  order, animated, show_nicknames, show_items, show_badges
+          sprites:  order, animated, show_nicknames, show_items, show_badges, show_hp_bars, show_status_effects
           bizhawk:  save_automatically
           remote:   start_server
         """
         try:
-            sprite_keys = {'order', 'animated', 'show_nicknames', 'show_items', 'show_badges'}
+            sprite_keys = {'order', 'animated', 'show_nicknames', 'show_items', 'show_badges', 'show_hp_bars', 'show_status_effects'}
             sprite_values = {k: v for k, v in values.items() if k in sprite_keys}
             if sprite_values:
                 self.sp.update(sprite_values)

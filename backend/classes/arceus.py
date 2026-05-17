@@ -211,7 +211,42 @@ class Arceus:
         async with self.server:
             await self.server.serve_forever()
 
+    async def start_helper_listener(self, sp: dict, configsave, save_callback=None):
+        helper_port = int(self.rem.get('helper_port', int(self.port) + 1))
+        self.helper_server = await asyncio.start_server(
+            lambda r, w: self._handle_helper(r, w, sp, configsave, save_callback),
+            self.host, helper_port)
+        self.logger.info(f"Helper-Listener auf Port {helper_port} gestartet")
+
+    async def _handle_helper(self, reader, writer, sp, configsave, save_callback):
+        try:
+            data = await self.receive_message(reader)
+            if isinstance(data, dict) and data.get("type") == "sprite_path_obs":
+                for key, value in data.items():
+                    if key != "type":
+                        sp[key] = value
+                if save_callback:
+                    save_callback()
+                await self.send_message(writer, "ok")
+                self.logger.info(f"OBS-Sprite-Pfade vom Helper empfangen und gespeichert.")
+            else:
+                await self.send_message(writer, "error")
+                self.logger.warning(f"Unbekannte Helper-Nachricht: {data}")
+        except Exception as err:
+            self.logger.error(f"Fehler im Helper-Handler: {err}")
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    async def stop_helper_listener(self):
+        if hasattr(self, 'helper_server') and self.helper_server:
+            self.helper_server.close()
+            await self.helper_server.wait_closed()
+            self.helper_server = None
+            self.logger.info("Helper-Listener gestoppt.")
+
     async def stop(self):
+        await self.stop_helper_listener()
         if self.server:
             self.heartbeattask.cancel()
             self.server.close()

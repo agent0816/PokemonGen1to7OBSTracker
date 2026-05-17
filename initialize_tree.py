@@ -182,6 +182,7 @@ def update_session(sessionpath, default=False):
     rem = {
         "client_id" : 0,
         "client_port":'43886',
+        "helper_port":'43887',
         "server_ip_adresse":'',
         "server_port":'43886',
         "start_server":False

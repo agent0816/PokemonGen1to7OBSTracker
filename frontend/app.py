@@ -169,6 +169,23 @@ class TrackerApp(App):
             from frontend.widgets.mainmenu import CrashReportPopup
             Clock.schedule_once(lambda dt: CrashReportPopup(crash_log).open(), 2)
 
+        if not self.sp.get('common_path'):
+            from frontend.widgets.sprite_setup_popup import SpriteSetupPopup
+            def _save_sprites():
+                self.save_config(f"{self.configsave}sprites.yml", self.sp)
+            Clock.schedule_once(lambda dt: SpriteSetupPopup(self.sp, self.configsave, save_callback=_save_sprites).open(), 3)
+        else:
+            from backend.sprite_repo import is_sprite_repo, pull_sprite_repo, get_repo_root_from_subpath
+            repo_root = get_repo_root_from_subpath(self.sp['common_path'])
+            if repo_root and is_sprite_repo(repo_root):
+                asyncio.create_task(self._auto_pull_sprites(repo_root))
+
+        if self.sp.get('obs_2_pc'):
+            def _save_sprites_from_helper():
+                self.save_config(f"{self.configsave}sprites.yml", self.sp)
+            asyncio.create_task(self.arceus.start_helper_listener(
+                self.sp, self.configsave, save_callback=_save_sprites_from_helper))
+
         return Screens(*arguments)
 
     def exit_check(self, *args, **kwargs):
@@ -189,6 +206,14 @@ class TrackerApp(App):
             asyncio.create_task(self.munchlax.disconnect()),
         ]
         asyncio.create_task(asyncio.wait(tasks, timeout=3))
+
+    async def _auto_pull_sprites(self, repo_root: str):
+        try:
+            from backend.sprite_repo import pull_sprite_repo
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, pull_sprite_repo, repo_root)
+        except Exception as err:
+            logger.error(f"Auto-Pull der Sprites fehlgeschlagen: {err}")
 
     def save_config(self, path, setting):
         with open(path, "w") as file:

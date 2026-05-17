@@ -1,3 +1,5 @@
+import asyncio
+import os
 import weakref
 from kivy.core.clipboard import Clipboard
 from kivy.uix.boxlayout import BoxLayout
@@ -11,7 +13,9 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.togglebutton import ToggleButton
 from backend.classes.obs import OBS
 from backend.controller.settings_controller import SettingsController
+from backend.sprite_repo import clone_sprite_repo, pull_sprite_repo, is_sprite_repo, get_repo_root_from_subpath, apply_sprite_paths
 from frontend.widgets.mainmenu import TrainerBox
+from frontend.widgets.sprite_setup_popup import SpriteSetupPopup
 import frontend.UIFactory as UI
 import tkinter.filedialog as fd
 from backend.logging_setup import get_logger
@@ -145,6 +149,16 @@ class ScrollSettings(ScrollView):
                                 text_id_name="badges_path", text_validate_function=None,
                                 browse_function=self.browse)
 
+        sprite_repo_buttons = BoxLayout(orientation='horizontal', size_hint=(None, None),
+            size=("420dp", "30dp"), pos_hint={"center_x": .5}, spacing="20dp")
+        btn_download_sprites = Button(text="Sprites herunterladen", size_hint=(1, 1),
+            on_press=lambda inst: self.download_sprites())
+        sprite_repo_buttons.add_widget(btn_download_sprites)
+        btn_update_sprites = Button(text="Sprites aktualisieren", size_hint=(1, 1),
+            on_press=lambda inst: self.update_sprites())
+        sprite_repo_buttons.add_widget(btn_update_sprites)
+        sprite_box.add_widget(sprite_repo_buttons)
+
         float_box = BoxLayout(orientation='vertical', size_hint_y=None, height=0)
         float_box.bind(minimum_height=float_box.setter('height')) # type: ignore
         self.ids["game_sprite_paths"] = weakref.proxy(float_box)
@@ -186,6 +200,11 @@ class ScrollSettings(ScrollView):
         sprite_box.add_widget(obs_sprites_bool_box)
 
         sprite_box.add_widget(float_box_obs)
+
+        obs_paket_button = Button(text="OBS-PC Paket erstellen", size_hint=(None, None),
+            size=("200dp", "30dp"), pos_hint={"center_x": .5},
+            on_press=lambda inst: self.create_obs_helper_package())
+        sprite_box.add_widget(obs_paket_button)
 
         box.add_widget(sprite_box)
 
@@ -239,10 +258,14 @@ class ScrollSettings(ScrollView):
         ueberschrift_server = Label(text="Server Einstellungen", size_hint=(.4, None), size=(0,"20dp"), font_size="17sp")
         remote_box.add_widget(ueberschrift_server)
 
-        UI.create_label_and_Textbox(remote_box, self.ids, 
+        UI.create_label_and_Textbox(remote_box, self.ids,
                             label_text='Host-Port', text_size_hint=(.1,1), is_port=True,
                             text_box_id='port_client',text_validate_function=self.save_changes)
-        
+
+        UI.create_label_and_Textbox(remote_box, self.ids,
+                            label_text='Helper-Port\n(OBS-PC)', text_size_hint=(.1,1), is_port=True,
+                            text_box_id='helper_port',text_validate_function=self.save_changes)
+
         ueberschrift_client = Label(text="Client Einstellungen", size_hint=(.4, None), size=(0,"20dp"), font_size="17sp")
         remote_box.add_widget(ueberschrift_client)
 
@@ -623,6 +646,101 @@ class ScrollSettings(ScrollView):
         btn.bind(on_press=popup.dismiss)
         popup.open()
 
+    def create_obs_helper_package(self):
+        import shutil
+        import yaml as _yaml
+        target = fd.askdirectory(title="Zielordner für OBS-PC Paket wählen")
+        if not target:
+            return
+
+        helper_dir = os.path.join(target, "sprite_helper")
+        os.makedirs(helper_dir, exist_ok=True)
+
+        helper_exe_source = os.path.join("utils", "sprite_helper.exe")
+        pull_exe_source = os.path.join("utils", "pull_task.exe")
+
+        copied_files = []
+        for src in (helper_exe_source, pull_exe_source):
+            if os.path.exists(src):
+                shutil.copy2(src, helper_dir)
+                copied_files.append(os.path.basename(src))
+
+        if not copied_files:
+            box = BoxLayout(orientation='vertical')
+            box.add_widget(Label(text="Helper-EXE nicht gefunden unter utils/.\nBitte zuerst kompilieren."))
+            btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
+            box.add_widget(btn)
+            popup = Popup(title='Fehler', content=box, size_hint=(None, None), size=(500, 200))
+            btn.bind(on_release=popup.dismiss)
+            popup.open()
+            return
+
+        helper_port = int(self.arceus.rem.get('helper_port', int(self.arceus.port) + 1))
+        config = {
+            "repo_url": "https://github.com/agent0816/sprites.git",
+            "tracker_ip": self.externalIPv4,
+            "tracker_port": helper_port,
+        }
+        config_path = os.path.join(helper_dir, "config.yml")
+        with open(config_path, 'w') as f:
+            _yaml.dump(config, f)
+
+        box = BoxLayout(orientation='vertical')
+        box.add_widget(Label(text=f"Paket erstellt in:\n{helper_dir}\n\nDateien: {', '.join(copied_files)}, config.yml"))
+        btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
+        box.add_widget(btn)
+        popup = Popup(title='OBS-PC Paket erstellt', content=box, size_hint=(None, None), size=(500, 200))
+        btn.bind(on_release=popup.dismiss)
+        popup.open()
+
+    def download_sprites(self):
+        popup = SpriteSetupPopup(
+            sp=self.sp,
+            configsave=self.configsave,
+            save_callback=self._after_sprite_download
+        )
+        popup.open()
+
+    def _after_sprite_download(self):
+        self.ids.common_path.text = self.sp['common_path']
+        self.ids.items_path.text = self.sp['items_path']
+        self.ids.badges_path.text = self.sp['badges_path']
+        if self.sp.get('obs_2_pc'):
+            self.ids.common_obs_path.text = self.sp['common_obs_path']
+            self.ids.items_obs_path.text = self.sp['items_obs_path']
+            self.ids.badges_obs_path.text = self.sp['badges_obs_path']
+        self.save_changes()
+
+    def update_sprites(self):
+        repo_root = get_repo_root_from_subpath(self.sp.get('common_path', ''))
+        if not repo_root or not is_sprite_repo(repo_root):
+            box = BoxLayout(orientation='vertical')
+            box.add_widget(Label(text="Kein Sprite-Repository gefunden.\nBitte zuerst herunterladen."))
+            btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
+            box.add_widget(btn)
+            popup = Popup(title='Fehler', content=box, size_hint=(None, None), size=(500, 200))
+            btn.bind(on_release=popup.dismiss)
+            popup.open()
+            return
+        asyncio.create_task(self._do_update_sprites(repo_root))
+
+    async def _do_update_sprites(self, repo_root: str):
+        loop = asyncio.get_event_loop()
+        success = await loop.run_in_executor(None, pull_sprite_repo, repo_root)
+        box = BoxLayout(orientation='vertical')
+        if success:
+            msg = "Sprites erfolgreich aktualisiert!"
+            title = "Aktualisierung erfolgreich"
+        else:
+            msg = "Fehler beim Aktualisieren. Siehe Log."
+            title = "Fehler"
+        box.add_widget(Label(text=msg))
+        btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
+        box.add_widget(btn)
+        popup = Popup(title=title, content=box, size_hint=(None, None), size=(500, 200))
+        btn.bind(on_release=popup.dismiss)
+        popup.open()
+
     def browse(self, widget, modus):
         if modus == 'file':
             path = fd.askopenfilename()
@@ -670,6 +788,7 @@ class ScrollSettings(ScrollView):
         rem = self.controller.load_remote()
         self.ids["ip_server"].text = rem['server_ip_adresse']
         self.ids["port_client"].text = rem['client_port']
+        self.ids["helper_port"].text = rem.get('helper_port', '43887')
         self.ids['port_server'].text = rem['server_port']
 
         pl = self.controller.load_player()
@@ -738,6 +857,7 @@ class ScrollSettings(ScrollView):
         # Remote-Einstellungen sammeln
         self.controller.save_remote({
             'client_port': self.ids['port_client'].text,
+            'helper_port': self.ids['helper_port'].text,
             'server_ip_adresse': self.ids['ip_server'].text,
             'server_port': self.ids['port_server'].text,
         })

@@ -63,6 +63,7 @@ local function detect_game()
 
     elseif emu.getsystemid() == 'NDS' then
         gameversion = memory.read_u16_be(0x23FFE08, 'ARM9 System Bus')
+        language = memory.read_u8(0x23FFE0F, 'ARM9 System Bus')
         if gameversion == 17408 then
             gameversion = 41
         elseif gameversion == 20480 then

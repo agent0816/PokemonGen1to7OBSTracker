@@ -39,6 +39,7 @@ from backend.logging_setup import setup_root_logger, get_logger
 setup_root_logger()
 logger = get_logger('main')
 
+os.environ['KIVY_LOG_MODE'] = 'PYTHON'
 from kivy.config import Config
 Config.read("backend/kivy_config/gui.ini")
 import frontend.app as FEApp

@@ -219,6 +219,23 @@ def update_session(sessionpath, default=False):
         else:
             new_rnd=Path(f"{sessionpath}/default/randomizer.yml")
             load_config(randomizer, rnd, new_path=new_rnd)
+    overlay = Path(f'{sessionpath}/overlay.yml')
+    ov = {
+        "enabled": False,
+        "port": "43888",
+    }
+    if not overlay.exists():
+        if not default:
+            save_config(overlay, ov)
+        else:
+            new_ov=Path(f"{sessionpath}/default/overlay.yml")
+            save_config(new_ov, ov)
+    else:
+        if not default:
+            load_config(overlay, ov)
+        else:
+            new_ov=Path(f"{sessionpath}/default/overlay.yml")
+            load_config(overlay, ov, new_path=new_ov)
 
 if __name__ == '__main__':
     init_config_folder()

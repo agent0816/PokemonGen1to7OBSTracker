@@ -23,7 +23,7 @@ from backend.logging_setup import get_logger
 logger = get_logger(__name__, 'logs/frontend.log')
 
 class SettingsMenu(Screen):
-    def __init__(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, app_version, **kwargs):
+    def __init__(self, arceus, bizhawk, munchlax, obs_websocket, overlay_server, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov, app_version, **kwargs):
         super().__init__(**kwargs)
 
         self.name = "SettingsMenu"
@@ -31,13 +31,13 @@ class SettingsMenu(Screen):
 
         box = BoxLayout(orientation="vertical")
         header_box = BoxLayout(orientation='horizontal', size_hint_y=0.15, padding=(0,"10dp"))
-        
+
         logo = Label(text='Logo', size_hint=(.15,1))
         header_box.add_widget(logo)
 
         self.head_label = Label(text=f"Version {app_version} | Session: {self.selected_session}",size_hint_x=.7)
         header_box.add_widget(self.head_label)
-        
+
         main_menu_button = Button(text="Hauptmenü",size_hint_x=.15, on_press=self.back_to_menu)
         header_box.add_widget(main_menu_button)
 
@@ -46,12 +46,13 @@ class SettingsMenu(Screen):
         layout = GridLayout(cols=2, size_hint_y=.85)
 
         button_box = BoxLayout(orientation="vertical", size_hint=(0.15, 1), pos_hint={"top": 0})
-        self.scrollview = ScrollSettings(self, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd)
+        self.scrollview = ScrollSettings(self, arceus, bizhawk, munchlax, obs_websocket, overlay_server, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov)
 
         settings_buttons = [
             ("Sprite\nPfade", 'sprite'),
             ("Bizhawk", 'bizhawk'),
             ("OBS", 'obs'),
+            ("Browser\nOverlay", 'overlay'),
             ("Remote", 'remote'),
             ("Spieler", 'player'),
             ("Randomizer", 'randomizer'),
@@ -90,10 +91,12 @@ class SettingsMenu(Screen):
         scrollview.scroll_y = scrolling
 
 class ScrollSettings(ScrollView):
-    def __init__(self, settingsscreen, arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, **kwargs):
+    def __init__(self, settingsscreen, arceus, bizhawk, munchlax, obs_websocket, overlay_server, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov, **kwargs):
         super().__init__(**kwargs)
 
         self.rnd = rnd
+        self.ov = ov
+        self.overlay_server = overlay_server
         self.settingsscreen = settingsscreen
         self.arceus = arceus
         self.bizhawk = bizhawk
@@ -108,7 +111,7 @@ class ScrollSettings(ScrollView):
         self.bh = bh
         self.pl = pl
 
-        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket)
+        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov, overlay_server)
 
         self.games={
             'Rot und Blau':'gen1_red','Gelb':'gen1_yellow',
@@ -247,6 +250,39 @@ class ScrollSettings(ScrollView):
                             text_box_id='obs_password',text_validate_function=self.save_changes)
 
         box.add_widget(obs_box)
+
+        overlay_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing="20dp")
+        overlay_box.bind(minimum_height=overlay_box.setter('height'))
+        self.ids["overlay"] = weakref.proxy(overlay_box)
+
+        ueberschrift_overlay = Label(text="Browser Overlay", size_hint=(1, None), size=(0, "20dp"), font_size="20sp")
+        overlay_box.add_widget(ueberschrift_overlay)
+
+        UI.create_label_and_Textbox(overlay_box, self.ids,
+                            label_text='Port', text_size_hint=(.1, 1), is_port=True,
+                            text_box_id='overlay_port', text_validate_function=self.save_changes)
+
+        overlay_link_grid = GridLayout(cols=2, size_hint_y=None, spacing="20dp")
+        overlay_link_grid.bind(minimum_height=overlay_link_grid.setter('height'))
+
+        overlay_port = self.ov.get('port', '43888')
+        for p in range(1, self.pl.get('player_count', 1) + 1):
+            team_url = f"http://localhost:{overlay_port}/player/{p}"
+            overlay_link_grid.add_widget(Label(text=f"Team Spieler {p}", size_hint=(.5, None), size=(0, "30dp")))
+            team_link = Label(on_ref_press=self.clipboard, text=f"[ref=overlay_team_{p}]{team_url}[/ref]",
+                              size_hint=(.5, None), size=(0, "30dp"), markup=True)
+            self.ids[f"overlay_team_link_{p}"] = weakref.proxy(team_link)
+            overlay_link_grid.add_widget(team_link)
+
+            badge_url = f"http://localhost:{overlay_port}/player/{p}/badges"
+            overlay_link_grid.add_widget(Label(text=f"Badges Spieler {p}", size_hint=(.5, None), size=(0, "30dp")))
+            badge_link = Label(on_ref_press=self.clipboard, text=f"[ref=overlay_badge_{p}]{badge_url}[/ref]",
+                               size_hint=(.5, None), size=(0, "30dp"), markup=True)
+            self.ids[f"overlay_badge_link_{p}"] = weakref.proxy(badge_link)
+            overlay_link_grid.add_widget(badge_link)
+
+        overlay_box.add_widget(overlay_link_grid)
+        box.add_widget(overlay_box)
 
         remote_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
         remote_box.bind(minimum_height=remote_box.setter('height')) # type: ignore
@@ -803,6 +839,20 @@ class ScrollSettings(ScrollView):
         self.ids.rom_path.text = rnd.get('rom_path', '')
         self.ids.output_path.text = rnd.get('output_path', '')
 
+        ov = self.controller.load_overlay()
+        self.ids["overlay_port"].text = ov.get('port', '43888')
+        self._update_overlay_links()
+
+    def _update_overlay_links(self):
+        port = self.ids["overlay_port"].text or '43888'
+        for p in range(1, self.pl.get('player_count', 1) + 1):
+            team_key = f"overlay_team_link_{p}"
+            badge_key = f"overlay_badge_link_{p}"
+            if team_key in self.ids:
+                self.ids[team_key].text = f"[ref=overlay_team_{p}]http://localhost:{port}/player/{p}[/ref]"
+            if badge_key in self.ids:
+                self.ids[badge_key].text = f"[ref=overlay_badge_{p}]http://localhost:{port}/player/{p}/badges[/ref]"
+
     def load_game_sprites_config(self):
         sp = self.controller.load_sprites()
         for _, game_id in self.games.items():
@@ -878,6 +928,12 @@ class ScrollSettings(ScrollView):
             'rom_path': self.ids.rom_path.text,
             'output_path': self.ids.output_path.text,
         })
+
+        # Overlay-Einstellungen sammeln
+        self.controller.save_overlay({
+            'port': self.ids["overlay_port"].text,
+        })
+        self._update_overlay_links()
 
         # UI-Aktualisierungen (bleiben in der View)
         main_menu = self.settingsscreen.manager.get_screen("MainMenu")

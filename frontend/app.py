@@ -25,6 +25,7 @@ from backend.classes.bizhawk import Bizhawk
 from backend.classes.citrahandler import CitraHandler
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
+from backend.classes.overlay_server import OverlayServer
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, 'logs/frontend.log')
@@ -36,7 +37,7 @@ APP_VERSION = VERSION
 
 
 class Screens(ScreenManager):
-    def __init__(self,arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,rnd,session_list,**kwargs,):
+    def __init__(self,arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,overlay_server,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,rnd,ov,session_list,**kwargs,):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
         update_menu = Update(APP_NAME, APP_VERSION)
@@ -48,6 +49,7 @@ class Screens(ScreenManager):
             bizhawk_instances,
             munchlax,
             obs_websocket,
+            overlay_server,
             configsave,
             sp,
             rem,
@@ -55,10 +57,11 @@ class Screens(ScreenManager):
             bh,
             pl,
             rnd,
+            ov,
             APP_VERSION,
         )
         self.add_widget(main_menu)
-        settings_menu = SettingsMenu(arceus,bizhawk,munchlax,obs_websocket,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,rnd,APP_VERSION,)
+        settings_menu = SettingsMenu(arceus,bizhawk,munchlax,obs_websocket,overlay_server,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,rnd,ov,APP_VERSION,)
         self.add_widget(settings_menu)
         session_menu = SessionMenu(session_list, main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, rnd, APP_VERSION)
         self.add_widget(session_menu)
@@ -117,6 +120,11 @@ class TrackerApp(App):
         self.rnd = {}
         with open(f"{self.configsave}randomizer.yml") as file:
             self.rnd = yaml.safe_load(file)
+        self.ov = {}
+        ov_path = f"{self.configsave}overlay.yml"
+        if os.path.exists(ov_path):
+            with open(ov_path) as file:
+                self.ov = yaml.safe_load(file) or {}
         self.session_list = []
         with open(f"{self.configsave}../session_list.yml") as file:
             self.session_list = yaml.safe_load(file)
@@ -145,6 +153,9 @@ class TrackerApp(App):
             self.obs,
         )
 
+        self.overlay_server = OverlayServer(self.munchlax, self.sp, self.obs, self.ov)
+        self.munchlax.overlay_server = self.overlay_server
+
         arguments = [
             self.arceus,
             self.bizhawk,
@@ -152,6 +163,7 @@ class TrackerApp(App):
             self.bizhawk_instances,
             self.munchlax,
             self.obs_websocket,
+            self.overlay_server,
             self.externalIPv4,
             self.externalIPv6,
             self.configsave,
@@ -161,6 +173,7 @@ class TrackerApp(App):
             self.bh,
             self.pl,
             self.rnd,
+            self.ov,
             self.session_list,
         ]
 
@@ -195,6 +208,7 @@ class TrackerApp(App):
         self.save_config(f"{self.configsave}player.yml", self.pl)
         self.save_config(f"{self.configsave}remote.yml", self.rem)
         self.save_config(f"{self.configsave}randomizer.yml", self.rnd)
+        self.save_config(f"{self.configsave}overlay.yml", self.ov)
 
         for bizhawk in self.bizhawk_instances:
             bizhawk.terminate()
@@ -204,6 +218,7 @@ class TrackerApp(App):
             asyncio.create_task(self.bizhawk.stop()),
             asyncio.create_task(self.obs_websocket.disconnect()),
             asyncio.create_task(self.munchlax.disconnect()),
+            asyncio.create_task(self.overlay_server.stop()),
         ]
         asyncio.create_task(asyncio.wait(tasks, timeout=3))
 

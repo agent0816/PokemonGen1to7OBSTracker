@@ -48,6 +48,7 @@ class Munchlax:
         self.port = port
         self.is_connected = False
         self.obs: OBS | None = None
+        self.overlay_server = None
         self.rando_tm_moves: dict[int, str] | None = None
         self.rando_hm_moves: dict[int, str] | None = None
         self.rando_abilities_gen3: dict[int, list[int]] | None = None
@@ -180,15 +181,20 @@ class Munchlax:
                         self.logger.info(f"{self.badges[player]=}")
                         if self.obs and self.obs.is_connected:
                             await self.obs.change_badges(player)
+                        if self.overlay_server and self.overlay_server.is_connected:
+                            await self.overlay_server.notify_update(player, "badges")
                 await self._persist_teams(self.unsorted_teams)
                 if new_teams != self.sorted_teams or not self.initialized:
                     for player in new_teams:
                         if player not in self.sorted_teams or not self.initialized:
-                            if self.obs and self.obs.is_connected: 
+                            if self.obs and self.obs.is_connected:
                                 await self.obs.changeSource(player, range(6), new_teams[player], self.editions[player])
                                 self.initialized = True
+                            self.sorted_teams[player] = new_teams[player]
+                            if self.overlay_server and self.overlay_server.is_connected:
+                                await self.overlay_server.notify_update(player, "team")
                             continue
-                        
+
                         diff = []
                         team = new_teams[player]
                         old_team = self.sorted_teams[player]
@@ -197,8 +203,10 @@ class Munchlax:
                                 self.logger.debug(f"{i=},{team[i]=}")
                                 diff.append(i)
                         if self.obs and self.obs.is_connected:
-                            await self.obs.changeSource(player, diff, team, self.editions[player]) 
-                    self.sorted_teams = new_teams.copy()
+                            await self.obs.changeSource(player, diff, team, self.editions[player])
+                        self.sorted_teams[player] = team
+                        if self.overlay_server and self.overlay_server.is_connected:
+                            await self.overlay_server.notify_update(player, "team")
             except (UnicodeEncodeError, UnicodeDecodeError) as err:
                 self.logger.warning(f"Unicode error:{type(err)},{err}")
                 self.logger.warning(f"{traceback.format_exc()}")

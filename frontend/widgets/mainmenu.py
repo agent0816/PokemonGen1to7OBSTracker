@@ -98,6 +98,7 @@ class MainMenu(Screen):
         bizhawk_instances,
         munchlax,
         obs_websocket,
+        overlay_server,
         configsave,
         sp,
         rem,
@@ -105,6 +106,7 @@ class MainMenu(Screen):
         bh,
         pl,
         rnd,
+        ov,
         app_version,
         **kwargs,
     ):
@@ -114,17 +116,19 @@ class MainMenu(Screen):
         self.bizhawk_instances = bizhawk_instances
         self.munchlax = munchlax
         self.obs_websocket: OBS = obs_websocket
+        self.overlay_server = overlay_server
         self.sp = sp
         self.rem = rem
         self.bh = bh
         self.pl = pl
         self.rnd = rnd
+        self.ov = ov
         self.selected_session = ""
         self.app_version = app_version
         self.connectors = set()
 
-        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket)
-        self.connection = ConnectionController(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl)
+        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov, overlay_server)
+        self.connection = ConnectionController(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl, overlay_server)
         self.randomizer = RandomizerController(rnd, pl)
 
         super().__init__(**kwargs)
@@ -188,6 +192,9 @@ class MainMenu(Screen):
         obs_connect = Button(text="OBS verbinden", on_press=self.toggle_obs)
         buttons_box.add_widget(obs_connect)
 
+        self.overlay_button = Button(text="Overlay starten", on_press=self.toggle_overlay)
+        buttons_box.add_widget(self.overlay_button)
+
         self.emulator = Button(text="Bizhawk starten", on_press=self.launchbh)
         buttons_box.add_widget(self.emulator)
 
@@ -234,6 +241,13 @@ class MainMenu(Screen):
         )
 
         status_box.add_widget(obs_box)
+
+        overlay_status_box = BoxLayout(orientation="horizontal")
+        overlay_status_box.add_widget(Label(text="Overlay status:"))
+        UI.create_connection_status(
+            overlay_status_box, ObjectConnectionStatusCircle, self.overlay_server
+        )
+        status_box.add_widget(overlay_status_box)
 
         # verbundene Munchlaxes
 
@@ -512,6 +526,18 @@ class MainMenu(Screen):
             if task:
                 self.connectors.add(task)
             instance.text = "OBS verbinden"
+
+    def toggle_overlay(self, instance):
+        if instance.text == "Overlay starten":
+            task = self.connection.start_overlay()
+            if task:
+                self.connectors.add(task)
+            instance.text = "Overlay beenden"
+        elif instance.text == "Overlay beenden":
+            task = self.connection.stop_overlay()
+            if task:
+                self.connectors.add(task)
+            instance.text = "Overlay starten"
 
     def launchbh(self, instance):
         bizhawk_path = Path(self.bh["path"])

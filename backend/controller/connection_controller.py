@@ -6,7 +6,7 @@ from backend.logging_setup import get_logger
 
 
 class ConnectionController:
-    def __init__(self, arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl):
+    def __init__(self, arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl, overlay_server=None):
         self.arceus = arceus
         self.bizhawk = bizhawk
         self.citra = citra
@@ -15,6 +15,7 @@ class ConnectionController:
         self.obs_websocket = obs_websocket
         self.bh = bh
         self.pl = pl
+        self.overlay_server = overlay_server
 
         self.logger = get_logger(__name__, './logs/connection_controller.log')
 
@@ -84,15 +85,29 @@ class ConnectionController:
             self.logger.error(f"Fehler beim Starten von BizHawk: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
 
+    # --- Overlay ---
+
+    def start_overlay(self) -> asyncio.Task:
+        task = asyncio.create_task(self.overlay_server.start())
+        self.logger.info("Overlay-Server wird gestartet.")
+        return task
+
+    def stop_overlay(self) -> asyncio.Task:
+        task = asyncio.create_task(self.overlay_server.stop())
+        self.logger.info("Overlay-Server wird gestoppt.")
+        return task
+
     # --- Alle Verbindungen ---
 
     def disconnect_all(self):
-        """Trennt alle aktiven Verbindungen (BizHawk, OBS, Munchlax, Arceus)."""
+        """Trennt alle aktiven Verbindungen (BizHawk, OBS, Munchlax, Arceus, Overlay)."""
         tasks = [
             asyncio.create_task(self.bizhawk.stop()),
             asyncio.create_task(self.obs_websocket.disconnect()),
             asyncio.create_task(self.munchlax.disconnect()),
             asyncio.create_task(self.arceus.stop()),
         ]
+        if self.overlay_server:
+            tasks.append(asyncio.create_task(self.overlay_server.stop()))
         asyncio.create_task(asyncio.wait(tasks, timeout=3))
         self.logger.info("Alle Verbindungen werden getrennt.")

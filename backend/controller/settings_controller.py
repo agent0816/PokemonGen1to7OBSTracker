@@ -5,7 +5,7 @@ from backend.logging_setup import get_logger
 
 
 class SettingsController:
-    def __init__(self, configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket):
+    def __init__(self, configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov=None, overlay_server=None):
         self.configsave = configsave
         self.sp = sp
         self.rem = rem
@@ -13,10 +13,12 @@ class SettingsController:
         self.bh = bh
         self.pl = pl
         self.rnd = rnd
+        self.ov = ov or {}
         self.arceus = arceus
         self.bizhawk = bizhawk
         self.munchlax = munchlax
         self.obs_websocket = obs_websocket
+        self.overlay_server = overlay_server
 
         self.logger = get_logger(__name__, './logs/settings_controller.log')
 
@@ -39,6 +41,9 @@ class SettingsController:
 
     def load_randomizer(self) -> dict:
         return self.rnd.copy()
+
+    def load_overlay(self) -> dict:
+        return self.ov.copy()
 
     # --- Private Update-Methoden: synchronisieren Backend-Objekte mit den aktuellen Config-Werten ---
     # Werden nur aufgerufen, wenn das jeweilige Backend noch nicht verbunden ist.
@@ -67,6 +72,14 @@ class SettingsController:
                 self.arceus.port = self.rem['client_port']
         except Exception as err:
             self.logger.error(f"Fehler beim Aktualisieren von Arceus: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())
+
+    def _update_overlay(self):
+        try:
+            if self.overlay_server and not self.overlay_server.is_connected:
+                self.overlay_server.port = int(self.ov.get('port', 43888))
+        except Exception as err:
+            self.logger.error(f"Fehler beim Aktualisieren des Overlay-Servers: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
 
     def _update_munchlax(self):
@@ -151,6 +164,18 @@ class SettingsController:
             self.logger.info("randomizer.yml gespeichert.")
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der Randomizer-Einstellungen: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())
+
+    def save_overlay(self, values: dict) -> None:
+        """Aktualisiert ov-Dict, speichert overlay.yml und synchronisiert den Overlay-Server."""
+        try:
+            self.ov.update(values)
+            self._update_overlay()
+            with open(f"{self.configsave}overlay.yml", 'w') as file:
+                yaml.dump(self.ov, file)
+            self.logger.info("overlay.yml gespeichert.")
+        except Exception as err:
+            self.logger.error(f"Fehler beim Speichern der Overlay-Einstellungen: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
 
     def save_main_menu_settings(self, values: dict) -> None:

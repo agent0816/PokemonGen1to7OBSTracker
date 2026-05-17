@@ -374,7 +374,7 @@ class SessionList(ScrollView):
             self.session_box.add_widget(session_selector)
 
 class SessionMenu(Screen):
-    def __init__(self, session_list_names, main_menu, settings_menu, configsave, sp, rem, obs, bh, pl, rnd, app_version, **kwargs):
+    def __init__(self, session_list_names, main_menu, settings_menu, configsave, sp, rem, obs, bh, pl, rnd, ov, app_version, **kwargs):
         super().__init__(**kwargs)
 
         self.name = "SessionMenu"
@@ -388,6 +388,7 @@ class SessionMenu(Screen):
         self.bh = bh
         self.pl = pl
         self.rnd = rnd
+        self.ov = ov
         self.app_version = app_version
 
         self.session_list_names = session_list_names
@@ -483,6 +484,9 @@ class SessionMenu(Screen):
         with open(f"{new_session}/randomizer.yml", 'w') as file:
             yaml.dump(self.rnd, file)
 
+        with open(f"{new_session}/overlay.yml", 'w') as file:
+            yaml.dump(self.ov, file)
+
     def select_session(self, instance, default=False):
         if not default:
             selected_session = self.get_selected_session()
@@ -556,6 +560,14 @@ class SessionMenu(Screen):
             if new_rnd:
                 for key, value in new_rnd.items():
                     self.rnd[key] = value
+
+        overlay_path = Path(f"{self.configsave}overlay.yml")
+        if overlay_path.exists():
+            with open(overlay_path, 'r') as file:
+                new_ov = yaml.safe_load(file)
+            if new_ov:
+                for key, value in new_ov.items():
+                    self.ov[key] = value
 
     def delete_session(self, instance):
         session_to_delete = self.get_selected_session()

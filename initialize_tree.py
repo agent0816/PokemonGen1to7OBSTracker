@@ -43,7 +43,7 @@ def init_config_folder():
     if not default_session.exists():
         default_session.mkdir(parents=True, exist_ok=True)
     for entry in config.iterdir():
-        if entry.is_file() and entry != session_list:
+        if entry.is_file() and entry not in (session_list, log_settings):
             files.append(entry)
         elif not entry.is_file():
             sessions.append(entry)

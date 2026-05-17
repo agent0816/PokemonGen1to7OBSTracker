@@ -63,7 +63,7 @@ class Screens(ScreenManager):
         self.add_widget(main_menu)
         settings_menu = SettingsMenu(arceus,bizhawk,munchlax,obs_websocket,overlay_server,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,rnd,ov,APP_VERSION,)
         self.add_widget(settings_menu)
-        session_menu = SessionMenu(session_list, main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, rnd, APP_VERSION)
+        session_menu = SessionMenu(session_list, main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, rnd, ov, APP_VERSION)
         self.add_widget(session_menu)
         pokedex_menu = PokedexMenu(configsave, APP_VERSION)
         self.add_widget(pokedex_menu)

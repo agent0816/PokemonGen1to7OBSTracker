@@ -206,11 +206,6 @@ class ScrollSettings(ScrollView):
 
         sprite_box.add_widget(float_box_obs)
 
-        obs_paket_button = Button(text="OBS-PC Paket erstellen", size_hint=(None, None),
-            size=("200dp", "30dp"), pos_hint={"center_x": .5},
-            on_press=lambda inst: self.create_obs_helper_package())
-        sprite_box.add_widget(obs_paket_button)
-
         box.add_widget(sprite_box)
 
         bizhawk_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
@@ -264,26 +259,7 @@ class ScrollSettings(ScrollView):
                             label_text='Port', text_size_hint=(.1, 1), is_port=True,
                             text_box_id='overlay_port', text_validate_function=self.save_changes)
 
-        overlay_link_grid = GridLayout(cols=2, size_hint_y=None, spacing="20dp")
-        overlay_link_grid.bind(minimum_height=overlay_link_grid.setter('height'))
-
-        overlay_port = self.ov.get('port', '43888')
-        for p in range(1, self.pl.get('player_count', 1) + 1):
-            team_url = f"http://localhost:{overlay_port}/player/{p}"
-            overlay_link_grid.add_widget(Label(text=f"Team Spieler {p}", size_hint=(.5, None), size=(0, "30dp")))
-            team_link = Label(on_ref_press=self.clipboard, text=f"[ref=overlay_team_{p}]{team_url}[/ref]",
-                              size_hint=(.5, None), size=(0, "30dp"), markup=True)
-            self.ids[f"overlay_team_link_{p}"] = weakref.proxy(team_link)
-            overlay_link_grid.add_widget(team_link)
-
-            badge_url = f"http://localhost:{overlay_port}/player/{p}/badges"
-            overlay_link_grid.add_widget(Label(text=f"Badges Spieler {p}", size_hint=(.5, None), size=(0, "30dp")))
-            badge_link = Label(on_ref_press=self.clipboard, text=f"[ref=overlay_badge_{p}]{badge_url}[/ref]",
-                               size_hint=(.5, None), size=(0, "30dp"), markup=True)
-            self.ids[f"overlay_badge_link_{p}"] = weakref.proxy(badge_link)
-            overlay_link_grid.add_widget(badge_link)
-
-        overlay_box.add_widget(overlay_link_grid)
+        self._build_overlay_buttons()
         box.add_widget(overlay_box)
 
         remote_box = BoxLayout(orientation='vertical',size_hint_y=None, spacing="20dp")
@@ -552,6 +528,12 @@ class ScrollSettings(ScrollView):
             self.ids.common_obs_path.text = self.sp['common_path']
             self.ids.items_obs_path.text = self.sp['items_path']
             self.ids.badges_obs_path.text = self.sp['badges_path']
+
+            obs_paket_button = Button(text="OBS-PC Paket erstellen", size_hint=(None, None),
+                size=("200dp", "30dp"), pos_hint={"center_x": .5},
+                on_press=lambda inst: self.create_obs_helper_package())
+            self.ids["obs_paket_button"] = weakref.proxy(obs_paket_button)
+            float_box.add_widget(obs_paket_button)
 
         else:
             children = float_box.children.copy()
@@ -867,15 +849,44 @@ class ScrollSettings(ScrollView):
         self.ids["overlay_port"].text = ov.get('port', '43888')
         self._update_overlay_links()
 
+    def _build_overlay_buttons(self):
+        overlay_box = self.ids["overlay"]
+        if "overlay_link_grid" in self.ids:
+            overlay_box.remove_widget(self.ids["overlay_link_grid"])
+
+        port = self.ids["overlay_port"].text if "overlay_port" in self.ids else self.ov.get('port', '43888')
+        player_count = self.pl.get('player_count', 1)
+
+        grid = GridLayout(cols=2, size_hint_y=None, spacing="20dp", padding=("0dp", "10dp"))
+        grid.bind(minimum_height=grid.setter('height'))
+        self.ids["overlay_link_grid"] = weakref.proxy(grid)
+
+        for p in range(1, player_count + 1):
+            team_url = f"http://localhost:{port}/player/{p}"
+            badge_url = f"http://localhost:{port}/player/{p}/badges"
+
+            player_cell = BoxLayout(orientation='horizontal', size_hint_y=None, height="40dp", spacing="10dp")
+            player_cell.add_widget(Label(text=f"Spieler {p}", size_hint_x=.3))
+            player_cell.add_widget(Button(text="Pokemon", size_hint_x=.35,
+                on_press=lambda inst, url=team_url: self._copy_overlay_url(url)))
+            player_cell.add_widget(Button(text="Badges", size_hint_x=.35,
+                on_press=lambda inst, url=badge_url: self._copy_overlay_url(url)))
+            grid.add_widget(player_cell)
+
+        overlay_box.add_widget(grid)
+
+    def _copy_overlay_url(self, url):
+        Clipboard.copy(url)
+        box = BoxLayout(orientation='vertical')
+        box.add_widget(Label(text=url))
+        btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
+        box.add_widget(btn)
+        popup = Popup(title='Link kopiert', content=box, size_hint=(None, None), size=(400, 150))
+        btn.bind(on_press=popup.dismiss)
+        popup.open()
+
     def _update_overlay_links(self):
-        port = self.ids["overlay_port"].text or '43888'
-        for p in range(1, self.pl.get('player_count', 1) + 1):
-            team_key = f"overlay_team_link_{p}"
-            badge_key = f"overlay_badge_link_{p}"
-            if team_key in self.ids:
-                self.ids[team_key].text = f"[ref=overlay_team_{p}]http://localhost:{port}/player/{p}[/ref]"
-            if badge_key in self.ids:
-                self.ids[badge_key].text = f"[ref=overlay_badge_{p}]http://localhost:{port}/player/{p}/badges[/ref]"
+        self._build_overlay_buttons()
 
     def load_game_sprites_config(self):
         sp = self.controller.load_sprites()

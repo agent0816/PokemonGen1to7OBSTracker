@@ -39,7 +39,7 @@ class PokemonBox(ButtonBehavior, BoxLayout):
         self.ids["hp_text"] = weakref.proxy(hp)
         info_box.add_widget(hp)
 
-        progress_bar = ProgressBar(max=1, value=1, size_hint_x=0.8, pos_hint={'center_x':0.5})
+        progress_bar = ProgressBar(max=1, value=1, size_hint=(0.8, None), height="6dp", pos_hint={'center_x':0.5})
         self.ids["hp_bar"] = weakref.proxy(progress_bar)
         info_box.add_widget(progress_bar)
 

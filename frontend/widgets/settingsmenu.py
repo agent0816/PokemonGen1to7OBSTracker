@@ -259,6 +259,27 @@ class ScrollSettings(ScrollView):
                             label_text='Port', text_size_hint=(.1, 1), is_port=True,
                             text_box_id='overlay_port', text_validate_function=self.save_changes)
 
+        layout_grid = GridLayout(cols=4, size_hint_y=None, size=(0, "30dp"), padding=("5dp", 0), spacing="5dp")
+        layout_grid.add_widget(Label(text="Team-Layout", size_hint_x=.2))
+        layout_spinner = Spinner(
+            text=self.ov.get('layout', 'horizontal'),
+            values=('horizontal', 'vertical', '2x3', '3x2'),
+            size_hint_x=.3,
+        )
+        layout_spinner.bind(text=lambda inst, val: self._on_layout_changed(val))
+        self.ids["overlay_layout"] = weakref.proxy(layout_spinner)
+        layout_grid.add_widget(layout_spinner)
+        layout_grid.add_widget(Label(text="Badge-Layout", size_hint_x=.2))
+        badge_layout_spinner = Spinner(
+            text=self.ov.get('badge_layout', 'horizontal'),
+            values=('horizontal', 'vertical', '2x4', '4x2'),
+            size_hint_x=.3,
+        )
+        badge_layout_spinner.bind(text=lambda inst, val: self._on_layout_changed(val))
+        self.ids["overlay_badge_layout"] = weakref.proxy(badge_layout_spinner)
+        layout_grid.add_widget(badge_layout_spinner)
+        overlay_box.add_widget(layout_grid)
+
         self._build_overlay_buttons()
         box.add_widget(overlay_box)
 
@@ -847,6 +868,8 @@ class ScrollSettings(ScrollView):
 
         ov = self.controller.load_overlay()
         self.ids["overlay_port"].text = ov.get('port', '43888')
+        self.ids["overlay_layout"].text = ov.get('layout', 'horizontal')
+        self.ids["overlay_badge_layout"].text = ov.get('badge_layout', 'horizontal')
         self._update_overlay_links()
 
     def _build_overlay_buttons(self):
@@ -855,15 +878,19 @@ class ScrollSettings(ScrollView):
             overlay_box.remove_widget(self.ids["overlay_link_grid"])
 
         port = self.ids["overlay_port"].text if "overlay_port" in self.ids else self.ov.get('port', '43888')
+        layout = self.ids["overlay_layout"].text if "overlay_layout" in self.ids else self.ov.get('layout', 'horizontal')
+        badge_layout = self.ids["overlay_badge_layout"].text if "overlay_badge_layout" in self.ids else self.ov.get('badge_layout', 'horizontal')
         player_count = self.pl.get('player_count', 1)
 
         grid = GridLayout(cols=2, size_hint_y=None, spacing="20dp", padding=("0dp", "10dp"))
         grid.bind(minimum_height=grid.setter('height'))
         self.ids["overlay_link_grid"] = weakref.proxy(grid)
 
+        team_layout_param = f"?layout={layout}" if layout != 'horizontal' else ""
+        badge_layout_param = f"?layout={badge_layout}" if badge_layout != 'horizontal' else ""
         for p in range(1, player_count + 1):
-            team_url = f"http://localhost:{port}/player/{p}"
-            badge_url = f"http://localhost:{port}/player/{p}/badges"
+            team_url = f"http://localhost:{port}/player/{p}{team_layout_param}"
+            badge_url = f"http://localhost:{port}/player/{p}/badges{badge_layout_param}"
 
             player_cell = BoxLayout(orientation='horizontal', size_hint_y=None, height="40dp", spacing="10dp")
             player_cell.add_widget(Label(text=f"Spieler {p}", size_hint_x=.3))
@@ -874,6 +901,9 @@ class ScrollSettings(ScrollView):
             grid.add_widget(player_cell)
 
         overlay_box.add_widget(grid)
+
+    def _on_layout_changed(self, value):
+        self.save_changes()
 
     def _copy_overlay_url(self, url):
         Clipboard.copy(url)
@@ -967,6 +997,8 @@ class ScrollSettings(ScrollView):
         # Overlay-Einstellungen sammeln
         self.controller.save_overlay({
             'port': self.ids["overlay_port"].text,
+            'layout': self.ids["overlay_layout"].text,
+            'badge_layout': self.ids["overlay_badge_layout"].text,
         })
         self._update_overlay_links()
 

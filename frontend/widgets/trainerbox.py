@@ -10,6 +10,16 @@ from kivy.uix.progressbar import ProgressBar
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
 
+STATUS_LABELS = {
+    'freeze': ('[color=3068B0]FRZ[/color]', (0.19, 0.41, 0.69, 1)),
+    'burn':   ('[color=E85030]BRN[/color]', (0.91, 0.31, 0.19, 1)),
+    'para':   ('[color=FAD300]PAR[/color]', (0.98, 0.83, 0.0, 1)),
+    'toxic':  ('[color=A040A0]TOX[/color]', (0.63, 0.25, 0.63, 1)),
+    'poison': ('[color=A040A0]PSN[/color]', (0.63, 0.25, 0.63, 1)),
+    'sleep':  ('[color=98D8D8]SLP[/color]', (0.6, 0.85, 0.85, 1)),
+}
+STATUS_PRIORITY = ('freeze', 'burn', 'para', 'toxic', 'poison', 'sleep')
+
 class PokemonBox(ButtonBehavior, BoxLayout):
     def __init__(self, obs_websocket: OBS, **kwargs):
         super().__init__(**kwargs)
@@ -36,6 +46,10 @@ class PokemonBox(ButtonBehavior, BoxLayout):
         item_name = Label(text="-")
         self.ids["Item_Name"] = weakref.proxy(item_name)
         info_box.add_widget(item_name)
+
+        status_label = Label(text="", markup=True, font_size="12sp", size_hint_y=0.4)
+        self.ids["Status"] = weakref.proxy(status_label)
+        info_box.add_widget(status_label)
 
         self.add_widget(info_box)
 
@@ -226,6 +240,33 @@ class TrainerBox(BoxLayout):
             slot_box.ids["hp_bar"].max = pokemon.max_hp
             slot_box.ids["hp_bar"].value = pokemon.cur_hp
             slot_box.ids["hp_text"].text = f"{pokemon.cur_hp}/{pokemon.max_hp}"
+
+            fainted = pokemon.cur_hp == 0 and pokemon.dexnr not in (0, 'egg') and pokemon.max_hp > 0
+            sprite_widget.color = (0.4, 0.4, 0.4, 1) if fainted else (1, 1, 1, 1)
+
+            pct = pokemon.cur_hp / max(pokemon.max_hp, 1)
+            if pct > 0.5:
+                hp_color = (0.3, 0.69, 0.31, 1)
+            elif pct > 0.2:
+                hp_color = (1.0, 0.6, 0.0, 1)
+            else:
+                hp_color = (0.96, 0.26, 0.21, 1)
+            hp_bar = slot_box.ids["hp_bar"]
+            hp_bar.canvas.after.clear()
+            with hp_bar.canvas.after:
+                Color(*hp_color)
+                Rectangle(
+                    pos=hp_bar.pos,
+                    size=(hp_bar.width * pct, hp_bar.height),
+                )
+
+            status = getattr(pokemon, 'status', {})
+            status_text = ''
+            for key in STATUS_PRIORITY:
+                if status.get(key):
+                    status_text = STATUS_LABELS[key][0]
+                    break
+            slot_box.ids["Status"].text = status_text
 
         self.old_team = new_team
 

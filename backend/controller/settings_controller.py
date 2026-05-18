@@ -176,6 +176,8 @@ class SettingsController:
             self._update_overlay()
             with open(f"{self.configsave}overlay.yml", 'w') as file:
                 yaml.dump(self.ov, file)
+            if self.overlay_server and self.overlay_server.is_connected:
+                asyncio.create_task(self.overlay_server.notify_config_change())
             self.logger.info("overlay.yml gespeichert.")
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der Overlay-Einstellungen: {type(err)}, {err}")
@@ -195,6 +197,8 @@ class SettingsController:
             if sprite_values:
                 self.sp.update(sprite_values)
                 asyncio.create_task(self.obs_websocket.redraw_obs())
+                if self.overlay_server and self.overlay_server.is_connected:
+                    asyncio.create_task(self.overlay_server.notify_config_change())
                 with open(f"{self.configsave}sprites.yml", 'w') as file:
                     yaml.dump(self.sp, file)
                 self.logger.info("sprites.yml (Hauptmenü) gespeichert.")

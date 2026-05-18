@@ -123,6 +123,11 @@ class OverlayServer:
         for q in dead:
             queues.remove(q)
 
+    async def notify_config_change(self):
+        for player_id in list(self._sse_queues.keys()):
+            await self.notify_update(player_id, "team")
+            await self.notify_update(player_id, "badges")
+
     # --- Payload-Builder ---
 
     def _build_full_payload(self, player_id: int) -> dict:
@@ -152,6 +157,9 @@ class OverlayServer:
                 "max_hp": pkmn.max_hp,
                 "sprite_url": f"/sprite/{player_id}/{slot}?v={sprite_cache_key}",
             }
+            status = getattr(pkmn, 'status', {})
+            if status:
+                entry["status"] = status
             if pkmn.item and edition > 20:
                 entry["item_url"] = f"/item/{player_id}/{slot}?v={pkmn.item}"
             team_data.append(entry)
@@ -179,6 +187,10 @@ class OverlayServer:
             "show_nicknames": self.sp.get('show_nicknames', False),
             "show_items": self.sp.get('show_items', False),
             "show_badges": self.sp.get('show_badges', False),
+            "show_hp_bars": self.sp.get('show_hp_bars', False),
+            "show_status_effects": self.sp.get('show_status_effects', False),
+            "team_layout": self.ov.get('layout', 'horizontal'),
+            "badge_layout": self.ov.get('badge_layout', 'horizontal'),
         }
 
     def _resolve_sprite_path(self, pokemon, edition: int) -> str | None:
@@ -213,12 +225,18 @@ class OverlayServer:
 
     async def _handle_team_page(self, request: web.Request) -> web.Response:
         player_id = int(request.match_info['player_id'])
-        html = self._render_team_html(player_id)
+        layout = request.query.get('layout', 'horizontal')
+        if layout not in ('horizontal', 'vertical', '2x3', '3x2'):
+            layout = 'horizontal'
+        html = self._render_team_html(player_id, layout)
         return web.Response(text=html, content_type='text/html')
 
     async def _handle_badges_page(self, request: web.Request) -> web.Response:
         player_id = int(request.match_info['player_id'])
-        html = self._render_badges_html(player_id)
+        badge_layout = request.query.get('layout', 'horizontal')
+        if badge_layout not in ('horizontal', 'vertical', '2x4', '4x2'):
+            badge_layout = 'horizontal'
+        html = self._render_badges_html(player_id, badge_layout)
         return web.Response(text=html, content_type='text/html')
 
     async def _handle_state(self, request: web.Request) -> web.Response:
@@ -323,7 +341,7 @@ class OverlayServer:
 
     # --- HTML-Renderer ---
 
-    def _render_team_html(self, player_id: int) -> str:
+    def _render_team_html(self, player_id: int, layout: str = 'horizontal') -> str:
         return f"""<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -331,7 +349,11 @@ class OverlayServer:
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{ background: transparent; font-family: 'Segoe UI', Arial, sans-serif; overflow: hidden; }}
-#team {{ display: flex; gap: 8px; padding: 4px; align-items: flex-start; }}
+#team {{ gap: 8px; padding: 4px; }}
+#team.layout-horizontal {{ display: flex; align-items: flex-start; }}
+#team.layout-vertical {{ display: flex; flex-direction: column; align-items: flex-start; }}
+#team.layout-2x3 {{ display: grid; grid-template-columns: repeat(2, auto); justify-content: start; }}
+#team.layout-3x2 {{ display: grid; grid-template-columns: repeat(3, auto); justify-content: start; }}
 .slot {{ display: flex; flex-direction: column; align-items: center; min-width: 80px; }}
 .slot.empty {{ visibility: hidden; }}
 .sprite {{ width: 80px; height: 80px; object-fit: contain; image-rendering: pixelated; }}
@@ -343,12 +365,24 @@ body {{ background: transparent; font-family: 'Segoe UI', Arial, sans-serif; ove
 .hp-green {{ background: #4caf50; }}
 .hp-yellow {{ background: #ff9800; }}
 .hp-red {{ background: #f44336; }}
+.sprite.fainted {{ filter: grayscale(100%); }}
+.sprite.status-freeze {{ filter: drop-shadow(0 0 5px #3068B0) drop-shadow(0 0 5px #3068B0); }}
+.sprite.status-burn {{ filter: drop-shadow(0 0 5px #E85030) drop-shadow(0 0 5px #E85030); }}
+.sprite.status-para {{ filter: drop-shadow(0 0 5px #FAD300) drop-shadow(0 0 5px #FAD300); }}
+.sprite.status-poison {{ filter: drop-shadow(0 0 5px #A040A0) drop-shadow(0 0 5px #A040A0); }}
+.sprite.status-sleep {{ filter: drop-shadow(0 0 5px #98D8D8) drop-shadow(0 0 5px #98D8D8); }}
+.sprite.fainted.status-freeze {{ filter: grayscale(100%) drop-shadow(0 0 5px #3068B0) drop-shadow(0 0 5px #3068B0); }}
+.sprite.fainted.status-burn {{ filter: grayscale(100%) drop-shadow(0 0 5px #E85030) drop-shadow(0 0 5px #E85030); }}
+.sprite.fainted.status-para {{ filter: grayscale(100%) drop-shadow(0 0 5px #FAD300) drop-shadow(0 0 5px #FAD300); }}
+.sprite.fainted.status-poison {{ filter: grayscale(100%) drop-shadow(0 0 5px #A040A0) drop-shadow(0 0 5px #A040A0); }}
+.sprite.fainted.status-sleep {{ filter: grayscale(100%) drop-shadow(0 0 5px #98D8D8) drop-shadow(0 0 5px #98D8D8); }}
 </style>
 </head>
 <body>
 <div id="team"></div>
 <script>
 const PLAYER_ID = {player_id};
+const QUERY_LAYOUT = new URLSearchParams(window.location.search).get('layout');
 
 function hpColor(cur, max) {{
     const pct = max > 0 ? cur / max : 0;
@@ -357,9 +391,20 @@ function hpColor(cur, max) {{
     return 'hp-red';
 }}
 
+function statusGlowClass(status) {{
+    if (!status) return null;
+    if (status.freeze) return 'status-freeze';
+    if (status.burn)   return 'status-burn';
+    if (status.para)   return 'status-para';
+    if (status.toxic || status.poison) return 'status-poison';
+    if (status.sleep)  return 'status-sleep';
+    return null;
+}}
+
 function renderTeam(data) {{
     const container = document.getElementById('team');
     container.innerHTML = '';
+    container.className = 'layout-' + (QUERY_LAYOUT || data.team_layout || 'horizontal');
     const team = data.team || [];
     for (const p of team) {{
         const div = document.createElement('div');
@@ -368,6 +413,11 @@ function renderTeam(data) {{
 
         const img = document.createElement('img');
         img.className = 'sprite';
+        if (p.cur_hp === 0 && p.max_hp > 0) img.classList.add('fainted');
+        if (data.show_status_effects) {{
+            const sc = statusGlowClass(p.status);
+            if (sc) img.classList.add(sc);
+        }}
         img.src = p.sprite_url;
         img.alt = p.nickname || '';
         div.appendChild(img);
@@ -384,7 +434,7 @@ function renderTeam(data) {{
         lvl.textContent = p.lvl != null ? 'Lv.' + p.lvl : '';
         div.appendChild(lvl);
 
-        if (p.max_hp > 0) {{
+        if (data.show_hp_bars && p.max_hp > 0) {{
             const bar = document.createElement('div');
             bar.className = 'hp-bar';
             const fill = document.createElement('div');
@@ -422,7 +472,7 @@ es.addEventListener('badges', function(e) {{
 </body>
 </html>"""
 
-    def _render_badges_html(self, player_id: int) -> str:
+    def _render_badges_html(self, player_id: int, badge_layout: str = 'horizontal') -> str:
         return f"""<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -430,7 +480,11 @@ es.addEventListener('badges', function(e) {{
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{ background: transparent; font-family: 'Segoe UI', Arial, sans-serif; overflow: hidden; }}
-#badges {{ display: flex; gap: 4px; padding: 4px; align-items: center; flex-wrap: wrap; }}
+#badges {{ gap: 4px; padding: 4px; }}
+#badges.layout-horizontal {{ display: flex; align-items: center; flex-wrap: wrap; }}
+#badges.layout-vertical {{ display: flex; flex-direction: column; align-items: center; }}
+#badges.layout-2x4 {{ display: grid; grid-template-columns: repeat(2, auto); justify-items: center; }}
+#badges.layout-4x2 {{ display: grid; grid-template-columns: repeat(4, auto); justify-items: center; }}
 .badge {{ width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }}
 .badge.not-earned {{ opacity: 0.4; }}
 </style>
@@ -439,10 +493,12 @@ body {{ background: transparent; font-family: 'Segoe UI', Arial, sans-serif; ove
 <div id="badges"></div>
 <script>
 const PLAYER_ID = {player_id};
+const QUERY_LAYOUT = new URLSearchParams(window.location.search).get('layout');
 
 function renderBadges(data) {{
     const container = document.getElementById('badges');
     container.innerHTML = '';
+    container.className = 'layout-' + (QUERY_LAYOUT || data.badge_layout || 'horizontal');
     if (!data.show_badges) return;
     const badges = data.badges || [];
     for (const b of badges) {{

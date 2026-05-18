@@ -226,7 +226,9 @@ def update_session(sessionpath, default=False):
             load_config(randomizer, rnd, new_path=new_rnd)
     overlay = Path(f'{sessionpath}/overlay.yml')
     ov = {
+        "badge_layout": "horizontal",
         "enabled": False,
+        "layout": "horizontal",
         "port": "43888",
     }
     if not overlay.exists():

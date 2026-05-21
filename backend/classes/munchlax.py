@@ -202,11 +202,12 @@ class Munchlax:
                             if not team[i].obs_property_changed(old_team[i], self.sp):
                                 self.logger.debug(f"{i=},{team[i]=}")
                                 diff.append(i)
+                        slot_mapping = self.compute_slot_mapping(old_team, team)
                         if self.obs and self.obs.is_connected:
-                            await self.obs.changeSource(player, diff, team, self.editions[player])
+                            await self.obs.changeSource(player, diff, team, self.editions[player], slot_mapping=slot_mapping)
                         self.sorted_teams[player] = team
                         if self.overlay_server and self.overlay_server.is_connected:
-                            await self.overlay_server.notify_update(player, "team")
+                            await self.overlay_server.notify_update(player, "team", slot_mapping=slot_mapping)
             except (UnicodeEncodeError, UnicodeDecodeError) as err:
                 self.logger.warning(f"Unicode error:{type(err)},{err}")
                 self.logger.warning(f"{traceback.format_exc()}")
@@ -295,6 +296,32 @@ class Munchlax:
         for player, team in teams.items():
             self.logger.debug(f"logging_teams: player {player}: {[str(p) for p in team[:6]]}")
     
+    def compute_slot_mapping(self, old_team: list, new_team: list) -> dict:
+        old_keys = {}
+        new_keys = {}
+        for slot in range(min(6, len(old_team))):
+            key = old_team[slot].identity_key
+            if key is not None:
+                old_keys[slot] = key
+        for slot in range(min(6, len(new_team))):
+            key = new_team[slot].identity_key
+            if key is not None:
+                new_keys[slot] = key
+
+        new_key_to_slot = {key: slot for slot, key in new_keys.items()}
+        old_key_set = set(old_keys.values())
+
+        mapping = {}
+        for old_slot, key in old_keys.items():
+            mapping[old_slot] = new_key_to_slot.get(key)
+
+        new_slots = [slot for slot, key in new_keys.items() if key not in old_key_set]
+        removed_slots = [old_slot for old_slot, key in old_keys.items() if key not in new_keys.values()]
+
+        mapping['new_slots'] = new_slots
+        mapping['removed_slots'] = removed_slots
+        return mapping
+
     def sort(self, liste, key):
         key = key.lower().replace('.', '')
         if key == 'dexnr':

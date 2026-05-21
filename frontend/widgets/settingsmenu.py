@@ -831,13 +831,13 @@ class ScrollSettings(ScrollView):
         self.ids.game_sprites_check.state = 'down' if not sp['single_path_check'] else 'normal'
         self.ids.obs_sprites_check.state = 'down' if sp['obs_2_pc'] else 'normal'
 
+        self.ausklapp_button_zeigen_oder_verstecken(self.ids.game_sprites_check, initializing=True)
+        self.obs_2_pcs_setup(self.ids.obs_sprites_check, initializing=True)
+
         if sp['obs_2_pc']:
             self.ids.common_obs_path.text = sp['common_obs_path']
             self.ids.items_obs_path.text = sp['items_obs_path']
             self.ids.badges_obs_path.text = sp['badges_obs_path']
-
-        self.ausklapp_button_zeigen_oder_verstecken(self.ids.game_sprites_check, initializing=True)
-        self.obs_ausklapp_button_zeigen_oder_verstecken(self.ids.obs_sprites_check, initializing=True)
 
         bh = self.controller.load_bizhawk()
         self.ids.bizhawk_exe.text = bh['path']

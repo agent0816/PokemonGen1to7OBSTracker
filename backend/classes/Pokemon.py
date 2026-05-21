@@ -42,6 +42,15 @@ class Pokemon:
         
         return representation
 
+    @property
+    def identity_key(self) -> str | None:
+        if self.dexnr == 0 or self.dexnr == 'egg':
+            return None
+        pv = getattr(self, 'personality', None)
+        if pv is not None:
+            return f"pid_{pv}"
+        return None
+
     def obs_property_changed(self, other, sp):
         if sp["show_items"] and self.item != other.item:
             return False

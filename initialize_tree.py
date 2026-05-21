@@ -61,6 +61,7 @@ def update_session(sessionpath, default=False):
     sp = {
         "alphasapphire":'',
         "alphasapphire_obs":'',
+        "animate_obs_reorder": False,
         "animated":False,
         "badges_path":'',
         "badges_obs_path":'',
@@ -84,6 +85,7 @@ def update_session(sessionpath, default=False):
         "items_path":'',
         "items_obs_path":'',
         "obs_2_pc":False,
+        "obs_animation_duration_ms": 300,
         "order":'team',
         "platinum":'',
         "platinum_obs":'',
@@ -226,6 +228,8 @@ def update_session(sessionpath, default=False):
             load_config(randomizer, rnd, new_path=new_rnd)
     overlay = Path(f'{sessionpath}/overlay.yml')
     ov = {
+        "animate_reorder": True,
+        "animation_duration_ms": 300,
         "badge_layout": "horizontal",
         "enabled": False,
         "layout": "horizontal",

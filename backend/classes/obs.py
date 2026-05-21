@@ -1,3 +1,4 @@
+import asyncio
 import simpleobsws
 import traceback
 from websockets.exceptions import WebSocketException
@@ -42,6 +43,10 @@ class OBS():
         self._filters_initialized: set[str] = set()
         self._hp_bars_initialized: set[str] = set()
         self._glow_available: bool = True
+        self._slot_positions: dict[str, tuple[float, float]] = {}
+        self._slot_item_info: dict[str, tuple[str, int]] = {}
+        self._scene_groups: list[str] = []
+        self._swap_filters: set[str] = set()
 
         self.logger = get_logger(__name__, './logs/obs.log')
 
@@ -60,6 +65,10 @@ class OBS():
                 self._filters_initialized.clear()
                 self._hp_bars_initialized.clear()
                 self._glow_available = True
+                self._slot_positions.clear()
+                self._slot_item_info.clear()
+                self._scene_groups.clear()
+                self._swap_filters.clear()
                 await self.redraw_obs()
                 self.logger.info("obs connected.")
                 self.is_connected = 'connected'
@@ -84,13 +93,17 @@ class OBS():
 
     async def redraw_obs(self):
         if self.ws and self.ws.is_identified():
+            await self._find_scene()
             if self.conf.get('show_hp_bars'):
-                await self._find_scene()
                 for player in self.munchlax.sorted_teams:
                     await self._ensure_hp_bars(player, range(6))
             if self.conf.get('show_status_effects'):
                 for player in self.munchlax.sorted_teams:
                     await self._ensure_filters(player, range(6))
+            if self.conf.get('animate_obs_reorder'):
+                for player in self.munchlax.sorted_teams:
+                    await self._cache_slot_info(player)
+                    await self._ensure_swap_filters(player)
             for player in self.munchlax.sorted_teams:
                 await self.changeSource(player, range(6), self.munchlax.sorted_teams[player], self.munchlax.editions[player])
                 await self.change_badges(player)
@@ -117,20 +130,25 @@ class OBS():
             for scene in scenes_to_check:
                 if not scene:
                     continue
+                # Alle Gruppen in dieser Szene sammeln
+                groups = await self._list_groups(scene)
+
                 # name1 direkt in Szene?
                 if await self._source_exists_in(scene, "name1"):
                     self._scene_name = scene
                     self._name_group = None
-                    self.logger.info(f"Szene gefunden (direkt): {scene}")
+                    self._scene_groups = groups
+                    self.logger.info(f"Szene gefunden (direkt): {scene}, Gruppen: {groups}")
                     return
                 # name1 in einer Gruppe innerhalb der Szene?
-                group_name = await self._find_group_containing(scene, "name1")
-                if group_name:
-                    self._scene_name = scene
-                    self._name_group = group_name
-                    await self._cache_group_transform(scene, group_name)
-                    self.logger.info(f"Szene gefunden: {scene}, Namen-Gruppe: {group_name}")
-                    return
+                for group_name in groups:
+                    if await self._source_exists_in(group_name, "name1"):
+                        self._scene_name = scene
+                        self._name_group = group_name
+                        self._scene_groups = groups
+                        await self._cache_group_transform(scene, group_name)
+                        self.logger.info(f"Szene gefunden: {scene}, Namen-Gruppe: {group_name}, Gruppen: {groups}")
+                        return
 
             self.logger.warning("Keine Szene mit 'name1' gefunden — HP-Bars können nicht erstellt werden.")
         except Exception as err:
@@ -147,21 +165,19 @@ class OBS():
         except Exception:
             return False
 
-    async def _find_group_containing(self, scene: str, source_name: str) -> str | None:
+    async def _list_groups(self, scene: str) -> list[str]:
+        groups = []
         try:
             resp = await self.ws.call(simpleobsws.Request(
                 "GetSceneItemList", {"sceneName": scene}
             ))
-            if not resp or not resp.ok() or not resp.responseData:
-                return None
-            for item in resp.responseData.get("sceneItems", []):
-                if item.get("isGroup"):
-                    group = item["sourceName"]
-                    if await self._source_exists_in(group, source_name):
-                        return group
+            if resp and resp.ok() and resp.responseData:
+                for item in resp.responseData.get("sceneItems", []):
+                    if item.get("isGroup"):
+                        groups.append(item["sourceName"])
         except Exception:
             pass
-        return None
+        return groups
 
     async def _cache_group_transform(self, scene: str, group_name: str):
         try:
@@ -337,7 +353,293 @@ class OBS():
             ))
         return batch
 
-    # ── Filter-Management ────────────────────────────────────────────
+    # ── Reorder-Animation (Move Source Swap Filter) ─────────────────
+
+    SWAP_FILTER_NAME = "tracker_swap"
+    SWAP_FILTER_KIND = "move_source_swap_filter"
+
+    def _all_slot_sources(self, player: int, slot: int) -> list[str]:
+        names = [self._slot_name(player, slot)]
+        if self.conf.get('show_nicknames'):
+            names.append(self._name_source_name(player, slot))
+        if self.conf.get('show_items'):
+            names.append(f"item{slot + 6 * (player - 1) + 1}")
+        if self.conf.get('show_hp_bars'):
+            names.append(self._hp_bar_name(player, slot))
+        return names
+
+    async def _find_source_item(self, source_name: str) -> tuple[str, int] | None:
+        containers = [self._scene_name] + self._scene_groups
+        for container in containers:
+            if not container:
+                continue
+            try:
+                resp = await self.ws.call(simpleobsws.Request(
+                    "GetSceneItemId",
+                    {"sceneName": container, "sourceName": source_name}
+                ))
+                if resp and resp.ok() and resp.responseData:
+                    return (container, resp.responseData["sceneItemId"])
+            except Exception:
+                continue
+        return None
+
+    async def _cache_slot_info(self, player: int):
+        if not self._scene_name or not self.ws or not self.ws.is_identified():
+            return
+        self.logger.info(f"_cache_slot_info: Spieler {player}, Gruppen={self._scene_groups}")
+        for slot in range(6):
+            for source in self._all_slot_sources(player, slot):
+                if source in self._slot_item_info:
+                    continue
+                try:
+                    info = await self._find_source_item(source)
+                    if not info:
+                        continue
+                    container, item_id = info
+                    self._slot_item_info[source] = (container, item_id)
+                    tr_resp = await self.ws.call(simpleobsws.Request(
+                        "GetSceneItemTransform",
+                        {"sceneName": container, "sceneItemId": item_id}
+                    ))
+                    if tr_resp and tr_resp.ok() and tr_resp.responseData:
+                        t = tr_resp.responseData.get("sceneItemTransform", {})
+                        self._slot_positions[source] = (
+                            t.get("positionX", 0.0), t.get("positionY", 0.0),
+                        )
+                    self.logger.info(f"  {source}: group={container}, pos={self._slot_positions.get(source)}")
+                except Exception as err:
+                    self.logger.error(f"_cache_slot_info Fehler bei {source}: {err}")
+                    self.logger.error(traceback.format_exc())
+
+    async def _ensure_swap_filters(self, player: int):
+        if not self.ws or not self.ws.is_identified():
+            return
+        groups_needed = set()
+        for slot in range(6):
+            for source in self._all_slot_sources(player, slot):
+                info = self._slot_item_info.get(source)
+                if info and info[0] != self._scene_name:
+                    groups_needed.add(info[0])
+
+        duration_ms = self.conf.get('obs_animation_duration_ms', 300)
+        for group in groups_needed:
+            if group in self._swap_filters:
+                continue
+            try:
+                resp = await self.ws.call(simpleobsws.Request(
+                    "GetSourceFilterList", {"sourceName": group}
+                ))
+                existing = set()
+                if resp and resp.ok() and resp.responseData:
+                    for f in resp.responseData.get("filters", []):
+                        existing.add(f.get("filterName"))
+
+                if self.SWAP_FILTER_NAME not in existing:
+                    create_resp = await self.ws.call(simpleobsws.Request(
+                        "CreateSourceFilter",
+                        {
+                            "sourceName": group,
+                            "filterName": self.SWAP_FILTER_NAME,
+                            "filterKind": self.SWAP_FILTER_KIND,
+                            "filterSettings": {
+                                "custom_duration": True,
+                                "duration": duration_ms,
+                                "easing_match": 3,
+                                "easing_function_match": 2,
+                                "enabled_match_moving": True,
+                            },
+                        }
+                    ))
+                    if not create_resp or not create_resp.ok():
+                        self.logger.warning(f"Swap-Filter auf '{group}' konnte nicht erstellt werden")
+                        continue
+                    await self.ws.call(simpleobsws.Request(
+                        "SetSourceFilterEnabled",
+                        {"sourceName": group, "filterName": self.SWAP_FILTER_NAME, "filterEnabled": False}
+                    ))
+
+                self._swap_filters.add(group)
+                self.logger.info(f"Swap-Filter auf Gruppe '{group}' bereit")
+            except Exception as err:
+                self.logger.error(f"_ensure_swap_filters Fehler bei {group}: {err}")
+                self.logger.error(traceback.format_exc())
+
+    @staticmethod
+    def _compute_swap_sequence(slot_mapping: dict) -> list[tuple[int, int]]:
+        visited = set()
+        cycles = []
+        for start in slot_mapping:
+            if start in ('new_slots', 'removed_slots'):
+                continue
+            start = int(start) if isinstance(start, str) else start
+            if start in visited:
+                continue
+            target = slot_mapping.get(start)
+            if target is None or target == start:
+                visited.add(start)
+                continue
+            cycle = []
+            current = start
+            while current not in visited:
+                visited.add(current)
+                cycle.append(current)
+                nxt = slot_mapping.get(current)
+                if nxt is None or nxt == start:
+                    break
+                current = nxt
+            if len(cycle) >= 2:
+                cycles.append(cycle)
+
+        sequence = []
+        for cycle in cycles:
+            if len(cycle) == 2:
+                sequence.append((cycle[0], cycle[1]))
+            else:
+                for i in range(1, len(cycle)):
+                    sequence.append((cycle[0], cycle[i]))
+        return sequence
+
+    def _build_slot_content_batch(self, player: int, slots, team, edition) -> list:
+        batch = []
+        for slot in slots:
+            sprite = self.get_sprite(team[slot], self.conf['animated'], edition, two_pc=self.conf['obs_2_pc'])
+            batch.append(simpleobsws.Request(
+                "SetInputSettings",
+                {
+                    "inputName": f"Slot{slot + 6 * (player - 1) + 1}",
+                    "inputSettings": {"file": sprite},
+                },
+            ))
+        if self.conf['show_nicknames']:
+            for slot in slots:
+                batch.append(simpleobsws.Request(
+                    "SetInputSettings",
+                    {
+                        "inputName": f"name{slot + 6 * (player - 1) + 1}",
+                        "inputSettings": {"text": team[slot].nickname},
+                    },
+                ))
+        if self.conf['show_items'] and edition > 20:
+            items_path = self.conf['items_path'] if not self.conf['obs_2_pc'] else self.conf['items_obs_path']
+            for slot in slots:
+                item_slug = str(team[slot].item)
+                item_slug = resolve_tm_hm_sprite(
+                    edition, item_slug,
+                    self.munchlax.rando_tm_moves,
+                    self.munchlax.rando_hm_moves,
+                )
+                batch.append(simpleobsws.Request(
+                    "SetInputSettings",
+                    {
+                        "inputName": f"item{slot + 6 * (player - 1) + 1}",
+                        "inputSettings": {
+                            "file": items_path + '/' + item_slug + ".png"
+                        },
+                    },
+                ))
+        if self.conf.get('show_hp_bars'):
+            batch.extend(self._build_hp_bar_updates(player, slots, team))
+        if self.conf.get('show_status_effects'):
+            batch.extend(self._build_filter_updates(player, slots, team))
+        return batch
+
+    async def _animate_swap(self, player: int, slot_mapping: dict, team, edition) -> set[int]:
+        sequence = self._compute_swap_sequence(slot_mapping)
+        if not sequence:
+            return set()
+
+        duration_ms = self.conf.get('obs_animation_duration_ms', 300)
+        animated_slots = set()
+
+        # Intermediäre Team-Reihenfolge berechnen:
+        # swap_sequence transformiert old→new. Rückwärts anwenden ergibt old_order.
+        current_order = list(range(6))
+        for a, b in reversed(sequence):
+            current_order[a], current_order[b] = current_order[b], current_order[a]
+        # current_order[i] = team-Index der aktuell an Position i angezeigt wird
+
+        for slot_a, slot_b in sequence:
+            config_batch = []
+            enable_batch = []
+            sources_a = self._all_slot_sources(player, slot_a)
+            sources_b = self._all_slot_sources(player, slot_b)
+            configured_groups = set()
+
+            for src_a, src_b in zip(sources_a, sources_b):
+                info_a = self._slot_item_info.get(src_a)
+                if not info_a:
+                    continue
+                group = info_a[0]
+                if group not in self._swap_filters or group in configured_groups:
+                    continue
+                configured_groups.add(group)
+
+                config_batch.append(simpleobsws.Request(
+                    "SetSourceFilterSettings",
+                    {
+                        "sourceName": group,
+                        "filterName": self.SWAP_FILTER_NAME,
+                        "filterSettings": {
+                            "source1": src_a,
+                            "source2": src_b,
+                            "duration": duration_ms,
+                        },
+                    }
+                ))
+                enable_batch.append(simpleobsws.Request(
+                    "SetSourceFilterEnabled",
+                    {"sourceName": group, "filterName": self.SWAP_FILTER_NAME, "filterEnabled": True}
+                ))
+
+            if config_batch:
+                await self.ws.call_batch(config_batch)
+            if enable_batch:
+                self.logger.info(f"Swap-Animation: Slot {slot_a} <-> {slot_b} auf {len(enable_batch)} Gruppen")
+                await self.ws.call_batch(enable_batch)
+                await asyncio.sleep(duration_ms / 1000.0 + 0.05)
+
+            # Intermediären Swap anwenden
+            current_order[slot_a], current_order[slot_b] = current_order[slot_b], current_order[slot_a]
+
+            # Atomar in einem Batch: Filter disable + Positionen zurücksetzen + Content-Update.
+            # Swap-Filter ändert Positionen permanent — Disable revertiert NICHT.
+            # Daher explizites Position-Reset auf Home-Koordinaten nötig.
+            finalize_batch = [
+                simpleobsws.Request(
+                    "SetSourceFilterEnabled",
+                    {"sourceName": g, "filterName": self.SWAP_FILTER_NAME, "filterEnabled": False}
+                ) for g in configured_groups
+            ]
+            for slot in [slot_a, slot_b]:
+                for source in self._all_slot_sources(player, slot):
+                    pos = self._slot_positions.get(source)
+                    info = self._slot_item_info.get(source)
+                    if not pos or not info:
+                        continue
+                    container, item_id = info
+                    finalize_batch.append(simpleobsws.Request(
+                        "SetSceneItemTransform",
+                        {
+                            "sceneName": container,
+                            "sceneItemId": item_id,
+                            "sceneItemTransform": {
+                                "positionX": pos[0],
+                                "positionY": pos[1],
+                            }
+                        }
+                    ))
+            intermediate_team = [team[current_order[i]] for i in range(6)]
+            finalize_batch.extend(self._build_slot_content_batch(player, [slot_a, slot_b], intermediate_team, edition))
+            if finalize_batch:
+                await self.ws.call_batch(finalize_batch)
+
+            animated_slots.add(slot_a)
+            animated_slots.add(slot_b)
+
+        return animated_slots
+
+    # ── Filter-Management (Status-Effekte) ───────────────────────────
 
     async def _ensure_filters(self, player: int, slots):
         if not self.ws or not self.ws.is_identified():
@@ -459,67 +761,29 @@ class OBS():
 
     # ── Bestehende Methoden (erweitert) ──────────────────────────────
 
-    async def changeSource(self, player, slots, team, edition):
+    async def changeSource(self, player, slots, team, edition, slot_mapping=None):
         if not self.ws or not self.ws.is_identified():
             self.is_connected = False
             return
         if not slots:
             return
         self.logger.info(f"changeSource: Spieler {player}, Slots {list(slots)}")
-        batch = []
-        for slot in slots:
-            sprite = self.get_sprite(team[slot], self.conf['animated'], edition, two_pc=self.conf['obs_2_pc'])
 
-            batch.append(
-                simpleobsws.Request(
-                    "SetInputSettings",
-                    {
-                        "inputName": f"Slot{slot + 6 * (player -1) +1}",
-                        "inputSettings": {"file": sprite},
-                    },
-                )
-            )
-        if self.conf['show_nicknames']:
-            for slot in slots:
-                batch.append(
-                    simpleobsws.Request(
-                        "SetInputSettings",
-                        {
-                            "inputName": f"name{slot + 6 * (player -1) +1}",
-                            "inputSettings": {"text": team[slot].nickname},
-                        },
-                    )
-                )
-        if self.conf['show_items'] and edition > 20:
-            items_path = self.conf['items_path'] if not self.conf['obs_2_pc'] else self.conf['items_obs_path']
-            for slot in slots:
-                item_slug = str(team[slot].item)
-                item_slug = resolve_tm_hm_sprite(
-                    edition, item_slug,
-                    self.munchlax.rando_tm_moves,
-                    self.munchlax.rando_hm_moves,
-                )
-                batch.append(
-                    simpleobsws.Request(
-                        "SetInputSettings",
-                        {
-                            "inputName": f"item{slot + 6 * (player - 1) + 1}",
-                            "inputSettings": {
-                                "file": items_path + '/'
-                                + item_slug
-                                + ".png"
-                            },
-                        },
-                    )
-                )
+        animate = (self.conf.get('animate_obs_reorder')
+                   and slot_mapping is not None
+                   and self._scene_name is not None)
+        animated_slots = set()
+        if animate:
+            if not self._slot_item_info:
+                await self._cache_slot_info(player)
+                await self._ensure_swap_filters(player)
+            if self._swap_filters:
+                animated_slots = await self._animate_swap(player, slot_mapping, team, edition)
 
-        if self.conf.get('show_hp_bars'):
-            batch.extend(self._build_hp_bar_updates(player, slots, team))
+        remaining_slots = [s for s in slots if s not in animated_slots]
+        batch = self._build_slot_content_batch(player, remaining_slots, team, edition)
 
-        if self.conf.get('show_status_effects'):
-            batch.extend(self._build_filter_updates(player, slots, team))
-
-        if batch != []:
+        if batch:
             await self.ws.call_batch(batch)
 
     async def change_badges(self, player):

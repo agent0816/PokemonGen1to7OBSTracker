@@ -104,11 +104,18 @@ class OverlayServer:
 
     # --- Notify (aufgerufen von Munchlax) ---
 
-    async def notify_update(self, player_id: int, update_type: str):
+    async def notify_update(self, player_id: int, update_type: str, slot_mapping: dict | None = None):
         queues = self._sse_queues.get(player_id, [])
         if not queues:
             return
         payload = self._build_full_payload(player_id)
+        if slot_mapping is not None:
+            payload["slot_mapping"] = {
+                str(k): v for k, v in slot_mapping.items()
+                if k not in ('new_slots', 'removed_slots')
+            }
+            payload["new_slots"] = slot_mapping.get('new_slots', [])
+            payload["removed_slots"] = slot_mapping.get('removed_slots', [])
         for p in payload.get('team', []):
             if p.get('dexnr', 0) != 0:
                 self.logger.debug(f"SSE slot={p['slot']}: dexnr={p['dexnr']}, item={p.get('item','')}, nickname={p.get('nickname','')}")
@@ -139,7 +146,7 @@ class OverlayServer:
         team_data = []
         for slot, pkmn in enumerate(team[:6]):
             if pkmn.dexnr == 0:
-                team_data.append({"slot": slot, "dexnr": 0})
+                team_data.append({"slot": slot, "dexnr": 0, "identity_key": f"empty_{slot}"})
                 continue
             shiny_flag = 1 if pkmn.shiny else 0
             female_flag = 1 if pkmn.female else 0
@@ -157,6 +164,7 @@ class OverlayServer:
                 "max_hp": pkmn.max_hp,
                 "sprite_url": f"/sprite/{player_id}/{slot}?v={sprite_cache_key}",
             }
+            entry["identity_key"] = pkmn.identity_key or f"empty_{slot}"
             status = getattr(pkmn, 'status', {})
             if status:
                 entry["status"] = status
@@ -191,6 +199,8 @@ class OverlayServer:
             "show_status_effects": self.sp.get('show_status_effects', False),
             "team_layout": self.ov.get('layout', 'horizontal'),
             "badge_layout": self.ov.get('badge_layout', 'horizontal'),
+            "animate_reorder": self.ov.get('animate_reorder', False),
+            "animation_duration_ms": self.ov.get('animation_duration_ms', 300),
         }
 
     def _resolve_sprite_path(self, pokemon, edition: int) -> str | None:
@@ -383,6 +393,7 @@ body {{ background: transparent; font-family: 'Segoe UI', Arial, sans-serif; ove
 <script>
 const PLAYER_ID = {player_id};
 const QUERY_LAYOUT = new URLSearchParams(window.location.search).get('layout');
+let prevData = null;
 
 function hpColor(cur, max) {{
     const pct = max > 0 ? cur / max : 0;
@@ -401,60 +412,202 @@ function statusGlowClass(status) {{
     return null;
 }}
 
+function createSlotNode(p, data) {{
+    const div = document.createElement('div');
+    div.className = 'slot' + (p.dexnr === 0 ? ' empty' : '');
+    div.dataset.identityKey = p.identity_key || ('empty_' + p.slot);
+    if (p.dexnr === 0) return div;
+
+    const img = document.createElement('img');
+    img.className = 'sprite';
+    if (p.cur_hp === 0 && p.max_hp > 0) img.classList.add('fainted');
+    if (data.show_status_effects) {{
+        const sc = statusGlowClass(p.status);
+        if (sc) img.classList.add(sc);
+    }}
+    img.src = p.sprite_url;
+    img.alt = p.nickname || '';
+    div.appendChild(img);
+
+    if (data.show_nicknames && p.nickname) {{
+        const name = document.createElement('div');
+        name.className = 'nickname';
+        name.textContent = p.nickname;
+        div.appendChild(name);
+    }}
+
+    const lvl = document.createElement('div');
+    lvl.className = 'level';
+    lvl.textContent = p.lvl != null ? 'Lv.' + p.lvl : '';
+    div.appendChild(lvl);
+
+    if (data.show_hp_bars && p.max_hp > 0) {{
+        const bar = document.createElement('div');
+        bar.className = 'hp-bar';
+        const fill = document.createElement('div');
+        const pct = Math.round((p.cur_hp / p.max_hp) * 100);
+        fill.className = 'hp-fill ' + hpColor(p.cur_hp, p.max_hp);
+        fill.style.width = pct + '%';
+        bar.appendChild(fill);
+        div.appendChild(bar);
+    }}
+
+    if (data.show_items && p.item_url) {{
+        const item = document.createElement('img');
+        item.className = 'item-icon';
+        item.src = p.item_url;
+        item.alt = p.item || '';
+        div.appendChild(item);
+    }}
+
+    return div;
+}}
+
+function updateSlotContent(div, p, data) {{
+    div.className = 'slot' + (p.dexnr === 0 ? ' empty' : '');
+    div.dataset.identityKey = p.identity_key || ('empty_' + p.slot);
+    if (p.dexnr === 0) {{
+        div.innerHTML = '';
+        return;
+    }}
+
+    let img = div.querySelector('.sprite');
+    if (!img) {{
+        div.innerHTML = '';
+        const newNode = createSlotNode(p, data);
+        div.replaceWith(newNode);
+        return;
+    }}
+
+    img.className = 'sprite';
+    if (p.cur_hp === 0 && p.max_hp > 0) img.classList.add('fainted');
+    if (data.show_status_effects) {{
+        const sc = statusGlowClass(p.status);
+        if (sc) img.classList.add(sc);
+    }}
+    if (img.src !== new URL(p.sprite_url, location.origin).href) {{
+        img.src = p.sprite_url;
+    }}
+    img.alt = p.nickname || '';
+
+    let nameEl = div.querySelector('.nickname');
+    if (data.show_nicknames && p.nickname) {{
+        if (!nameEl) {{
+            nameEl = document.createElement('div');
+            nameEl.className = 'nickname';
+            img.after(nameEl);
+        }}
+        nameEl.textContent = p.nickname;
+    }} else if (nameEl) {{
+        nameEl.remove();
+    }}
+
+    let lvlEl = div.querySelector('.level');
+    if (lvlEl) {{
+        lvlEl.textContent = p.lvl != null ? 'Lv.' + p.lvl : '';
+    }}
+
+    let hpBar = div.querySelector('.hp-bar');
+    if (data.show_hp_bars && p.max_hp > 0) {{
+        if (!hpBar) {{
+            hpBar = document.createElement('div');
+            hpBar.className = 'hp-bar';
+            const fill = document.createElement('div');
+            hpBar.appendChild(fill);
+            div.appendChild(hpBar);
+        }}
+        const fill = hpBar.querySelector('.hp-fill') || hpBar.firstChild;
+        const pct = Math.round((p.cur_hp / p.max_hp) * 100);
+        fill.className = 'hp-fill ' + hpColor(p.cur_hp, p.max_hp);
+        fill.style.width = pct + '%';
+    }} else if (hpBar) {{
+        hpBar.remove();
+    }}
+
+    let itemEl = div.querySelector('.item-icon');
+    if (data.show_items && p.item_url) {{
+        if (!itemEl) {{
+            itemEl = document.createElement('img');
+            itemEl.className = 'item-icon';
+            div.appendChild(itemEl);
+        }}
+        if (itemEl.src !== new URL(p.item_url, location.origin).href) {{
+            itemEl.src = p.item_url;
+        }}
+        itemEl.alt = p.item || '';
+    }} else if (itemEl) {{
+        itemEl.remove();
+    }}
+}}
+
 function renderTeam(data) {{
     const container = document.getElementById('team');
-    container.innerHTML = '';
     container.className = 'layout-' + (QUERY_LAYOUT || data.team_layout || 'horizontal');
     const team = data.team || [];
+    const animate = data.animate_reorder && prevData !== null;
+    const duration = data.animation_duration_ms || 300;
+
+    const oldRects = new Map();
+    if (animate) {{
+        for (const child of container.children) {{
+            if (child.dataset.identityKey) {{
+                oldRects.set(child.dataset.identityKey, child.getBoundingClientRect());
+            }}
+        }}
+    }}
+
+    const existingNodes = new Map();
+    for (const child of Array.from(container.children)) {{
+        existingNodes.set(child.dataset.identityKey, child);
+    }}
+
+    const usedKeys = new Set();
     for (const p of team) {{
-        const div = document.createElement('div');
-        div.className = 'slot' + (p.dexnr === 0 ? ' empty' : '');
-        if (p.dexnr === 0) {{ container.appendChild(div); continue; }}
-
-        const img = document.createElement('img');
-        img.className = 'sprite';
-        if (p.cur_hp === 0 && p.max_hp > 0) img.classList.add('fainted');
-        if (data.show_status_effects) {{
-            const sc = statusGlowClass(p.status);
-            if (sc) img.classList.add(sc);
+        const key = p.identity_key || ('empty_' + p.slot);
+        usedKeys.add(key);
+        let div = existingNodes.get(key);
+        if (div) {{
+            updateSlotContent(div, p, data);
+        }} else {{
+            div = createSlotNode(p, data);
         }}
-        img.src = p.sprite_url;
-        img.alt = p.nickname || '';
-        div.appendChild(img);
-
-        if (data.show_nicknames && p.nickname) {{
-            const name = document.createElement('div');
-            name.className = 'nickname';
-            name.textContent = p.nickname;
-            div.appendChild(name);
-        }}
-
-        const lvl = document.createElement('div');
-        lvl.className = 'level';
-        lvl.textContent = p.lvl != null ? 'Lv.' + p.lvl : '';
-        div.appendChild(lvl);
-
-        if (data.show_hp_bars && p.max_hp > 0) {{
-            const bar = document.createElement('div');
-            bar.className = 'hp-bar';
-            const fill = document.createElement('div');
-            const pct = Math.round((p.cur_hp / p.max_hp) * 100);
-            fill.className = 'hp-fill ' + hpColor(p.cur_hp, p.max_hp);
-            fill.style.width = pct + '%';
-            bar.appendChild(fill);
-            div.appendChild(bar);
-        }}
-
-        if (data.show_items && p.item_url) {{
-            const item = document.createElement('img');
-            item.className = 'item-icon';
-            item.src = p.item_url;
-            item.alt = p.item || '';
-            div.appendChild(item);
-        }}
-
         container.appendChild(div);
     }}
+
+    for (const [key, node] of existingNodes) {{
+        if (!usedKeys.has(key)) {{
+            if (animate) {{
+                const anim = node.animate([{{opacity: 1}}, {{opacity: 0}}], {{duration, fill: 'forwards'}});
+                anim.onfinish = () => node.remove();
+            }} else {{
+                node.remove();
+            }}
+        }}
+    }}
+
+    if (animate) {{
+        for (const child of container.children) {{
+            const key = child.dataset.identityKey;
+            const oldRect = oldRects.get(key);
+            if (!oldRect) {{
+                child.animate([
+                    {{opacity: 0, transform: 'scale(0.8)'}},
+                    {{opacity: 1, transform: 'scale(1)'}}
+                ], {{duration, easing: 'ease-out'}});
+                continue;
+            }}
+            const newRect = child.getBoundingClientRect();
+            const dx = oldRect.left - newRect.left;
+            const dy = oldRect.top - newRect.top;
+            if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+            child.animate([
+                {{transform: 'translate(' + dx + 'px, ' + dy + 'px)'}},
+                {{transform: 'translate(0, 0)'}}
+            ], {{duration, easing: 'ease-in-out'}});
+        }}
+    }}
+
+    prevData = data;
 }}
 
 fetch('/player/' + PLAYER_ID + '/state')

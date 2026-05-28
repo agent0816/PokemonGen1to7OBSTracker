@@ -400,14 +400,15 @@ def pokemon3(data, edition, is_boxed=False):
     ot_name = _decode_gen3_string(data[0x14:0x1B])
 
     if not is_boxed:
-        status_bytes = f"{int.from_bytes(data[0x50:0x51]):#010b}".replace('0b', '')
-        status = {}
-        status["sleep"] = int(status_bytes[0:3])
-        status["poison"] = int(status_bytes[3])
-        status["burn"] = int(status_bytes[4])
-        status["freeze"] = int(status_bytes[5])
-        status["para"] = int(status_bytes[6])
-        status["toxic"] = int(status_bytes[7])
+        status_byte = data[0x50]
+        status = {
+            "sleep": status_byte & 0x07,
+            "poison": (status_byte >> 3) & 1,
+            "burn": (status_byte >> 4) & 1,
+            "freeze": (status_byte >> 5) & 1,
+            "para": (status_byte >> 6) & 1,
+            "toxic": (status_byte >> 7) & 1,
+        }
         lvl = data[84]
         cur_hp = int.from_bytes(data[0x56:0x58], "little")
         max_hp = int.from_bytes(data[0x58:0x5A], "little")
@@ -501,13 +502,13 @@ def pokemon45(data, gen, is_boxed=False):
     status = {}
     if not is_boxed:
         if gen == 4:
-            status_bytes = f"{int.from_bytes(decrypted_battle_stats[0:1]):#010b}".replace('0b', '')
-            status["sleep"] = int(status_bytes[0:3])
-            status["poison"] = int(status_bytes[3])
-            status["burn"] = int(status_bytes[4])
-            status["freeze"] = int(status_bytes[5])
-            status["para"] = int(status_bytes[6])
-            status["toxic"] = int(status_bytes[7])
+            status_byte = decrypted_battle_stats[0]
+            status["sleep"] = status_byte & 0x07
+            status["poison"] = (status_byte >> 3) & 1
+            status["burn"] = (status_byte >> 4) & 1
+            status["freeze"] = (status_byte >> 5) & 1
+            status["para"] = (status_byte >> 6) & 1
+            status["toxic"] = (status_byte >> 7) & 1
         else:
             status_bytes = int.from_bytes(decrypted_battle_stats[0:1])
             status["sleep"] = 1 if status_bytes == 2 else 0

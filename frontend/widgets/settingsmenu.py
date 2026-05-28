@@ -280,6 +280,18 @@ class ScrollSettings(ScrollView):
         layout_grid.add_widget(badge_layout_spinner)
         overlay_box.add_widget(layout_grid)
 
+        anim_duration_grid = GridLayout(cols=2, size_hint_y=None, size=(0, "30dp"), padding=("5dp", 0), spacing="5dp")
+        anim_duration_grid.add_widget(Label(text="Animations-\ndauer (ms)", size_hint_x=.4))
+        anim_duration_spinner = Spinner(
+            text=str(self.ov.get('animation_duration_ms', 300)),
+            values=[str(v) for v in range(300, 801, 100)],
+            size_hint_x=.3,
+        )
+        anim_duration_spinner.bind(text=lambda inst, val: self.save_changes())
+        self.ids["animation_duration_ms"] = weakref.proxy(anim_duration_spinner)
+        anim_duration_grid.add_widget(anim_duration_spinner)
+        overlay_box.add_widget(anim_duration_grid)
+
         self._build_overlay_buttons()
         box.add_widget(overlay_box)
 
@@ -870,6 +882,7 @@ class ScrollSettings(ScrollView):
         self.ids["overlay_port"].text = ov.get('port', '43888')
         self.ids["overlay_layout"].text = ov.get('layout', 'horizontal')
         self.ids["overlay_badge_layout"].text = ov.get('badge_layout', 'horizontal')
+        self.ids["animation_duration_ms"].text = str(ov.get('animation_duration_ms', 300))
         self._update_overlay_links()
 
     def _build_overlay_buttons(self):
@@ -995,10 +1008,15 @@ class ScrollSettings(ScrollView):
         })
 
         # Overlay-Einstellungen sammeln
+        duration_ms = int(self.ids["animation_duration_ms"].text)
         self.controller.save_overlay({
             'port': self.ids["overlay_port"].text,
             'layout': self.ids["overlay_layout"].text,
             'badge_layout': self.ids["overlay_badge_layout"].text,
+            'animation_duration_ms': duration_ms,
+        })
+        self.controller.save_sprites({
+            'obs_animation_duration_ms': duration_ms,
         })
         self._update_overlay_links()
 

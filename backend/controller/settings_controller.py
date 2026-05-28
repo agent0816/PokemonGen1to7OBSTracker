@@ -187,12 +187,12 @@ class SettingsController:
         """Speichert Anzeigeoptionen und Server-Modus aus dem Hauptmenü.
 
         Erwartet folgende Keys in values:
-          sprites:  order, animated, show_nicknames, show_items, show_badges, show_hp_bars, show_status_effects
+          sprites:  order, animated, show_nicknames, show_items, show_badges, show_hp_bars, show_status_effects, animate_obs_reorder
           bizhawk:  save_automatically
           remote:   start_server
         """
         try:
-            sprite_keys = {'order', 'animated', 'show_nicknames', 'show_items', 'show_badges', 'show_hp_bars', 'show_status_effects'}
+            sprite_keys = {'order', 'animated', 'show_nicknames', 'show_items', 'show_badges', 'show_hp_bars', 'show_status_effects', 'animate_obs_reorder'}
             sprite_values = {k: v for k, v in values.items() if k in sprite_keys}
             if sprite_values:
                 self.sp.update(sprite_values)
@@ -202,6 +202,15 @@ class SettingsController:
                 with open(f"{self.configsave}sprites.yml", 'w') as file:
                     yaml.dump(self.sp, file)
                 self.logger.info("sprites.yml (Hauptmenü) gespeichert.")
+
+            if 'animate_obs_reorder' in values:
+                self.ov['animate_reorder'] = values['animate_obs_reorder']
+                self._update_overlay()
+                with open(f"{self.configsave}overlay.yml", 'w') as file:
+                    yaml.dump(self.ov, file)
+                self.logger.info("overlay.yml (Hauptmenü) gespeichert.")
+                if self.overlay_server and self.overlay_server.is_connected:
+                    asyncio.create_task(self.overlay_server.notify_config_change())
 
             if 'save_automatically' in values:
                 self.bh['save_automatically'] = values['save_automatically']

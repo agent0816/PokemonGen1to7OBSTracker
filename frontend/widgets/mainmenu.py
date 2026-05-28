@@ -351,6 +351,7 @@ class MainMenu(Screen):
             ("animierte Sprites", "animated_check"),
             ("KP-Leiste", "hp_bars_check"),
             ("Status-Effekte", "status_effects_check"),
+            ("Verschiebung\nanimieren", "animate_reorder_check"),
         )
         show_layout = GridLayout(cols=2)
 
@@ -704,6 +705,7 @@ class MainMenu(Screen):
         self.ids.items_check.state = "down" if sp["show_items"] else "normal"
         self.ids.hp_bars_check.state = "down" if sp.get("show_hp_bars") else "normal"
         self.ids.status_effects_check.state = "down" if sp.get("show_status_effects") else "normal"
+        self.ids.animate_reorder_check.state = "down" if sp.get("animate_obs_reorder") else "normal"
         if pl["session_game"] in ['Sonne', 'Mond', 'Ultra Sonne', 'Ultra Mond']:
             self.ids.badges_check.disabled = True
             self.ids.badges_check.state = "normal"
@@ -736,6 +738,7 @@ class MainMenu(Screen):
         order = next((sorts[b.text] for b in toggle_widgets if b.state == "down"), None)
         del toggle_widgets
 
+        animate_reorder = self.ids.animate_reorder_check.state == "down"
         values = {
             'animated': self.ids.animated_check.state == "down",
             'show_nicknames': self.ids.names_check.state == "down",
@@ -743,6 +746,7 @@ class MainMenu(Screen):
             'show_badges': self.ids.badges_check.state == "down",
             'show_hp_bars': self.ids.hp_bars_check.state == "down",
             'show_status_effects': self.ids.status_effects_check.state == "down",
+            'animate_obs_reorder': animate_reorder,
             'save_automatically': self.ids.bizhawk_check.state == "down",
             'start_server': self.ids["start_server"].state == "down",
         }

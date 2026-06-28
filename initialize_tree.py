@@ -247,6 +247,28 @@ def update_session(sessionpath, default=False):
         else:
             new_ov=Path(f"{sessionpath}/default/overlay.yml")
             load_config(overlay, ov, new_path=new_ov)
+    nuzlocke = Path(f'{sessionpath}/nuzlocke.yml')
+    nuz = {
+        "enabled": False,
+        "gifts_are_additional": True,
+        "fossils_repeatable": True,
+        "static_encounters_separate": True,
+        "shiny_clause": True,
+        "dupes_clause": True,
+        "encounter_methods_separate": False,
+    }
+    if not nuzlocke.exists():
+        if not default:
+            save_config(nuzlocke, nuz)
+        else:
+            new_nuz=Path(f"{sessionpath}/default/nuzlocke.yml")
+            save_config(new_nuz, nuz)
+    else:
+        if not default:
+            load_config(nuzlocke, nuz)
+        else:
+            new_nuz=Path(f"{sessionpath}/default/nuzlocke.yml")
+            load_config(nuzlocke, nuz, new_path=new_nuz)
 
 if __name__ == '__main__':
     init_config_folder()

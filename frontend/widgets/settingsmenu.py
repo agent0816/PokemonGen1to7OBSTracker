@@ -24,7 +24,7 @@ from backend.logging_setup import get_logger, set_console_level, get_console_lev
 logger = get_logger(__name__, 'logs/frontend.log')
 
 class SettingsMenu(Screen):
-    def __init__(self, arceus, bizhawk, munchlax, obs_websocket, overlay_server, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov, app_version, **kwargs):
+    def __init__(self, arceus, bizhawk, munchlax, obs_websocket, overlay_server, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, app_version, **kwargs):
         super().__init__(**kwargs)
 
         self.name = "SettingsMenu"
@@ -47,7 +47,7 @@ class SettingsMenu(Screen):
         layout = GridLayout(cols=2, size_hint_y=.85)
 
         button_box = BoxLayout(orientation="vertical", size_hint=(0.15, 1), pos_hint={"top": 0})
-        self.scrollview = ScrollSettings(self, arceus, bizhawk, munchlax, obs_websocket, overlay_server, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov)
+        self.scrollview = ScrollSettings(self, arceus, bizhawk, munchlax, obs_websocket, overlay_server, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz)
 
         settings_buttons = [
             ("Sprite\nPfade", 'sprite'),
@@ -57,6 +57,7 @@ class SettingsMenu(Screen):
             ("Remote", 'remote'),
             ("Spieler", 'player'),
             ("Randomizer", 'randomizer'),
+            ("Nuzlocke", 'nuzlocke'),
             ("Logging", 'logging'),
         ]
 
@@ -85,7 +86,7 @@ class SettingsMenu(Screen):
         
         if jump_id == "sprite":
             scrolling = 1
-        elif jump_id in ("player", "randomizer", "logging"):
+        elif jump_id in ("player", "randomizer", "nuzlocke", "logging"):
             scrolling = 0
         else:
             scrolling = new_scrollheight / scroll_max_height
@@ -93,11 +94,12 @@ class SettingsMenu(Screen):
         scrollview.scroll_y = scrolling
 
 class ScrollSettings(ScrollView):
-    def __init__(self, settingsscreen, arceus, bizhawk, munchlax, obs_websocket, overlay_server, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov, **kwargs):
+    def __init__(self, settingsscreen, arceus, bizhawk, munchlax, obs_websocket, overlay_server, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, **kwargs):
         super().__init__(**kwargs)
 
         self.rnd = rnd
         self.ov = ov
+        self.nuz = nuz
         self.overlay_server = overlay_server
         self.settingsscreen = settingsscreen
         self.arceus = arceus
@@ -113,7 +115,7 @@ class ScrollSettings(ScrollView):
         self.bh = bh
         self.pl = pl
 
-        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov, overlay_server)
+        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov, overlay_server, nuz)
 
         self.games={
             'Rot und Blau':'gen1_red','Gelb':'gen1_yellow',
@@ -454,6 +456,32 @@ class ScrollSettings(ScrollView):
         logging_box.add_widget(log_level_box)
 
         box.add_widget(logging_box)
+
+        # --- Nuzlocke ---
+        nuzlocke_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing="20dp")
+        nuzlocke_box.bind(minimum_height=nuzlocke_box.setter('height'))
+        self.ids["nuzlocke"] = weakref.proxy(nuzlocke_box)
+
+        ueberschrift_nuzlocke = Label(text="Nuzlocke", size_hint=(1, None), size=(0, "20dp"), font_size="20sp")
+        nuzlocke_box.add_widget(ueberschrift_nuzlocke)
+
+        nuzlocke_checks = [
+            ("nuz_enabled", "Nuzlocke aktiviert"),
+            ("nuz_shiny_clause", "Shiny-Clause"),
+            ("nuz_dupes_clause", "Dupes-Clause (inkl. Entwicklungen)"),
+            ("nuz_gifts_additional", "Geschenke sind zusätzlich"),
+            ("nuz_fossils_repeatable", "Fossile mehrfach einlösbar"),
+            ("nuz_static_separate", "Statische Encounters separat"),
+        ]
+        for check_id, label_text in nuzlocke_checks:
+            row = BoxLayout(orientation='horizontal', size_hint_y=None, size=(0, "30dp"), padding=("5dp", 0))
+            row.add_widget(Label(text=label_text, size_hint_x=.8))
+            cb = CheckBox(size_hint_x=.2)
+            self.ids[check_id] = weakref.proxy(cb)
+            row.add_widget(cb)
+            nuzlocke_box.add_widget(row)
+
+        box.add_widget(nuzlocke_box)
 
         self.add_widget(box)
 
@@ -885,6 +913,14 @@ class ScrollSettings(ScrollView):
         self.ids["animation_duration_ms"].text = str(ov.get('animation_duration_ms', 300))
         self._update_overlay_links()
 
+        nuz = self.controller.load_nuzlocke()
+        self.ids["nuz_enabled"].state = 'down' if nuz.get('enabled', False) else 'normal'
+        self.ids["nuz_shiny_clause"].state = 'down' if nuz.get('shiny_clause', True) else 'normal'
+        self.ids["nuz_dupes_clause"].state = 'down' if nuz.get('dupes_clause', True) else 'normal'
+        self.ids["nuz_gifts_additional"].state = 'down' if nuz.get('gifts_are_additional', True) else 'normal'
+        self.ids["nuz_fossils_repeatable"].state = 'down' if nuz.get('fossils_repeatable', True) else 'normal'
+        self.ids["nuz_static_separate"].state = 'down' if nuz.get('static_encounters_separate', True) else 'normal'
+
     def _build_overlay_buttons(self):
         overlay_box = self.ids["overlay"]
         if "overlay_link_grid" in self.ids:
@@ -1019,6 +1055,16 @@ class ScrollSettings(ScrollView):
             'obs_animation_duration_ms': duration_ms,
         })
         self._update_overlay_links()
+
+        # Nuzlocke-Einstellungen sammeln
+        self.controller.save_nuzlocke({
+            'enabled': self.ids["nuz_enabled"].state == 'down',
+            'shiny_clause': self.ids["nuz_shiny_clause"].state == 'down',
+            'dupes_clause': self.ids["nuz_dupes_clause"].state == 'down',
+            'gifts_are_additional': self.ids["nuz_gifts_additional"].state == 'down',
+            'fossils_repeatable': self.ids["nuz_fossils_repeatable"].state == 'down',
+            'static_encounters_separate': self.ids["nuz_static_separate"].state == 'down',
+        })
 
         # UI-Aktualisierungen (bleiben in der View)
         main_menu = self.settingsscreen.manager.get_screen("MainMenu")

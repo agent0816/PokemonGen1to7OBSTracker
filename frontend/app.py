@@ -37,7 +37,7 @@ APP_VERSION = VERSION
 
 
 class Screens(ScreenManager):
-    def __init__(self,arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,overlay_server,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,rnd,ov,session_list,**kwargs,):
+    def __init__(self,arceus,bizhawk,citra,bizhawk_instances,munchlax,obs_websocket,overlay_server,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,rnd,ov,nuz,session_list,**kwargs,):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
         update_menu = Update(APP_NAME, APP_VERSION)
@@ -61,9 +61,9 @@ class Screens(ScreenManager):
             APP_VERSION,
         )
         self.add_widget(main_menu)
-        settings_menu = SettingsMenu(arceus,bizhawk,munchlax,obs_websocket,overlay_server,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,rnd,ov,APP_VERSION,)
+        settings_menu = SettingsMenu(arceus,bizhawk,munchlax,obs_websocket,overlay_server,externalIPv4,externalIPv6,configsave,sp,rem,obs,bh,pl,rnd,ov,nuz,APP_VERSION,)
         self.add_widget(settings_menu)
-        session_menu = SessionMenu(session_list, main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, rnd, ov, APP_VERSION)
+        session_menu = SessionMenu(session_list, main_menu, settings_menu,configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, APP_VERSION)
         self.add_widget(session_menu)
         pokedex_menu = PokedexMenu(configsave, APP_VERSION)
         self.add_widget(pokedex_menu)
@@ -125,6 +125,11 @@ class TrackerApp(App):
         if os.path.exists(ov_path):
             with open(ov_path) as file:
                 self.ov = yaml.safe_load(file) or {}
+        self.nuz = {}
+        nuz_path = f"{self.configsave}nuzlocke.yml"
+        if os.path.exists(nuz_path):
+            with open(nuz_path) as file:
+                self.nuz = yaml.safe_load(file) or {}
         self.session_list = []
         with open(f"{self.configsave}../session_list.yml") as file:
             self.session_list = yaml.safe_load(file)
@@ -143,7 +148,7 @@ class TrackerApp(App):
             if self.rem["start_server"]
             else self.rem["server_port"]
         )
-        self.munchlax = Munchlax(ip_to_connect, port_to_connect, self.rem, self.sp, self.pl, self.configsave)
+        self.munchlax = Munchlax(ip_to_connect, port_to_connect, self.rem, self.sp, self.pl, self.configsave, self.nuz)
         self.obs_websocket = OBS(
             self.obs["host"],
             self.obs["port"],
@@ -174,6 +179,7 @@ class TrackerApp(App):
             self.pl,
             self.rnd,
             self.ov,
+            self.nuz,
             self.session_list,
         ]
 
@@ -209,6 +215,7 @@ class TrackerApp(App):
         self.save_config(f"{self.configsave}remote.yml", self.rem)
         self.save_config(f"{self.configsave}randomizer.yml", self.rnd)
         self.save_config(f"{self.configsave}overlay.yml", self.ov)
+        self.save_config(f"{self.configsave}nuzlocke.yml", self.nuz)
 
         for bizhawk in self.bizhawk_instances:
             bizhawk.terminate()

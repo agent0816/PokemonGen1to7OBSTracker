@@ -1,0 +1,144 @@
+# Gen 5 Map-Header-ID → Ortsname (deutsch)
+# IDs aus childMapHeader (u16 LE), Quelle: NDS-Nuzlocke-Tracker + PKHeX
+# Gilt für Schwarz/Weiß und Schwarz 2/Weiß 2
+
+# === Städte & Orte ===
+0: Schwarze Stadt
+6: Orion City
+7: Orion City Arena
+16: Septerna City
+18: Septerna City Arena
+19: Septerna City Arena
+28: Stratos City
+29: Stratos City Arena
+30: Stratos City Arena
+62: Rayono City
+63: Rayono City Arena
+96: Marea City
+97: Marea City Arena
+107: Panaero City
+108: Panaero City Arena
+113: Nevaio City
+114: Nevaio City Arena
+120: Twindrake City
+121: Twindrake City Arena
+136: Pokémon Liga
+147: Turm der Einheit
+289: Rayono City
+290: Marea City
+291: Panaero City
+292: Nevaio City
+293: Twindrake City
+294: Schwarze Stadt
+295: Weißer Wald
+315: Tessera
+316: Ondula
+317: Route 1
+319: Route 2
+321: Route 3
+389: Avenitia
+391: Labor
+397: Gavina
+406: Tessera
+412: Ondula
+418: Ferrula
+424: Weißer Wald
+
+# === Routen ===
+304: Route 5
+305: Route 6
+306: Route 7
+307: Route 8
+308: Route 9
+309: Route 11
+310: Route 12
+311: Route 13
+312: Route 14
+313: Route 15
+314: Route 16
+326: Route 4
+329: Route 5
+331: Route 6
+337: Route 7
+345: Route 8
+348: Route 9
+355: Route 10
+365: Route 11
+368: Route 12
+370: Route 13
+374: Route 14
+378: Route 15
+383: Route 16
+387: Route 18
+423: Route 17
+
+# === Dungeons & Spezialgebiete ===
+152: Traumbrache
+154: Ewigenwald Außen
+155: Ewigenwald
+157: Wüstenresort
+160: Alter Palast
+191: Tiefkühlcontainer
+194: Elektrolithhöhle
+198: Wendelberg
+205: Drachenstiege
+214: Siegesstraße
+230: Riesengrotte
+235: Freiheitsgarten
+238: P2-Labor
+240: Bucht von Ondula
+241: Unterwasserruine
+249: Himmelspfeilbrücke
+253: Marea-Zugbrücke
+254: Zylinderbrücke
+255: Dorfbrücke
+263: Wunderbrücke
+264: Schloss von N
+279: Kontaktebenenhain
+296: Tiefkühlcontainer
+297: Elektrolithhöhle
+298: Wendelberg
+299: Drachenstiege
+300: Riesengrotte
+301: Marea-Zugbrücke
+302: Zylinderbrücke
+303: Wunderbrücke
+324: Grundwassersenke
+333: Höhle der Schulung
+338: Turm des Himmels
+346: Moor von Nevaio
+352: Kammer der Prüfung
+376: Schrein der Ernte
+381: Porterlabor
+385: Hain der Täuschung
+
+# === Schwarz 2 / Weiß 2 exklusiv ===
+165: Eventura City Arena
+176: Vapydro City Arena
+184: Abidaya City Arena
+427: Eventura City
+437: Route 19
+439: Dausing
+444: Dausing-Hof
+446: Route 20
+448: Vapydro City
+456: Vapydro-Werke
+458: Monsentiero
+461: Janusberg
+462: Bizarro-Haus
+463: Route 21
+464: Unterseetunnel
+465: Abidaya City
+474: Route 22
+475: Route 23
+490: Einklangspassage
+495: Stratos-Kanalisation
+503: Alter Fluchtweg
+506: Turner-Pfad
+515: Strandgrotte
+517: Beschwörungshöhle
+518: Versteckte Lichtung
+552: Plasma-Fregatte
+566: Pokéwood
+573: Siegesstraße
+584: Naturschutzgebiet

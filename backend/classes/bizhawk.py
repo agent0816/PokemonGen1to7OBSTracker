@@ -5,6 +5,7 @@ from backend.classes.Pokemon import Pokemon
 import backend.pokedecoder as pokedecoder
 import backend.bh_pointers as bh_pointers
 import backend.bag_decoder as bag_decoder
+from backend.encounter_tracker import EncounterTracker
 from backend.logging_setup import get_logger
 
 class Bizhawk:
@@ -35,6 +36,11 @@ class Bizhawk:
         self.box_request_queues: dict[str, list] = {}
         # Verhindert ueberlappende Bag-Refreshs pro Client.
         self._bag_refresh_inflight: dict[str, bool] = {}
+        # Verhindert ueberlappende Encounter-Reads pro Client.
+        self._encounter_inflight: dict[str, bool] = {}
+        self._last_battle_pv: dict[str, int | None] = {}
+        self._last_map_header: dict[str, int] = {}
+        self.encounter_tracker = None
         # Serialisiert Bag-IO pro Client — Reads und Schreibvorgaenge duerfen
         # sich nicht ueberschneiden, sonst lesen wir ein halb-geschriebenes
         # Pocket oder allokieren denselben leeren Slot doppelt.
@@ -120,6 +126,10 @@ class Bizhawk:
             if name:
                 self.munchlax.player_names[player] = name
 
+            self.munchlax._on_new_pokemon_detected = lambda p, ed, pkmns, pvs: (
+                self._handle_new_pokemon(client_id, p, ed, pkmns, pvs)
+            )
+
             # Edition/Language merken, damit read_all_boxes() das Box-Layout
             # aus der YAML ermitteln kann, ohne es selbst zu cachen.
             self.edition_per_client[client_id] = edition
@@ -168,6 +178,19 @@ class Bizhawk:
                         await self.send_messages(writer, "in_battle")
                         data = (await self.receive_messages(reader)).decode()
                         in_battle = data == "true"
+                        if in_battle and not self._encounter_inflight.get(client_id):
+                            self._encounter_inflight[client_id] = True
+                            asyncio.create_task(
+                                self._read_encounter_data(client_id, player, edition)
+                            )
+                        elif not in_battle and self._last_battle_pv.get(client_id) is not None:
+                            asyncio.create_task(
+                                self._check_encounter_outcome(client_id, player, edition)
+                            )
+                    elif counter % 60 == 4 and not in_battle:
+                        asyncio.create_task(
+                            self._refresh_map_header(client_id, edition)
+                        )
                     elif counter % 60 == 3 and in_battle and edition > 50:
                         await self.send_messages(writer, "stat_aktualisieren")
                         data = (await self.receive_messages(reader)).decode()
@@ -651,6 +674,202 @@ class Bizhawk:
             self.logger.warning(f"{traceback.format_exc()}")
         finally:
             self._bag_refresh_inflight[client_id] = False
+
+    async def _refresh_map_header(self, client_id: str, edition: int):
+        """Liest periodisch die aktuelle Map-Header-ID für Gift-Erkennung."""
+        try:
+            language = self.language_per_client.get(client_id)
+            pointers = bh_pointers.get_pointers(edition, language)
+            map_ptr = pointers.get("mapidpointer", 0)
+            if not map_ptr:
+                return
+            queue = self.box_request_queues.get(client_id)
+            if queue is None:
+                return
+            loop = asyncio.get_event_loop()
+            fut = loop.create_future()
+            queue.append(("boxw", map_ptr, 2, fut, ""))
+            map_bytes = await fut
+            self._last_map_header[client_id] = int.from_bytes(map_bytes, "little")
+        except Exception:
+            pass
+
+    async def _read_encounter_data(self, client_id: str, player: int,
+                                    edition: int):
+        """Liest Gegner-Daten bei Kampfbeginn und prüft Nuzlocke-Regeln.
+
+        Nutzt die bestehende boxw-Queue: battleopponentidpointer (u16) für
+        Wild/Trainer-Unterscheidung, dann battleopponentpointer für den
+        gegnerischen Party-Slot.
+        """
+        try:
+            language = self.language_per_client.get(client_id)
+            pointers = bh_pointers.get_pointers(edition, language)
+            opp_id_ptr = pointers.get("battleopponentidpointer", 0)
+            opp_ptr = pointers.get("battleopponentpointer", 0)
+            if not opp_id_ptr or not opp_ptr:
+                return
+
+            queue = self.box_request_queues.get(client_id)
+            if queue is None:
+                return
+            loop = asyncio.get_event_loop()
+
+            oid_fut = loop.create_future()
+            queue.append(("boxw", opp_id_ptr, 2, oid_fut, ""))
+            oid_bytes = await oid_fut
+            opponent_id = int.from_bytes(oid_bytes, "little")
+
+            if opponent_id != 0:
+                self.logger.debug(f"Trainer-Kampf erkannt (opponent_id=0x{opponent_id:04X}), kein Encounter")
+                return
+
+            slot_size = 220 if edition > 50 else 236
+            opp_fut = loop.create_future()
+            queue.append(("boxw", opp_ptr, slot_size, opp_fut, ""))
+            opp_bytes = await opp_fut
+
+            opp = pokedecoder.decode_opponent_gen45(opp_bytes)
+            if opp is None:
+                self.logger.debug("Gegner-Slot leer oder ungültig")
+                return
+
+            route = opp["met_location"]
+
+            map_header = None
+            map_ptr = pointers.get("mapidpointer", 0)
+            if map_ptr:
+                map_fut = loop.create_future()
+                queue.append(("boxw", map_ptr, 2, map_fut, ""))
+                map_bytes = await map_fut
+                map_header = int.from_bytes(map_bytes, "little")
+
+            if route == 0 and map_header is not None and map_header != 0:
+                route = map_header
+
+            self._last_battle_pv[client_id] = opp["personality"]
+            if map_header is not None:
+                self._last_map_header[client_id] = map_header
+
+            if self.encounter_tracker is None:
+                self.munchlax._ensure_pokedex_db()
+                if self.munchlax.pokedex_db is not None:
+                    self.encounter_tracker = EncounterTracker(
+                        self.munchlax.pokedex_db,
+                        self.munchlax.nuz,
+                    )
+
+            if self.encounter_tracker is None:
+                self.logger.warning("PokedexDB nicht verfügbar, Encounter wird übersprungen")
+                return
+
+            from backend.classes.pokedex_db import PokedexDB
+            owner = PokedexDB.build_owner(
+                self.munchlax.pl.get('your_name', ''), str(player)
+            )
+            result = await loop.run_in_executor(
+                None, self.encounter_tracker.process_wild_encounter,
+                owner, edition, opp, route
+            )
+            if result.already_logged:
+                self.logger.debug(
+                    f"Encounter bereits geloggt (PV={opp['personality']:#x})"
+                )
+            else:
+                map_info = f" map_header={map_header}" if map_header is not None else ""
+                self.logger.info(
+                    f"Encounter: route={route}{map_info} dex={opp['dexnr']} "
+                    f"lv={opp['lvl']} shiny={opp['shiny']} first={result.is_first} "
+                    f"shiny_override={result.is_shiny_override} "
+                    f"dupes={result.is_dupes_skip} balls={result.has_balls}"
+                )
+        except Exception as err:
+            self.logger.error(f"Encounter-Read fehlgeschlagen: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+        finally:
+            self._encounter_inflight[client_id] = False
+
+    def _handle_new_pokemon(self, client_id: str, player: int, edition,
+                            pokemons, new_pvs: list[int]):
+        """Prüft ob neue Pokemon Gift-Encounters sind (nicht aus Kampf)."""
+        battle_pv = self._last_battle_pv.get(client_id)
+        non_battle_pvs = [pv for pv in new_pvs if pv != battle_pv]
+        if not non_battle_pvs or self.encounter_tracker is None:
+            return
+
+        map_header = self._last_map_header.get(client_id, 0)
+
+        from backend.classes.pokedex_db import PokedexDB
+        owner = PokedexDB.build_owner(
+            self.munchlax.pl.get('your_name', ''), str(player)
+        )
+
+        for pv in non_battle_pvs:
+            pokemon = None
+            for p in pokemons[:6]:
+                if getattr(p, "personality", None) is not None and int(p.personality) == pv:
+                    pokemon = p
+                    break
+            if pokemon is None:
+                continue
+
+            dexnr = pokemon.dexnr
+            if dexnr == 0 or dexnr == "egg":
+                continue
+
+            result = self.encounter_tracker.process_gift_encounter(
+                owner=owner,
+                edition=int(edition),
+                personality=pv,
+                dexnr=int(dexnr) if isinstance(dexnr, (int, str)) and str(dexnr).isdigit() else 0,
+                lvl=pokemon.lvl or 1,
+                shiny=bool(pokemon.shiny),
+                route=getattr(pokemon, "route", 0) or 0,
+                map_header_id=map_header or 0,
+            )
+            if result and not result.already_logged:
+                self.logger.info(
+                    f"Gift erkannt: dex={dexnr} lv={pokemon.lvl} "
+                    f"method={result.method} map_header={map_header}"
+                )
+
+    async def _check_encounter_outcome(self, client_id: str, player: int,
+                                        edition: int):
+        """Prüft nach Kampfende ob das Gegner-Pokemon gefangen wurde."""
+        try:
+            battle_pv = self._last_battle_pv.pop(client_id, None)
+            if battle_pv is None or self.encounter_tracker is None:
+                return
+
+            team = self.munchlax.bizhawk_teams.get(player, [])
+            team_pvs = set()
+            for p in team[:6]:
+                pv = getattr(p, "personality", None)
+                if pv is not None:
+                    team_pvs.add(int(pv))
+
+            from backend.classes.pokedex_db import PokedexDB
+            owner = PokedexDB.build_owner(
+                self.munchlax.pl.get('your_name', ''), str(player)
+            )
+
+            if int(battle_pv) in team_pvs:
+                outcome = "caught"
+            else:
+                outcome = "not_caught"
+
+            loop = asyncio.get_event_loop()
+            updated = await loop.run_in_executor(
+                None, self.encounter_tracker.update_outcome,
+                int(battle_pv), owner, outcome
+            )
+            if updated:
+                self.logger.info(
+                    f"Encounter-Outcome: PV={battle_pv:#x} → {outcome}"
+                )
+        except Exception as err:
+            self.logger.error(f"Outcome-Check fehlgeschlagen: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
 
     async def disconnect(self, client_id):
         # Noch offene Box-Futures mit Fehler beenden, damit read_all_boxes()

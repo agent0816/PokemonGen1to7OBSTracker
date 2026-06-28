@@ -15,7 +15,7 @@ from backend.logging_setup import get_logger
 BOX_REFRESH_THROTTLE_SECONDS = 5.0
 
 class Munchlax:
-    def __init__(self, host, port, rem, sp, pl, configsave=None):
+    def __init__(self, host, port, rem, sp, pl, configsave=None, nuz=None):
         self.client_id = rem.get("client_id", 0)
         if self.client_id == 0:
             self.client_id = self.generate_hashed_id()
@@ -43,6 +43,7 @@ class Munchlax:
         self.sp = sp
         self.pl = pl
         self.configsave = configsave
+        self.nuz = nuz or {}
         self.pokedex_db: PokedexDB | None = None
         self.host = host
         self.port = port
@@ -276,20 +277,26 @@ class Munchlax:
                 return
             loop = asyncio.get_event_loop()
             for player, team_data in teams.items():
-                # team_data hat die Form [p1..p6, badges, edition]
                 pokemons = team_data[:6]
                 edition = team_data[7] if len(team_data) > 7 else self.editions.get(player)
                 owner = str(player)
-                await loop.run_in_executor(
+                written, new_pvs = await loop.run_in_executor(
                     None,
                     self.pokedex_db.upsert_team,
                     owner,
                     edition,
                     pokemons,
                 )
+                if new_pvs:
+                    self._on_new_pokemon_detected(player, edition, pokemons, new_pvs)
         except Exception as err:
             self.logger.error(f"_persist_teams failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
+
+    def _on_new_pokemon_detected(self, player: int, edition, pokemons, new_pvs: list[int]):
+        """Callback wenn neue Pokemon in der DB auftauchen. Wird von bizhawk
+        überschrieben um Gift-Encounter-Erkennung zu triggern."""
+        pass
 
     def logging_teams(self, teams: dict, dictname: str):
         self.logger.debug(dictname)

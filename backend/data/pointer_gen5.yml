@@ -27,6 +27,7 @@
   battleopponentidpointer: 0x022696FE
   curHPinBattlepointer: 0x0226D5F4
   badgepointer: 0x23CCF0
+  mapidpointer: 0x025592B2
   bag_items: 0x02233EEC
   bag_keyitems: 0x022343C4
   bag_tmvm: 0x02234510
@@ -42,6 +43,7 @@
   battleopponentidpointer: 0x022697DE
   curHPinBattlepointer: 0x0226D6D4
   badgepointer: 0x23CDD0
+  mapidpointer: 0x025592D2
   bag_items: 0x02233FCC
   bag_keyitems: 0x022344A4
   bag_tmvm: 0x022345F0
@@ -57,6 +59,7 @@
   battleopponentidpointer: 0x02257232
   curHPinBattlepointer: 0x0225B134
   badgepointer: 0x226628
+  mapidpointer: 0x02246860
   bag_items: 0x0221D924
   bag_keyitems: 0x0221DDFC
   bag_tmvm: 0x0221DF48
@@ -72,6 +75,7 @@
   battleopponentidpointer: 0x022571D2
   curHPinBattlepointer: 0x0225B154
   badgepointer: 0x226648
+  mapidpointer: 0x022468E0
   bag_items: 0x0221D944
   bag_keyitems: 0x0221DE1C
   bag_tmvm: 0x0221DF68

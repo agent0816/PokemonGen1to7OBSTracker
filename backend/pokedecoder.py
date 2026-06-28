@@ -85,6 +85,40 @@ def decryptpokemon(data, gen):
         ).to_bytes(2, "little")
     return (unshuffled_bytes, decrypted_battle_stats, shiny_value, encryption_key)
 
+def decode_opponent_gen45(data: bytes) -> dict | None:
+    """Dekodiert nur Species, Level, Shiny, Personality und met_location
+    aus einem Gen-4/5-Party-Slot (220 oder 236 Bytes).
+
+    Gibt None zurück bei leerem Slot.
+    """
+    if len(data) < 136:
+        return None
+    encryption_key = int.from_bytes(data[:4], "little")
+    if encryption_key == 0 and int.from_bytes(data[4:8], "little") == 0:
+        return None
+
+    unshuffled_bytes, decrypted_battle_stats, shiny_value, personality = decryptpokemon(
+        data, "45"
+    )
+    dexnr = int.from_bytes(unshuffled_bytes[0:2], "little")
+    if dexnr == 0 or dexnr >= 650:
+        return None
+
+    lvl = decrypted_battle_stats[4] if len(decrypted_battle_stats) > 4 else 0
+
+    met_location = int.from_bytes(unshuffled_bytes[0x3E:0x40], "little")
+    if met_location == 0 and len(unshuffled_bytes) >= 0x7A:
+        met_location = int.from_bytes(unshuffled_bytes[0x78:0x7A], "little")
+
+    return {
+        "dexnr": dexnr,
+        "lvl": lvl,
+        "shiny": shiny_value < 9,
+        "personality": personality,
+        "met_location": met_location,
+    }
+
+
 def decryptpokemon3(data):
     # offset_lut = [[0, 1, 2, 3],[0, 1, 3, 2],[0, 2, 1, 3],[0, 2, 3, 1],[0, 3, 1, 2],[0, 3, 2, 1],[1, 0, 2, 3],[1, 0, 3, 2],[1, 2, 0, 3],[1, 2, 3, 0],[1, 3, 0, 2],[1, 3, 2, 0],[2, 0, 1, 3],[2, 0, 3, 1],[2, 1, 0, 3],[2, 1, 3, 0],[2, 3, 0, 1],[2, 3, 1, 0],[3, 0, 1, 2],[3, 0, 2, 1],[3, 1, 0, 2],[3, 1, 2, 0],[3, 2, 0, 1],[3, 2, 1, 0],]
     offset_lut = [[0, 1, 2, 3],[0, 1, 3, 2],[0, 2, 1, 3],[0, 3, 1, 2],[0, 2, 3, 1],[0, 3, 2, 1],[1, 0, 2, 3],[1, 0, 3, 2],[2, 0, 1, 3],[3, 0, 1, 2],[2, 0, 3, 1],[3, 0, 2, 1],[1, 2, 0, 3],[1, 3, 0, 2],[2, 1, 0, 3],[3, 1, 0, 2],[2, 3, 0, 1],[3, 2, 0, 1],[1, 2, 3, 0],[1, 3, 2, 0],[2, 1, 3, 0],[3, 1, 2, 0],[2, 3, 1, 0],[3, 2, 1, 0],]

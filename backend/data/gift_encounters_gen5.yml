@@ -1,0 +1,126 @@
+# Gift/Fossil/Static/Egg Encounter-Definitionen für Gen 5
+# Keyed by map_header_id (childMapHeader u16 Wert aus mapidpointer)
+# dexnr wird NICHT geprüft — Randomizer ändert Species
+#
+# type: gift | fossil | egg | static | trade
+# count: wie viele Pokemon an diesem Ort vergeben werden
+# repeatable: true wenn mehrfach einlösbar (z.B. tägliches Fossil)
+# edition: [51,52,53,54] — wenn leer, gilt für alle
+# condition: optionale Bedingung (event_transfer, post_game, national_dex)
+#
+# Map-Header-IDs verifiziert gegen NDS-Nuzlocke-Tracker (LocationData.lua)
+
+# Septerna City Museum
+16:
+  - type: fossil
+    name: Tägliches Fossil
+    count: 1
+    repeatable: true
+    condition: national_dex
+  - type: egg
+    name: Happiny-Ei
+    count: 1
+    edition: [53, 54]
+
+# Stratos City
+28:
+  - type: gift
+    name: Zorua
+    count: 1
+    condition: event_transfer
+    edition: [51, 52]
+  - type: gift
+    name: Eevee
+    count: 1
+    condition: post_game
+    edition: [53, 54]
+
+# Marea City
+96:
+  - type: gift
+    name: Zorua (N)
+    count: 1
+    edition: [53, 54]
+
+# Traumbrache
+152:
+  - type: gift
+    name: Elementaraffe
+    count: 1
+  - type: static
+    name: Musharna
+    count: 1
+    condition: post_game
+
+# Wüstenresort
+157:
+  - type: static
+    name: Darmanitan
+    count: 5
+
+# Alter Palast
+160:
+  - type: fossil
+    name: Fossil-Wahl
+    count: 1
+  - type: static
+    name: Volcarona
+    count: 1
+    condition: national_dex
+
+# Wunderbrücke
+263:
+  - type: gift
+    name: Magikarp-Kauf
+    count: 1
+
+# Route 6
+331:
+  - type: static
+    name: Foongus
+    count: 2
+  - type: gift
+    name: Deerling
+    count: 1
+    edition: [53, 54]
+
+# Route 10
+355:
+  - type: static
+    name: Foongus/Hutsassa
+    count: 3
+
+# Hain der Täuschung
+385:
+  - type: static
+    name: Zoroark
+    count: 1
+    condition: event_transfer
+
+# Route 18
+387:
+  - type: egg
+    name: Larvesta-Ei
+    count: 1
+
+# Eventura City (B2W2)
+427:
+  - type: gift
+    name: Starter
+    count: 1
+    edition: [53, 54]
+
+# Dausing (B2W2)
+439:
+  - type: gift
+    name: Shiny Gible/Dratini
+    count: 1
+    condition: post_game
+    edition: [53, 54]
+
+# Dausing-Hof (B2W2)
+444:
+  - type: static
+    name: Dausing-Hof Encounter
+    count: 1
+    edition: [53, 54]

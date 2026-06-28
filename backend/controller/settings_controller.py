@@ -5,7 +5,7 @@ from backend.logging_setup import get_logger
 
 
 class SettingsController:
-    def __init__(self, configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov=None, overlay_server=None):
+    def __init__(self, configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov=None, overlay_server=None, nuz=None):
         self.configsave = configsave
         self.sp = sp
         self.rem = rem
@@ -14,6 +14,7 @@ class SettingsController:
         self.pl = pl
         self.rnd = rnd
         self.ov = ov or {}
+        self.nuz = nuz or {}
         self.arceus = arceus
         self.bizhawk = bizhawk
         self.munchlax = munchlax
@@ -44,6 +45,9 @@ class SettingsController:
 
     def load_overlay(self) -> dict:
         return self.ov.copy()
+
+    def load_nuzlocke(self) -> dict:
+        return self.nuz.copy()
 
     # --- Private Update-Methoden: synchronisieren Backend-Objekte mit den aktuellen Config-Werten ---
     # Werden nur aufgerufen, wenn das jeweilige Backend noch nicht verbunden ist.
@@ -181,6 +185,16 @@ class SettingsController:
             self.logger.info("overlay.yml gespeichert.")
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der Overlay-Einstellungen: {type(err)}, {err}")
+            self.logger.error(traceback.format_exc())
+
+    def save_nuzlocke(self, values: dict) -> None:
+        try:
+            self.nuz.update(values)
+            with open(f"{self.configsave}nuzlocke.yml", 'w') as file:
+                yaml.dump(self.nuz, file)
+            self.logger.info("nuzlocke.yml gespeichert.")
+        except Exception as err:
+            self.logger.error(f"Fehler beim Speichern der Nuzlocke-Einstellungen: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
 
     def save_main_menu_settings(self, values: dict) -> None:

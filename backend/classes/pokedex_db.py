@@ -9,7 +9,7 @@ from backend.classes.Pokemon import Pokemon
 from backend.logging_setup import get_logger
 
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 4
 
 
 class PokedexDB:
@@ -57,6 +57,10 @@ class PokedexDB:
             self._apply_v1(cursor)
         if current_version < 2:
             self._apply_v2(cursor)
+        if current_version < 3:
+            self._apply_v3(cursor)
+        if current_version < 4:
+            self._apply_v4(cursor)
 
         self.connection.commit()
 
@@ -125,19 +129,55 @@ class PokedexDB:
         )
         self.logger.info("PokedexDB Schema v2 angewendet (bag_inventory + bag_first_seen)")
 
+    def _apply_v3(self, cursor):
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS encounters (
+                personality INTEGER NOT NULL,
+                owner       TEXT    NOT NULL,
+                edition     INTEGER NOT NULL,
+                route       INTEGER NOT NULL,
+                dexnr       INTEGER NOT NULL,
+                lvl         INTEGER,
+                shiny       INTEGER NOT NULL DEFAULT 0,
+                is_first    INTEGER NOT NULL DEFAULT 0,
+                is_shiny_override INTEGER NOT NULL DEFAULT 0,
+                is_dupes_skip     INTEGER NOT NULL DEFAULT 0,
+                has_balls   INTEGER NOT NULL DEFAULT 0,
+                timestamp   TEXT    NOT NULL,
+                PRIMARY KEY (personality, owner)
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_encounters_route
+            ON encounters (owner, edition, route)
+        """)
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (3, datetime.now(timezone.utc).isoformat()),
+        )
+        self.logger.info("PokedexDB Schema v3 angewendet (encounters)")
+
+    def _apply_v4(self, cursor):
+        cursor.execute("ALTER TABLE encounters ADD COLUMN method TEXT DEFAULT 'wild'")
+        cursor.execute("ALTER TABLE encounters ADD COLUMN outcome TEXT DEFAULT 'unknown'")
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (4, datetime.now(timezone.utc).isoformat()),
+        )
+        self.logger.info("PokedexDB Schema v4 angewendet (method + outcome)")
+
     @staticmethod
     def build_owner(your_name: str, client_id: str) -> str:
         return f"{your_name}_{client_id}"
 
-    def upsert_pokemon(self, owner: str, edition, pokemon: Pokemon) -> bool:
+    def upsert_pokemon(self, owner: str, edition, pokemon: Pokemon) -> str:
+        """Gibt 'inserted', 'updated' oder 'skipped' zurück."""
         if self.connection is None:
-            return False
-        # Gen 1/2 haben keine personality — werden übersprungen.
+            return "skipped"
         if not hasattr(pokemon, "personality") or pokemon.personality is None:
-            return False
-        # Leere Teamslots (dexnr == 0) nicht speichern; Eier (dexnr == 'egg') sehr wohl.
+            return "skipped"
         if pokemon.dexnr == 0:
-            return False
+            return "skipped"
         try:
             now = datetime.now(timezone.utc).isoformat()
             cursor = self.connection.cursor()
@@ -189,18 +229,41 @@ class PokedexDB:
                 ),
             )
             self.connection.commit()
-            return True
+            changes = cursor.connection.total_changes
+            if cursor.rowcount > 0:
+                last_id = cursor.lastrowid
+                cursor.execute(
+                    "SELECT first_seen, last_seen FROM pokemon "
+                    "WHERE personality = ? AND owner = ?",
+                    (int(pokemon.personality), owner),
+                )
+                row = cursor.fetchone()
+                if row and row["first_seen"] == row["last_seen"]:
+                    return "inserted"
+                return "updated"
+            return "skipped"
         except Exception as err:
             self.logger.error(f"upsert_pokemon failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
-            return False
+            return "skipped"
 
-    def upsert_team(self, owner: str, edition, team) -> int:
+    def upsert_team(self, owner: str, edition, team) -> tuple[int, list]:
+        """Gibt (written_count, new_personalities) zurück.
+
+        new_personalities enthält PVs von Pokemon die NEU in die DB kamen
+        (INSERT, nicht UPDATE) — für Gift-Encounter-Erkennung.
+        """
         written = 0
+        new_pvs = []
         for pokemon in team:
-            if self.upsert_pokemon(owner, edition, pokemon):
+            result = self.upsert_pokemon(owner, edition, pokemon)
+            if result != "skipped":
                 written += 1
-        return written
+            if result == "inserted":
+                pv = getattr(pokemon, "personality", None)
+                if pv is not None:
+                    new_pvs.append(int(pv))
+        return written, new_pvs
 
     def get_lvls_by_personalities(self, personalities: list[int]) -> dict[int, int]:
         """Liefert pro PV das zuletzt gespeicherte Level (last_seen DESC).
@@ -347,3 +410,156 @@ class PokedexDB:
             self.logger.error(f"get_bag_first_seen failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
             return {}
+
+    # -- Encounters (Schema v3) ------------------------------------------------
+
+    def insert_encounter(self, personality: int, owner: str, edition: int,
+                         route: int, dexnr: int, lvl: int, shiny: bool,
+                         is_first: bool, is_shiny_override: bool,
+                         is_dupes_skip: bool, has_balls: bool,
+                         method: str = "wild",
+                         outcome: str = "unknown") -> bool:
+        if self.connection is None:
+            return False
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            cursor = self.connection.cursor()
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO encounters (
+                    personality, owner, edition, route, dexnr, lvl, shiny,
+                    is_first, is_shiny_override, is_dupes_skip, has_balls,
+                    method, outcome, timestamp
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    int(personality), owner, int(edition), int(route),
+                    int(dexnr), int(lvl), int(shiny),
+                    int(is_first), int(is_shiny_override),
+                    int(is_dupes_skip), int(has_balls),
+                    method, outcome, now,
+                ),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
+        except Exception as err:
+            self.logger.error(f"insert_encounter failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    def update_encounter_outcome(self, personality: int, owner: str,
+                                  outcome: str) -> bool:
+        if self.connection is None:
+            return False
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "UPDATE encounters SET outcome = ? "
+                "WHERE personality = ? AND owner = ?",
+                (outcome, int(personality), owner),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
+        except Exception as err:
+            self.logger.error(f"update_encounter_outcome failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    def get_route_status(self, owner: str, edition=None) -> list[dict]:
+        if self.connection is None:
+            return []
+        try:
+            query = (
+                "SELECT route, method, outcome, dexnr, lvl, shiny, "
+                "is_first, is_dupes_skip, has_balls, timestamp "
+                "FROM encounters WHERE owner = ?"
+            )
+            params: list = [owner]
+            if edition is not None:
+                query += " AND edition = ?"
+                params.append(int(edition))
+            query += " ORDER BY route, timestamp"
+            cursor = self.connection.cursor()
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as err:
+            self.logger.error(f"get_route_status failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return []
+
+    def has_encounter_on_route(self, owner: str, edition: int,
+                               route: int) -> bool:
+        if self.connection is None:
+            return False
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT 1 FROM encounters "
+                "WHERE owner = ? AND edition = ? AND route = ? AND has_balls = 1 "
+                "LIMIT 1",
+                (owner, int(edition), int(route)),
+            )
+            return cursor.fetchone() is not None
+        except Exception as err:
+            self.logger.error(f"has_encounter_on_route failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    def is_species_family_caught(self, owner: str,
+                                  family_members: list[int]) -> bool:
+        if self.connection is None or not family_members:
+            return False
+        try:
+            placeholders = ",".join("?" for _ in family_members)
+            cursor = self.connection.cursor()
+            cursor.execute(
+                f"SELECT 1 FROM pokemon "
+                f"WHERE owner = ? AND dexnr IN ({placeholders}) "
+                f"LIMIT 1",
+                [owner] + [str(d) for d in family_members],
+            )
+            return cursor.fetchone() is not None
+        except Exception as err:
+            self.logger.error(f"is_species_family_caught failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    def has_catching_balls(self, owner: str, edition) -> bool:
+        """Prüft ob der Spieler JEMALS einen Ball besessen hat (bag_first_seen).
+
+        Bestimmt ob der Nuzlocke-Run gestartet hat — einmal True, bleibt True.
+        """
+        if self.connection is None:
+            return False
+        try:
+            edition_str = str(edition) if edition is not None else ""
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT 1 FROM bag_first_seen "
+                "WHERE owner = ? AND edition = ? AND pocket = 'baelle' "
+                "LIMIT 1",
+                (owner, edition_str),
+            )
+            return cursor.fetchone() is not None
+        except Exception as err:
+            self.logger.error(f"has_catching_balls failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    def get_encounters(self, owner: str, edition=None) -> list[dict]:
+        if self.connection is None:
+            return []
+        try:
+            query = "SELECT * FROM encounters WHERE owner = ?"
+            params: list = [owner]
+            if edition is not None:
+                query += " AND edition = ?"
+                params.append(int(edition))
+            query += " ORDER BY timestamp DESC"
+            cursor = self.connection.cursor()
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as err:
+            self.logger.error(f"get_encounters failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return []

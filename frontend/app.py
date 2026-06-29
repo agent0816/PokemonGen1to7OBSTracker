@@ -6,6 +6,7 @@ import yaml
 import requests
 from frontend.widgets.bagmenu import BagMenu
 from frontend.widgets.boxmenu import BoxMenu
+from frontend.widgets.encountermenu import EncounterMenu
 from frontend.widgets.mainmenu import MainMenu
 from frontend.widgets.pokedexmenu import PokedexMenu
 from frontend.widgets.sessionsmenu import SessionMenu
@@ -71,6 +72,8 @@ class Screens(ScreenManager):
         self.add_widget(box_menu)
         bag_menu = BagMenu(configsave, pl, sp, bizhawk, citra, APP_VERSION)
         self.add_widget(bag_menu)
+        encounter_menu = EncounterMenu(configsave, pl, APP_VERSION)
+        self.add_widget(encounter_menu)
         self.current = "Update"
         update_menu.check_for_update()
 

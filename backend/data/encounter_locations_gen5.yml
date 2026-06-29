@@ -1,0 +1,288 @@
+# Gen 5 Encounter-Locations (Nuzlocke)
+# Keyed by met_location ID (PKHeX text_bw2_00000_de.txt)
+# Gespeichert im Pokemon-Struct als "route" / encounters-Tabelle
+# games: [51=Schwarz, 52=Weiß, 53=Schwarz 2, 54=Weiß 2]
+#
+# Zwei ID-Systeme im Projekt:
+#   locations_gen5.yml:           map_header_id  → Name (Gift-Positionserkennung)
+#   encounter_locations_gen5.yml: met_location_id → Name + Games (EncounterMenu)
+
+# ============================================================
+# Routen (BW, geteilte IDs — in B2W2 post-game zugänglich)
+# ============================================================
+14:
+  name: Route 1
+  games: [51, 52, 53, 54]
+15:
+  name: Route 2
+  games: [51, 52, 53, 54]
+16:
+  name: Route 3
+  games: [51, 52, 53, 54]
+17:
+  name: Route 4
+  games: [51, 52, 53, 54]
+
+# Routen 5-16: BW-only met_location IDs (B2W2 hat eigene IDs 93-103)
+18:
+  name: Route 5
+  games: [51, 52]
+19:
+  name: Route 6
+  games: [51, 52]
+20:
+  name: Route 7
+  games: [51, 52]
+21:
+  name: Route 8
+  games: [51, 52]
+22:
+  name: Route 9
+  games: [51, 52]
+23:
+  name: Route 10
+  games: [51, 52]
+24:
+  name: Route 11
+  games: [51, 52]
+25:
+  name: Route 12
+  games: [51, 52]
+26:
+  name: Route 13
+  games: [51, 52]
+27:
+  name: Route 14
+  games: [51, 52]
+28:
+  name: Route 15
+  games: [51, 52]
+29:
+  name: Route 16
+  games: [51, 52]
+
+# Route 17+18: keine B2W2-eigene ID, in B2W2 post-game zugänglich
+30:
+  name: Route 17
+  games: [51, 52, 53, 54]
+31:
+  name: Route 18
+  games: [51, 52, 53, 54]
+
+# ============================================================
+# Dungeons & Gebiete (geteilte IDs — beide Spielepaare)
+# ============================================================
+32:
+  name: Traumbrache
+  games: [51, 52, 53, 54]
+33:
+  name: Ewigenwald
+  games: [51, 52, 53, 54]
+34:
+  name: Wüstenresort
+  games: [51, 52, 53, 54]
+35:
+  name: Alter Palast
+  games: [51, 52, 53, 54]
+53:
+  name: Grundwassersenke
+  games: [51, 52, 53, 54]
+54:
+  name: Panaero-Höhle
+  games: [51, 52, 53, 54]
+56:
+  name: Turm des Himmels
+  games: [51, 52, 53, 54]
+57:
+  name: Moor von Nevaio
+  games: [51, 52, 53, 54]
+63:
+  name: P2-Labor
+  games: [51, 52, 53, 54]
+70:
+  name: Schrein der Ernte
+  games: [51, 52, 53, 54]
+71:
+  name: Bucht von Ondula
+  games: [51, 52, 53, 54]
+72:
+  name: Hain der Täuschung
+  games: [51, 52, 53, 54]
+
+# ============================================================
+# BW-only Dungeons (B2W2 hat eigene IDs oder nicht zugänglich)
+# ============================================================
+37:
+  name: Elektrolithhöhle
+  games: [51, 52]
+38:
+  name: Wendelberg
+  games: [51, 52]
+39:
+  name: Drachenstiege
+  games: [51, 52]
+40:
+  name: Siegesstraße
+  games: [51, 52]
+59:
+  name: Höhle der Schulung
+  games: [51, 52]
+61:
+  name: Riesengrotte
+  games: [51, 52]
+
+# ============================================================
+# BW-only Spezialgebiete
+# ============================================================
+41:
+  name: Tessera
+  games: [51, 52]
+42:
+  name: Ondula
+  games: [51, 52]
+51:
+  name: Weißer Wald
+  games: [52]
+
+# ============================================================
+# BW Brücken mit Schatten-Encounters (Ducklett/Swanna)
+# ============================================================
+65:
+  name: Marea-Zugbrücke
+  games: [51, 52]
+68:
+  name: Wunderbrücke
+  games: [51, 52]
+
+# ============================================================
+# B2W2 Revisited Dungeons (eigene met_location IDs)
+# ============================================================
+82:
+  name: Weißer Wald
+  games: [54]
+85:
+  name: Elektrolithhöhle
+  games: [53, 54]
+86:
+  name: Wendelberg
+  games: [53, 54]
+87:
+  name: Drachenstiege
+  games: [53, 54]
+88:
+  name: Riesengrotte
+  games: [53, 54]
+134:
+  name: Siegesstraße
+  games: [53, 54]
+
+# ============================================================
+# B2W2 Revisited Brücken
+# ============================================================
+89:
+  name: Marea-Zugbrücke
+  games: [53, 54]
+92:
+  name: Wunderbrücke
+  games: [53, 54]
+
+# ============================================================
+# B2W2 Revisited Routen (eigene met_location IDs)
+# Route 10 existiert nicht in B2W2 (zerstört)
+# ============================================================
+93:
+  name: Route 5
+  games: [53, 54]
+94:
+  name: Route 6
+  games: [53, 54]
+95:
+  name: Route 7
+  games: [53, 54]
+96:
+  name: Route 8
+  games: [53, 54]
+97:
+  name: Route 9
+  games: [53, 54]
+98:
+  name: Route 11
+  games: [53, 54]
+99:
+  name: Route 12
+  games: [53, 54]
+100:
+  name: Route 13
+  games: [53, 54]
+101:
+  name: Route 14
+  games: [53, 54]
+102:
+  name: Route 15
+  games: [53, 54]
+103:
+  name: Route 16
+  games: [53, 54]
+
+# ============================================================
+# B2W2 Revisited Orte (Surf-Encounters)
+# ============================================================
+104:
+  name: Tessera
+  games: [53, 54]
+105:
+  name: Ondula
+  games: [53, 54]
+
+# ============================================================
+# B2W2 Neue Routen
+# ============================================================
+124:
+  name: Route 19
+  games: [53, 54]
+125:
+  name: Route 20
+  games: [53, 54]
+126:
+  name: Route 21
+  games: [53, 54]
+127:
+  name: Route 22
+  games: [53, 54]
+128:
+  name: Route 23
+  games: [53, 54]
+
+# ============================================================
+# B2W2 Neue Dungeons & Gebiete
+# ============================================================
+129:
+  name: Stratos-Kanalisation
+  games: [53, 54]
+130:
+  name: Dausing-Hof
+  games: [53, 54]
+131:
+  name: Vapydro-Werke
+  games: [53, 54]
+132:
+  name: Janusberg
+  games: [53, 54]
+133:
+  name: Bizarro-Haus
+  games: [53, 54]
+136:
+  name: Alter Fluchtweg
+  games: [53, 54]
+137:
+  name: Turner-Pfad
+  games: [53, 54]
+141:
+  name: Strandgrotte
+  games: [53, 54]
+143:
+  name: Versteckte Lichtung
+  games: [53, 54]
+147:
+  name: Naturschutzgebiet
+  games: [53, 54]

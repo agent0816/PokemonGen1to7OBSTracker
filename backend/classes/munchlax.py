@@ -1,11 +1,12 @@
 import asyncio
-import os
 import hashlib
+import os
 import pickle
 import time
 from pathlib import Path
 from pickle import UnpicklingError
 import traceback
+from backend.bag_decoder import BagItem
 from backend.classes.obs import OBS
 from backend.classes.pokedex_db import PokedexDB
 from backend.logging_setup import get_logger
@@ -55,6 +56,7 @@ class Munchlax:
         self.rando_abilities_gen3: dict[int, list[int]] | None = None
         self.writer_lock = asyncio.Lock()
         self.disconnect_lock = asyncio.Lock()
+        self._last_bag_hash: dict[str, str] = {}
 
         self.logger = get_logger(__name__, './logs/munchlax.log')
 
@@ -166,6 +168,12 @@ class Munchlax:
                         self.remote_connection_status.update(data.get("status", {}))
                         self.remote_connection_names.clear()
                         self.remote_connection_names.update(data.get("names", {}))
+                    elif msg_type == "encounter_sync":
+                        self._handle_remote_encounters(data.get("encounters", []))
+                    elif msg_type == "encounter_outcome":
+                        self._handle_remote_outcome(data)
+                    elif msg_type == "bag_sync":
+                        self._handle_remote_bag(data)
                     else:
                         self.logger.warning(f"Unbekannter Message-Typ vom Server: {msg_type}")
                     continue
@@ -266,9 +274,102 @@ class Munchlax:
                     pocket_key,
                     items,
                 )
+            bag_key = f"{owner}_{edition}"
+            current_hash = self._bag_hash(pockets)
+            if current_hash != self._last_bag_hash.get(bag_key):
+                self._last_bag_hash[bag_key] = current_hash
+                await self.send_bag_sync(owner, edition, pockets)
         except Exception as err:
             self.logger.error(f"update_bag failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
+
+    async def send_encounter_sync(self, encounter_dict: dict):
+        """Sendet einen Encounter-Record an Arceus zur Weiterverteilung."""
+        if not self.is_connected:
+            return
+        try:
+            async with self.writer_lock:
+                await self.send_message({
+                    "type": "encounter_sync",
+                    "encounters": [encounter_dict],
+                })
+        except Exception as err:
+            self.logger.warning(f"send_encounter_sync failed: {err}")
+
+    async def send_encounter_outcome(self, personality: int, owner: str, outcome: str):
+        """Sendet ein Outcome-Update an Arceus zur Weiterverteilung."""
+        if not self.is_connected:
+            return
+        try:
+            async with self.writer_lock:
+                await self.send_message({
+                    "type": "encounter_outcome",
+                    "personality": personality,
+                    "owner": owner,
+                    "outcome": outcome,
+                })
+        except Exception as err:
+            self.logger.warning(f"send_encounter_outcome failed: {err}")
+
+    async def send_bag_sync(self, owner: str, edition, pockets: dict):
+        """Sendet Bag-Inhalt an Arceus. BagItem → (id, qty) Tupel."""
+        if not self.is_connected:
+            return
+        try:
+            wire_pockets = {}
+            for pocket_key, items in pockets.items():
+                wire_pockets[pocket_key] = [(it.id, it.qty) for it in items if it.id != 0 and it.qty != 0]
+            async with self.writer_lock:
+                await self.send_message({
+                    "type": "bag_sync",
+                    "owner": owner,
+                    "edition": str(edition) if edition is not None else "",
+                    "pockets": wire_pockets,
+                })
+        except Exception as err:
+            self.logger.warning(f"send_bag_sync failed: {err}")
+
+    def _handle_remote_encounters(self, encounters: list[dict]):
+        self._ensure_pokedex_db()
+        if self.pokedex_db is None or self.pokedex_db.connection is None:
+            return
+        count = 0
+        for enc in encounters:
+            if self.pokedex_db.sync_encounter(enc):
+                count += 1
+        if count:
+            self.logger.info(f"Remote-Encounters empfangen: {count} von {len(encounters)} eingefügt/aktualisiert")
+
+    def _handle_remote_outcome(self, data: dict):
+        self._ensure_pokedex_db()
+        if self.pokedex_db is None or self.pokedex_db.connection is None:
+            return
+        self.pokedex_db.update_encounter_outcome(
+            data["personality"], data["owner"], data["outcome"]
+        )
+
+    def _handle_remote_bag(self, data: dict):
+        self._ensure_pokedex_db()
+        if self.pokedex_db is None or self.pokedex_db.connection is None:
+            return
+        owner = data.get("owner", "")
+        edition = data.get("edition", "")
+        pockets = data.get("pockets", {})
+        for pocket_key, items_raw in pockets.items():
+            bag_items = [BagItem(id=item_id, qty=qty) for item_id, qty in items_raw]
+            self.pokedex_db.upsert_bag_pocket(owner, edition, pocket_key, bag_items)
+        self.logger.info(
+            f"Remote-Bag empfangen: owner={owner} edition={edition} "
+            f"pockets={list(pockets.keys())}"
+        )
+
+    @staticmethod
+    def _bag_hash(pockets: dict) -> str:
+        parts = []
+        for key in sorted(pockets.keys()):
+            items = pockets[key]
+            parts.append(f"{key}:" + ",".join(f"{it.id}:{it.qty}" for it in items))
+        return hashlib.md5("|".join(parts).encode()).hexdigest()
 
     async def _persist_teams(self, teams):
         try:

@@ -783,6 +783,21 @@ class Bizhawk:
                     f"shiny_override={result.is_shiny_override} "
                     f"dupes={result.is_dupes_skip} balls={result.has_balls}"
                 )
+                asyncio.create_task(self.munchlax.send_encounter_sync({
+                    "personality": int(opp["personality"]),
+                    "owner": owner,
+                    "edition": int(edition),
+                    "route": int(route),
+                    "dexnr": int(opp["dexnr"]),
+                    "lvl": int(opp["lvl"]),
+                    "shiny": int(opp["shiny"]),
+                    "is_first": int(result.is_first),
+                    "is_shiny_override": int(result.is_shiny_override),
+                    "is_dupes_skip": int(result.is_dupes_skip),
+                    "has_balls": int(result.has_balls),
+                    "method": result.method,
+                    "outcome": result.outcome,
+                }))
         except Exception as err:
             self.logger.error(f"Encounter-Read fehlgeschlagen: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
@@ -832,6 +847,21 @@ class Bizhawk:
                     f"Gift erkannt: dex={dexnr} lv={pokemon.lvl} "
                     f"method={result.method} map_header={map_header}"
                 )
+                asyncio.create_task(self.munchlax.send_encounter_sync({
+                    "personality": int(pv),
+                    "owner": owner,
+                    "edition": int(edition),
+                    "route": int(result.route),
+                    "dexnr": int(result.dexnr),
+                    "lvl": int(result.lvl),
+                    "shiny": int(result.shiny),
+                    "is_first": int(result.is_first),
+                    "is_shiny_override": int(result.is_shiny_override),
+                    "is_dupes_skip": int(result.is_dupes_skip),
+                    "has_balls": int(result.has_balls),
+                    "method": result.method,
+                    "outcome": result.outcome,
+                }))
 
     async def _check_encounter_outcome(self, client_id: str, player: int,
                                         edition: int):
@@ -866,6 +896,9 @@ class Bizhawk:
             if updated:
                 self.logger.info(
                     f"Encounter-Outcome: PV={battle_pv:#x} → {outcome}"
+                )
+                asyncio.create_task(
+                    self.munchlax.send_encounter_outcome(int(battle_pv), owner, outcome)
                 )
         except Exception as err:
             self.logger.error(f"Outcome-Check fehlgeschlagen: {type(err)},{err}")

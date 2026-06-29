@@ -465,6 +465,37 @@ class PokedexDB:
             self.logger.error(f"{traceback.format_exc()}")
             return False
 
+    def sync_encounter(self, enc: dict) -> bool:
+        """INSERT OR REPLACE für Remote-Encounters. Überschreibt bei PK-Kollision."""
+        if self.connection is None:
+            return False
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO encounters (
+                    personality, owner, edition, route, dexnr, lvl, shiny,
+                    is_first, is_shiny_override, is_dupes_skip, has_balls,
+                    method, outcome, timestamp
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    int(enc["personality"]), enc["owner"], int(enc["edition"]),
+                    int(enc["route"]), int(enc["dexnr"]), int(enc["lvl"]),
+                    int(enc.get("shiny", 0)),
+                    int(enc.get("is_first", 0)), int(enc.get("is_shiny_override", 0)),
+                    int(enc.get("is_dupes_skip", 0)), int(enc.get("has_balls", 0)),
+                    enc.get("method", "wild"), enc.get("outcome", "unknown"),
+                    enc.get("timestamp", ""),
+                ),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
+        except Exception as err:
+            self.logger.error(f"sync_encounter failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
     def get_route_status(self, owner: str, edition=None) -> list[dict]:
         if self.connection is None:
             return []

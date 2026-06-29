@@ -20,6 +20,12 @@ class Arceus:
         # Wird vom besitzenden Munchlax per "boxes_update" gefüllt und bei
         # neuen Verbindungen einmalig an den Client gepusht.
         self.boxes = {}
+        # Encounter-Cache: (personality, owner) → enc_dict.
+        # Wird bei encounter_sync gefüllt, bei encounter_outcome aktualisiert
+        # und beim Connect eines neuen Clients einmalig ausgeliefert.
+        self.encounters: dict[tuple[int, str], dict] = {}
+        # Bag-Cache: (owner, edition) → pockets_dict.
+        self.bags: dict[tuple[str, str], dict] = {}
         # Pro Client ein Lock, damit gleichzeitige Sender (update_all_clients +
         # broadcast_boxes_update) sich nicht in den chunked-Stream funken.
         self.writer_locks = {}
@@ -63,6 +69,25 @@ class Arceus:
                     else:
                         self.boxes[player_id] = boxes
                         asyncio.create_task(self.broadcast_boxes_update(client_id, player_id, boxes))
+                elif isinstance(data, dict) and data.get("type") == "encounter_sync":
+                    encounters = data.get("encounters", [])
+                    for enc in encounters:
+                        key = (enc["personality"], enc["owner"])
+                        self.encounters[key] = enc
+                    asyncio.create_task(self.broadcast_encounter_sync(client_id, encounters))
+                elif isinstance(data, dict) and data.get("type") == "encounter_outcome":
+                    pv = data["personality"]
+                    owner = data["owner"]
+                    outcome = data["outcome"]
+                    key = (pv, owner)
+                    if key in self.encounters:
+                        self.encounters[key]["outcome"] = outcome
+                    asyncio.create_task(self.broadcast_encounter_outcome(client_id, pv, owner, outcome))
+                elif isinstance(data, dict) and data.get("type") == "bag_sync":
+                    bag_owner = data.get("owner", "")
+                    bag_edition = data.get("edition", "")
+                    self.bags[(bag_owner, bag_edition)] = data.get("pockets", {})
+                    asyncio.create_task(self.broadcast_bag_sync(client_id, data))
                 else:
                     for player, team in data.items(): #type: ignore
                         if player not in self.teams or self.teams[player] != team:
@@ -97,6 +122,20 @@ class Arceus:
                 "boxes": boxes,
             })
 
+        if self.encounters:
+            await self.send_to_client(client_id, {
+                "type": "encounter_sync",
+                "encounters": list(self.encounters.values()),
+            })
+
+        for (bag_owner, bag_edition), pockets in list(self.bags.items()):
+            await self.send_to_client(client_id, {
+                "type": "bag_sync",
+                "owner": bag_owner,
+                "edition": bag_edition,
+                "pockets": pockets,
+            })
+
         while True:
             try:
                 if old_teams != self.teams:
@@ -129,6 +168,38 @@ class Arceus:
                 self.logger.error(f"broadcast_boxes_update an {client_id} failed: {type(exc)},{exc}")
                 self.logger.error(f"{traceback.format_exc()}")
     
+    async def broadcast_encounter_sync(self, sender_id, encounters):
+        message = {"type": "encounter_sync", "encounters": encounters}
+        for client_id in list(self.munchlaxes.keys()):
+            if client_id == sender_id:
+                continue
+            try:
+                await self.send_to_client(client_id, message)
+            except Exception as exc:
+                self.logger.error(f"broadcast_encounter_sync an {client_id} failed: {type(exc)},{exc}")
+                self.logger.error(f"{traceback.format_exc()}")
+
+    async def broadcast_encounter_outcome(self, sender_id, personality, owner, outcome):
+        message = {"type": "encounter_outcome", "personality": personality, "owner": owner, "outcome": outcome}
+        for client_id in list(self.munchlaxes.keys()):
+            if client_id == sender_id:
+                continue
+            try:
+                await self.send_to_client(client_id, message)
+            except Exception as exc:
+                self.logger.error(f"broadcast_encounter_outcome an {client_id} failed: {type(exc)},{exc}")
+                self.logger.error(f"{traceback.format_exc()}")
+
+    async def broadcast_bag_sync(self, sender_id, data):
+        for client_id in list(self.munchlaxes.keys()):
+            if client_id == sender_id:
+                continue
+            try:
+                await self.send_to_client(client_id, data)
+            except Exception as exc:
+                self.logger.error(f"broadcast_bag_sync an {client_id} failed: {type(exc)},{exc}")
+                self.logger.error(f"{traceback.format_exc()}")
+
     async def disconnect_client(self, client_id):
         async with self.disconnect_lock:
             if client_id in self.munchlaxes:

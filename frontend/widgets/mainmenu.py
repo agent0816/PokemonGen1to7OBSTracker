@@ -392,6 +392,9 @@ class MainMenu(Screen):
         bag_button = Button(text="Tasche", on_press=self.switch_to_bag)
         info_buttons.add_widget(bag_button)
 
+        encounter_button = Button(text="Encounters", on_press=self.switch_to_encounters)
+        info_buttons.add_widget(encounter_button)
+
         self.randomize_button = Button(text="Randomisieren", on_press=self.start_randomization)
         info_buttons.add_widget(self.randomize_button)
         
@@ -796,6 +799,9 @@ class MainMenu(Screen):
 
     def switch_to_bag(self, instance):
         self.manager.current = "BagMenu"
+
+    def switch_to_encounters(self, instance):
+        self.manager.current = "EncounterMenu"
 
     def switch_to_settings(self, instance):
         settings_menu = self.manager.get_screen("SettingsMenu")

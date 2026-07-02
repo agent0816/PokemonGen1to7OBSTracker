@@ -1,0 +1,227 @@
+# Gen 4 Map-Header-ID → Ortsname (deutsch)
+# IDs aus childMapHeader (u16 LE via Pointer-Chain), Quelle: NDS-Ironmon-Tracker LocationData.lua
+# Übersetzung Englisch→Deutsch via PKHeX text_hgss_00000_de.txt
+#
+# DPPt und HGSS haben SEPARATE map_header_id-Räume mit Kollisionen!
+# Deshalb aufgeteilt in dppt: und hgss: Top-Level-Keys.
+# Wird für Gift-Positionserkennung und Fallback-Anzeige verwendet.
+#
+# Zugriff: locations[subgen][map_header_id]
+#   subgen = "dppt" für edition 41/42/43, "hgss" für 44/45
+
+dppt:
+  # === Städte & Gyms ===
+  3: Jubelstadt
+  33: Fleetburg
+  45: Erzelingen
+  65: Ewigenau
+  86: Herzhofen
+  120: Weideburg
+  132: Schleiede
+  150: Sonnewik
+  165: Blizzach
+  172: Pokémon Liga
+  188: Kampfareal
+  411: Zweiblattdorf
+  418: Sandgemme
+  426: Flori
+  433: Trostu
+  442: Elyses
+  450: Überlebensareal
+  457: Erholungsgebiet
+
+  # === Routen ===
+  342: Route 201
+  343: Route 202
+  344: Route 203
+  345: Route 204
+  346: Route 204
+  347: Route 205
+  348: Route 205
+  350: Route 206
+  353: Route 207
+  354: Route 208
+  356: Route 209
+  362: Route 210
+  365: Route 211
+  367: Route 212
+  371: Route 212
+  373: Route 213
+  380: Route 214
+  382: Route 215
+  383: Route 216
+  385: Route 217
+  388: Route 218
+  391: Route 219
+  467: Route 220
+  392: Route 221
+  395: Route 222
+  468: Route 223
+  399: Route 224
+  400: Route 225
+  469: Route 226
+  403: Route 227
+  406: Route 228
+  407: Route 229
+  471: Route 230
+
+  # === Dungeons & Naturgebiete ===
+  59: Erzelingen-Mine (Museum)
+  197: Erzelingen-Mine
+  200: Windkraftwerk
+  202: Ewigwald
+  204: Feuriohütte
+  207: Kraterberg
+  220: Speersäule
+  225: Trostu-Ruinen
+  244: Siegesstraße
+  251: Park der Freunde
+  253: Auen von Flori
+  254: Verwüsteter Pfad
+  258: Erzelingen-Tor
+  260: Vollmond-Insel
+  262: Kahlberg
+  267: Scheidequelle
+  268: Höhle der Umkehr
+  274: Blumenparadies
+  278: Blizzach-Tempel
+  284: Bizarre Höhle
+  286: Maniac-Höhle
+  287: Trophäengarten
+  288: Eiseninsel
+  292: Eiseninsel (Innen)
+  295: Alte Villa
+  305: Galakti-Zentrale
+  311: See der Wahrheit
+  313: Wahrheitsgrotte
+  314: See der Kühnheit
+  316: Kühnheitsgrotte
+  317: See der Stärke
+  319: Stärkegrotte
+  320: Neumond-Insel
+  334: Wahrheitsufer
+  338: Kühnheitsufer
+  340: Stärkeufer
+  341: Frühlingspfad
+  437: Trostu (Happiny-Ei)
+  504: Großmoor
+  559: Kampfzone
+  570: Zerrwelt
+
+  # === Städte-Subzonen (Gift-relevant) ===
+  69: Ewigenau (Evoli-Haus)
+  81: Ewigenau (Bebe)
+  134: Schleiede (Porygon-Haus)
+
+hgss:
+  # === Städte ===
+  49: Alabastia
+  50: Vertania City
+  51: Marmoria City
+  52: Azuria City
+  53: Lavandia
+  54: Orania City
+  55: Prismania City
+  56: Fuchsania City
+  57: Zinnoberinsel
+  58: Indigo Plateau
+  59: Saffronia City
+  60: Neuborkia
+  61: Neuborkia (Labor)
+  62: Neuborkia (Prof. Lind)
+  67: Rosalia City
+  73: Viola City
+  74: Azalea City
+  75: Anemonia City
+  76: Dukatia City
+  77: Oliviana City
+  78: Teak City
+  87: Mahagonia City
+  88: See des Zorns
+  89: Ebenholz City
+
+  # === Routen ===
+  9: Route 1
+  10: Route 2
+  11: Route 3
+  12: Route 4
+  13: Route 5
+  14: Route 6
+  15: Route 7
+  16: Route 8
+  17: Route 9
+  18: Route 10
+  19: Route 11
+  20: Route 12
+  21: Route 13
+  22: Route 14
+  23: Route 15
+  24: Route 16
+  25: Route 17
+  26: Route 18
+  27: Route 22
+  28: Route 24
+  29: Route 25
+  30: Route 26
+  31: Route 27
+  32: Route 28
+  33: Route 29
+  34: Route 30
+  35: Route 31
+  36: Route 32
+  37: Route 33
+  38: Route 34
+  39: Route 35
+  40: Route 36
+  41: Route 37
+  42: Route 38
+  43: Route 39
+  44: Route 42
+  45: Route 43
+  46: Route 44
+  47: Route 45
+  48: Route 46
+  91: Route 19
+  92: Route 20
+  93: Route 21
+  94: Route 40
+  95: Route 41
+  151: Route 47
+  152: Route 48
+
+  # === Dungeons & Naturgebiete ===
+  6: Glockenklangpfad
+  7: Turmruine
+  8: Alph-Ruinen
+  96: Nationalpark
+  99: Einheitstunnel
+  106: DIGDAs Höhle
+  107: Mondberg
+  108: Felstunnel
+  110: KNOFENSA-Turm
+  111: Glockenturm
+  113: Alph-Ruinen (Innen)
+  114: FLEGMON-Brunnen
+  117: Steineichenwald
+  119: Kesselberg
+  120: Eispfad
+  121: Strudelinseln
+  122: Silberberghöhle
+  123: Dunkelhöhle
+  124: Siegesstraße
+  125: Drachenhöhle
+  126: Tohjo-Fälle
+  145: Azuria-Höhle
+  146: Seeschauminseln
+  147: Vertania-Wald
+  342: Felsschlundhöhle
+  343: Safari-Zone
+
+  # === Subzonen (Gift-relevant) ===
+  182: Dukatia City (Bill)
+  232: Anemonia City (Pottrott)
+  233: Felsenherzturm
+  242: Strudelinseln (Lugia)
+  250: Kesselberg (Karatekönig)
+  253: Drachenhöhle (Meister)
+  332: Glockenturm (Ho-Oh)

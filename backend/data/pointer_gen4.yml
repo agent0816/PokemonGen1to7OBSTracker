@@ -27,6 +27,7 @@
   battleopponentidpointer: 0x2AFFCE
   badgepointer: 0xB70
   badgeoffset: 0x292
+  mapidoffset: 0x144C
   bag_items: 0x0026DD78
   bag_keyitems: 0x0026E00C
   bag_tmvm: 0x0026E0D4
@@ -45,6 +46,7 @@
   battleopponentidpointer: 0x2AFFCE
   badgepointer: 0xB70
   badgeoffset: 0x292
+  mapidoffset: 0x144C
   bag_items: 0x0026DD78
   bag_keyitems: 0x0026E00C
   bag_tmvm: 0x0026E0D4
@@ -63,6 +65,7 @@
   battleopponentidpointer: 0x2BFBF6
   badgepointer: 0xBA8
   badgeoffset: 0x96
+  mapidoffset: 0x239B0
   bag_items: 0x0027E99C
   bag_keyitems: 0x0027EC30
   bag_tmvm: 0x0027ECF8
@@ -93,9 +96,10 @@
   box_stride: 0x1000
   battlepointer: 0x2CAD00
   battleopponentpointer: 0x2CB2D0
-  battleopponentidpointer: 0x0
+  battleopponentidpointer: 0x2C0312
   badgepointer: 0xBA8
   badgeoffset: 0x8E
+  mapidoffset: 0x25FE4
   bag_items: 0x0027C8BC
   bag_keyitems: 0x0027CB50
   bag_tmvm: 0x0027CC18
@@ -111,9 +115,10 @@
   box_stride: 0x1000
   battlepointer: 0x2CAD00
   battleopponentpointer: 0x2CB2D0
-  battleopponentidpointer: 0x0
+  battleopponentidpointer: 0x2C0312
   badgepointer: 0xBA8
   badgeoffset: 0x8E
+  mapidoffset: 0x25FE4
   bag_items: 0x0027C8BC
   bag_keyitems: 0x0027CB50
   bag_tmvm: 0x0027CC18

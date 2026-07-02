@@ -25,15 +25,26 @@ except Exception as err:
     logger.error(f"Species_de.yaml laden fehlgeschlagen: {err}")
     species_de = {}
 
-try:
-    with open("backend/data/encounter_locations_gen5.yml", encoding="utf-8") as f:
-        _ENCOUNTER_LOCATIONS: dict = yaml.safe_load(f) or {}
-except Exception as err:
-    logger.error(f"encounter_locations_gen5.yml laden fehlgeschlagen: {err}")
-    _ENCOUNTER_LOCATIONS = {}
+_ENCOUNTER_LOCATIONS: dict[int, dict] = {}
+for _gen, _filename in ((4, "encounter_locations_gen4.yml"), (5, "encounter_locations_gen5.yml")):
+    try:
+        with open(f"backend/data/{_filename}", encoding="utf-8") as f:
+            _ENCOUNTER_LOCATIONS[_gen] = yaml.safe_load(f) or {}
+    except Exception as err:
+        logger.error(f"{_filename} laden fehlgeschlagen: {err}")
+        _ENCOUNTER_LOCATIONS[_gen] = {}
+
+
+def _edition_to_gen(edition: int) -> int:
+    if 41 <= edition <= 45:
+        return 4
+    if 51 <= edition <= 54:
+        return 5
+    return 0
 
 
 _EDITION_NAME = {
+    41: "Diamant", 42: "Perl", 43: "Platin", 44: "HeartGold", 45: "SoulSilver",
     51: "Schwarz", 52: "Weiß", 53: "Schwarz 2", 54: "Weiß 2",
 }
 
@@ -73,16 +84,24 @@ def _species_name(dexnr) -> str:
         return f"#{dexnr}"
 
 
-def _location_name(route_id: int) -> str:
-    loc = _ENCOUNTER_LOCATIONS.get(route_id)
+def _location_name(route_id: int, edition: int = 0) -> str:
+    gen = _edition_to_gen(edition)
+    locs = _ENCOUNTER_LOCATIONS.get(gen, {})
+    loc = locs.get(route_id)
     if loc and isinstance(loc, dict):
         return loc.get("name", f"Route {route_id}")
+    for g in _ENCOUNTER_LOCATIONS.values():
+        loc = g.get(route_id)
+        if loc and isinstance(loc, dict):
+            return loc.get("name", f"Route {route_id}")
     return f"Route {route_id}"
 
 
 def _locations_for_edition(edition: int) -> list[int]:
+    gen = _edition_to_gen(edition)
+    locs = _ENCOUNTER_LOCATIONS.get(gen, {})
     result = []
-    for loc_id, loc_data in _ENCOUNTER_LOCATIONS.items():
+    for loc_id, loc_data in locs.items():
         if not isinstance(loc_data, dict):
             continue
         games = loc_data.get("games", [])
@@ -229,10 +248,11 @@ class EncounterMenu(Screen):
 
         for route, encs in encountered_routes.items():
             for enc in encs:
+                enc_edition = int(enc.get("edition", 0))
                 status = self._determine_status(enc)
                 rows.append({
                     "route": route,
-                    "location": _location_name(route),
+                    "location": _location_name(route, enc_edition),
                     "species": _species_name(enc.get("dexnr", 0)),
                     "dexnr": enc.get("dexnr", 0),
                     "lvl": enc.get("lvl", ""),
@@ -248,7 +268,7 @@ class EncounterMenu(Screen):
                 if route_id not in encountered_routes:
                     rows.append({
                         "route": route_id,
-                        "location": _location_name(route_id),
+                        "location": _location_name(route_id, edition_filter),
                         "species": "—",
                         "dexnr": 0,
                         "lvl": "",

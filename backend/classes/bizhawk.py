@@ -675,18 +675,46 @@ class Bizhawk:
         finally:
             self._bag_refresh_inflight[client_id] = False
 
+    async def _resolve_gen4_pointer_chain(self, queue, pointers, offset: int) -> int:
+        """Löst die Gen-4-Pointer-Chain auf (identisch zur Badge-Lesung in Lua).
+
+        Schritte: badgepointer → read u32, mask 24bit → +0x20 → read u32, mask 24bit → +offset → read u16
+        """
+        loop = asyncio.get_event_loop()
+        badge_ptr = pointers.get("badgepointer", 0)
+
+        fut1 = loop.create_future()
+        queue.append(("boxw", badge_ptr, 4, fut1, ""))
+        base1 = int.from_bytes(await fut1, "little") & 0xFFFFFF
+
+        fut2 = loop.create_future()
+        queue.append(("boxw", base1 + 0x20, 4, fut2, ""))
+        base2 = int.from_bytes(await fut2, "little") & 0xFFFFFF
+
+        fut3 = loop.create_future()
+        queue.append(("boxw", base2 + offset, 2, fut3, ""))
+        return int.from_bytes(await fut3, "little")
+
     async def _refresh_map_header(self, client_id: str, edition: int):
         """Liest periodisch die aktuelle Map-Header-ID für Gift-Erkennung."""
         try:
             language = self.language_per_client.get(client_id)
             pointers = bh_pointers.get_pointers(edition, language)
-            map_ptr = pointers.get("mapidpointer", 0)
-            if not map_ptr:
-                return
             queue = self.box_request_queues.get(client_id)
             if queue is None:
                 return
             loop = asyncio.get_event_loop()
+
+            mapid_offset = pointers.get("mapidoffset", 0)
+            if mapid_offset:
+                self._last_map_header[client_id] = await self._resolve_gen4_pointer_chain(
+                    queue, pointers, mapid_offset
+                )
+                return
+
+            map_ptr = pointers.get("mapidpointer", 0)
+            if not map_ptr:
+                return
             fut = loop.create_future()
             queue.append(("boxw", map_ptr, 2, fut, ""))
             map_bytes = await fut
@@ -737,12 +765,18 @@ class Bizhawk:
             route = opp["met_location"]
 
             map_header = None
-            map_ptr = pointers.get("mapidpointer", 0)
-            if map_ptr:
-                map_fut = loop.create_future()
-                queue.append(("boxw", map_ptr, 2, map_fut, ""))
-                map_bytes = await map_fut
-                map_header = int.from_bytes(map_bytes, "little")
+            mapid_offset = pointers.get("mapidoffset", 0)
+            if mapid_offset:
+                map_header = await self._resolve_gen4_pointer_chain(
+                    queue, pointers, mapid_offset
+                )
+            else:
+                map_ptr = pointers.get("mapidpointer", 0)
+                if map_ptr:
+                    map_fut = loop.create_future()
+                    queue.append(("boxw", map_ptr, 2, map_fut, ""))
+                    map_bytes = await map_fut
+                    map_header = int.from_bytes(map_bytes, "little")
 
             if route == 0 and map_header is not None and map_header != 0:
                 route = map_header

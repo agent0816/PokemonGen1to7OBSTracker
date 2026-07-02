@@ -25,6 +25,11 @@ class EncounterResult:
 
 
 class EncounterTracker:
+    _GIFT_FILES = {
+        4: "backend/data/gift_encounters_gen4.yml",
+        5: "backend/data/gift_encounters_gen5.yml",
+    }
+
     def __init__(self, pokedex_db, nuz: dict | None = None):
         self.pokedex_db = pokedex_db
         self.nuz = nuz or {}
@@ -37,17 +42,40 @@ class EncounterTracker:
         for dexnr, basis in self.evolution_families.items():
             self.family_members[basis].append(dexnr)
 
-        try:
-            with open("backend/data/gift_encounters_gen5.yml") as f:
-                self.gift_definitions: dict[int, list] = yaml.safe_load(f) or {}
-        except FileNotFoundError:
-            self.gift_definitions = {}
+        self._gift_cache: dict[int, dict[int, list]] = {}
+        self.gift_definitions: dict[int, list] = {}
 
         self.logger.info(
             f"EncounterTracker initialisiert: {len(self.evolution_families)} Species, "
-            f"{len(self.family_members)} Familien, "
-            f"{len(self.gift_definitions)} Gift-Locations"
+            f"{len(self.family_members)} Familien"
         )
+
+    @staticmethod
+    def _edition_to_gen(edition: int) -> int:
+        if 41 <= edition <= 45:
+            return 4
+        if 51 <= edition <= 54:
+            return 5
+        return 0
+
+    def _load_gifts(self, edition: int) -> dict[int, list]:
+        gen = self._edition_to_gen(edition)
+        if gen in self._gift_cache:
+            return self._gift_cache[gen]
+        path = self._GIFT_FILES.get(gen)
+        if path is None:
+            self._gift_cache[gen] = {}
+            return {}
+        try:
+            with open(path) as f:
+                defs = yaml.safe_load(f) or {}
+            self._gift_cache[gen] = defs
+            self.logger.info(f"Gift-Definitionen geladen: {path} ({len(defs)} Locations)")
+            return defs
+        except FileNotFoundError:
+            self.logger.warning(f"Gift-Datei nicht gefunden: {path}")
+            self._gift_cache[gen] = {}
+            return {}
 
     def get_family_members(self, dexnr: int) -> list[int]:
         basis = self.evolution_families.get(dexnr, dexnr)
@@ -135,7 +163,8 @@ class EncounterTracker:
                                 shiny: bool, route: int,
                                 map_header_id: int) -> EncounterResult | None:
         """Prüft ob ein neues Pokemon ein bekanntes Geschenk ist und loggt es."""
-        gifts = self.gift_definitions.get(map_header_id, [])
+        gift_defs = self._load_gifts(edition)
+        gifts = gift_defs.get(map_header_id, [])
         if not gifts:
             return None
 

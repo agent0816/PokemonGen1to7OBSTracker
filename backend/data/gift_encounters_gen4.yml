@@ -1,0 +1,236 @@
+# Gift/Fossil/Static/Egg Encounter-Definitionen für Gen 4
+# Keyed by map_header_id (childMapHeader u16 via Pointer-Chain)
+# dexnr wird NICHT geprüft — Randomizer ändert Species
+#
+# type: gift | fossil | egg | static | trade
+# count: wie viele Pokemon an diesem Ort vergeben werden
+# repeatable: true wenn mehrfach einlösbar
+# edition: [41=D, 42=P, 43=Pt, 44=HG, 45=SS] — wenn leer, gilt für alle DPPt/HGSS
+# condition: optionale Bedingung (event_transfer, post_game, national_dex)
+#
+# Map-Header-IDs aus NDS-Ironmon-Tracker LocationData.lua
+# HINWEIS: IDs noch nicht gegen BizHawk verifiziert — bei Fehlern bitte melden
+
+# ============================================================
+# DPPt
+# ============================================================
+
+# See der Wahrheit — Starter von Prof. Eibe
+311:
+  - type: gift
+    name: Starter
+    count: 1
+    edition: [41, 42, 43]
+
+# Erzelingen — Bergbaumuseum: Fossil-Wiederbelebung
+59:
+  - type: fossil
+    name: Fossil-Wiederbelebung
+    count: 1
+    edition: [41, 42, 43]
+
+# Ewigenau — Eevee von Heidi
+# (Heidi/Bebe wohnt im Haus neben dem Pokémon Center)
+81:
+  - type: gift
+    name: Evoli
+    count: 1
+    edition: [41, 42, 43]
+
+# Eiseninsel — Riolu-Ei von Urs
+292:
+  - type: egg
+    name: Riolu-Ei
+    count: 1
+    edition: [41, 42, 43]
+
+# Trostu — Happiny-Ei (vom Wanderer)
+437:
+  - type: egg
+    name: Happiny-Ei
+    count: 1
+    edition: [41, 42, 43]
+
+# Ewigenau — Togepi-Ei von Cynthia (nur Platin)
+69:
+  - type: egg
+    name: Togepi-Ei
+    count: 1
+    edition: [43]
+
+# Schleiede — Porygon (nur Platin)
+134:
+  - type: gift
+    name: Porygon
+    count: 1
+    edition: [43]
+
+# Speersäule — Dialga/Palkia
+220:
+  - type: static
+    name: Dialga/Palkia
+    count: 1
+    edition: [41, 42, 43]
+
+# Höhle der Umkehr — Giratina (DP)
+268:
+  - type: static
+    name: Giratina
+    count: 1
+    edition: [41, 42]
+
+# Zerrwelt — Giratina (Pt)
+570:
+  - type: static
+    name: Giratina
+    count: 1
+    edition: [43]
+
+# Wahrheitsgrotte — Uxie
+313:
+  - type: static
+    name: Uxie
+    count: 1
+    edition: [41, 42, 43]
+
+# Kühnheitsgrotte — Azelf
+316:
+  - type: static
+    name: Azelf
+    count: 1
+    edition: [41, 42, 43]
+
+# Stärkegrotte — Mesprit (Roamer nach Interaktion)
+319:
+  - type: static
+    name: Mesprit
+    count: 1
+    edition: [41, 42, 43]
+
+# Vollmond-Insel — Cresselia (Roamer)
+260:
+  - type: static
+    name: Cresselia
+    count: 1
+    edition: [41, 42, 43]
+
+# Kahlberg — Heatran
+262:
+  - type: static
+    name: Heatran
+    count: 1
+    edition: [41, 42, 43]
+
+# Blizzach-Tempel — Regigigas
+278:
+  - type: static
+    name: Regigigas
+    count: 1
+    edition: [41, 42, 43]
+
+# Alte Villa — Rotom
+295:
+  - type: static
+    name: Rotom
+    count: 1
+    edition: [41, 42, 43]
+
+# ============================================================
+# HGSS
+# ============================================================
+
+# Neuborkia — Starter von Prof. Lind (Labor)
+61:
+  - type: gift
+    name: Starter
+    count: 1
+    edition: [44, 45]
+
+# Neuborkia — Togepi-Ei von Prof. Lind
+62:
+  - type: egg
+    name: Togepi-Ei
+    count: 1
+    edition: [44, 45]
+
+# Dukatia City — Evoli von Bill
+182:
+  - type: gift
+    name: Evoli
+    count: 1
+    edition: [44, 45]
+
+# Kesselberg — Kapoera von Karatekönig
+250:
+  - type: gift
+    name: Kapoera
+    count: 1
+    edition: [44, 45]
+
+# Drachenhöhle — Dratini von Meister
+253:
+  - type: gift
+    name: Dratini
+    count: 1
+    edition: [44, 45]
+
+# See des Zorns — Rotes Garados (Static)
+88:
+  - type: static
+    name: Rotes Garados
+    count: 1
+    edition: [44, 45]
+
+# Anemonia City — Pottrott von Herr Fels
+232:
+  - type: gift
+    name: Pottrott
+    count: 1
+    edition: [44, 45]
+
+# Glockenturm — Ho-Oh (HG) + Lugia (HG post-game)
+332:
+  - type: static
+    name: Ho-Oh
+    count: 1
+    edition: [44]
+  - type: static
+    name: Lugia
+    count: 1
+    edition: [44]
+    condition: post_game
+
+# Strudelinseln — Lugia (SS) + Ho-Oh (SS post-game)
+242:
+  - type: static
+    name: Lugia
+    count: 1
+    edition: [45]
+  - type: static
+    name: Ho-Oh
+    count: 1
+    edition: [45]
+    condition: post_game
+
+# Azuria-Höhle — Mewtu
+145:
+  - type: static
+    name: Mewtu
+    count: 1
+    edition: [44, 45]
+    condition: post_game
+
+# Marmoria City — Fossil-Wiederbelebung
+51:
+  - type: fossil
+    name: Fossil-Wiederbelebung
+    count: 1
+    edition: [44, 45]
+
+# Felsenherzturm — Groudon (HG) / Kyogre (SS) / Rayquaza
+233:
+  - type: static
+    name: Groudon/Kyogre/Rayquaza
+    count: 1
+    edition: [44, 45]
+    condition: post_game

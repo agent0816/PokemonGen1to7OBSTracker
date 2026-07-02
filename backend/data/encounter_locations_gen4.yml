@@ -1,0 +1,443 @@
+# Gen 4 Encounter-Locations (Nuzlocke)
+# Keyed by met_location ID (PKHeX text_hgss_00000_de.txt)
+# Gespeichert im Pokemon-Struct als "route" / encounters-Tabelle
+# games: [41=Diamant, 42=Perl, 43=Platin, 44=HeartGold, 45=SoulSilver]
+#
+# Zwei ID-Systeme im Projekt:
+#   locations_gen4.yml:           map_header_id  → Name (Gift-Positionserkennung)
+#   encounter_locations_gen4.yml: met_location_id → Name + Games (EncounterMenu)
+
+# ============================================================
+# Sinnoh — Routen (DPPt)
+# ============================================================
+16:
+  name: Route 201
+  games: [41, 42, 43]
+17:
+  name: Route 202
+  games: [41, 42, 43]
+18:
+  name: Route 203
+  games: [41, 42, 43]
+19:
+  name: Route 204
+  games: [41, 42, 43]
+20:
+  name: Route 205
+  games: [41, 42, 43]
+21:
+  name: Route 206
+  games: [41, 42, 43]
+22:
+  name: Route 207
+  games: [41, 42, 43]
+23:
+  name: Route 208
+  games: [41, 42, 43]
+24:
+  name: Route 209
+  games: [41, 42, 43]
+25:
+  name: Route 210
+  games: [41, 42, 43]
+26:
+  name: Route 211
+  games: [41, 42, 43]
+27:
+  name: Route 212
+  games: [41, 42, 43]
+28:
+  name: Route 213
+  games: [41, 42, 43]
+29:
+  name: Route 214
+  games: [41, 42, 43]
+30:
+  name: Route 215
+  games: [41, 42, 43]
+31:
+  name: Route 216
+  games: [41, 42, 43]
+32:
+  name: Route 217
+  games: [41, 42, 43]
+33:
+  name: Route 218
+  games: [41, 42, 43]
+34:
+  name: Route 219
+  games: [41, 42, 43]
+35:
+  name: Route 220
+  games: [41, 42, 43]
+36:
+  name: Route 221
+  games: [41, 42, 43]
+37:
+  name: Route 222
+  games: [41, 42, 43]
+38:
+  name: Route 223
+  games: [41, 42, 43]
+39:
+  name: Route 224
+  games: [41, 42, 43]
+40:
+  name: Route 225
+  games: [41, 42, 43]
+41:
+  name: Route 226
+  games: [41, 42, 43]
+42:
+  name: Route 227
+  games: [41, 42, 43]
+43:
+  name: Route 228
+  games: [41, 42, 43]
+44:
+  name: Route 229
+  games: [41, 42, 43]
+45:
+  name: Route 230
+  games: [41, 42, 43]
+
+# ============================================================
+# Sinnoh — Dungeons & Naturgebiete (DPPt)
+# ============================================================
+47:
+  name: Erzelingen-Mine
+  games: [41, 42, 43]
+48:
+  name: Windkraftwerk
+  games: [41, 42, 43]
+49:
+  name: Ewigwald
+  games: [41, 42, 43]
+50:
+  name: Feuriohütte
+  games: [41, 42, 43]
+51:
+  name: Kraterberg
+  games: [41, 42, 43]
+53:
+  name: Großmoor
+  games: [41, 42, 43]
+54:
+  name: Trostu-Ruinen
+  games: [41, 42, 43]
+55:
+  name: Siegesstraße
+  games: [41, 42, 43]
+57:
+  name: Platz der Treue
+  games: [41, 42, 43]
+58:
+  name: Verwüsteter Pfad
+  games: [41, 42, 43]
+59:
+  name: Auen von Flori
+  games: [41, 42, 43]
+60:
+  name: Erzelingen-Tor
+  games: [41, 42, 43]
+61:
+  name: Vollmond-Insel
+  games: [41, 42, 43]
+62:
+  name: Scheidequelle
+  games: [41, 42, 43]
+63:
+  name: Höhle der Umkehr
+  games: [41, 42, 43]
+65:
+  name: Blizzach-Tempel
+  games: [41, 42, 43]
+66:
+  name: Bizarre Höhle
+  games: [41, 42, 43]
+67:
+  name: Maniac-Höhle
+  games: [41, 42, 43]
+68:
+  name: Maniac-Tunnel
+  games: [41, 42, 43]
+69:
+  name: Trophäengarten
+  games: [41, 42, 43]
+70:
+  name: Eiseninsel
+  games: [41, 42, 43]
+71:
+  name: Alte Villa
+  games: [41, 42, 43]
+73:
+  name: Wahrheitsufer
+  games: [41, 42, 43]
+74:
+  name: Kühnheitsufer
+  games: [41, 42, 43]
+75:
+  name: Stärkeufer
+  games: [41, 42, 43]
+76:
+  name: Frühlingspfad
+  games: [41, 42, 43]
+77:
+  name: See der Wahrheit
+  games: [41, 42, 43]
+78:
+  name: See der Kühnheit
+  games: [41, 42, 43]
+79:
+  name: See der Stärke
+  games: [41, 42, 43]
+80:
+  name: Neumond-Insel
+  games: [41, 42, 43]
+85:
+  name: Kahlberg
+  games: [41, 42, 43]
+
+# ============================================================
+# Sinnoh — Speersäule & Zerrwelt (Pt-exklusiv)
+# ============================================================
+52:
+  name: Speersäule
+  games: [43]
+118:
+  name: Zerrwelt
+  games: [43]
+
+# ============================================================
+# Kanto/Johto — Routen (HGSS)
+# ============================================================
+150:
+  name: Route 1
+  games: [44, 45]
+151:
+  name: Route 2
+  games: [44, 45]
+152:
+  name: Route 3
+  games: [44, 45]
+153:
+  name: Route 4
+  games: [44, 45]
+154:
+  name: Route 5
+  games: [44, 45]
+155:
+  name: Route 6
+  games: [44, 45]
+156:
+  name: Route 7
+  games: [44, 45]
+157:
+  name: Route 8
+  games: [44, 45]
+158:
+  name: Route 9
+  games: [44, 45]
+159:
+  name: Route 10
+  games: [44, 45]
+160:
+  name: Route 11
+  games: [44, 45]
+161:
+  name: Route 12
+  games: [44, 45]
+162:
+  name: Route 13
+  games: [44, 45]
+163:
+  name: Route 14
+  games: [44, 45]
+164:
+  name: Route 15
+  games: [44, 45]
+165:
+  name: Route 16
+  games: [44, 45]
+166:
+  name: Route 17
+  games: [44, 45]
+167:
+  name: Route 18
+  games: [44, 45]
+168:
+  name: Route 19
+  games: [44, 45]
+169:
+  name: Route 20
+  games: [44, 45]
+170:
+  name: Route 21
+  games: [44, 45]
+171:
+  name: Route 22
+  games: [44, 45]
+172:
+  name: Route 23
+  games: [44, 45]
+173:
+  name: Route 24
+  games: [44, 45]
+174:
+  name: Route 25
+  games: [44, 45]
+175:
+  name: Route 26
+  games: [44, 45]
+176:
+  name: Route 27
+  games: [44, 45]
+177:
+  name: Route 28
+  games: [44, 45]
+178:
+  name: Route 29
+  games: [44, 45]
+179:
+  name: Route 30
+  games: [44, 45]
+180:
+  name: Route 31
+  games: [44, 45]
+181:
+  name: Route 32
+  games: [44, 45]
+182:
+  name: Route 33
+  games: [44, 45]
+183:
+  name: Route 34
+  games: [44, 45]
+184:
+  name: Route 35
+  games: [44, 45]
+185:
+  name: Route 36
+  games: [44, 45]
+186:
+  name: Route 37
+  games: [44, 45]
+187:
+  name: Route 38
+  games: [44, 45]
+188:
+  name: Route 39
+  games: [44, 45]
+189:
+  name: Route 40
+  games: [44, 45]
+190:
+  name: Route 41
+  games: [44, 45]
+191:
+  name: Route 42
+  games: [44, 45]
+192:
+  name: Route 43
+  games: [44, 45]
+193:
+  name: Route 44
+  games: [44, 45]
+194:
+  name: Route 45
+  games: [44, 45]
+195:
+  name: Route 46
+  games: [44, 45]
+196:
+  name: Route 47
+  games: [44, 45]
+197:
+  name: Route 48
+  games: [44, 45]
+
+# ============================================================
+# Kanto/Johto — Dungeons & Naturgebiete (HGSS)
+# ============================================================
+198:
+  name: DIGDAs Höhle
+  games: [44, 45]
+199:
+  name: Mondberg
+  games: [44, 45]
+200:
+  name: Azuria-Höhle
+  games: [44, 45]
+201:
+  name: Felstunnel
+  games: [44, 45]
+203:
+  name: Safari-Zone
+  games: [44, 45]
+204:
+  name: Seeschauminseln
+  games: [44, 45]
+205:
+  name: KNOFENSA-Turm
+  games: [44, 45]
+206:
+  name: Glockenturm
+  games: [44, 45]
+207:
+  name: Turmruine
+  games: [44, 45]
+208:
+  name: Nationalpark
+  games: [44, 45]
+210:
+  name: Alph-Ruinen
+  games: [44, 45]
+211:
+  name: Einheitstunnel
+  games: [44, 45]
+212:
+  name: FLEGMON-Brunnen
+  games: [44, 45]
+215:
+  name: Steineichenwald
+  games: [44, 45]
+217:
+  name: Kesselberg
+  games: [44, 45]
+218:
+  name: Eispfad
+  games: [44, 45]
+219:
+  name: Strudelinseln
+  games: [44, 45]
+220:
+  name: Silberberghöhle
+  games: [44, 45]
+221:
+  name: Dunkelhöhle
+  games: [44, 45]
+222:
+  name: Siegesstraße
+  games: [44, 45]
+223:
+  name: Drachenhöhle
+  games: [44, 45]
+224:
+  name: Tohjo-Fälle
+  games: [44, 45]
+225:
+  name: Vertania-Wald
+  games: [44, 45]
+229:
+  name: Felsschlundhöhle
+  games: [44, 45]
+231:
+  name: Glockenklangpfad
+  games: [44, 45]
+
+# ============================================================
+# Seen (HGSS — Surf/Angel-Encounters)
+# ============================================================
+136:
+  name: See des Zorns
+  games: [44, 45]

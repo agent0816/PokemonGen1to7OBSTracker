@@ -1,0 +1,465 @@
+# Gen 3 Encounter-Locations (Nuzlocke)
+# Keyed by met_location ID = MAPSEC (regionMapSectionId, u8 bei gMapHeader+0x14)
+# Quelle: PKHeX text_rsefrlg_00000_de.txt (Zeilennr - 1 = MAPSEC)
+# games: [31=Rubin, 32=Saphir, 33=Smaragd, 34=Feuerrot, 35=Blattgrün]
+#
+# Zwei ID-Systeme im Projekt:
+#   locations_gen3.yml:           mapLayoutId    → Name (Gift-Positionserkennung)
+#   encounter_locations_gen3.yml: met_location_id → Name + Games (EncounterMenu)
+
+# ============================================================
+# Hoenn — Routen (RSE)
+# ============================================================
+16:
+  name: Route 101
+  games: [31, 32, 33]
+17:
+  name: Route 102
+  games: [31, 32, 33]
+18:
+  name: Route 103
+  games: [31, 32, 33]
+19:
+  name: Route 104
+  games: [31, 32, 33]
+20:
+  name: Route 105
+  games: [31, 32, 33]
+21:
+  name: Route 106
+  games: [31, 32, 33]
+22:
+  name: Route 107
+  games: [31, 32, 33]
+23:
+  name: Route 108
+  games: [31, 32, 33]
+24:
+  name: Route 109
+  games: [31, 32, 33]
+25:
+  name: Route 110
+  games: [31, 32, 33]
+26:
+  name: Route 111
+  games: [31, 32, 33]
+27:
+  name: Route 112
+  games: [31, 32, 33]
+28:
+  name: Route 113
+  games: [31, 32, 33]
+29:
+  name: Route 114
+  games: [31, 32, 33]
+30:
+  name: Route 115
+  games: [31, 32, 33]
+31:
+  name: Route 116
+  games: [31, 32, 33]
+32:
+  name: Route 117
+  games: [31, 32, 33]
+33:
+  name: Route 118
+  games: [31, 32, 33]
+34:
+  name: Route 119
+  games: [31, 32, 33]
+35:
+  name: Route 120
+  games: [31, 32, 33]
+36:
+  name: Route 121
+  games: [31, 32, 33]
+37:
+  name: Route 122
+  games: [31, 32, 33]
+38:
+  name: Route 123
+  games: [31, 32, 33]
+39:
+  name: Route 124
+  games: [31, 32, 33]
+40:
+  name: Route 125
+  games: [31, 32, 33]
+41:
+  name: Route 126
+  games: [31, 32, 33]
+42:
+  name: Route 127
+  games: [31, 32, 33]
+43:
+  name: Route 128
+  games: [31, 32, 33]
+44:
+  name: Route 129
+  games: [31, 32, 33]
+45:
+  name: Route 130
+  games: [31, 32, 33]
+46:
+  name: Route 131
+  games: [31, 32, 33]
+47:
+  name: Route 132
+  games: [31, 32, 33]
+48:
+  name: Route 133
+  games: [31, 32, 33]
+49:
+  name: Route 134
+  games: [31, 32, 33]
+
+# ============================================================
+# Hoenn — Unterwasser (RSE)
+# ============================================================
+51:
+  name: Unterwasser (Route 124)
+  games: [31, 32, 33]
+52:
+  name: Unterwasser (Route 126)
+  games: [31, 32, 33]
+53:
+  name: Unterwasser (Route 127)
+  games: [31, 32, 33]
+54:
+  name: Unterwasser (Route 128)
+  games: [31, 32, 33]
+55:
+  name: Unterwasser (Prachtpolis City)
+  games: [31, 32, 33]
+
+# ============================================================
+# Hoenn — Dungeons (RSE)
+# ============================================================
+56:
+  name: Granithöhle
+  games: [31, 32, 33]
+57:
+  name: Schlotberg
+  games: [31, 32, 33]
+58:
+  name: Safari-Zone
+  games: [31, 32, 33]
+60:
+  name: Blütenburgwald
+  games: [31, 32, 33]
+61:
+  name: Metaflurtunnel
+  games: [31, 32, 33]
+62:
+  name: Schiffswrack
+  games: [31, 32, 33]
+63:
+  name: Neu Malvenfroh
+  games: [31, 32, 33]
+64:
+  name: Meteorfälle
+  games: [31, 32, 33]
+66:
+  name: Pyroberg
+  games: [31, 32, 33]
+68:
+  name: Küstenhöhle
+  games: [31, 32, 33]
+69:
+  name: Tiefseehöhle
+  games: [31, 32, 33]
+70:
+  name: Unterwasser (Tiefseehöhle)
+  games: [31, 32, 33]
+71:
+  name: Siegesstraße
+  games: [31, 32, 33]
+72:
+  name: Wundereiland
+  games: [31, 32, 33]
+73:
+  name: Urzeithöhle
+  games: [31, 32, 33]
+74:
+  name: Insel im Süden
+  games: [31, 32, 33]
+75:
+  name: Feuriger Pfad
+  games: [31, 32, 33]
+77:
+  name: Steilpass
+  games: [31, 32, 33]
+79:
+  name: Siegelkammer
+  games: [31, 32, 33]
+80:
+  name: Unterwasser (Route 134)
+  games: [31, 32, 33]
+81:
+  name: Sonnengrotte
+  games: [31, 32, 33]
+82:
+  name: Inselhöhle
+  games: [31, 32, 33]
+83:
+  name: Wüstenruine
+  games: [31, 32, 33]
+84:
+  name: Grabmal
+  games: [31, 32, 33]
+86:
+  name: Himmelturm
+  games: [31, 32, 33]
+
+# ============================================================
+# Hoenn — Smaragd-exklusive Orte
+# ============================================================
+198:
+  name: Aquas Versteck
+  games: [33]
+199:
+  name: Magmas Versteck
+  games: [33]
+200:
+  name: Wunderturm
+  games: [33]
+201:
+  name: Entstehungsinsel
+  games: [33]
+203:
+  name: Höhlenatelier
+  games: [33]
+204:
+  name: Ozeanhöhle
+  games: [33]
+205:
+  name: Unterwasser (Ozeanhöhle)
+  games: [33]
+206:
+  name: Terrahöhle
+  games: [33]
+207:
+  name: Unterwasser (Route 105)
+  games: [33]
+208:
+  name: Unterwasser (Route 125)
+  games: [33]
+209:
+  name: Unterwasser (Route 129)
+  games: [33]
+210:
+  name: Wüstentunnel
+  games: [33]
+211:
+  name: Wandelhöhle
+  games: [33]
+212:
+  name: Nabelfels
+  games: [33]
+213:
+  name: Trainerberg
+  games: [33]
+
+# ============================================================
+# Kanto — Routen (FRLG)
+# ============================================================
+102:
+  name: Route 1
+  games: [34, 35]
+103:
+  name: Route 2
+  games: [34, 35]
+104:
+  name: Route 3
+  games: [34, 35]
+105:
+  name: Route 4
+  games: [34, 35]
+106:
+  name: Route 5
+  games: [34, 35]
+107:
+  name: Route 6
+  games: [34, 35]
+108:
+  name: Route 7
+  games: [34, 35]
+109:
+  name: Route 8
+  games: [34, 35]
+110:
+  name: Route 9
+  games: [34, 35]
+111:
+  name: Route 10
+  games: [34, 35]
+112:
+  name: Route 11
+  games: [34, 35]
+113:
+  name: Route 12
+  games: [34, 35]
+114:
+  name: Route 13
+  games: [34, 35]
+115:
+  name: Route 14
+  games: [34, 35]
+116:
+  name: Route 15
+  games: [34, 35]
+117:
+  name: Route 16
+  games: [34, 35]
+118:
+  name: Route 17
+  games: [34, 35]
+119:
+  name: Route 18
+  games: [34, 35]
+120:
+  name: Route 19
+  games: [34, 35]
+121:
+  name: Route 20
+  games: [34, 35]
+122:
+  name: Route 21
+  games: [34, 35]
+123:
+  name: Route 22
+  games: [34, 35]
+124:
+  name: Route 23
+  games: [34, 35]
+125:
+  name: Route 24
+  games: [34, 35]
+126:
+  name: Route 25
+  games: [34, 35]
+
+# ============================================================
+# Kanto — Dungeons (FRLG)
+# ============================================================
+127:
+  name: Vertania-Wald
+  games: [34, 35]
+128:
+  name: Mondberg
+  games: [34, 35]
+130:
+  name: Tunnelpfad (Routes 5-6)
+  games: [34, 35]
+131:
+  name: Tunnelpfad (Routes 7-8)
+  games: [34, 35]
+132:
+  name: Digdas Höhle
+  games: [34, 35]
+133:
+  name: Siegesstraße
+  games: [34, 35]
+137:
+  name: Safari-Zone
+  games: [34, 35]
+139:
+  name: Felstunnel
+  games: [34, 35]
+140:
+  name: Seeschauminseln
+  games: [34, 35]
+141:
+  name: Pokémon Turm
+  games: [34, 35]
+142:
+  name: Azuria-Höhle
+  games: [34, 35]
+143:
+  name: Kraftwerk
+  games: [34, 35]
+
+# ============================================================
+# Sevii Islands (FRLG)
+# ============================================================
+151:
+  name: Glühweg
+  games: [34, 35]
+152:
+  name: Schatzgestade
+  games: [34, 35]
+153:
+  name: Kap Kante
+  games: [34, 35]
+154:
+  name: Bundbrücke
+  games: [34, 35]
+160:
+  name: Ferienparadies
+  games: [34, 35]
+161:
+  name: Wasserirrgarten
+  games: [34, 35]
+162:
+  name: Eiland 5-Weide
+  games: [34, 35]
+164:
+  name: Fern-Eiland
+  games: [34, 35]
+165:
+  name: Grüner Pfad
+  games: [34, 35]
+166:
+  name: Wasserweg
+  games: [34, 35]
+167:
+  name: Ruinental
+  games: [34, 35]
+169:
+  name: Schluchteingang
+  games: [34, 35]
+170:
+  name: 7-Schatzschlucht
+  games: [34, 35]
+171:
+  name: Tanibo-Ruinen
+  games: [34, 35]
+175:
+  name: Nabelfels
+  games: [34, 35]
+176:
+  name: Glutberg
+  games: [34, 35]
+177:
+  name: Beerenforst
+  games: [34, 35]
+178:
+  name: Eiskaskadenhöhle
+  games: [34, 35]
+180:
+  name: Trainerturm
+  games: [34, 35]
+181:
+  name: Punktloch
+  games: [34, 35]
+182:
+  name: Verlorene Höhle
+  games: [34, 35]
+183:
+  name: Musterbuschwald
+  games: [34, 35]
+184:
+  name: Wandelhöhle
+  games: [34, 35]
+185:
+  name: Tanibo-Kammer
+  games: [34, 35]
+186:
+  name: Tri-Eiland-Pfad
+  games: [34, 35]
+188:
+  name: Entstehungsinsel
+  games: [34, 35]
+196:
+  name: Gluttherme
+  games: [34, 35]

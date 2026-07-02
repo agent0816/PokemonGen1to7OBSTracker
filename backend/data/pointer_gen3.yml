@@ -32,6 +32,10 @@
   box_pointer: 0x20300A4
   box_count: 14
   box_stride: 0x960
+  mapheaderpointer: 0x0202E828
+  battlerscountpointer: 0x02024A68
+  battleopponentidpointer: 0x0202FF5E
+  battleopponentpointer: 0x030045C0
   languages:
     1096308292:
       badgepointer: 0x2026a54
@@ -46,6 +50,10 @@
   box_pointer: 0x20300A4
   box_count: 14
   box_stride: 0x960
+  mapheaderpointer: 0x0202E828
+  battlerscountpointer: 0x02024A68
+  battleopponentidpointer: 0x0202FF5E
+  battleopponentpointer: 0x030045C0
   languages:
     1096306756:
       badgepointer: 0x2026a54
@@ -61,6 +69,10 @@
   box_pointer_offset: 0x4
   box_count: 14
   box_stride: 0x960
+  mapheaderpointer: 0x02037318
+  battlerscountpointer: 0x0202406C
+  battleopponentidpointer: 0x02038BCA
+  battleopponentpointer: 0x02024744
   languages:
     1112556868:
       badgepointer: 0x03005d8c
@@ -77,6 +89,10 @@
   box_pointer_offset: 0x4
   box_count: 14
   box_stride: 0x960
+  mapheaderpointer: 0x02036DFC
+  battlerscountpointer: 0x02023BCC
+  battleopponentidpointer: 0x020386AE
+  battleopponentpointer: 0x0202402C
   languages:
     1112560197:
       badgepointer: 0x3005008
@@ -95,6 +111,10 @@
   box_pointer_offset: 0x4
   box_count: 14
   box_stride: 0x960
+  mapheaderpointer: 0x02036DFC
+  battlerscountpointer: 0x02023BCC
+  battleopponentidpointer: 0x020386AE
+  battleopponentpointer: 0x0202402C
   languages:
     1112557380:
       badgepointer: 0x3004F58

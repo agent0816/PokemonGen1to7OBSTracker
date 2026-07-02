@@ -1,0 +1,200 @@
+# Gift/Fossil/Static/Egg Encounter-Definitionen für Gen 3
+# Keyed by mapLayoutId (u16 aus gMapHeader+0x12)
+# dexnr wird NICHT geprüft — Randomizer ändert Species
+#
+# type: gift | fossil | egg | static | trade
+# count: wie viele Pokemon an diesem Ort vergeben werden
+# repeatable: true wenn mehrfach einlösbar
+# edition: [31=Rubin, 32=Saphir, 33=Smaragd, 34=Feuerrot, 35=Blattgrün]
+# condition: optionale Bedingung (event_transfer, post_game)
+#
+# RSE-IDs auf Emerald-Basis normalisiert (R/S mapLayoutId > 107 wird
+# in Python um -1 korrigiert, da R/S LILYCOVE_EMPTY_MAP bei 108 hat).
+# FRLG-IDs direkt aus Ironmon RouteData.lua.
+#
+# mapLayoutIds aus Ironmon-Tracker RouteData.lua (setupRouteInfoAsRSE/FRLG)
+# HINWEIS: Einige Locations fehlen in Ironmon (markiert als TODO)
+
+# ============================================================
+# RSE — Gifts & Statics
+# ============================================================
+
+# Prof. Birchs Labor — Starter
+58:
+  - type: gift
+    name: Starter
+    count: 1
+    edition: [31, 32, 33]
+
+# Wetterinstitut 1F — Castform
+271:
+  - type: gift
+    name: Castform
+    count: 1
+    edition: [31, 32, 33]
+
+# Wundereiland — Latias/Latios
+291:
+  - type: static
+    name: Latias/Latios
+    count: 1
+    edition: [31, 32, 33]
+
+# Himmelturm 6F — Rayquaza
+331:
+  - type: static
+    name: Rayquaza
+    count: 1
+    edition: [31, 32, 33]
+
+# Urzeithöhle B4F — Kyogre/Groudon (nur R/S, normalisierte ID)
+# RS raw 163 → normalisiert 162 (LILYCOVE_EMPTY_MAP-Offset)
+162:
+  - type: static
+    name: Kyogre/Groudon
+    count: 1
+    edition: [31, 32]
+
+# Ozeanhöhle — Kyogre (nur Smaragd)
+413:
+  - type: static
+    name: Kyogre
+    count: 1
+    edition: [33]
+
+# Terrahöhle — Groudon (nur Smaragd)
+409:
+  - type: static
+    name: Groudon
+    count: 1
+    edition: [33]
+
+# Ferneiland — Mew (Event, nur Smaragd)
+403:
+  - type: static
+    name: Mew
+    count: 1
+    edition: [33]
+    condition: event_transfer
+
+# Entstehungsinsel — Deoxys (Event)
+404:
+  - type: static
+    name: Deoxys
+    count: 1
+    edition: [31, 32, 33]
+    condition: event_transfer
+
+# Nabelfels Gipfel — Ho-Oh (Event, nur Smaragd)
+423:
+  - type: static
+    name: Ho-Oh
+    count: 1
+    edition: [33]
+    condition: event_transfer
+
+# Nabelfels Tiefe — Lugia (Event, nur Smaragd)
+424:
+  - type: static
+    name: Lugia
+    count: 1
+    edition: [33]
+    condition: event_transfer
+
+# TODO: Folgende RSE-Gifts fehlen (mapLayoutId unbekannt, mit BizHawk verifizieren):
+# - Wynaut-Ei (alte Frau in Bad Lavastadt)
+# - Beldum (Stevens Haus in Moosbach City)
+# - Fossil-Wiederbelebung (Devon Corp. in Metarost City)
+# - Regice (Inselhöhle)
+# - Regirock (Wüstenruine)
+# - Registeel (Grabmal)
+
+# ============================================================
+# FRLG — Gifts & Statics
+# ============================================================
+
+# Prof. Eichs Labor — Starter
+5:
+  - type: gift
+    name: Starter
+    count: 1
+    edition: [34, 35]
+
+# Karate-Dojo Saffronia — Hitmonlee/Hitmonchan
+228:
+  - type: gift
+    name: Hitmonlee/Hitmonchan
+    count: 1
+    edition: [34, 35]
+
+# Silph Co. 7F — Lapras
+138:
+  - type: gift
+    name: Lapras
+    count: 1
+    edition: [34, 35]
+
+# Mondberg B2F — Fossil-Wahl
+116:
+  - type: fossil
+    name: Fossil (Mondberg)
+    count: 1
+    edition: [34, 35]
+
+# Azuria-Höhle B1F — Mewtu
+153:
+  - type: static
+    name: Mewtu
+    count: 1
+    edition: [34, 35]
+
+# Kraftwerk — Zapdos
+168:
+  - type: static
+    name: Zapdos
+    count: 1
+    edition: [34, 35]
+
+# Seeschauminseln B4F — Arktos
+160:
+  - type: static
+    name: Arktos
+    count: 1
+    edition: [34, 35]
+
+# Glutberg Gipfel — Lavados
+281:
+  - type: static
+    name: Lavados
+    count: 1
+    edition: [34, 35]
+
+# Entstehungsinsel — Deoxys (Event, FRLG)
+342:
+  - type: static
+    name: Deoxys
+    count: 1
+    edition: [34, 35]
+    condition: event_transfer
+
+# Nabelfels Gipfel — Ho-Oh (Event, FRLG)
+345:
+  - type: static
+    name: Ho-Oh
+    count: 1
+    edition: [34, 35]
+    condition: event_transfer
+
+# Nabelfels Tiefe — Lugia (Event, FRLG)
+346:
+  - type: static
+    name: Lugia
+    count: 1
+    edition: [34, 35]
+    condition: event_transfer
+
+# TODO: Folgende FRLG-Gifts fehlen (mapLayoutId unbekannt, mit BizHawk verifizieren):
+# - Evoli (Prismania City Dachgeschoss)
+# - Fossil-Wiederbelebung (Pokémon-Labor Zinnoberinsel)
+# - Togepi-Ei (NPC im Wasserirrgarten, mapLayoutId 247 hat aber Wild-Encounters)
+# - Relaxo (Route 12 / Route 16, STATIC in Ironmon bei mapLayoutId 100/104)

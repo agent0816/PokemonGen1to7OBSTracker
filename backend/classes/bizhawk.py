@@ -705,6 +705,17 @@ class Bizhawk:
                 return
             loop = asyncio.get_event_loop()
 
+            map_header_ptr = pointers.get("mapheaderpointer", 0)
+            if map_header_ptr and edition < 40:
+                # Gen 3: mapLayoutId (u16) bei gMapHeader + 0x12
+                fut = loop.create_future()
+                queue.append(("boxw", map_header_ptr + 0x12, 2, fut, ""))
+                layout_id = int.from_bytes(await fut, "little")
+                if edition in (31, 32) and layout_id > 107:
+                    layout_id -= 1
+                self._last_map_header[client_id] = layout_id
+                return
+
             mapid_offset = pointers.get("mapidoffset", 0)
             if mapid_offset:
                 self._last_map_header[client_id] = await self._resolve_gen4_pointer_chain(
@@ -752,12 +763,20 @@ class Bizhawk:
                 self.logger.debug(f"Trainer-Kampf erkannt (opponent_id=0x{opponent_id:04X}), kein Encounter")
                 return
 
-            slot_size = 220 if edition > 50 else 236
+            if edition < 40:
+                slot_size = 100
+            elif edition > 50:
+                slot_size = 220
+            else:
+                slot_size = 236
             opp_fut = loop.create_future()
             queue.append(("boxw", opp_ptr, slot_size, opp_fut, ""))
             opp_bytes = await opp_fut
 
-            opp = pokedecoder.decode_opponent_gen45(opp_bytes)
+            if edition < 40:
+                opp = pokedecoder.decode_opponent_gen3(opp_bytes)
+            else:
+                opp = pokedecoder.decode_opponent_gen45(opp_bytes)
             if opp is None:
                 self.logger.debug("Gegner-Slot leer oder ungültig")
                 return
@@ -765,21 +784,34 @@ class Bizhawk:
             route = opp["met_location"]
 
             map_header = None
-            mapid_offset = pointers.get("mapidoffset", 0)
-            if mapid_offset:
-                map_header = await self._resolve_gen4_pointer_chain(
-                    queue, pointers, mapid_offset
-                )
+            map_header_ptr = pointers.get("mapheaderpointer", 0)
+            if map_header_ptr and edition < 40:
+                fut = loop.create_future()
+                queue.append(("boxw", map_header_ptr + 0x12, 2, fut, ""))
+                layout_id = int.from_bytes(await fut, "little")
+                if edition in (31, 32) and layout_id > 107:
+                    layout_id -= 1
+                map_header = layout_id
+                if route == 0:
+                    mapsec_fut = loop.create_future()
+                    queue.append(("boxw", map_header_ptr + 0x14, 1, mapsec_fut, ""))
+                    route = (await mapsec_fut)[0]
             else:
-                map_ptr = pointers.get("mapidpointer", 0)
-                if map_ptr:
-                    map_fut = loop.create_future()
-                    queue.append(("boxw", map_ptr, 2, map_fut, ""))
-                    map_bytes = await map_fut
-                    map_header = int.from_bytes(map_bytes, "little")
+                mapid_offset = pointers.get("mapidoffset", 0)
+                if mapid_offset:
+                    map_header = await self._resolve_gen4_pointer_chain(
+                        queue, pointers, mapid_offset
+                    )
+                else:
+                    map_ptr = pointers.get("mapidpointer", 0)
+                    if map_ptr:
+                        map_fut = loop.create_future()
+                        queue.append(("boxw", map_ptr, 2, map_fut, ""))
+                        map_bytes = await map_fut
+                        map_header = int.from_bytes(map_bytes, "little")
 
-            if route == 0 and map_header is not None and map_header != 0:
-                route = map_header
+                if route == 0 and map_header is not None and map_header != 0:
+                    route = map_header
 
             self._last_battle_pv[client_id] = opp["personality"]
             if map_header is not None:

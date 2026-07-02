@@ -1,0 +1,428 @@
+# Gen 3 mapLayoutId → Ortsname (deutsch)
+# IDs aus mapLayoutId (u16 LE bei gMapHeader+0x12), Quelle: Ironmon-Tracker RouteData.lua
+# Übersetzung Englisch→Deutsch via PKHeX text_rsefrlg_00000_de.txt
+#
+# RSE und FRLG haben SEPARATE mapLayoutId-Räume mit Kollisionen!
+# Deshalb aufgeteilt in rse: und frlg: Top-Level-Keys.
+# RSE-IDs auf Emerald-Basis normalisiert (R/S mapLayoutId > 107 wird
+# in Python um -1 korrigiert, da R/S LILYCOVE_EMPTY_MAP bei 108 hat).
+#
+# Zugriff: locations[subgen][mapLayoutId]
+#   subgen = "rse" für edition 31/32/33, "frlg" für 34/35
+
+rse:
+  # === Städte ===
+  1: Blütenburg City
+  2: Graphitport City
+  3: Malvenfroh City
+  4: Metarost City
+  5: Baumhausen City
+  6: Seegrasulb City
+  7: Moosbach City
+  8: Xeneroville
+  9: Prachtpolis City
+  10: Wurzelheim
+  11: Rosaltstadt
+  12: Faustauhaven
+  13: Bad Lavastadt
+  14: Laubwechselfeld
+  15: Wiesenflur
+  16: Floßbrunn
+
+  # === Routen ===
+  17: Route 101
+  18: Route 102
+  19: Route 103
+  20: Route 104
+  21: Route 105
+  22: Route 106
+  23: Route 107
+  24: Route 108
+  25: Route 109
+  26: Route 110
+  27: Route 111
+  28: Route 112
+  29: Route 113
+  30: Route 114
+  31: Route 115
+  32: Route 116
+  33: Route 117
+  34: Route 118
+  35: Route 119
+  36: Route 120
+  37: Route 121
+  38: Route 122
+  39: Route 123
+  40: Route 124
+  41: Route 125
+  42: Route 126
+  43: Route 127
+  44: Route 128
+  45: Route 129
+  46: Route 130
+  47: Route 131
+  48: Route 132
+  49: Route 133
+  50: Route 134
+
+  # === Unterwasser ===
+  51: Unterwasser (Route 126)
+  52: Unterwasser (Route 127)
+  53: Unterwasser (Route 128)
+  274: Unterwasser (Route 124)
+
+  # === Gebäude & Innen-Maps ===
+  54: Brendans Haus 1F
+  55: Brendans Haus 2F
+  56: Maikes Haus 1F
+  57: Maikes Haus 2F
+  58: Prof. Birchs Labor
+  61: Pokémon-Center
+  62: Pokémon-Center 2F
+  63: Pokémon-Markt
+  65: Faustauhaven Arena
+  69: Bad Lavastadt Arena 1F
+  70: Bad Lavastadt Arena B1F
+  71: Bad Lavastadt Pokémon-Center
+  79: Blütenburg Arena
+  86: Ozeanmuseum 1F
+  87: Ozeanmuseum 2F
+  89: Malvenfroh Arena
+  94: Metarost Arena
+  100: Baumhausen Arena
+  108: Moosbach Arena
+  109: Xeneroville Arena 1F
+  110: Xeneroville Arena B1F
+  111: Ulrichs Raum
+  112: Antonia Raum
+  113: Frida Raum
+  114: Dragan Raum
+  115: Champ-Raum
+  136: Schlotberg
+  243: Strandhaus
+
+  # === Wetterinstitut ===
+  271: Wetterinstitut 1F
+  272: Wetterinstitut 2F
+
+  # === Weltraumzentrum (nur Smaragd) ===
+  275: Weltraumzentrum 1F
+  276: Weltraumzentrum 2F
+
+  # === Schifffahrt ===
+  277: S.S. Tidal Gang
+  278: S.S. Tidal Deck
+  279: S.S. Tidal Kabinen
+
+  # === Dungeons ===
+  125: Meteorfälle 1F 1R
+  126: Meteorfälle 1F 2R
+  127: Meteorfälle B1F 1R
+  128: Meteorfälle B1F 2R
+  129: Metaflurtunnel
+  132: Granithöhle 1F
+  133: Granithöhle B1F
+  134: Granithöhle B2F
+  135: Blütenburgwald
+  137: Pyroberg 1F
+  138: Pyroberg 2F
+  139: Pyroberg 3F
+  140: Pyroberg 4F
+  141: Pyroberg 5F
+  142: Pyroberg 6F
+  143: Aqua-Versteck 1F
+  144: Aqua-Versteck B1F
+  145: Aqua-Versteck B2F
+  146: Tiefseehöhle Unterwasser
+  147: Tiefseehöhle Eingang
+  148: Tiefseehöhle 1
+  149: Tiefseehöhle 2
+  150: Tiefseehöhle 3
+  151: Tiefseehöhle 4
+  152: Tiefseehöhle 5
+  153: Tiefseehöhle 6
+  154: Tiefseehöhle 7
+  155: Tiefseehöhle 8
+  156: Tiefseehöhle 9
+  157: Urzeithöhle
+  158: Urzeithöhle 1F
+  162: Urzeithöhle B1F
+  163: Siegesstraße 1F
+  164: Sonnengrotte 1
+  165: Sonnengrotte 2
+  166: Sonnengrotte 3
+  167: Sonnengrotte 4
+  168: Sonnengrotte Hi-1
+  169: Sonnengrotte Hi-2
+  184: Neu Malvenfroh Eingang
+  185: Neu Malvenfroh Innen
+  186: Schiffswrack Deck
+  187: Schiffswrack 1F
+  188: Schiffswrack 1F
+  189: Schiffswrack B1F
+  190: Schiffswrack B1F
+  191: Schiffswrack B1F
+  192: Schiffswrack Unterwasser 1
+  193: Schiffswrack B1F
+  194: Schiffswrack 1F
+  195: Schiffswrack Kapitän
+  196: Schiffswrack Unterwasser 2
+  238: Safari-Zone NW
+  239: Safari-Zone NO
+  240: Safari-Zone SW
+  241: Safari-Zone SO
+  247: Trickhaus 1
+  248: Trickhaus 2
+  249: Trickhaus 3
+  250: Trickhaus 4
+  251: Trickhaus 5
+  252: Trickhaus 6
+  253: Trickhaus 7
+  254: Trickhaus 8
+  270: Pokémon Liga Pokémon-Center
+  285: Siegesstraße B1F
+  286: Siegesstraße B2F
+  288: Granithöhle Steven
+  291: Wundereiland
+  292: Steilpass
+  293: Feuriger Pfad
+  302: Pyroberg Außen
+  303: Pyroberg Gipfel
+  322: Himmelturm 1F
+  324: Himmelturm 3F
+  330: Himmelturm 5F
+  331: Himmelturm 6F
+
+  # === Magma-Versteck (nur Smaragd) ===
+  336: Magma-Versteck 1F
+  337: Magma-Versteck 2Fa
+  338: Magma-Versteck 2Fb
+  339: Magma-Versteck 3Fa
+  340: Magma-Versteck 3Fb
+  341: Magma-Versteck 4F
+  379: Magma-Versteck 3Fc
+  380: Magma-Versteck 2Fc
+
+  # === Kampfzone (nur Smaragd) ===
+  332: Kampfpalais L.
+  333: Kampfpalais Halle
+  334: Kampfpalais Vor.
+  335: Kampfpalais Raum
+  345: Kampfzone
+
+  # === Wunderturm / Mirage Tower ===
+  381: Wunderturm 1F
+  382: Wunderturm 2F
+  383: Wunderturm 3F
+  388: Wunderturm 4F
+
+  # === Smaragd-exklusive Dungeons ===
+  389: Wüstentunnel
+  394: Safari-Zone Nord-Erw.
+  395: Safari-Zone Süd-Erw.
+  400: Höhlenatelier B1F
+  401: Höhlenatelier 1F
+  431: Meteorfälle Steven
+
+  # === Legendäre Orte ===
+  403: Ferneiland (Mew)
+  404: Entstehungsinsel (Deoxys)
+  409: Terrahöhle (Groudon)
+  413: Ozeanhöhle (Kyogre)
+  423: Nabelfels Gipfel (Ho-Oh)
+  424: Nabelfels Tiefe (Lugia)
+
+frlg:
+  # === Städte ===
+  78: Alabastia
+  79: Vertania City
+  80: Marmoria City
+  81: Azuria City
+  82: Lavandia
+  83: Orania City
+  84: Prismania City
+  85: Fuchsania City
+  86: Zinnoberinsel
+  87: Indigo Plateau
+  88: Saffronia City
+
+  # === Routen ===
+  89: Route 1
+  90: Route 2
+  91: Route 3
+  92: Route 4
+  93: Route 5
+  94: Route 6
+  95: Route 7
+  96: Route 8
+  97: Route 9
+  98: Route 10
+  99: Route 11
+  100: Route 12
+  101: Route 13
+  102: Route 14
+  103: Route 15
+  104: Route 16
+  105: Route 17
+  106: Route 18
+  107: Route 19
+  108: Route 20
+  109: Route 21 Nord
+  110: Route 22
+  111: Route 23
+  112: Route 24
+  113: Route 25
+  219: Route 21 Süd
+
+  # === Gebäude ===
+  1: Zuhause
+  2: Dein Zimmer
+  3: Rivalen-Haus
+  4: Rivalen-Zimmer
+  5: Prof. Eichs Labor
+  8: Pokémon-Center
+  9: Pokémon-Center 2F
+  10: Pokémon-Markt
+  12: Azuria Arena
+  15: Prismania Arena
+  20: Fuchsania Arena
+  25: Orania Arena
+  27: Spielhalle
+  28: Marmoria Arena
+  34: Saffronia Arena
+  36: Zinnoberinsel Arena
+  37: Vertania Arena
+  77: Safari-Zone Rasthaus
+  212: Pokémon Liga Pokémon-Center
+  213: Loreleis Raum
+  214: Brunos Raum
+  215: Agathas Raum
+  216: Lances Raum
+  217: Champ-Raum
+  228: Karate-Dojo
+
+  # === Dungeons ===
+  114: Mondberg 1F
+  115: Mondberg B1F
+  116: Mondberg B2F
+  117: Vertania-Wald
+  118: M.S. Anne Außen
+  119: M.S. Anne 1F
+  120: M.S. Anne 2F
+  121: M.S. Anne 3F
+  122: M.S. Anne B1F
+  123: M.S. Anne Deck
+  124: Digdas Höhle B1F
+  125: Siegesstraße 1F
+  126: Siegesstraße 2F
+  127: Siegesstraße 3F
+  128: Rocket-Versteck B1F
+  129: Rocket-Versteck B2F
+  130: Rocket-Versteck B3F
+  131: Rocket-Versteck B4F
+  132: Silph Co. 1F
+  133: Silph Co. 2F
+  134: Silph Co. 3F
+  135: Silph Co. 4F
+  136: Silph Co. 5F
+  137: Silph Co. 6F
+  138: Silph Co. 7F
+  139: Silph Co. 8F
+  140: Silph Co. 9F
+  141: Silph Co. 10F
+  142: Silph Co. 11F
+  143: Pokémon-Haus 1F
+  144: Pokémon-Haus 2F
+  145: Pokémon-Haus 3F
+  146: Pokémon-Haus B1F
+  147: Safari-Zone Mitte
+  148: Safari-Zone Ost
+  149: Safari-Zone Nord
+  150: Safari-Zone West
+  151: Azuria-Höhle 1F
+  152: Azuria-Höhle 2F
+  153: Azuria-Höhle B1F
+  154: Felstunnel 1F
+  155: Felstunnel B1F
+  156: Seeschauminseln 1F
+  157: Seeschauminseln B1F
+  158: Seeschauminseln B2F
+  159: Seeschauminseln B3F
+  160: Seeschauminseln B4F
+  161: Pokémon Turm 1F
+  162: Pokémon Turm 2F
+  163: Pokémon Turm 3F
+  164: Pokémon Turm 4F
+  165: Pokémon Turm 5F
+  166: Pokémon Turm 6F
+  167: Pokémon Turm 7F
+  168: Kraftwerk
+
+  # === Sevii Islands ===
+  230: Eiland Eins
+  232: Eiland Drei
+  233: Eiland Vier
+  234: Eiland Fünf
+  237: Glühweg
+  238: Schatzgestade
+  239: Kap Kante
+  240: Bundbrücke
+  241: Tri-Eiland Hafen
+  246: Ferienparadies
+  247: Wasserirrgarten
+  248: Eiland 5-Weide
+  249: Gedenksäule
+  250: Fern-Eiland
+  251: Grüner Pfad
+  252: Wasserweg
+  253: Ruinental
+  254: Trainerturm
+  255: Schluchteingang
+  256: 7-Schatzschlucht
+  257: Tanibo-Ruinen
+  270: Beerenforst
+  271: Eiland Eins Pokémon-Center
+  280: Glutberg Basis
+  281: Glutberg Gipfel
+  282: Glutberg Pfad 1F
+  283: Glutberg Pfad 2F
+  284: Glutberg Pfad 3F
+  285: Glutberg Rubinpfad 1F
+  286: Glutberg Rubinpfad B1Fa
+  287: Glutberg Rubinpfad B2Fa
+  288: Glutberg Rubinpfad B3F
+  289: Glutberg Rubinpfad B1Fb
+  290: Glutberg Rubinpfad B2Fb
+  292: Rocket-Lager
+  293: Eiskaskadenhöhle Eingang
+  294: Eiskaskadenhöhle 1F
+  295: Eiskaskadenhöhle B1F
+  296: Eiskaskadenhöhle Hinten
+  317: Musterbuschwald
+  321: Verlorene Höhle 1
+  322: Verlorene Höhle 2
+  323: Verlorene Höhle 3
+  324: Verlorene Höhle 4
+  325: Verlorene Höhle 5
+  326: Verlorene Höhle 6
+  327: Verlorene Höhle 7
+  328: Verlorene Höhle 8
+  329: Verlorene Höhle 9
+  330: Verlorene Höhle 10
+  331: Verlorene Höhle 11
+  332: Verlorene Höhle 12
+  333: Verlorene Höhle 13
+  334: Verlorene Höhle 14
+  335: Einamon-Kammer
+  336: Pezwulp-Kammer
+  337: Dreicke-Kammer
+  338: Vierzisse-Kammer
+  339: Fünibisku-Kammer
+  340: Wandelhöhle
+  362: Lilechs-Kammer
+  363: Sieborbia-Kammer
+
+  # === Legendäre Orte ===
+  342: Entstehungsinsel (Deoxys)
+  345: Nabelfels Gipfel (Ho-Oh)
+  346: Nabelfels Tiefe (Lugia)

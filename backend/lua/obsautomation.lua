@@ -175,18 +175,29 @@ local function check_battle(state)
     if state.gameversion > 40 then
         state.max_team_player = memory.read_u32_le(battlepointer - 0x8, state.domain)
         state.cur_team_player = memory.read_u32_le(battlepointer - 0x4, state.domain)
+        if state.max_team_player == 6 and state.cur_team_player > 0 and state.cur_team_player <= 7 then
+            pointer = battlepointer
+            state.in_battle = true
+            state.battle_msg = 'true'
+        else
+            pointer = state.old_pointer
+            state.in_battle = false
+            state.battle_msg = 'false'
+        end
+    elseif state.gameversion > 30 and state.gameversion < 40 then
+        -- Gen 3: gBattlersCount-basiert, kein Pointer-Swap
+        if battlerscountpointer then
+            local cnt = memory.readbyte(battlerscountpointer, state.domain)
+            if cnt > 0 and cnt <= 4 then
+                state.in_battle = true
+                state.battle_msg = 'true'
+            else
+                state.in_battle = false
+                state.battle_msg = 'false'
+            end
+        end
     elseif state.gameversion == 23 then
         state.cur_team_player = memory.readbyte(0xFCD7)
-    end
-
-    if state.max_team_player == 6 and state.cur_team_player > 0 and state.cur_team_player <= 7 then
-        pointer = battlepointer
-        state.in_battle = true
-        state.battle_msg = 'true'
-    else
-        pointer = state.old_pointer
-        state.in_battle = false
-        state.battle_msg = 'false'
     end
 end
 

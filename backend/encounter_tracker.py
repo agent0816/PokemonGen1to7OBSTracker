@@ -26,6 +26,7 @@ class EncounterResult:
 
 class EncounterTracker:
     _GIFT_FILES = {
+        3: "backend/data/gift_encounters_gen3.yml",
         4: "backend/data/gift_encounters_gen4.yml",
         5: "backend/data/gift_encounters_gen5.yml",
     }
@@ -52,6 +53,8 @@ class EncounterTracker:
 
     @staticmethod
     def _edition_to_gen(edition: int) -> int:
+        if 31 <= edition <= 35:
+            return 3
         if 41 <= edition <= 45:
             return 4
         if 51 <= edition <= 54:

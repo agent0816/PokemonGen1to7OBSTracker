@@ -29,6 +29,7 @@ class EncounterTracker:
         3: "backend/data/gift_encounters_gen3.yml",
         4: "backend/data/gift_encounters_gen4.yml",
         5: "backend/data/gift_encounters_gen5.yml",
+        6: "backend/data/gift_encounters_gen6.yml",
     }
 
     def __init__(self, pokedex_db, nuz: dict | None = None):
@@ -59,6 +60,8 @@ class EncounterTracker:
             return 4
         if 51 <= edition <= 54:
             return 5
+        if 61 <= edition <= 64:
+            return 6
         return 0
 
     def _load_gifts(self, edition: int) -> dict[int, list]:

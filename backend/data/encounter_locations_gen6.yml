@@ -1,0 +1,364 @@
+# Encounter-Locations für Gen 6 (XY + ORAS)
+# met_location_id -> Name + Games
+# Quelle: PKHeX text_xy_00000_de.txt (0-indexed line = met_location_id)
+# Routen, Höhlen, Städte mit Wild-Encounters (Gras, Höhlen, Wasser, Angeln)
+
+# ── XY (Kalos) ──────────────────────────────────────────────
+
+8:
+  name: Route 1
+  games: [61, 62]
+
+12:
+  name: Route 2
+  games: [61, 62]
+
+14:
+  name: Nouvaria-Wald
+  games: [61, 62]
+
+16:
+  name: Route 3
+  games: [61, 62]
+
+20:
+  name: Route 4
+  games: [61, 62]
+
+28:
+  name: Route 5
+  games: [61, 62]
+
+34:
+  name: Route 6
+  games: [61, 62]
+
+36:
+  name: Magnum-Opus-Palast
+  games: [61, 62]
+
+38:
+  name: Route 7
+  games: [61, 62]
+
+40:
+  name: Relievera City
+  games: [61, 62]
+
+42:
+  name: Route 8
+  games: [61, 62]
+
+44:
+  name: Petrophia
+  games: [61, 62]
+
+46:
+  name: Route 9
+  games: [61, 62]
+
+50:
+  name: Route 10
+  games: [61, 62]
+
+54:
+  name: Route 11
+  games: [61, 62]
+
+56:
+  name: Spiegelhöhle
+  games: [61, 62]
+
+58:
+  name: Yantara City
+  games: [61, 62]
+
+62:
+  name: Route 12
+  games: [61, 62]
+
+66:
+  name: Route 13
+  games: [61, 62]
+
+68:
+  name: Route 14
+  games: [61, 62]
+
+70:
+  name: Romantia City
+  games: [61, 62]
+
+74:
+  name: Route 15
+  games: [61, 62]
+
+78:
+  name: Route 16
+  games: [61, 62]
+
+82:
+  name: Frosthöhle
+  games: [61, 62]
+
+84:
+  name: Route 17
+  games: [61, 62]
+
+88:
+  name: Route 18
+  games: [61, 62]
+
+90:
+  name: Mosaia
+  games: [61, 62]
+
+92:
+  name: Route 19
+  games: [61, 62]
+
+96:
+  name: Route 20
+  games: [61, 62]
+
+97:
+  name: Irrwald
+  games: [61, 62]
+
+98:
+  name: Pokémon-Dorf
+  games: [61, 62]
+
+100:
+  name: Route 21
+  games: [61, 62]
+
+102:
+  name: Route 22
+  games: [61, 62]
+
+104:
+  name: Siegesstraße
+  games: [61, 62]
+
+112:
+  name: Azurbucht
+  games: [61, 62]
+
+132:
+  name: Leuchthöhle
+  games: [61, 62]
+
+134:
+  name: Geolinkhöhle
+  games: [61, 62]
+
+140:
+  name: Omega-Höhle
+  games: [61, 62]
+
+142:
+  name: Hotelruine
+  games: [61, 62]
+
+144:
+  name: Kammer der Leere
+  games: [61, 62]
+
+148:
+  name: Kontaktsafari
+  games: [61, 62]
+
+# ── ORAS (Hoenn) ────────────────────────────────────────────
+
+204:
+  name: Route 101
+  games: [63, 64]
+
+206:
+  name: Route 102
+  games: [63, 64]
+
+208:
+  name: Route 103
+  games: [63, 64]
+
+210:
+  name: Route 104
+  games: [63, 64]
+
+212:
+  name: Route 105
+  games: [63, 64]
+
+214:
+  name: Route 106
+  games: [63, 64]
+
+216:
+  name: Route 107
+  games: [63, 64]
+
+218:
+  name: Route 108
+  games: [63, 64]
+
+220:
+  name: Route 109
+  games: [63, 64]
+
+222:
+  name: Route 110
+  games: [63, 64]
+
+224:
+  name: Route 111
+  games: [63, 64]
+
+226:
+  name: Route 112
+  games: [63, 64]
+
+228:
+  name: Route 113
+  games: [63, 64]
+
+230:
+  name: Route 114
+  games: [63, 64]
+
+232:
+  name: Route 115
+  games: [63, 64]
+
+234:
+  name: Route 116
+  games: [63, 64]
+
+236:
+  name: Route 117
+  games: [63, 64]
+
+238:
+  name: Route 118
+  games: [63, 64]
+
+240:
+  name: Route 119
+  games: [63, 64]
+
+242:
+  name: Route 120
+  games: [63, 64]
+
+244:
+  name: Route 121
+  games: [63, 64]
+
+246:
+  name: Route 122
+  games: [63, 64]
+
+248:
+  name: Route 123
+  games: [63, 64]
+
+250:
+  name: Route 124
+  games: [63, 64]
+
+252:
+  name: Route 125
+  games: [63, 64]
+
+254:
+  name: Route 126
+  games: [63, 64]
+
+256:
+  name: Route 127
+  games: [63, 64]
+
+258:
+  name: Route 128
+  games: [63, 64]
+
+260:
+  name: Route 129
+  games: [63, 64]
+
+262:
+  name: Route 130
+  games: [63, 64]
+
+264:
+  name: Route 131
+  games: [63, 64]
+
+266:
+  name: Route 132
+  games: [63, 64]
+
+268:
+  name: Route 133
+  games: [63, 64]
+
+270:
+  name: Route 134
+  games: [63, 64]
+
+272:
+  name: Meteorfälle
+  games: [63, 64]
+
+274:
+  name: Metaflurtunnel
+  games: [63, 64]
+
+280:
+  name: Granithöhle
+  games: [63, 64]
+
+282:
+  name: Blütenburgwald
+  games: [63, 64]
+
+284:
+  name: Schlotberg
+  games: [63, 64]
+
+286:
+  name: Steilpass
+  games: [63, 64]
+
+288:
+  name: Feuriger Pfad
+  games: [63, 64]
+
+290:
+  name: Pyroberg
+  games: [63, 64]
+
+294:
+  name: Tiefseehöhle
+  games: [63, 64]
+
+298:
+  name: Siegesstraße
+  games: [63, 64]
+
+306:
+  name: Inselhöhle
+  games: [63, 64]
+
+324:
+  name: Safari-Zone
+  games: [63, 64]
+
+326:
+  name: Wunderwald
+  games: [63, 64]
+
+328:
+  name: Wunderhöhle
+  games: [63, 64]

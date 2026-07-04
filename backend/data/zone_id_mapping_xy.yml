@@ -1,0 +1,68 @@
+# Runtime zone_id -> met_location_id Mapping für Pokemon X/Y
+# zone_id wird aus 0x08CEC568 gelesen (u16, ändert sich bei Routenwechsel)
+# met_location_id = PKHeX text_xy_00000_de.txt Zeilenindex (0-basiert)
+#
+# Erstellt mit tools/zone_logger.py + ROM-Extraktion (tools/extract_zonedata.py)
+
+# ── Städte / Nicht-Encounter-Zonen ──
+0x0218: 0    # Zwischenraum: Route 5 -> Illumina City
+0x022C: 0    # Château Tristesse
+0x025C: 0    # Nouvaria City - Arena (Vorraum)
+0x02B4: 0    # Zwischenraum: Route 4 -> Illumina City
+0x031C: 0    # Prof. Platans Labor (1. Stock)
+0x032C: 0    # Vanitéa
+0x0378: 0    # Nouvaria City - Arena (Kampfraum)
+0x03E0: 0    # Prof. Platans Labor (EG)
+0x0438: 0    # Nouvaria City
+0x0450: 0    # Escissia
+0x046C: 0    # Prof. Platans Labor (2. Stock)
+0x04A4: 0    # Aquarellia
+0x0630: 0    # Nouvaria City - Pokemon Center
+0x0B30: 0    # Illumina City (Südring)
+
+# ── Encounter-Zonen (verifiziert via zone_logger) ──
+0x0164: 8    # Route 1
+0x0264: 12   # Route 2
+0x0A68: 14   # Nouvaria-Wald
+0x0434: 16   # Route 3
+0x04FC: 20   # Route 4
+0x06DC: 28   # Route 5
+0x0B04: 38   # Route 7
+0x0604: 42   # Route 8 (Bereich 1)
+0x06E4: 42   # Route 8 (Bereich 2)
+0x05AC: 102  # Route 22
+0x02F0: 134  # Geolinkhöhle (korrigiert: war 125)
+
+# ── Encounter-Zonen (zone_id noch nicht geloggt) ──
+# Mit zone_logger.py ermitteln und oben eintragen
+# Route 6             met_location: 34
+# Magnum-Opus-Palast  met_location: 36
+# Relievera City      met_location: 40
+# Petrophia           met_location: 44
+# Route 9             met_location: 46
+# Route 10            met_location: 50
+# Route 11            met_location: 54
+# Spiegelhöhle        met_location: 56
+# Yantara City        met_location: 58
+# Route 12            met_location: 62
+# Route 13            met_location: 66
+# Route 14            met_location: 68
+# Romantia City       met_location: 70
+# Route 15            met_location: 74
+# Route 16            met_location: 78
+# Frosthöhle          met_location: 82
+# Route 17            met_location: 84
+# Route 18            met_location: 88
+# Mosaia              met_location: 90
+# Route 19            met_location: 92
+# Route 20            met_location: 96
+# Irrwald             met_location: 97
+# Pokémon-Dorf        met_location: 98
+# Route 21            met_location: 100
+# Siegesstraße         met_location: 104
+# Azurbucht           met_location: 112
+# Leuchthöhle         met_location: 132
+# Omega-Höhle         met_location: 140
+# Hotelruine          met_location: 142
+# Kammer der Leere    met_location: 144
+# Kontaktsafari       met_location: 148

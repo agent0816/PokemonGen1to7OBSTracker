@@ -1,0 +1,246 @@
+# Gift/Fossil/Static/Egg Encounter-Definitionen für Gen 6
+# Keyed by zone_id (u16 aus encounter_zone_pointer, Runtime-Wert)
+# dexnr wird NICHT geprüft — Randomizer ändert Species
+#
+# type: gift | fossil | egg | static | trade
+# count: wie viele Pokemon an diesem Ort vergeben werden
+# repeatable: true wenn mehrfach einlösbar
+# edition: [61=X, 62=Y, 63=OR, 64=AS] — wenn leer, gilt für alle XY bzw. ORAS
+# condition: optionale Bedingung (event_transfer, post_game)
+#
+# Zone-IDs aus zone_logger.py (nur Runtime-verifizierte Werte verwenden!)
+# HINWEIS: Viele Zone-IDs noch nicht verifiziert — mit zone_logger.py beim
+#          Spielen ermitteln und hier eintragen.
+
+# ============================================================
+# XY — Gifts
+# ============================================================
+
+# Aquarellia — Kalos-Starter (Igamaro/Fynx/Froxy) von Nachbarn
+# TODO: zone_id mit zone_logger.py in der Starter-Szene ermitteln
+#       (indoor, wahrscheinlich NICHT 0x04A4 = Aquarellia outdoor)
+# ???:
+#   - type: gift
+#     name: Kalos-Starter
+#     count: 1
+#     edition: [61, 62]
+
+# Prof. Platans Labor — Kanto-Starter (Bisasam/Glumanda/Schiggy)
+# Verifiziert: Labor hat zone_ids 0x03E0 (EG), 0x031C (1F), 0x046C (2F)
+# TODO: verifizieren welches Stockwerk — vermutlich 2F (0x046C)
+0x046C:
+  - type: gift
+    name: Kanto-Starter
+    count: 1
+    edition: [61, 62]
+
+# Petrophia — Fossil-Wiederbelebung (Balgoras/Amarino)
+# TODO: zone_id für Petrophia Fossil-Labor mit zone_logger.py ermitteln
+# ???:
+#   - type: fossil
+#     name: Fossil-Wiederbelebung
+#     count: 1
+#     edition: [61, 62]
+
+# Turm der Erkenntnis — Lucario von Connie (mit Lucarionit)
+# TODO: zone_id für Turm der Erkenntnis mit zone_logger.py ermitteln
+# ???:
+#   - type: gift
+#     name: Lucario
+#     count: 1
+#     edition: [61, 62]
+
+# Route 12 — Lapras von NPC
+# TODO: zone_id für Route 12 mit zone_logger.py ermitteln
+#       (könnte gleiche zone_id wie Route-12-Encounter sein)
+# ???:
+#   - type: gift
+#     name: Lapras
+#     count: 1
+#     edition: [61, 62]
+
+# ============================================================
+# XY — Static Encounters
+# ============================================================
+
+# Team-Flare-Geheimbasis — Xerneas (X) / Yveltal (Y)
+# TODO: zone_id für Flare-Geheimbasis mit zone_logger.py ermitteln
+# ???:
+#   - type: static
+#     name: Xerneas/Yveltal
+#     count: 1
+#     edition: [61, 62]
+
+# Omega-Höhle — Zygarde (Post-Game)
+# TODO: zone_id für Omega-Höhle mit zone_logger.py ermitteln
+# ???:
+#   - type: static
+#     name: Zygarde
+#     count: 1
+#     edition: [61, 62]
+#     condition: post_game
+
+# Pokémon-Dorf Höhle — Mewtu (Post-Game)
+# TODO: zone_id für die Höhle beim Pokémon-Dorf ermitteln
+# ???:
+#   - type: static
+#     name: Mewtu
+#     count: 1
+#     edition: [61, 62]
+#     condition: post_game
+
+# Meerestitanenhöhle — Arktos/Zapdos/Lavados (Post-Game, nach Roaming)
+# TODO: zone_id für Meerestitanenhöhle ermitteln
+# ???:
+#   - type: static
+#     name: Legendärer Vogel
+#     count: 1
+#     edition: [61, 62]
+#     condition: post_game
+
+# ============================================================
+# ORAS — Gifts
+# ============================================================
+
+# Route 101 / Wurzelheim — Hoenn-Starter (Geckarbor/Flemmli/Hydropi) von Prof. Birk
+# TODO: zone_id für die Starter-Szene auf Route 101 ermitteln
+# ???:
+#   - type: gift
+#     name: Hoenn-Starter
+#     count: 1
+#     edition: [63, 64]
+
+# Wetterinstitut — Formeo
+# TODO: zone_id für Wetterinstitut ermitteln
+# ???:
+#   - type: gift
+#     name: Formeo
+#     count: 1
+#     edition: [63, 64]
+
+# Moosbach City — Tanhel von Troy (Post-Game, Stevens Haus)
+# TODO: zone_id für Stevens Haus in Moosbach ermitteln
+# ???:
+#   - type: gift
+#     name: Tanhel
+#     count: 1
+#     edition: [63, 64]
+#     condition: post_game
+
+# Bad Lavastadt — Isso-Ei (alte Frau)
+# TODO: zone_id für Bad Lavastadt Haus ermitteln
+# ???:
+#   - type: egg
+#     name: Isso-Ei
+#     count: 1
+#     edition: [63, 64]
+
+# Metarost City — Devon Corp Fossil-Wiederbelebung
+# TODO: zone_id für Devon Corp ermitteln
+# ???:
+#   - type: fossil
+#     name: Fossil-Wiederbelebung
+#     count: 1
+#     edition: [63, 64]
+
+# Malvenfroh City — Latias (AS) / Latios (OR) als Story-Gift
+# TODO: zone_id für Malvenfroh Cutscene ermitteln
+# ???:
+#   - type: gift
+#     name: Latias/Latios
+#     count: 1
+#     edition: [63, 64]
+
+# Graphitport City — Cosplay-Pikachu (Contest-Halle)
+# TODO: zone_id für Contest-Halle ermitteln
+# ???:
+#   - type: gift
+#     name: Cosplay-Pikachu
+#     count: 1
+#     edition: [63, 64]
+
+# ============================================================
+# ORAS — Static Encounters
+# ============================================================
+
+# Urzeithöhle — Groudon (OR) / Kyogre (AS)
+# TODO: zone_id für Urzeithöhle ermitteln
+# ???:
+#   - type: static
+#     name: Groudon/Kyogre
+#     count: 1
+#     edition: [63, 64]
+
+# Himmelturm — Rayquaza (Delta-Episode)
+# TODO: zone_id für Himmelturm ermitteln
+# ???:
+#   - type: static
+#     name: Rayquaza
+#     count: 1
+#     edition: [63, 64]
+
+# Luftraum — Deoxys (Delta-Episode)
+# TODO: zone_id für Luftraum-Kampf ermitteln
+# ???:
+#   - type: static
+#     name: Deoxys
+#     count: 1
+#     edition: [63, 64]
+
+# Inselhöhle — Regice
+# TODO: zone_id für Inselhöhle ermitteln
+# ???:
+#   - type: static
+#     name: Regice
+#     count: 1
+#     edition: [63, 64]
+
+# Wüstenruine — Regirock
+# TODO: zone_id für Wüstenruine ermitteln
+# ???:
+#   - type: static
+#     name: Regirock
+#     count: 1
+#     edition: [63, 64]
+
+# Grabmal — Registeel
+# TODO: zone_id für Grabmal ermitteln
+# ???:
+#   - type: static
+#     name: Registeel
+#     count: 1
+#     edition: [63, 64]
+
+# Inselhöhle — Regigigas (alle 3 Regis + Nickname)
+# TODO: zone_id (evtl. gleich wie Regice-Inselhöhle)
+# ???:
+#   - type: static
+#     name: Regigigas
+#     count: 1
+#     edition: [63, 64]
+
+# ============================================================
+# ORAS — Wunderorte (Soaring-Legendäre, Post-Game)
+# ============================================================
+# Alle Soaring-Legendären erscheinen in Wunderorten (Mirage Spots).
+# Die Zone-IDs sind unbekannt. Encounter-Locations:
+#   326 = Wunderwald, 328 = Wunderhöhle, 330 = Wundereiland,
+#   332 = Wunderberg
+#
+# Legendäre:
+# - Ho-Oh (OR) / Lugia (AS) — Wundereiland (bei Seewoge Malvenfroh)
+# - Dialga (OR) / Palkia (AS) — Wunderhöhle
+# - Reshiram (OR) / Zekrom (AS) — Wunderberg
+# - Giratina — Wunderhöhle (braucht Dialga + Palkia)
+# - Kyurem — Wunderhöhle (braucht Reshiram + Zekrom)
+# - Heatran — Wunderhöhle (Kampfresort-Nähe)
+# - Tornadus (OR) / Thundurus (AS) — Wunderwolke
+# - Landorus — Wunderwolke (braucht Tornadus + Thundurus)
+# - Raikou (OR) / Entei (AS) — Wilder Wald
+# - Suicune — Wilder Wald (braucht Raikou + Entei)
+# - Uxie, Mesprit, Azelf — Namenlose Ebene
+# - Cobalion, Terrakion, Virizion — Sichelinsel
+# - Cresselia — Sichelinsel
+#
+# TODO: Zone-IDs für Wunderorte mit zone_logger.py ermitteln.
+#       Jeder Wunderort-Typ hat vermutlich eine eigene zone_id.

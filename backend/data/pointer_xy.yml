@@ -19,3 +19,6 @@ bag_keyitems: 0x08c67b94
 bag_tmvm: 0x08c67d14
 bag_medizin: 0x08c67ebc
 bag_beeren: 0x08c67fbc
+# Encounter-Tracking (verifiziert: PokemonCheatPlugin + CitraRNG)
+encounter_pokemon: 0x081FF744
+encounter_zone_pointer: 0x08CEC568

@@ -1,0 +1,60 @@
+# Runtime zone_id -> met_location_id Mapping für Pokemon ORAS
+# zone_id wird aus 0x08D0646C gelesen (u16, ändert sich bei Routenwechsel)
+# met_location_id = PKHeX text_xy_00000_de.txt Zeilenindex (0-basiert)
+#
+# Erstellt mit tools/zone_logger.py
+# TODO: Alle Zonen müssen noch per zone_logger.py gemappt werden
+
+# ── Encounter-Zonen (verifiziert via zone_logger) ──
+# (noch keine Einträge — zone_logger muss in ORAS laufen)
+
+# ── Encounter-Zonen (zone_id noch nicht geloggt) ──
+# Mit zone_logger.py ermitteln und oben eintragen
+# Route 101          met_location: 204
+# Route 102          met_location: 206
+# Route 103          met_location: 208
+# Route 104          met_location: 210
+# Route 105          met_location: 212
+# Route 106          met_location: 214
+# Route 107          met_location: 216
+# Route 108          met_location: 218
+# Route 109          met_location: 220
+# Route 110          met_location: 222
+# Route 111          met_location: 224
+# Route 112          met_location: 226
+# Route 113          met_location: 228
+# Route 114          met_location: 230
+# Route 115          met_location: 232
+# Route 116          met_location: 234
+# Route 117          met_location: 236
+# Route 118          met_location: 238
+# Route 119          met_location: 240
+# Route 120          met_location: 242
+# Route 121          met_location: 244
+# Route 122          met_location: 246
+# Route 123          met_location: 248
+# Route 124          met_location: 250
+# Route 125          met_location: 252
+# Route 126          met_location: 254
+# Route 127          met_location: 256
+# Route 128          met_location: 258
+# Route 129          met_location: 260
+# Route 130          met_location: 262
+# Route 131          met_location: 264
+# Route 132          met_location: 266
+# Route 133          met_location: 268
+# Route 134          met_location: 270
+# Meteorfälle        met_location: 272
+# Metaflurtunnel     met_location: 274
+# Granithöhle        met_location: 280
+# Blütenburgwald     met_location: 282
+# Schlotberg         met_location: 284
+# Steilpass          met_location: 286
+# Feuriger Pfad      met_location: 288
+# Pyroberg           met_location: 290
+# Tiefseehöhle       met_location: 294
+# Siegesstraße        met_location: 298
+# Inselhöhle         met_location: 306
+# Safari-Zone        met_location: 324
+# Wunderwald         met_location: 326
+# Wunderhöhle        met_location: 328

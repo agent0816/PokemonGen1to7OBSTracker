@@ -8,6 +8,7 @@ from backend.classes.munchlax import Munchlax
 from backend.classes.Pokemon import Pokemon
 import backend.pokedecoder as pokedecoder
 import backend.bag_decoder as bag_decoder
+from backend.encounter_tracker import EncounterTracker
 from backend.logging_setup import get_logger
 
 BLOCK_SIZE = 56
@@ -39,6 +40,14 @@ class CitraHandler:
         self.bag_write_queue: list[tuple[int, bytes, "asyncio.Future[bool]"]] = []
         self._last_bag_refresh: float = 0.0
         self._bag_refresh_inflight: bool = False
+        # Encounter-Tracking
+        self._encounter_tracker: EncounterTracker | None = None
+        self._current_battle_kind: int = 0
+        self._in_wild_battle: bool = False
+        self._encounter_processed: bool = False
+        self._last_battle_pv: int | None = None
+        self._last_team_pvs: set[int] = set()
+        self._zone_id_mappings: dict[int, int] = {}
         # Serialisiert add_rare_candies-Aufrufe gegen sich selbst — verhindert,
         # dass schnelle Doppelklicks den selben leeren Slot doppelt allokieren.
         self._bag_io_lock: asyncio.Lock = asyncio.Lock()
@@ -126,6 +135,8 @@ class CitraHandler:
 
                 self.update_teams(new_data)
                 self.update_stats(update_data)
+
+                self._process_encounter_tick()
 
                 # Periodischer Bag-Refresh alle 5 s. Der eigentliche Read
                 # laeuft als Background-Task, der Pockets in bag_request_queue
@@ -296,6 +307,7 @@ class CitraHandler:
     def read_in_battle_stats(self):
         result = {}
         battle_kind = int.from_bytes(self.citra_instance.read_memory(self.pointer["battle_kind"], 2), 'little')
+        self._current_battle_kind = battle_kind
         self.logger.debug(f"battle_kind=0x{battle_kind:04X} (trainer=0x{self.pointer['trainer_value']:04X}, wild=0x{self.pointer['wild_value']:04X})")
         if battle_kind == self.pointer["trainer_value"]:
             read_address = self.pointer["kampf_trainer"]
@@ -562,6 +574,7 @@ class CitraHandler:
         self._select_game_process()
         self.set_pointer()
         self.set_player_number()
+        self._load_zone_mappings()
         if not self.player_number:
             self.is_connected = False
         asyncio.create_task(self.handle_citra())
@@ -580,6 +593,231 @@ class CitraHandler:
             name = self.munchlax.pl.get('your_name', '')
             if name:
                 self.munchlax.player_names[self.player_number] = name
+
+    # ── Encounter-Tracking ──────────────────────────────────────
+
+    def _load_zone_mappings(self):
+        self._zone_id_mappings = {}
+        if self.edition in (61, 62):
+            path = "backend/data/zone_id_mapping_xy.yml"
+        elif self.edition in (63, 64):
+            path = "backend/data/zone_id_mapping_oras.yml"
+        else:
+            return
+        try:
+            with open(path) as f:
+                raw = yaml.safe_load(f) or {}
+            for zone_id, met_loc in raw.items():
+                if isinstance(met_loc, int) and met_loc > 0:
+                    self._zone_id_mappings[int(zone_id)] = met_loc
+            self.logger.info(f"Zone-Mapping geladen: {path} ({len(self._zone_id_mappings)} Einträge)")
+        except FileNotFoundError:
+            self.logger.info(f"Zone-Mapping nicht gefunden: {path}")
+        except Exception as err:
+            self.logger.warning(f"Zone-Mapping laden fehlgeschlagen: {path}: {err}")
+
+    def _ensure_encounter_tracker(self) -> bool:
+        if self._encounter_tracker is not None:
+            return True
+        self.munchlax._ensure_pokedex_db()
+        if self.munchlax.pokedex_db is not None:
+            self._encounter_tracker = EncounterTracker(
+                self.munchlax.pokedex_db,
+                self.munchlax.nuz,
+            )
+            return True
+        return False
+
+    def _read_zone_id(self) -> int:
+        zone_ptr = self.pointer.get("encounter_zone_pointer", 0)
+        if not zone_ptr:
+            return 0
+        zone_bytes = self.citra_instance.read_memory(zone_ptr, 2)
+        return int.from_bytes(zone_bytes, "little")
+
+    def _process_encounter_tick(self):
+        in_wild = self._current_battle_kind == self.pointer["wild_value"]
+        in_battle = in_wild or self._current_battle_kind == self.pointer["trainer_value"]
+
+        if in_wild and not self._encounter_processed:
+            self._encounter_processed = True
+            self._in_wild_battle = True
+            self._read_and_process_encounter()
+        elif not in_battle and self._in_wild_battle:
+            self._in_wild_battle = False
+            self._encounter_processed = False
+            self._check_encounter_outcome()
+        elif not in_battle:
+            self._encounter_processed = False
+            self._check_gift_encounters()
+
+    def _read_and_process_encounter(self):
+        try:
+            enc_ptr = self.pointer.get("encounter_pokemon", 0)
+            if not enc_ptr:
+                self.logger.debug("encounter_pokemon Pointer nicht konfiguriert, Encounter-Tracking inaktiv")
+                return
+
+            enc_data = self.citra_instance.read_memory(enc_ptr, SLOT_DATA_SIZE)
+            opp = pokedecoder.decode_opponent_gen67(enc_data)
+            if opp is None:
+                self.logger.debug("Gegner-Slot leer oder ungültig")
+                return
+
+            zone_id = self._read_zone_id()
+            route = opp["met_location"]
+            if route == 0:
+                route = self._zone_id_mappings.get(zone_id, 0)
+
+            self._last_battle_pv = opp["personality"]
+
+            if not self._ensure_encounter_tracker():
+                self.logger.warning("PokedexDB nicht verfügbar, Encounter wird übersprungen")
+                return
+
+            from backend.classes.pokedex_db import PokedexDB
+            owner = PokedexDB.build_owner(
+                self.munchlax.pl.get('your_name', ''), str(self.player_number)
+            )
+
+            result = self._encounter_tracker.process_wild_encounter(
+                owner, self.edition, opp, route
+            )
+
+            if result.already_logged:
+                self.logger.debug(f"Encounter bereits geloggt (PV={opp['personality']:#x})")
+            else:
+                zone_info = f" zone_id=0x{zone_id:04X}" if zone_id else ""
+                self.logger.info(
+                    f"Encounter: route={route}{zone_info} dex={opp['dexnr']} "
+                    f"lv={opp['lvl']} shiny={opp['shiny']} first={result.is_first} "
+                    f"shiny_override={result.is_shiny_override} "
+                    f"dupes={result.is_dupes_skip} balls={result.has_balls}"
+                )
+                asyncio.create_task(self.munchlax.send_encounter_sync({
+                    "personality": int(opp["personality"]),
+                    "owner": owner,
+                    "edition": int(self.edition),
+                    "route": int(route),
+                    "dexnr": int(opp["dexnr"]),
+                    "lvl": int(opp["lvl"]),
+                    "shiny": int(opp["shiny"]),
+                    "is_first": int(result.is_first),
+                    "is_shiny_override": int(result.is_shiny_override),
+                    "is_dupes_skip": int(result.is_dupes_skip),
+                    "has_balls": int(result.has_balls),
+                    "method": result.method,
+                    "outcome": result.outcome,
+                }))
+        except Exception as err:
+            self.logger.error(f"Encounter-Read fehlgeschlagen: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+
+    def _check_encounter_outcome(self):
+        try:
+            battle_pv = self._last_battle_pv
+            self._last_battle_pv = None
+            if battle_pv is None or self._encounter_tracker is None:
+                return
+
+            team = self.munchlax.bizhawk_teams.get(self.player_number, [])
+            team_pvs = set()
+            for p in team[:6]:
+                pv = getattr(p, "personality", None)
+                if pv is not None:
+                    team_pvs.add(int(pv))
+
+            from backend.classes.pokedex_db import PokedexDB
+            owner = PokedexDB.build_owner(
+                self.munchlax.pl.get('your_name', ''), str(self.player_number)
+            )
+
+            outcome = "caught" if int(battle_pv) in team_pvs else "not_caught"
+
+            updated = self._encounter_tracker.update_outcome(int(battle_pv), owner, outcome)
+            if updated:
+                self.logger.info(f"Encounter-Outcome: PV={battle_pv:#x} → {outcome}")
+                asyncio.create_task(
+                    self.munchlax.send_encounter_outcome(int(battle_pv), owner, outcome)
+                )
+        except Exception as err:
+            self.logger.error(f"Outcome-Check fehlgeschlagen: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+
+    def _check_gift_encounters(self):
+        if self.player_number is None:
+            return
+
+        team = self.munchlax.bizhawk_teams.get(self.player_number, [])
+        current_pvs = set()
+        for p in team[:6]:
+            pv = getattr(p, "personality", None)
+            if pv is not None and pv != 0:
+                current_pvs.add(int(pv))
+
+        if not self._last_team_pvs:
+            self._last_team_pvs = current_pvs
+            return
+
+        new_pvs = current_pvs - self._last_team_pvs
+        self._last_team_pvs = current_pvs
+
+        if not new_pvs or not self._ensure_encounter_tracker():
+            return
+
+        zone_id = self._read_zone_id()
+
+        from backend.classes.pokedex_db import PokedexDB
+        owner = PokedexDB.build_owner(
+            self.munchlax.pl.get('your_name', ''), str(self.player_number)
+        )
+
+        for pv in new_pvs:
+            if pv == self._last_battle_pv:
+                continue
+
+            pokemon = None
+            for p in team[:6]:
+                if getattr(p, "personality", None) is not None and int(p.personality) == pv:
+                    pokemon = p
+                    break
+            if pokemon is None:
+                continue
+
+            dexnr = pokemon.dexnr
+            if dexnr == 0 or dexnr == "egg":
+                continue
+
+            result = self._encounter_tracker.process_gift_encounter(
+                owner=owner,
+                edition=int(self.edition),
+                personality=pv,
+                dexnr=int(dexnr) if isinstance(dexnr, (int, str)) and str(dexnr).isdigit() else 0,
+                lvl=pokemon.lvl or 1,
+                shiny=bool(pokemon.shiny),
+                route=getattr(pokemon, "route", 0) or 0,
+                map_header_id=zone_id,
+            )
+            if result and not result.already_logged:
+                self.logger.info(
+                    f"Gift erkannt: dex={dexnr} lv={pokemon.lvl} "
+                    f"method={result.method} zone_id=0x{zone_id:04X}"
+                )
+                asyncio.create_task(self.munchlax.send_encounter_sync({
+                    "personality": int(pv),
+                    "owner": owner,
+                    "edition": int(self.edition),
+                    "route": int(result.route),
+                    "dexnr": int(result.dexnr),
+                    "lvl": int(result.lvl),
+                    "shiny": int(result.shiny),
+                    "is_first": int(result.is_first),
+                    "is_shiny_override": int(result.is_shiny_override),
+                    "is_dupes_skip": int(result.is_dupes_skip),
+                    "has_balls": int(result.has_balls),
+                    "method": result.method,
+                    "outcome": result.outcome,
+                }))
 
     async def _auto_reconnect(self) -> bool:
         delays = [10, 20, 40]

@@ -153,6 +153,42 @@ def decode_opponent_gen3(data: bytes) -> dict | None:
     }
 
 
+def decode_opponent_gen67(data: bytes) -> dict | None:
+    """Dekodiert Species, Level, Shiny, Personality und met_location
+    aus einem Gen-6/7-Wild-Encounter-Slot (232 Bytes PK6)."""
+    if len(data) < 232:
+        return None
+    encryption_key = int.from_bytes(data[:4], "little")
+    if encryption_key == 0 and int.from_bytes(data[4:8], "little") == 0:
+        return None
+
+    unshuffled_bytes, _, shiny_value, _ = decryptpokemon(data, "67")
+
+    checksum_given = int.from_bytes(data[0x06:0x08], "little")
+    checksum_calculated = calculate_checksum(unshuffled_bytes)
+    if checksum_given != checksum_calculated:
+        return None
+
+    dexnr = int.from_bytes(unshuffled_bytes[0:2], "little")
+    if dexnr == 0 or dexnr >= 810:
+        return None
+
+    personality = int.from_bytes(unshuffled_bytes[0x10:0x14], "little")
+    met_location = int.from_bytes(unshuffled_bytes[0xD2:0xD4], "little")
+    lvl = unshuffled_bytes[0xD4] & 0x7F
+    if lvl == 0:
+        xp = int.from_bytes(unshuffled_bytes[0x08:0x0C], "little")
+        lvl = xp_to_level_mediumfast(xp)
+
+    return {
+        "dexnr": dexnr,
+        "lvl": lvl,
+        "shiny": shiny_value < 17,
+        "personality": personality,
+        "met_location": met_location,
+    }
+
+
 def decryptpokemon3(data):
     # offset_lut = [[0, 1, 2, 3],[0, 1, 3, 2],[0, 2, 1, 3],[0, 2, 3, 1],[0, 3, 1, 2],[0, 3, 2, 1],[1, 0, 2, 3],[1, 0, 3, 2],[1, 2, 0, 3],[1, 2, 3, 0],[1, 3, 0, 2],[1, 3, 2, 0],[2, 0, 1, 3],[2, 0, 3, 1],[2, 1, 0, 3],[2, 1, 3, 0],[2, 3, 0, 1],[2, 3, 1, 0],[3, 0, 1, 2],[3, 0, 2, 1],[3, 1, 0, 2],[3, 1, 2, 0],[3, 2, 0, 1],[3, 2, 1, 0],]
     offset_lut = [[0, 1, 2, 3],[0, 1, 3, 2],[0, 2, 1, 3],[0, 3, 1, 2],[0, 2, 3, 1],[0, 3, 2, 1],[1, 0, 2, 3],[1, 0, 3, 2],[2, 0, 1, 3],[3, 0, 1, 2],[2, 0, 3, 1],[3, 0, 2, 1],[1, 2, 0, 3],[1, 3, 0, 2],[2, 1, 0, 3],[3, 1, 0, 2],[2, 3, 0, 1],[3, 2, 0, 1],[1, 2, 3, 0],[1, 3, 2, 0],[2, 1, 3, 0],[3, 1, 2, 0],[2, 3, 1, 0],[3, 2, 1, 0],]

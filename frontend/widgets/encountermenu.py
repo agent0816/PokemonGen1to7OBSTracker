@@ -26,7 +26,7 @@ except Exception as err:
     species_de = {}
 
 _ENCOUNTER_LOCATIONS: dict[int, dict] = {}
-for _gen, _filename in ((3, "encounter_locations_gen3.yml"), (4, "encounter_locations_gen4.yml"), (5, "encounter_locations_gen5.yml")):
+for _gen, _filename in ((3, "encounter_locations_gen3.yml"), (4, "encounter_locations_gen4.yml"), (5, "encounter_locations_gen5.yml"), (6, "encounter_locations_gen6.yml")):
     try:
         with open(f"backend/data/{_filename}", encoding="utf-8") as f:
             _ENCOUNTER_LOCATIONS[_gen] = yaml.safe_load(f) or {}
@@ -42,6 +42,8 @@ def _edition_to_gen(edition: int) -> int:
         return 4
     if 51 <= edition <= 54:
         return 5
+    if 61 <= edition <= 64:
+        return 6
     return 0
 
 
@@ -49,6 +51,7 @@ _EDITION_NAME = {
     31: "Rubin", 32: "Saphir", 33: "Smaragd", 34: "Feuerrot", 35: "Blattgrün",
     41: "Diamant", 42: "Perl", 43: "Platin", 44: "HeartGold", 45: "SoulSilver",
     51: "Schwarz", 52: "Weiß", 53: "Schwarz 2", 54: "Weiß 2",
+    61: "X", 62: "Y", 63: "Omega Rubin", 64: "Alpha Saphir",
 }
 
 COLUMNS = [

@@ -19,3 +19,6 @@ bag_keyitems: 0x08c6b2c0
 bag_tmvm: 0x08c6b440
 bag_medizin: 0x08c6b5f0
 bag_beeren: 0x08c6b6f0
+# Encounter-Tracking
+encounter_pokemon: 0x081FFA6C
+encounter_zone_pointer: 0x08D0646C  # TODO: noch nicht live verifiziert

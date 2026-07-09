@@ -264,6 +264,7 @@ def update_session(sessionpath, default=False):
         "soullink_player_count": 2,
         "soullink_link_strategy": "full_chain",
         "soullink_team_membership": {},
+        "soullink_expected_owners": [],
         "soullink_death_sync": True,
         "soullink_box_sync": True,
         # Regeln (aus echten Regelwerken, alle als Checkbox konfigurierbar)
@@ -285,6 +286,7 @@ def update_session(sessionpath, default=False):
         "rule_dragon_rage_clause_badge_limit": 2,
         "rule_token_rule": False,
         "rule_same_species_retry": False,
+        "snapshot_backup_path": None,
     }
     if not nuzlocke.exists():
         if not default:

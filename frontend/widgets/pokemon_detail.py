@@ -13,6 +13,7 @@ from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
+from backend.classes.pokedex_db import PokedexDB
 from backend.logging_setup import get_logger
 
 
@@ -364,7 +365,7 @@ class PokemonDetailScreen(Screen):
             try:
                 your_name = m.pl.get("your_name", "") if m.pl else ""
                 client_id = str(m.rem.get("client_id", 0)) if m.rem else "0"
-                owner = f"{your_name}_{client_id}"
+                owner = PokedexDB.build_owner(your_name, client_id)
             except Exception:
                 return
         # Passenden Link suchen

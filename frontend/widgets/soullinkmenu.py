@@ -4,6 +4,7 @@ import asyncio
 import traceback
 from pathlib import Path
 
+from kivy.app import App
 from kivy.clock import Clock
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -314,28 +315,47 @@ class SoullinkMenu(Screen):
         return SnapshotManager(session_path, session_name,
                                  bh_config=self.bh, munchlax=self.munchlax)
 
+    def _set_status(self, text: str):
+        def _apply(_dt):
+            self.status_label.text = text
+        Clock.schedule_once(_apply, 0)
+
     def _create_snapshot(self):
         label = (self.snapshot_label_input.text or "manual").strip() or "manual"
+        self.status_label.text = "Snapshot wird erstellt..."
+        asyncio.create_task(self._create_snapshot_async(label))
+
+    async def _create_snapshot_async(self, label: str):
         try:
             sm = self._snapshot_manager()
-            snap_id = sm.create(label=label)
-            if snap_id:
-                self.status_label.text = f"Snapshot erstellt: {snap_id}"
-                self._refresh_snapshot_list()
-            else:
-                self.status_label.text = "Snapshot-Erstellung fehlgeschlagen"
+            loop = asyncio.get_event_loop()
+            snap_id = await loop.run_in_executor(None, sm.create, label)
         except Exception as err:
             logger.error(f"snapshot create failed: {type(err)},{err}")
             logger.error(f"{traceback.format_exc()}")
-            self.status_label.text = f"Snapshot-Fehler: {err}"
+            self._set_status(f"Snapshot-Fehler: {err}")
+            return
+        if snap_id:
+            self._set_status(f"Snapshot erstellt: {snap_id}")
+            self._refresh_snapshot_list()
+        else:
+            self._set_status("Snapshot-Erstellung fehlgeschlagen")
 
     def _refresh_snapshot_list(self):
-        self.snapshot_list_layout.clear_widgets()
+        asyncio.create_task(self._refresh_snapshot_list_async())
+
+    async def _refresh_snapshot_list_async(self):
         try:
-            entries = self._snapshot_manager().list()
+            sm = self._snapshot_manager()
+            loop = asyncio.get_event_loop()
+            entries = await loop.run_in_executor(None, sm.list)
         except Exception as err:
             logger.error(f"snapshot list failed: {err}")
             entries = []
+        Clock.schedule_once(lambda _dt: self._render_snapshot_list(entries), 0)
+
+    def _render_snapshot_list(self, entries):
+        self.snapshot_list_layout.clear_widgets()
         if not entries:
             self.snapshot_list_layout.add_widget(Label(text="(keine Snapshots)",
                                                         size_hint_y=None, height="30dp"))
@@ -357,8 +377,11 @@ class SoullinkMenu(Screen):
             self.snapshot_list_layout.add_widget(row)
 
     def _restore_snapshot(self, snap_id: str):
+        self.status_label.text = f"Snapshot wird geladen: {snap_id}"
+        asyncio.create_task(self._restore_snapshot_async(snap_id))
+
+    async def _restore_snapshot_async(self, snap_id: str):
         try:
-            # DB muss vor restore geschlossen werden
             db = getattr(self.munchlax, "pokedex_db", None)
             if db is not None:
                 try:
@@ -367,23 +390,31 @@ class SoullinkMenu(Screen):
                     logger.warning(f"pokedex_db close vor restore: {err}")
                 self.munchlax.pokedex_db = None
             sm = self._snapshot_manager()
-            ok = sm.restore(snap_id)
-            self.status_label.text = (
-                f"Snapshot geladen: {snap_id}" if ok else f"Restore fehlgeschlagen: {snap_id}"
-            )
+            loop = asyncio.get_event_loop()
+            ok = await loop.run_in_executor(None, sm.restore, snap_id)
         except Exception as err:
             logger.error(f"snapshot restore failed: {type(err)},{err}")
             logger.error(f"{traceback.format_exc()}")
-            self.status_label.text = f"Restore-Fehler: {err}"
+            self._set_status(f"Restore-Fehler: {err}")
+            return
+        self._set_status(
+            f"Snapshot geladen: {snap_id}" if ok else f"Restore fehlgeschlagen: {snap_id}"
+        )
 
     def _delete_snapshot(self, snap_id: str):
+        asyncio.create_task(self._delete_snapshot_async(snap_id))
+
+    async def _delete_snapshot_async(self, snap_id: str):
         try:
-            self._snapshot_manager().delete(snap_id)
-            self._refresh_snapshot_list()
-            self.status_label.text = f"Snapshot gelöscht: {snap_id}"
+            sm = self._snapshot_manager()
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, sm.delete, snap_id)
         except Exception as err:
             logger.error(f"snapshot delete failed: {err}")
-            self.status_label.text = f"Delete-Fehler: {err}"
+            self._set_status(f"Delete-Fehler: {err}")
+            return
+        self._refresh_snapshot_list()
+        self._set_status(f"Snapshot gelöscht: {snap_id}")
 
     def _apply_preset(self):
         pid = self._preset_label_to_id.get(self.preset_spinner.text)
@@ -403,9 +434,8 @@ class SoullinkMenu(Screen):
         self.nuz["soullink_team_membership"] = cfg["team_membership"]
         self.nuz["soullink_expected_owners"] = cfg["expected_owners"]
         try:
-            import yaml
-            with open(f"{self.configsave}nuzlocke.yml", "w") as f:
-                yaml.dump(self.nuz, f)
+            app = App.get_running_app()
+            app.save_config(f"{self.configsave}nuzlocke.yml", self.nuz)
             self.status_label.text = "In Session gespeichert"
         except Exception as err:
             logger.error(f"nuzlocke.yml speichern failed: {type(err)},{err}")

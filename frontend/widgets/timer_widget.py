@@ -90,10 +90,16 @@ class TimerWidget(BoxLayout):
     # ----- Send-Wrapper -----
 
     def _send_async(self, coro):
+        async def _runner():
+            try:
+                await coro
+            except Exception as err:
+                logger.error(f"async send failed: {type(err)},{err}")
+                logger.error(f"{traceback.format_exc()}")
         try:
-            asyncio.create_task(coro)
+            asyncio.create_task(_runner())
         except Exception as err:
-            logger.error(f"async send failed: {type(err)},{err}")
+            logger.error(f"async task create failed: {type(err)},{err}")
             logger.error(f"{traceback.format_exc()}")
 
     async def _send_timer_start(self):

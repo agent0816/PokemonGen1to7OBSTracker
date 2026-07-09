@@ -6,9 +6,11 @@ Zeigt drei Handlungs-Optionen:
 - "Bei Null starten" — archiviert encounters-Tabelle, aktive DB-Reset
 """
 
+import asyncio
 import traceback
 from pathlib import Path
 
+from kivy.clock import Clock
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
@@ -65,7 +67,16 @@ class TotalWipeBanner(Popup):
         return SnapshotManager(session_path, session_name,
                                  bh_config=self.bh, munchlax=self.munchlax)
 
+    def _set_status(self, text: str):
+        def _apply(_dt):
+            self.status_label.text = text
+        Clock.schedule_once(_apply, 0)
+
     def _load_latest_snapshot(self):
+        self.status_label.text = "Snapshot wird geladen..."
+        asyncio.create_task(self._load_latest_snapshot_async())
+
+    async def _load_latest_snapshot_async(self):
         try:
             db = getattr(self.munchlax, "pokedex_db", None)
             if db is not None:
@@ -75,21 +86,24 @@ class TotalWipeBanner(Popup):
                     logger.warning(f"pokedex_db close: {err}")
                 self.munchlax.pokedex_db = None
             sm = self._snapshot_manager()
-            entries = sm.list()
+            loop = asyncio.get_event_loop()
+            entries = await loop.run_in_executor(None, sm.list)
             if not entries:
-                self.status_label.text = "Keine Snapshots vorhanden"
+                self._set_status("Keine Snapshots vorhanden")
                 return
             latest = entries[0]
-            ok = sm.restore(latest.get("id", ""))
-            if ok:
-                self.status_label.text = f"Geladen: {latest.get('id', '')}"
-                self.dismiss()
-            else:
-                self.status_label.text = "Restore fehlgeschlagen"
+            snap_id = latest.get("id", "")
+            ok = await loop.run_in_executor(None, sm.restore, snap_id)
         except Exception as err:
             logger.error(f"latest snapshot load failed: {type(err)},{err}")
             logger.error(f"{traceback.format_exc()}")
-            self.status_label.text = f"Fehler: {err}"
+            self._set_status(f"Fehler: {err}")
+            return
+        if ok:
+            self._set_status(f"Geladen: {snap_id}")
+            Clock.schedule_once(lambda _dt: self.dismiss(), 0)
+        else:
+            self._set_status("Restore fehlgeschlagen")
 
     def _pick_other(self):
         if callable(self._on_pick_other):
@@ -100,13 +114,19 @@ class TotalWipeBanner(Popup):
         self.dismiss()
 
     def _reset_run(self):
+        self.status_label.text = "Encounters werden archiviert..."
+        asyncio.create_task(self._reset_run_async())
+
+    async def _reset_run_async(self):
         try:
-            archive = self.munchlax.archive_active_run()
-            if archive:
-                self.status_label.text = f"Encounters archiviert als {archive}"
-                self.dismiss()
-            else:
-                self.status_label.text = "Archivieren fehlgeschlagen"
+            loop = asyncio.get_event_loop()
+            archive = await loop.run_in_executor(None, self.munchlax.archive_active_run)
         except Exception as err:
             logger.error(f"reset_run failed: {err}")
-            self.status_label.text = f"Fehler: {err}"
+            self._set_status(f"Fehler: {err}")
+            return
+        if archive:
+            self._set_status(f"Encounters archiviert als {archive}")
+            Clock.schedule_once(lambda _dt: self.dismiss(), 0)
+        else:
+            self._set_status("Archivieren fehlgeschlagen")

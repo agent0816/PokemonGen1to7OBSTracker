@@ -6,6 +6,7 @@ from pathlib import Path
 
 from aiohttp import web
 
+from backend.classes.pokedex_db import PokedexDB
 from backend.logging_setup import get_logger
 from backend.tm_type_resolver import resolve_tm_hm_sprite
 
@@ -339,7 +340,7 @@ class OverlayServer:
             client_id = str(self.munchlax.rem.get("client_id", 0)) if self.munchlax.rem else "0"
         except AttributeError:
             client_id = "0"
-        return f"{your_name}_{client_id}"
+        return PokedexDB.build_owner(your_name, client_id)
 
     def _soullink_filter_active(self) -> bool:
         """True wenn nicht-vollständig gelinkte Pokemon versteckt werden sollen."""

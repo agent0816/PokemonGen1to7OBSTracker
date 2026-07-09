@@ -167,7 +167,8 @@ class PokemonDetailScreen(Screen):
     def _is_gen1(self) -> bool:
         return 11 <= self._edition <= 13
 
-    def show(self, pokemon, edition: int, rando_data=None, back_callback=None):
+    def show(self, pokemon, edition: int, rando_data=None, back_callback=None,
+             munchlax=None, owner: str | None = None):
         """Befüllt die Detailansicht mit Pokemon-Daten.
 
         Args:
@@ -175,10 +176,15 @@ class PokemonDetailScreen(Screen):
             edition: Editions-ID (für Sprite-Pfad).
             rando_data: RandomizerLogData oder None.
             back_callback: Callable für den Zurück-Button.
+            munchlax: Optional — für Soullink-Partner-Anzeige.
+            owner: Optional — Owner-String des Pokemon (für Link-Zuordnung).
+                    Wenn None: aus munchlax.pl + rem abgeleitet.
         """
         self._back_callback = back_callback
         self._edition = edition
         self._last_pokemon = pokemon
+        self._detail_munchlax = munchlax if munchlax is not None else self._refresh_munchlax
+        self._detail_owner = owner
         self.detail_layout.clear_widgets()
 
         if pokemon is None or getattr(pokemon, "dexnr", 0) in (0, "", None):
@@ -327,6 +333,9 @@ class PokemonDetailScreen(Screen):
             if status:
                 self._add_section(self._label(f"Status: {status}"))
 
+        # -- Soullink-Partner --
+        self._render_soullink_section(pokemon)
+
         # -- Randomizer-Extras --
         if rando_pokemon:
             if rando_pokemon.item:
@@ -337,6 +346,57 @@ class PokemonDetailScreen(Screen):
                 if evos:
                     self._add_separator("Entwicklungen (Rando)")
                     self._add_section(self._label(" → ".join(evos)))
+
+    def _render_soullink_section(self, pokemon):
+        """Zeigt Partner-Pokemon aus Soullink-Link falls vorhanden."""
+        m = getattr(self, "_detail_munchlax", None)
+        if m is None:
+            return
+        pv = getattr(pokemon, "personality", None)
+        if pv is None:
+            return
+        links = getattr(m, "soullink_links", None)
+        if not isinstance(links, dict) or not links:
+            return
+        # Owner ermitteln (falls nicht explizit gesetzt)
+        owner = getattr(self, "_detail_owner", None)
+        if owner is None:
+            try:
+                your_name = m.pl.get("your_name", "") if m.pl else ""
+                client_id = str(m.rem.get("client_id", 0)) if m.rem else "0"
+                owner = f"{your_name}_{client_id}"
+            except Exception:
+                return
+        # Passenden Link suchen
+        link_match = None
+        for link in links.values():
+            member = (link.get("members") or {}).get(owner)
+            if member and member.get("personality") == pv:
+                link_match = link
+                break
+        if link_match is None:
+            return
+
+        self._add_separator(f"Soullink-Partner (Link #{link_match.get('link_id', '?')} — Route {link_match.get('route', '?')} — {link_match.get('state', '?')})")
+        for other_owner, member in (link_match.get("members") or {}).items():
+            if other_owner == owner:
+                continue
+            partner_dex = member.get("dexnr")
+            partner_species = species_de.get(partner_dex, f"#{partner_dex}") if partner_dex else "?"
+            outcome = member.get("outcome", "unknown")
+            outcome_map = {
+                "caught": "gefangen", "obtained": "erhalten",
+                "not_caught": "verpasst", "dead": "gestorben",
+                "unknown": "offen",
+            }
+            outcome_de = outcome_map.get(outcome, outcome)
+            row = BoxLayout(orientation="horizontal", size_hint_y=None, height="30dp",
+                             spacing="6dp")
+            row.add_widget(self._label(f"{other_owner}:", size_hint_x=0.35))
+            row.add_widget(self._label(f"#{partner_dex} {partner_species}",
+                                          size_hint_x=0.45))
+            row.add_widget(self._label(outcome_de, size_hint_x=0.20))
+            self._add_section(row)
 
     def _resolve_vanilla_types(self, dexnr) -> list[str]:
         """Vanilla-Typen aus generationsspezifischen Personal-Daten auflösen."""

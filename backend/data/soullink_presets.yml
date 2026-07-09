@@ -1,0 +1,97 @@
+# Soullink-Regel-Presets. SoullinkMenu läst sie über backend/soullink_presets.py
+# und wendet die Rule-Keys direkt auf das nuzlocke.yml-Dict an (flach, rule_*).
+
+standard_2way:
+  label: "Standard 2-Way Soullink"
+  description: >
+    Basis-Soullink 2 Spieler mit Dupes-Retry + Token-Regel. Kein Ersttyp-Clause.
+  soullink_mode: coop
+  soullink_player_count: 2
+  soullink_link_strategy: full_chain
+  rules:
+    rule_run_start_on_ball: true
+    rule_dead_pokemon_unusable: true
+    rule_one_encounter_per_area: true
+    rule_must_catch_first_encounter: true
+    rule_nickname_required: true
+    rule_species_clause_cross_players: false
+    rule_same_species_retry: true
+    rule_token_rule: true
+    rule_shiny_clause_always_catchable: true
+    rule_restart_on_total_wipe: false
+
+versus_2v2:
+  label: "2v2 Versus (Schwarz/Weiß)"
+  description: >
+    Zwei Zweierteams mit internem Soullink. Ersttyp-Clause zwischen Partnern,
+    Static-Ausnahme, ein Ersttyp pro Team.
+  soullink_mode: versus
+  soullink_player_count: 4
+  soullink_link_strategy: full_chain
+  rules:
+    rule_run_start_on_ball: true
+    rule_dead_pokemon_unusable: true
+    rule_restart_on_total_wipe: true
+    rule_one_encounter_per_area: true
+    rule_must_catch_first_encounter: true
+    rule_nickname_required: true
+    rule_first_type_clause_linked: true
+    rule_first_type_clause_static_exception: true
+    rule_single_type_per_team: true
+    rule_shiny_clause_always_catchable: true
+    rule_same_species_retry: false
+    rule_token_rule: false
+
+coop_3way:
+  label: "3-Way Coop"
+  description: >
+    Drei Spieler, alle miteinander verlinkt. Ersttyp-Clause + Static-Ausnahme.
+    Ein Ersttyp pro Team.
+  soullink_mode: coop
+  soullink_player_count: 3
+  soullink_link_strategy: full_chain
+  rules:
+    rule_run_start_on_ball: true
+    rule_dead_pokemon_unusable: true
+    rule_restart_on_total_wipe: true
+    rule_one_encounter_per_area: true
+    rule_must_catch_first_encounter: true
+    rule_nickname_required: true
+    rule_first_type_clause_linked: true
+    rule_first_type_clause_static_exception: true
+    rule_single_type_per_team: true
+    rule_shiny_clause_always_catchable: true
+    rule_same_species_retry: false
+    rule_token_rule: false
+
+coop_4way_usum:
+  label: "4-Way Coop (Ultra Sonne/Mond)"
+  description: >
+    Vier Spieler. Doppelkämpfe nach erstem Rivalen, randomized Movesets,
+    Drachenwut-Klausel bis Orden 2, Shiny immer fangbar.
+  soullink_mode: coop
+  soullink_player_count: 4
+  soullink_link_strategy: full_chain
+  rules:
+    rule_run_start_on_ball: true
+    rule_dead_pokemon_unusable: true
+    rule_restart_on_total_wipe: true
+    rule_one_encounter_per_area: true
+    rule_must_catch_first_encounter: true
+    rule_nickname_required: true
+    rule_first_type_clause_linked: true
+    rule_first_type_clause_static_exception: false
+    rule_single_type_per_team: false
+    rule_doubles_only_after_first_rival: true
+    rule_randomized_movesets: true
+    rule_dragon_rage_clause: true
+    rule_dragon_rage_clause_badge_limit: 2
+    rule_shiny_clause_always_catchable: true
+    rule_same_species_retry: false
+    rule_token_rule: false
+
+custom:
+  label: "Custom (freie Auswahl)"
+  description: "Kein Preset — bestehende Rule-Werte bleiben."
+  soullink_mode: null
+  rules: {}

@@ -9,7 +9,7 @@ from backend.classes.Pokemon import Pokemon
 from backend.logging_setup import get_logger
 
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 class PokedexDB:
@@ -61,6 +61,8 @@ class PokedexDB:
             self._apply_v3(cursor)
         if current_version < 4:
             self._apply_v4(cursor)
+        if current_version < 5:
+            self._apply_v5(cursor)
 
         self.connection.commit()
 
@@ -165,6 +167,50 @@ class PokedexDB:
             (4, datetime.now(timezone.utc).isoformat()),
         )
         self.logger.info("PokedexDB Schema v4 angewendet (method + outcome)")
+
+    def _apply_v5(self, cursor):
+        # Soullink-Verlinkung: encounters bekommt link_group_id + link_index,
+        # zwei neue Tabellen halten die Group-Metadaten und die Member-Zuordnung.
+        cursor.execute("ALTER TABLE encounters ADD COLUMN link_group_id INTEGER")
+        cursor.execute("ALTER TABLE encounters ADD COLUMN link_index INTEGER")
+        # soullink_links: eine Zeile pro Route/Encounter-Slot der Gruppe.
+        # state = pending | complete | failed. edition_gen 3..7.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS soullink_links (
+                link_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                route        INTEGER NOT NULL,
+                edition_gen  INTEGER NOT NULL,
+                link_index   INTEGER NOT NULL,
+                state        TEXT    NOT NULL DEFAULT 'pending',
+                created_at   TEXT    NOT NULL,
+                updated_at   TEXT    NOT NULL
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_soullink_links_route
+            ON soullink_links (edition_gen, route, link_index)
+        """)
+        # soullink_link_members: welcher Owner (Spieler) mit welchem PID zur Gruppe gehört.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS soullink_link_members (
+                link_id     INTEGER NOT NULL,
+                owner       TEXT    NOT NULL,
+                personality INTEGER NOT NULL,
+                edition     INTEGER NOT NULL,
+                outcome     TEXT    NOT NULL DEFAULT 'unknown',
+                PRIMARY KEY (link_id, owner),
+                FOREIGN KEY (link_id) REFERENCES soullink_links (link_id)
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_soullink_members_owner
+            ON soullink_link_members (owner, personality)
+        """)
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (5, datetime.now(timezone.utc).isoformat()),
+        )
+        self.logger.info("PokedexDB Schema v5 angewendet (soullink_links + members)")
 
     @staticmethod
     def build_owner(your_name: str, client_id: str) -> str:
@@ -520,13 +566,20 @@ class PokedexDB:
 
     def has_encounter_on_route(self, owner: str, edition: int,
                                route: int) -> bool:
+        """True wenn Route bereits einen First-Encounter hat (Nuzlocke-Zwecke).
+
+        Filtert `is_first = 1`: dupes-Skips und andere Retry-Zeilen
+        (is_first=0) zählen NICHT als Route-belegt — die Route bleibt für den
+        echten First-Encounter frei.
+        """
         if self.connection is None:
             return False
         try:
             cursor = self.connection.cursor()
             cursor.execute(
                 "SELECT 1 FROM encounters "
-                "WHERE owner = ? AND edition = ? AND route = ? AND has_balls = 1 "
+                "WHERE owner = ? AND edition = ? AND route = ? "
+                "  AND has_balls = 1 AND is_first = 1 "
                 "LIMIT 1",
                 (owner, int(edition), int(route)),
             )

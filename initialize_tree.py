@@ -234,6 +234,9 @@ def update_session(sessionpath, default=False):
         "enabled": False,
         "layout": "horizontal",
         "port": "43888",
+        # Soullink-Anzeige: leere Slots ans Ende, sortiert nach Link-Group
+        "hide_incomplete_links": True,
+        "sort_mode": "default",
     }
     if not overlay.exists():
         if not default:
@@ -256,6 +259,32 @@ def update_session(sessionpath, default=False):
         "shiny_clause": True,
         "dupes_clause": True,
         "encounter_methods_separate": False,
+        # Soullink-Modus + Struktur
+        "soullink_mode": "off",
+        "soullink_player_count": 2,
+        "soullink_link_strategy": "full_chain",
+        "soullink_team_membership": {},
+        "soullink_death_sync": True,
+        "soullink_box_sync": True,
+        # Regeln (aus echten Regelwerken, alle als Checkbox konfigurierbar)
+        "rule_run_start_on_ball": True,
+        "rule_dead_pokemon_unusable": True,
+        "rule_restart_on_total_wipe": False,
+        "rule_one_encounter_per_area": True,
+        "rule_must_catch_first_encounter": True,
+        "rule_nickname_required": True,
+        "rule_first_type_clause_linked": False,
+        "rule_first_type_clause_static_exception": True,
+        "rule_single_type_per_team": False,
+        "rule_species_clause_cross_players": False,
+        "rule_shiny_clause_always_catchable": True,
+        "rule_doubles_only": False,
+        "rule_doubles_only_after_first_rival": False,
+        "rule_randomized_movesets": False,
+        "rule_dragon_rage_clause": False,
+        "rule_dragon_rage_clause_badge_limit": 2,
+        "rule_token_rule": False,
+        "rule_same_species_retry": False,
     }
     if not nuzlocke.exists():
         if not default:

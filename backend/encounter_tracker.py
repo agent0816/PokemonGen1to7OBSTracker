@@ -32,9 +32,12 @@ class EncounterTracker:
         6: "backend/data/gift_encounters_gen6.yml",
     }
 
-    def __init__(self, pokedex_db, nuz: dict | None = None):
+    def __init__(self, pokedex_db, nuz: dict | None = None, munchlax=None):
         self.pokedex_db = pokedex_db
         self.nuz = nuz or {}
+        # Optionaler Munchlax-Ref für Token-Credits (Task #12): erlaubt der Instanz,
+        # server-seitigen Token-State zu lesen und Extra-Encounter-Slots freizuschalten.
+        self.munchlax = munchlax
         self.logger = get_logger(__name__, './logs/encounter_tracker.log')
 
         with open("backend/data/evolution_families.yml") as f:
@@ -51,6 +54,42 @@ class EncounterTracker:
             f"EncounterTracker initialisiert: {len(self.evolution_families)} Species, "
             f"{len(self.family_members)} Familien"
         )
+
+    def _has_active_token_credit(self, owner: str, edition, route) -> bool:
+        if not self.nuz.get("rule_token_rule", False):
+            return False
+        if self.munchlax is None:
+            return False
+        tokens = getattr(self.munchlax, "soullink_tokens", None)
+        if not isinstance(tokens, dict):
+            return False
+        st = tokens.get(owner)
+        if not st:
+            return False
+        active_route = st.get("active_route")
+        if active_route is None or int(active_route) != int(route):
+            return False
+        active_edition = st.get("active_edition")
+        if active_edition is not None and edition is not None:
+            try:
+                if int(active_edition) != int(edition):
+                    return False
+            except (ValueError, TypeError):
+                return False
+        return True
+
+    def _consume_token_credit(self, owner: str, edition, route):
+        # Optimistisches lokales Update — Server erkennt den Verbrauch beim
+        # nächsten encounter_sync über _token_consume_if_matches und broadcastet
+        # den finalen Token-State zurück.
+        if self.munchlax is None:
+            return
+        tokens = getattr(self.munchlax, "soullink_tokens", None)
+        if isinstance(tokens, dict):
+            st = tokens.get(owner)
+            if st:
+                st["active_route"] = None
+                st["active_edition"] = None
 
     @staticmethod
     def _edition_to_gen(edition: int) -> int:
@@ -90,8 +129,17 @@ class EncounterTracker:
     def _check_nuzlocke_flags(self, owner: str, edition: int,
                                route: int, dexnr: int,
                                shiny: bool, method: str) -> tuple[bool, bool, bool, bool]:
-        """Prüft Nuzlocke-Regeln. Gibt (has_balls, is_first, is_shiny_override, is_dupes_skip) zurück."""
+        """Prüft Nuzlocke-Regeln. Gibt (has_balls, is_first, is_shiny_override, is_dupes_skip) zurück.
+
+        Rule-Mapping (Task #10):
+        - rule_shiny_clause_always_catchable → überschreibt shiny_clause (Preset-Kompat)
+        - rule_same_species_retry            → überschreibt dupes_clause (Preset-Kompat)
+        - rule_run_start_on_ball             → run beginnt erst mit erstem Ball
+        """
         has_balls = self.pokedex_db.has_catching_balls(owner, edition)
+        if self.nuz.get("rule_run_start_on_ball", True) and not has_balls:
+            # Ohne Ball zählt nichts — is_first=False verhindert Link + DB-First-Marker
+            return has_balls, False, False, False
 
         gifts_additional = self.nuz.get("gifts_are_additional", True)
         if gifts_additional and method in ("gift", "fossil", "egg", "static"):
@@ -104,16 +152,94 @@ class EncounterTracker:
         is_shiny_override = False
         is_dupes_skip = False
 
-        if not is_first and shiny and self.nuz.get("shiny_clause", True):
+        # Token-Regel (Task #12): Bei aktivem Token-Credit für (owner, edition, route)
+        # wird Route wie ohne bisherigen Encounter behandelt.
+        if route_has_encounter and self._has_active_token_credit(owner, edition, route):
+            is_first = True
+            self._consume_token_credit(owner, edition, route)
+            self.logger.info(
+                f"Token-Extra-Slot verbraucht: owner={owner} route={route} edition={edition}"
+            )
+
+        shiny_active = self.nuz.get(
+            "rule_shiny_clause_always_catchable",
+            self.nuz.get("shiny_clause", True),
+        )
+        if not is_first and shiny and shiny_active:
             is_shiny_override = True
 
-        if (is_first or is_shiny_override) and self.nuz.get("dupes_clause", True):
+        dupes_active = self.nuz.get(
+            "rule_same_species_retry",
+            self.nuz.get("dupes_clause", True),
+        )
+        if (is_first or is_shiny_override) and dupes_active:
             family = self.get_family_members(dexnr)
             is_dupes_skip = self.pokedex_db.is_species_family_caught(
                 owner, family
             )
 
+        # Ersttyp-Clause-Retry: Wenn rule_first_type_clause_linked aktiv ist
+        # UND ein verlinkter Partner bereits einen Pokemon mit gleichem Ersttyp
+        # gefangen hat, gilt der Encounter als Retry (nicht als verbrauchter Slot).
+        is_type_clash_retry = False
+        if (is_first or is_shiny_override) and self._has_type_clash_with_linked(
+            owner, dexnr, method
+        ):
+            is_type_clash_retry = True
+
+        # Retry-Regeln: dupes-Skip UND Type-Clash-Retry verbrauchen die Route
+        # NICHT — Encounter wird zwar geloggt (für Statistik), aber mit
+        # is_first=False, damit der echte First-Encounter noch ansteht.
+        # is_dupes_skip wird als gemeinsamer "Retry"-Marker in der DB verwendet.
+        if is_dupes_skip or is_type_clash_retry:
+            is_first = False
+            is_shiny_override = False
+            is_dupes_skip = True  # Marker vereinheitlichen
+            if is_type_clash_retry:
+                self.logger.info(
+                    f"Ersttyp-Clause-Retry: owner={owner} dex={dexnr} method={method}"
+                )
+
         return has_balls, is_first, is_shiny_override, is_dupes_skip
+
+    def _has_type_clash_with_linked(self, owner: str, dexnr, method: str) -> bool:
+        """Prüft ob ein verlinkter Partner bereits einen Pokemon mit gleichem
+        Ersttyp gefangen hat. Wenn ja → Encounter darf zurückgewiesen werden
+        (Retry-Regel), ohne die Route zu verbrauchen.
+
+        - rule_first_type_clause_linked muss aktiv sein
+        - method ∈ {gift, fossil, static, egg} zählt als exempt (bekommt Token
+          statt Retry — der Spieler konnte den Typ nicht wählen)
+        """
+        if not self.nuz.get("rule_first_type_clause_linked", False):
+            return False
+        exempt = self.nuz.get("rule_first_type_clause_static_exception", True)
+        exempt_methods = {"static", "gift", "fossil", "egg"} if exempt else set()
+        if method in exempt_methods:
+            return False
+        if self.munchlax is None:
+            return False
+        from backend.type_lookup import first_type
+        my_type = first_type(dexnr)
+        if my_type is None:
+            return False
+        links = getattr(self.munchlax, "soullink_links", None)
+        if not isinstance(links, dict):
+            return False
+        caught_like = {"caught", "obtained"}
+        for link in links.values():
+            expected = link.get("expected_owners", []) or []
+            if owner not in expected:
+                continue
+            for other_owner, member in (link.get("members") or {}).items():
+                if other_owner == owner:
+                    continue
+                if member.get("outcome") not in caught_like:
+                    continue
+                other_type = first_type(member.get("dexnr"))
+                if other_type == my_type:
+                    return True
+        return False
 
     def process_wild_encounter(self, owner: str, edition: int,
                                 opponent: dict, route: int) -> EncounterResult:
@@ -228,6 +354,14 @@ class EncounterTracker:
                 f"gift='{matched_gift.get('name', '?')}' method={method} "
                 f"dex={dexnr} lv={lvl}"
             )
+            # Token-Earn: bei method='token' auf dem Server registrieren
+            if method == "token" and self.munchlax is not None and self.nuz.get("rule_token_rule", False):
+                try:
+                    import asyncio
+                    asyncio.create_task(self.munchlax.send_soullink_token_earned(owner))
+                    self.logger.info(f"Token-Earn ausgelöst für {owner}")
+                except Exception as err:
+                    self.logger.warning(f"send_soullink_token_earned failed: {err}")
 
         return EncounterResult(
             dexnr=dexnr, lvl=lvl, shiny=shiny, route=route,

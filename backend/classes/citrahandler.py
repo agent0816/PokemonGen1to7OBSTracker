@@ -624,6 +624,7 @@ class CitraHandler:
             self._encounter_tracker = EncounterTracker(
                 self.munchlax.pokedex_db,
                 self.munchlax.nuz,
+                munchlax=self.munchlax,
             )
             return True
         return False

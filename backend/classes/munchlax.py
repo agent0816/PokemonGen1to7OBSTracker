@@ -15,6 +15,11 @@ from backend.logging_setup import get_logger
 # Verhindert Box-Read-Stürme z.B. bei Team-Reorder-Spam oder Evolutionen.
 BOX_REFRESH_THROTTLE_SECONDS = 5.0
 
+# Wipe-Detection HP-Consistency: erst nach N consecutive Zero-Reads pro Pokemon
+# gilt es als tot. Gefährdungen: RAM-Fluktuationen, Battle-RAM-Ausreißer in
+# Gen 6/7 wo Kampfstatistiken temporär an anderer Adresse liegen können.
+WIPE_ZERO_READ_THRESHOLD = 5
+
 class Munchlax:
     def __init__(self, host, port, rem, sp, pl, configsave=None, nuz=None):
         self.client_id = rem.get("client_id", 0)
@@ -57,6 +62,33 @@ class Munchlax:
         self.writer_lock = asyncio.Lock()
         self.disconnect_lock = asyncio.Lock()
         self._last_bag_hash: dict[str, str] = {}
+        # Soullink-State, gespiegelt vom Server. Persistenz auf DB kommt in
+        # späteren Tasks (Frontend/Persistierung); hier reine In-Memory-Ablage.
+        self.soullink_config: dict = {}
+        self.soullink_links: dict[int, dict] = {}
+        self.soullink_deaths: dict[tuple[int, str], dict] = {}
+        self.soullink_versus_state: dict[str, dict] = {}
+        self.soullink_versus_battles: list[dict] = []
+        self.soullink_rule_violations: dict[tuple[str, str], dict] = {}
+        # Token-State pro Owner (Server-authoritativ, Cache).
+        # {owner: {earned, used, active_route, active_edition}}
+        self.soullink_tokens: dict[str, dict] = {}
+        self._wipe_signaled: dict = {}
+        self.on_total_wipe_callback = None
+        # HP-Consistency: pro (player_id, personality) → {last_max_hp, last_lvl, zero_reads}.
+        # Filtert kurze RAM-Fluktuationen und Gen-6/7-Battle-RAM-Ausreißer, bevor ein
+        # Pokemon als "tot" gilt.
+        self._pokemon_hp_state: dict[tuple, dict] = {}
+        # Race-Timer, gespiegelt vom Server. `timer_state` = kompletter Snapshot,
+        # `timer_last_tick` = (elapsed, server_ts, local_ts_at_receive) für lokale
+        # Drift-Korrektur zwischen Ticks (Client rechnet elapsed lokal weiter).
+        self.timer_state: dict = {}
+        self.timer_last_tick: dict | None = None
+        # Countdown (z.B. YouTube-Aufnahme). `countdown_finished_callback` wird
+        # vom Frontend gesetzt und beim Ablauf einmal aufgerufen (Ton/Popup).
+        self.countdown_state: dict = {}
+        self.countdown_last_tick: dict | None = None
+        self.countdown_finished_callback = None
 
         self.logger = get_logger(__name__, './logs/munchlax.log')
 
@@ -71,6 +103,17 @@ class Munchlax:
         self.remote_connection_status.clear()
         self.remote_connection_names.clear()
         self.initialized = False
+        self.soullink_config = {}
+        self.soullink_links = {}
+        self.soullink_deaths = {}
+        self.soullink_versus_state = {}
+        self.soullink_versus_battles = []
+        self.soullink_rule_violations = {}
+        self.soullink_tokens = {}
+        self.timer_state = {}
+        self.timer_last_tick = None
+        self.countdown_state = {}
+        self.countdown_last_tick = None
 
     def should_auto_refresh_boxes(self, player_id: int) -> bool:
         """True wenn die Throttle-Drosselung einen automatischen Refresh erlaubt."""
@@ -174,6 +217,92 @@ class Munchlax:
                         self._handle_remote_outcome(data)
                     elif msg_type == "bag_sync":
                         self._handle_remote_bag(data)
+                    elif msg_type == "soullink_config":
+                        self.soullink_config = data.get("config", {}) or {}
+                        self.logger.info(
+                            f"soullink_config empfangen: mode={self.soullink_config.get('mode')}, "
+                            f"players={self.soullink_config.get('expected_owners')}"
+                        )
+                        await self._notify_overlay_session("soullink_config", self.soullink_config)
+                    elif msg_type == "soullink_link_state":
+                        link = data.get("link") or {}
+                        if link.get("link_id") is not None:
+                            self.soullink_links[link["link_id"]] = link
+                            self.logger.info(
+                                f"soullink_link_state empfangen: link={link.get('link_id')} "
+                                f"state={link.get('state')} members={list(link.get('members', {}).keys())}"
+                            )
+                            await self._notify_overlay_session("soullink_link_state", link)
+                    elif msg_type == "soullink_death":
+                        death = data.get("death") or {}
+                        self._handle_remote_death(death)
+                        await self._notify_overlay_session("soullink_death", death)
+                    elif msg_type == "soullink_versus_state":
+                        self.soullink_versus_state = data.get("state", {}) or {}
+                        self.soullink_versus_battles = data.get("battles", []) or []
+                        self.logger.info(
+                            f"soullink_versus_state empfangen: teams={list(self.soullink_versus_state.keys())}"
+                        )
+                        await self._notify_overlay_session("soullink_versus_state", {
+                            "state": self.soullink_versus_state,
+                            "battles": self.soullink_versus_battles,
+                        })
+                    elif msg_type == "soullink_versus_battle":
+                        battle = data.get("battle") or {}
+                        self.soullink_versus_battles.append(battle)
+                        self.logger.info(
+                            f"soullink_versus_battle empfangen: {battle.get('winner')} vs {battle.get('loser')}"
+                        )
+                        await self._notify_overlay_session("soullink_versus_battle", battle)
+                    elif msg_type == "soullink_rule_violation":
+                        violation = data.get("violation") or {}
+                        key = (violation.get("type", "unknown"), str(violation.get("subject", "")))
+                        self.soullink_rule_violations[key] = violation
+                        self.logger.warning(
+                            f"soullink_rule_violation empfangen: type={violation.get('type')} "
+                            f"subject={violation.get('subject')} msg={violation.get('message')}"
+                        )
+                        await self._notify_overlay_session("soullink_rule_violation", violation)
+                        # Frontend-Trigger für total_wipe
+                        if violation.get("type") == "total_wipe" and callable(getattr(self, "on_total_wipe_callback", None)):
+                            try:
+                                self.on_total_wipe_callback(violation)
+                            except Exception as err:
+                                self.logger.warning(f"on_total_wipe_callback: {err}")
+                    elif msg_type == "soullink_tokens":
+                        self.soullink_tokens = data.get("tokens", {}) or {}
+                        self.logger.info(
+                            f"soullink_tokens empfangen: {[(o, s.get('earned'), s.get('used'), s.get('active_route')) for o, s in self.soullink_tokens.items()]}"
+                        )
+                        await self._notify_overlay_session("soullink_tokens", self.soullink_tokens)
+                    elif msg_type == "timer_state":
+                        self._handle_timer_state(data.get("timer") or {})
+                        await self._notify_overlay_session("timer_state", self.timer_state)
+                        await self._push_timer_text_to_obs()
+                    elif msg_type == "timer_tick":
+                        self._handle_timer_tick(data)
+                        await self._notify_overlay_session("timer_tick", {
+                            "elapsed": data.get("elapsed", 0.0),
+                            "running": data.get("running", False),
+                            "server_ts": data.get("server_ts"),
+                        })
+                        await self._push_timer_text_to_obs()
+                    elif msg_type == "countdown_state":
+                        self._handle_countdown_state(data.get("countdown") or {})
+                        await self._notify_overlay_session("countdown_state", self.countdown_state)
+                    elif msg_type == "countdown_tick":
+                        self._handle_countdown_tick(data)
+                        await self._notify_overlay_session("countdown_tick", {
+                            "remaining_seconds": data.get("remaining_seconds", 0.0),
+                            "running": data.get("running", False),
+                            "server_ts": data.get("server_ts"),
+                        })
+                    elif msg_type == "countdown_finished":
+                        self._handle_countdown_finished(data)
+                        await self._notify_overlay_session("countdown_finished", {
+                            "label": data.get("label", ""),
+                            "duration_seconds": data.get("duration_seconds", 0.0),
+                        })
                     else:
                         self.logger.warning(f"Unbekannter Message-Typ vom Server: {msg_type}")
                     continue
@@ -311,6 +440,396 @@ class Munchlax:
         except Exception as err:
             self.logger.warning(f"send_encounter_outcome failed: {err}")
 
+    async def send_soullink_death(self, personality: int, owner: str,
+                                    edition=None, cause: str = "faint"):
+        """Meldet dem Server, dass ein Pokemon gestorben ist."""
+        if not self.is_connected:
+            return
+        try:
+            async with self.writer_lock:
+                await self.send_message({
+                    "type": "soullink_death",
+                    "personality": personality,
+                    "owner": owner,
+                    "edition": edition,
+                    "cause": cause,
+                })
+        except Exception as err:
+            self.logger.warning(f"send_soullink_death failed: {err}")
+
+    async def send_soullink_config(self, config: dict):
+        """Setzt/aktualisiert die Soullink-Config auf dem Server."""
+        if not self.is_connected:
+            return
+        try:
+            async with self.writer_lock:
+                await self.send_message({
+                    "type": "soullink_config",
+                    "config": config,
+                })
+        except Exception as err:
+            self.logger.warning(f"send_soullink_config failed: {err}")
+
+    async def send_soullink_versus_battle(self, winner: str, loser: str, label: str = ""):
+        """Meldet manuelles PvP-Battle-Result zwischen zwei Teams."""
+        if not self.is_connected:
+            return
+        try:
+            async with self.writer_lock:
+                await self.send_message({
+                    "type": "soullink_versus_battle",
+                    "winner": winner,
+                    "loser": loser,
+                    "label": label,
+                })
+        except Exception as err:
+            self.logger.warning(f"send_soullink_versus_battle failed: {err}")
+
+    async def send_soullink_token_earned(self, owner: str):
+        await self._send_timer_message({
+            "type": "soullink_token_earned",
+            "owner": owner,
+        })
+
+    async def send_soullink_token_redeem(self, owner: str, edition, route: int):
+        await self._send_timer_message({
+            "type": "soullink_token_redeem",
+            "owner": owner,
+            "edition": edition,
+            "route": int(route),
+        })
+
+    async def _send_timer_message(self, msg: dict):
+        if not self.is_connected:
+            return
+        try:
+            async with self.writer_lock:
+                await self.send_message(msg)
+        except Exception as err:
+            self.logger.warning(f"send timer msg failed: {err}")
+
+    async def send_timer_start(self):
+        await self._send_timer_message({"type": "timer_start"})
+
+    async def send_timer_reset(self):
+        await self._send_timer_message({"type": "timer_reset"})
+
+    async def send_timer_split(self, label: str, source: str = "manual"):
+        await self._send_timer_message({"type": "timer_split", "label": label, "source": source})
+
+    async def send_timer_pause_request(self):
+        await self._send_timer_message({"type": "timer_pause_request"})
+
+    async def send_timer_resume_request(self):
+        await self._send_timer_message({"type": "timer_resume_request"})
+
+    def _handle_timer_state(self, timer: dict):
+        self.timer_state = timer
+        self.timer_last_tick = {
+            "elapsed": timer.get("elapsed", 0.0),
+            "server_ts": timer.get("server_ts", time.time()),
+            "local_ts": time.time(),
+            "running": timer.get("running", False),
+        }
+        self.logger.info(
+            f"timer_state empfangen: running={timer.get('running')} "
+            f"elapsed={timer.get('elapsed'):.1f}s splits={len(timer.get('splits', []))} "
+            f"pause_consent={len(timer.get('pause_consent', []))}/{timer.get('consent_required')}"
+        )
+
+    def _handle_timer_tick(self, data: dict):
+        self.timer_last_tick = {
+            "elapsed": data.get("elapsed", 0.0),
+            "server_ts": data.get("server_ts", time.time()),
+            "local_ts": time.time(),
+            "running": data.get("running", False),
+        }
+
+    def current_timer_elapsed(self) -> float:
+        """Lokal gerechneter Timer-Wert. Verwendet letzten Tick als Anker."""
+        if not self.timer_last_tick:
+            return 0.0
+        base = self.timer_last_tick.get("elapsed", 0.0)
+        if not self.timer_last_tick.get("running"):
+            return base
+        return base + (time.time() - self.timer_last_tick.get("local_ts", time.time()))
+
+    async def send_countdown_start(self, duration_seconds: float, label: str = ""):
+        await self._send_timer_message({
+            "type": "countdown_start",
+            "duration_seconds": float(duration_seconds),
+            "label": label,
+        })
+
+    async def send_countdown_pause(self):
+        await self._send_timer_message({"type": "countdown_pause"})
+
+    async def send_countdown_resume(self):
+        await self._send_timer_message({"type": "countdown_resume"})
+
+    async def send_countdown_cancel(self):
+        await self._send_timer_message({"type": "countdown_cancel"})
+
+    def _handle_countdown_state(self, cd: dict):
+        self.countdown_state = cd
+        self.countdown_last_tick = {
+            "remaining": cd.get("remaining_seconds", 0.0),
+            "server_ts": cd.get("server_ts", time.time()),
+            "local_ts": time.time(),
+            "running": cd.get("running", False),
+        }
+        self.logger.info(
+            f"countdown_state empfangen: running={cd.get('running')} "
+            f"remaining={cd.get('remaining_seconds'):.1f}s label='{cd.get('label')}'"
+        )
+
+    def _handle_countdown_tick(self, data: dict):
+        self.countdown_last_tick = {
+            "remaining": data.get("remaining_seconds", 0.0),
+            "server_ts": data.get("server_ts", time.time()),
+            "local_ts": time.time(),
+            "running": data.get("running", False),
+        }
+
+    def _handle_countdown_finished(self, data: dict):
+        label = data.get("label", "")
+        duration = data.get("duration_seconds", 0.0)
+        self.logger.info(f"countdown_finished empfangen: label='{label}' dauer={duration}s")
+        if self.countdown_finished_callback is not None:
+            try:
+                self.countdown_finished_callback(label, duration)
+            except Exception as err:
+                self.logger.error(f"countdown_finished_callback failed: {type(err)},{err}")
+
+    async def _notify_overlay_session(self, event_type: str, payload):
+        srv = self.overlay_server
+        if srv is None or not srv.is_connected:
+            return
+        try:
+            await srv.notify_session_event(event_type, payload)
+        except Exception as err:
+            self.logger.debug(f"notify_overlay_session {event_type} failed: {err}")
+
+    async def check_total_wipe(self, player_id, team) -> bool:
+        """Prüft rule_restart_on_total_wipe: alle Team-Slots tot → Broadcast Warning.
+
+        Debounce: nach einem erkannten Wipe wird `_wipe_signaled[player_id]=True`
+        gesetzt und erst wieder gelöscht sobald ein Pokemon wieder lebt. So
+        entsteht keine Broadcast-Schleife bei jedem Team-Tick.
+
+        HP-Consistency (`_is_pokemon_dead`): filtert kurze RAM-Fluktuationen
+        (Threshold: WIPE_ZERO_READ_THRESHOLD consecutive Zero-Reads) und
+        Gen-6/7-Battle-RAM-Ausreißer (max_hp-Wechsel ohne plausibles Level-Up).
+        """
+        if not self.nuz.get("rule_restart_on_total_wipe", False):
+            return False
+        alive = 0
+        any_pokemon = False
+        for slot in team[:6] if team else []:
+            if slot is None:
+                continue
+            if isinstance(slot, dict):
+                dex = slot.get("dexnr")
+            else:
+                dex = getattr(slot, "dexnr", None)
+            if not dex:
+                continue
+            any_pokemon = True
+            if not self._is_pokemon_dead(player_id, slot):
+                alive += 1
+        if not any_pokemon:
+            # Team leer (z.B. vor ROM-Load) — kein Wipe, aber auch nicht als Wipe zaehlen.
+            return False
+        if alive > 0:
+            # Debounce zuruecksetzen sobald Team wieder lebt.
+            if getattr(self, "_wipe_signaled", None) is None:
+                self._wipe_signaled = {}
+            self._wipe_signaled.pop(player_id, None)
+            return False
+        # alive_count = 0 UND any_pokemon vorhanden → Wipe
+        if getattr(self, "_wipe_signaled", None) is None:
+            self._wipe_signaled = {}
+        if self._wipe_signaled.get(player_id):
+            return True  # bereits gemeldet
+        self._wipe_signaled[player_id] = True
+        self.logger.warning(f"Total Wipe erkannt für player_id={player_id}")
+        if self.is_connected:
+            try:
+                async with self.writer_lock:
+                    await self.send_message({
+                        "type": "soullink_rule_violation",
+                        "violation": {
+                            "type": "total_wipe",
+                            "subject": str(player_id),
+                            "player_id": player_id,
+                            "message": "Alle Pokemon gefallen — Run-Neustart erforderlich",
+                            "timestamp": time.time(),
+                        },
+                    })
+            except Exception as err:
+                self.logger.warning(f"total_wipe send failed: {err}")
+        return True
+
+    def archive_active_run(self) -> str | None:
+        """Archiviert die aktive encounters-Tabelle unter encounters_archived_<ts>.
+
+        Wird von Frontend-Wipe-Banner "Bei Null starten" gerufen. Legt eine
+        Kopie an und leert die aktive Tabelle.
+        """
+        self._ensure_pokedex_db()
+        if self.pokedex_db is None or self.pokedex_db.connection is None:
+            return None
+        try:
+            from datetime import datetime, timezone
+            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            archive_name = f"encounters_archived_{ts}"
+            conn = self.pokedex_db.connection
+            conn.execute(f"CREATE TABLE IF NOT EXISTS {archive_name} AS SELECT * FROM encounters")
+            conn.execute("DELETE FROM encounters")
+            conn.commit()
+            self.logger.info(f"Aktive encounters archiviert als {archive_name}")
+            # Debounce zurücksetzen
+            if getattr(self, "_wipe_signaled", None) is not None:
+                self._wipe_signaled.clear()
+            return archive_name
+        except Exception as err:
+            self.logger.error(f"archive_active_run failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return None
+
+    def _is_pokemon_dead(self, player_id, slot) -> bool:
+        """Consistency-Check für HP=0.
+
+        Ein Pokemon gilt erst als tot, wenn:
+        1. cur_hp konsistent 0 ist über WIPE_ZERO_READ_THRESHOLD aufeinanderfolgende Reads
+        2. Der Read plausibel ist: max_hp identisch zum letzten Read ODER Level-Diff in {0,1}
+           (letzteres deckt in-battle Level-Up ab).
+
+        max_hp-Wechsel mit unplausiblem Level-Diff = wahrscheinlich Battle-RAM-Read
+        an falscher Adresse (Gen 6/7): Read verwerfen, Debounce-Zähler nicht erhöhen.
+        """
+        if isinstance(slot, dict):
+            pv = slot.get("personality")
+            cur_hp = slot.get("cur_hp")
+            max_hp = slot.get("max_hp")
+            lvl = slot.get("lvl")
+        else:
+            pv = getattr(slot, "personality", None)
+            cur_hp = getattr(slot, "cur_hp", None)
+            max_hp = getattr(slot, "max_hp", None)
+            lvl = getattr(slot, "lvl", None)
+
+        if pv is None:
+            # Ohne PID kein Consistency-Tracking möglich — direkter Check.
+            return cur_hp is not None and cur_hp == 0
+
+        key = (player_id, pv)
+        state = self._pokemon_hp_state.get(key)
+        if state is None:
+            state = {"last_max_hp": max_hp, "last_lvl": lvl, "zero_reads": 0}
+            self._pokemon_hp_state[key] = state
+            # Beim allerersten Read kein Zero-Zaehler-Increment (keine Baseline für
+            # Consistency vorhanden). Erst ab dem zweiten Read greift der Filter.
+            return False
+
+        # Consistency: max_hp-Wechsel ohne plausibles Level-Up → Read verwerfen.
+        if (state["last_max_hp"] is not None and max_hp is not None
+                and max_hp != state["last_max_hp"]):
+            last_lvl = state["last_lvl"]
+            plausible = False
+            if last_lvl is not None and lvl is not None:
+                lvl_diff = lvl - last_lvl
+                if lvl_diff in (0, 1):
+                    plausible = True
+            if not plausible:
+                self.logger.debug(
+                    f"HP-Read verworfen (Battle-RAM?): player={player_id} pv={pv} "
+                    f"max_hp {state['last_max_hp']}->{max_hp} lvl {last_lvl}->{lvl}"
+                )
+                # Zero-Reads NICHT hochzählen, state NICHT aktualisieren
+                return state["zero_reads"] >= WIPE_ZERO_READ_THRESHOLD
+
+        # Read akzeptieren + State updaten
+        state["last_max_hp"] = max_hp
+        state["last_lvl"] = lvl
+
+        if cur_hp is None:
+            state["zero_reads"] = 0
+            return False
+        if cur_hp == 0:
+            state["zero_reads"] += 1
+            if state["zero_reads"] >= WIPE_ZERO_READ_THRESHOLD:
+                return True
+            return False
+        state["zero_reads"] = 0
+        return False
+
+    def check_nickname_required(self, pokemon, edition, default_species_name) -> bool:
+        """rule_nickname_required: prüft ob Nickname vom Default-Species-Namen abweicht."""
+        if not self.nuz.get("rule_nickname_required", True):
+            return True
+        nickname = getattr(pokemon, "nickname", "") or ""
+        default = default_species_name or ""
+        # Wenn Nickname leer oder gleich Species-Default → Verstoss (return False)
+        return bool(nickname and nickname.strip() and nickname.strip().upper() != default.strip().upper())
+
+    async def _push_timer_text_to_obs(self):
+        """Setzt eine OBS-Text-Source 'RaceTimer' auf den aktuellen Timer-Wert.
+
+        Optional: Nur aktiv wenn OBS-WebSocket verbunden UND eine Input mit
+        exakt diesem Namen existiert. Bei Fehler: still ignorieren, damit
+        andere Overlay-Wege (Browser-Source) unabhängig weiterlaufen.
+        """
+        if self.obs is None or not self.obs.is_connected:
+            return
+        elapsed = self.current_timer_elapsed()
+        s = int(max(0, elapsed))
+        text = f"{s // 3600:02d}:{(s // 60) % 60:02d}:{s % 60:02d}"
+        try:
+            import simpleobsws
+            await self.obs.ws.call(simpleobsws.Request(
+                "SetInputSettings",
+                {
+                    "inputName": "RaceTimer",
+                    "inputSettings": {"text": text},
+                    "overlay": True,
+                },
+            ))
+        except Exception as err:
+            # OBS-Text-Source ist optional — kein Grund für Log-Spam.
+            self.logger.debug(f"OBS RaceTimer-Text set failed: {err}")
+
+    def current_countdown_remaining(self) -> float:
+        """Lokal gerechneter Rest-Countdown. Anker = letzter Server-Tick."""
+        if not self.countdown_last_tick:
+            return 0.0
+        base = float(self.countdown_last_tick.get("remaining", 0.0))
+        if not self.countdown_last_tick.get("running"):
+            return base
+        return max(0.0, base - (time.time() - self.countdown_last_tick.get("local_ts", time.time())))
+
+    def _handle_remote_death(self, death: dict):
+        pv = death.get("personality")
+        owner = death.get("owner")
+        if pv is None or not owner:
+            return
+        self.soullink_deaths[(pv, owner)] = death
+        partners = death.get("partners", [])
+        # Ist dieser Client Owner eines Partners? Dann lokale UI/DB-Reaktion nötig.
+        my_partner = None
+        for partner in partners:
+            for pid, edition in self.editions.items():
+                partner_owner = str(pid)
+                if partner_owner == partner.get("owner"):
+                    my_partner = partner
+                    break
+        self.logger.info(
+            f"soullink_death empfangen: owner={owner} pv={pv} "
+            f"link={death.get('link_id')} own_partner={my_partner}"
+        )
+        # Falls Server auch Link-Group als failed markiert hat, kommt separater
+        # soullink_link_state-Broadcast; hier keine doppelte Verarbeitung.
+
     async def send_bag_sync(self, owner: str, edition, pockets: dict):
         """Sendet Bag-Inhalt an Arceus. BagItem → (id, qty) Tupel."""
         if not self.is_connected:
@@ -390,6 +909,7 @@ class Munchlax:
                 )
                 if new_pvs:
                     self._on_new_pokemon_detected(player, edition, pokemons, new_pvs)
+                await self.check_total_wipe(player, pokemons)
         except Exception as err:
             self.logger.error(f"_persist_teams failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")

@@ -395,6 +395,9 @@ class MainMenu(Screen):
         encounter_button = Button(text="Encounters", on_press=self.switch_to_encounters)
         info_buttons.add_widget(encounter_button)
 
+        soullink_button = Button(text="Soullink / Timer", on_press=self.switch_to_soullink)
+        info_buttons.add_widget(soullink_button)
+
         self.randomize_button = Button(text="Randomisieren", on_press=self.start_randomization)
         info_buttons.add_widget(self.randomize_button)
         
@@ -802,6 +805,9 @@ class MainMenu(Screen):
 
     def switch_to_encounters(self, instance):
         self.manager.current = "EncounterMenu"
+
+    def switch_to_soullink(self, instance):
+        self.manager.current = "SoullinkMenu"
 
     def switch_to_settings(self, instance):
         settings_menu = self.manager.get_screen("SettingsMenu")

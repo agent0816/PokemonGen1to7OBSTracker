@@ -56,6 +56,9 @@ class OverlayServer:
         self.runner: web.AppRunner | None = None
         self.site: web.TCPSite | None = None
         self._sse_queues: dict[int, list[asyncio.Queue]] = {}
+        # Session-weite SSE-Queues (nicht an player_id gebunden) für Soullink
+        # und Race-/Countdown-Timer. Overlay-Seite /timer verbindet sich hier.
+        self._session_sse_queues: list[asyncio.Queue] = []
 
         self.logger = get_logger(__name__, './logs/overlay_server.log')
 
@@ -92,6 +95,7 @@ class OverlayServer:
             self.site = None
             self.app = None
             self._sse_queues.clear()
+            self._session_sse_queues.clear()
 
     def _setup_routes(self):
         self.app.router.add_get('/player/{player_id}', self._handle_team_page)
@@ -101,6 +105,10 @@ class OverlayServer:
         self.app.router.add_get('/sprite/{player_id}/{slot}', self._handle_sprite)
         self.app.router.add_get('/item/{player_id}/{slot}', self._handle_item)
         self.app.router.add_get('/badge_img/{player_id}/{index}', self._handle_badge_img)
+        # Session-Events (Timer, Countdown, Soullink) + Overlay-Seite /timer
+        self.app.router.add_get('/session/events', self._handle_session_sse)
+        self.app.router.add_get('/session/state', self._handle_session_state)
+        self.app.router.add_get('/timer', self._handle_timer_page)
 
     # --- Notify (aufgerufen von Munchlax) ---
 
@@ -135,6 +143,39 @@ class OverlayServer:
             await self.notify_update(player_id, "team")
             await self.notify_update(player_id, "badges")
 
+    async def notify_session_event(self, event_type: str, payload: dict):
+        """Verteilt Session-Events (Timer/Countdown/Soullink) an alle /session/events-Clients."""
+        if not self._session_sse_queues:
+            return
+        try:
+            data = json.dumps(payload, ensure_ascii=False, default=str)
+        except Exception as err:
+            self.logger.warning(f"notify_session_event serialize failed: {err}")
+            return
+        event = f"event: {event_type}\ndata: {data}\n\n"
+        dead = []
+        for q in list(self._session_sse_queues):
+            try:
+                q.put_nowait(event)
+            except asyncio.QueueFull:
+                dead.append(q)
+        for q in dead:
+            if q in self._session_sse_queues:
+                self._session_sse_queues.remove(q)
+
+    def _build_session_snapshot(self) -> dict:
+        m = self.munchlax
+        return {
+            "soullink_config": getattr(m, "soullink_config", {}) or {},
+            "soullink_links": list((getattr(m, "soullink_links", {}) or {}).values()),
+            "soullink_deaths": list((getattr(m, "soullink_deaths", {}) or {}).values()),
+            "soullink_versus_state": getattr(m, "soullink_versus_state", {}) or {},
+            "soullink_versus_battles": list(getattr(m, "soullink_versus_battles", []) or []),
+            "soullink_rule_violations": list((getattr(m, "soullink_rule_violations", {}) or {}).values()),
+            "timer_state": getattr(m, "timer_state", {}) or {},
+            "countdown_state": getattr(m, "countdown_state", {}) or {},
+        }
+
     # --- Payload-Builder ---
 
     def _build_full_payload(self, player_id: int) -> dict:
@@ -143,10 +184,26 @@ class OverlayServer:
         badges_val = self.munchlax.badges.get(player_id, 0)
         player_name = self.munchlax.player_names.get(player_id, f"Spieler {player_id}")
 
+        owner = self._owner_for_local_player(player_id)
+        hide_incomplete = self._soullink_filter_active()
+        link_id_by_pv = self._link_id_by_personality(owner)
+
         team_data = []
         for slot, pkmn in enumerate(team[:6]):
             if pkmn.dexnr == 0:
                 team_data.append({"slot": slot, "dexnr": 0, "identity_key": f"empty_{slot}"})
+                continue
+            pv = getattr(pkmn, "personality", None)
+            link_state = self._pokemon_link_state(pkmn, owner)
+            if hide_incomplete and link_state != "complete":
+                team_data.append({
+                    "slot": slot,
+                    "dexnr": 0,
+                    "identity_key": f"empty_{slot}",
+                    "link_hidden": True,
+                    "link_state": link_state,
+                    "personality": pv,
+                })
                 continue
             shiny_flag = 1 if pkmn.shiny else 0
             female_flag = 1 if pkmn.female else 0
@@ -163,14 +220,22 @@ class OverlayServer:
                 "cur_hp": pkmn.cur_hp,
                 "max_hp": pkmn.max_hp,
                 "sprite_url": f"/sprite/{player_id}/{slot}?v={sprite_cache_key}",
+                "personality": pv,
             }
             entry["identity_key"] = pkmn.identity_key or f"empty_{slot}"
+            if link_state is not None:
+                entry["link_state"] = link_state
+            if pv in link_id_by_pv:
+                entry["link_id"] = link_id_by_pv[pv]
             status = getattr(pkmn, 'status', {})
             if status:
                 entry["status"] = status
             if pkmn.item and edition > 20:
                 entry["item_url"] = f"/item/{player_id}/{slot}?v={pkmn.item}"
             team_data.append(entry)
+
+        # Sortierung anwenden (Task #14): leere Slots ans Ende, sonst je nach sort_mode.
+        team_data = self._apply_slot_sort(team_data, link_id_by_pv)
 
         region = BADGE_REGION.get(edition, '')
         badge_count = 16 if region == 'johto' else 8
@@ -202,6 +267,102 @@ class OverlayServer:
             "animate_reorder": self.ov.get('animate_reorder', False),
             "animation_duration_ms": self.ov.get('animation_duration_ms', 300),
         }
+
+    def _link_id_by_personality(self, owner: str) -> dict[int, int]:
+        """Mapping PID→link_id für alle Members des gegebenen Owners."""
+        result: dict[int, int] = {}
+        links = getattr(self.munchlax, "soullink_links", None)
+        if not isinstance(links, dict):
+            return result
+        for link in links.values():
+            member = (link.get("members") or {}).get(owner)
+            if not member:
+                continue
+            pv = member.get("personality")
+            if pv is None:
+                continue
+            result[pv] = link.get("link_id", 0)
+        return result
+
+    def _apply_slot_sort(self, team_data: list, link_id_by_pv: dict) -> list:
+        """Sortiert Slots nach ov.sort_mode. Leere/versteckte Slots immer ans Ende.
+
+        Modi:
+        - default: Reihenfolge unverändert (leere Slots bleiben wo sie sind)
+        - by_link_group: nach link_id aufsteigend, nicht-gelinkte danach, leere zuletzt
+        - by_route: (nicht in Task 14 umgesetzt — Route-Info aktuell nicht im Payload)
+        - by_dexnr: nach dexnr aufsteigend, leere zuletzt
+        """
+        mode = (self.ov.get("sort_mode", "default") or "default").lower()
+        if mode == "default":
+            # Nur leere Slots ans Ende schieben (Empty-Slot-Regel Task #13).
+            visible = [e for e in team_data if e.get("dexnr", 0) != 0]
+            empty = [e for e in team_data if e.get("dexnr", 0) == 0]
+            return self._reindex_slots(visible + empty)
+        if mode == "by_link_group":
+            def key(entry):
+                if entry.get("dexnr", 0) == 0:
+                    return (2, 0, entry.get("slot", 0))
+                pv = entry.get("personality")
+                lid = link_id_by_pv.get(pv) if pv is not None else None
+                if lid is None:
+                    return (1, 0, entry.get("slot", 0))
+                return (0, lid, entry.get("slot", 0))
+            return self._reindex_slots(sorted(team_data, key=key))
+        if mode == "by_dexnr":
+            def key(entry):
+                if entry.get("dexnr", 0) == 0:
+                    return (1, 0)
+                return (0, entry.get("dexnr", 0))
+            return self._reindex_slots(sorted(team_data, key=key))
+        # Fallback = default
+        visible = [e for e in team_data if e.get("dexnr", 0) != 0]
+        empty = [e for e in team_data if e.get("dexnr", 0) == 0]
+        return self._reindex_slots(visible + empty)
+
+    @staticmethod
+    def _reindex_slots(entries: list) -> list:
+        """Setzt slot=0..N-1 nach neuer Reihenfolge. Empty-identity_keys anpassen."""
+        for i, e in enumerate(entries):
+            e["slot"] = i
+            if e.get("dexnr", 0) == 0 and str(e.get("identity_key", "")).startswith("empty_"):
+                e["identity_key"] = f"empty_{i}"
+        return entries
+
+    def _owner_for_local_player(self, player_id: int) -> str:
+        """Owner-String für lokal betreute Player (build_owner-Konvention)."""
+        try:
+            your_name = self.munchlax.pl.get("your_name", "") if self.munchlax.pl else ""
+        except AttributeError:
+            your_name = ""
+        try:
+            client_id = str(self.munchlax.rem.get("client_id", 0)) if self.munchlax.rem else "0"
+        except AttributeError:
+            client_id = "0"
+        return f"{your_name}_{client_id}"
+
+    def _soullink_filter_active(self) -> bool:
+        """True wenn nicht-vollständig gelinkte Pokemon versteckt werden sollen."""
+        cfg = getattr(self.munchlax, "soullink_config", None) or {}
+        if cfg.get("mode", "off") == "off":
+            return False
+        return bool(self.ov.get("hide_incomplete_links", True))
+
+    def _pokemon_link_state(self, pokemon, owner: str) -> str | None:
+        """Sucht (personality, owner) in soullink_links. Return: link.state oder None."""
+        pv = getattr(pokemon, "personality", None)
+        if pv is None:
+            return None
+        links = getattr(self.munchlax, "soullink_links", None)
+        if not isinstance(links, dict):
+            return None
+        for link in links.values():
+            member = (link.get("members") or {}).get(owner)
+            if not member:
+                continue
+            if member.get("personality") == pv:
+                return link.get("state")
+        return None
 
     def _resolve_sprite_path(self, pokemon, edition: int) -> str | None:
         """Baut Dateisystempfad — spiegelt OBS.get_sprite() Logik."""
@@ -253,6 +414,46 @@ class OverlayServer:
         player_id = int(request.match_info['player_id'])
         payload = self._build_full_payload(player_id)
         return web.json_response(payload)
+
+    async def _handle_session_state(self, request: web.Request) -> web.Response:
+        return web.json_response(self._build_session_snapshot())
+
+    async def _handle_session_sse(self, request: web.Request) -> web.StreamResponse:
+        response = web.StreamResponse(
+            status=200, reason='OK',
+            headers={
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*',
+            },
+        )
+        await response.prepare(request)
+        queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+        self._session_sse_queues.append(queue)
+        self.logger.info("Session-SSE-Client verbunden")
+        # Initial-Snapshot senden
+        try:
+            snap = self._build_session_snapshot()
+            init = f"event: snapshot\ndata: {json.dumps(snap, ensure_ascii=False, default=str)}\n\n"
+            await response.write(init.encode('utf-8'))
+        except Exception as err:
+            self.logger.warning(f"session SSE initial snapshot failed: {err}")
+        try:
+            while True:
+                event = await queue.get()
+                await response.write(event.encode('utf-8'))
+        except (asyncio.CancelledError, ConnectionResetError):
+            pass
+        finally:
+            if queue in self._session_sse_queues:
+                self._session_sse_queues.remove(queue)
+            self.logger.info("Session-SSE-Client getrennt")
+        return response
+
+    async def _handle_timer_page(self, request: web.Request) -> web.Response:
+        html = self._render_timer_html()
+        return web.Response(text=html, content_type='text/html')
 
     async def _handle_sse(self, request: web.Request) -> web.StreamResponse:
         player_id = int(request.match_info['player_id'])
@@ -621,6 +822,150 @@ es.addEventListener('team', function(e) {{
 es.addEventListener('badges', function(e) {{
     // Team-Overlay ignoriert Badge-Events
 }});
+</script>
+</body>
+</html>"""
+
+    def _render_timer_html(self) -> str:
+        return """<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: transparent; font-family: 'Segoe UI', Arial, sans-serif; color: #fff; overflow: hidden; }
+#wrap { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; align-items: baseline; gap: 10px; text-shadow: 2px 2px 4px #000, 0 0 8px #000; }
+.label { font-size: 16px; opacity: 0.8; }
+.value { font-family: 'Consolas', 'Courier New', monospace; font-weight: bold; }
+.timer { font-size: 42px; }
+.countdown { font-size: 32px; }
+.countdown.finished { color: #4caf50; }
+.countdown.paused { color: #ff9800; }
+.timer.paused { color: #ff9800; }
+.hidden { display: none; }
+.splits { font-size: 14px; color: #ffd700; }
+.violations { font-size: 13px; margin-top: 6px; }
+.viol { padding: 3px 6px; border-radius: 3px; margin-bottom: 3px; background: rgba(180, 40, 40, 0.85); text-shadow: 1px 1px 2px #000; }
+.viol.total_wipe { background: rgba(200, 30, 30, 0.95); font-weight: bold; }
+.viol.first_type_clash { background: rgba(180, 100, 30, 0.85); }
+.viol.trade { background: rgba(120, 60, 180, 0.85); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div class="row"><span class="label">Race</span><span id="timer" class="value timer">00:00:00</span></div>
+  <div id="cd-row" class="row hidden"><span class="label" id="cd-label">Countdown</span><span id="countdown" class="value countdown">--:--:--</span></div>
+  <div id="splits" class="splits"></div>
+  <div id="violations" class="violations"></div>
+</div>
+<script>
+let state = { timer_state: {}, countdown_state: {} };
+let timerAnchor = null;   // {elapsed, running, local_ts}
+let countdownAnchor = null;
+
+function fmt(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    const h = String(Math.floor(sec / 3600)).padStart(2, '0');
+    const m = String(Math.floor(sec / 60) % 60).padStart(2, '0');
+    const s = String(sec % 60).padStart(2, '0');
+    return h + ':' + m + ':' + s;
+}
+
+function setTimerAnchor(elapsed, running) {
+    timerAnchor = { elapsed: elapsed || 0, running: !!running, local_ts: Date.now() / 1000 };
+}
+
+function setCountdownAnchor(remaining, running) {
+    countdownAnchor = { remaining: remaining || 0, running: !!running, local_ts: Date.now() / 1000 };
+}
+
+function tick() {
+    const timerEl = document.getElementById('timer');
+    if (timerAnchor) {
+        let elapsed = timerAnchor.elapsed;
+        if (timerAnchor.running) elapsed += (Date.now() / 1000) - timerAnchor.local_ts;
+        timerEl.textContent = fmt(elapsed);
+        timerEl.className = 'value timer' + (timerAnchor.running ? '' : ' paused');
+    }
+    const cdEl = document.getElementById('countdown');
+    const cdRow = document.getElementById('cd-row');
+    const cs = state.countdown_state || {};
+    if (cs.duration_seconds > 0) {
+        cdRow.classList.remove('hidden');
+        let remaining = countdownAnchor ? countdownAnchor.remaining : (cs.remaining_seconds || 0);
+        if (countdownAnchor && countdownAnchor.running) {
+            remaining = Math.max(0, remaining - ((Date.now() / 1000) - countdownAnchor.local_ts));
+        }
+        cdEl.textContent = fmt(remaining);
+        cdEl.className = 'value countdown' + (cs.finished ? ' finished' : (cs.running ? '' : ' paused'));
+        const lbl = cs.label || 'Countdown';
+        document.getElementById('cd-label').textContent = lbl;
+    } else {
+        cdRow.classList.add('hidden');
+    }
+    requestAnimationFrame(tick);
+}
+
+function renderSplits() {
+    const el = document.getElementById('splits');
+    const ts = state.timer_state || {};
+    const splits = ts.splits || [];
+    el.innerHTML = splits.slice(-6).map(s => fmt(s.elapsed) + '  ' + (s.label || '')).join('<br>');
+}
+
+function renderViolations() {
+    const el = document.getElementById('violations');
+    const violations = state.soullink_rule_violations || [];
+    if (!violations.length) { el.innerHTML = ''; return; }
+    el.innerHTML = violations.slice(-5).map(v => {
+        const cls = 'viol ' + (v.type || 'unknown');
+        return '<div class="' + cls + '">' + (v.message || v.type || '?') + '</div>';
+    }).join('');
+}
+
+function applySnapshot(snap) {
+    state = snap || {};
+    const ts = state.timer_state || {};
+    setTimerAnchor(ts.elapsed || 0, ts.running);
+    const cs = state.countdown_state || {};
+    setCountdownAnchor(cs.remaining_seconds || 0, cs.running);
+    renderSplits();
+    renderViolations();
+}
+
+fetch('/session/state').then(r => r.json()).then(applySnapshot);
+
+const es = new EventSource('/session/events');
+es.addEventListener('snapshot', function(e) { applySnapshot(JSON.parse(e.data)); });
+es.addEventListener('timer_state', function(e) {
+    const t = JSON.parse(e.data);
+    state.timer_state = t;
+    setTimerAnchor(t.elapsed || 0, t.running);
+    renderSplits();
+});
+es.addEventListener('timer_tick', function(e) {
+    const t = JSON.parse(e.data);
+    setTimerAnchor(t.elapsed || 0, t.running);
+});
+es.addEventListener('countdown_state', function(e) {
+    const c = JSON.parse(e.data);
+    state.countdown_state = c;
+    setCountdownAnchor(c.remaining_seconds || 0, c.running);
+});
+es.addEventListener('countdown_tick', function(e) {
+    const c = JSON.parse(e.data);
+    setCountdownAnchor(c.remaining_seconds || 0, c.running);
+});
+es.addEventListener('countdown_finished', function(e) {
+    state.countdown_state = Object.assign({}, state.countdown_state, {finished: true, running: false});
+});
+es.addEventListener('soullink_rule_violation', function(e) {
+    const v = JSON.parse(e.data);
+    state.soullink_rule_violations = (state.soullink_rule_violations || []).concat([v]);
+    renderViolations();
+});
+tick();
 </script>
 </body>
 </html>"""

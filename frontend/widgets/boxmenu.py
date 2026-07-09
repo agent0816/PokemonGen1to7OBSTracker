@@ -279,6 +279,7 @@ class BoxMenu(Screen):
         self.box_detail_screen.show(
             pokemon, edition, rando_data,
             back_callback=lambda: setattr(self.box_sm, 'current', 'BoxGrid'),
+            munchlax=self.munchlax,
         )
         self.box_sm.current = "PokemonDetail"
 

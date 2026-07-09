@@ -823,6 +823,7 @@ class Bizhawk:
                     self.encounter_tracker = EncounterTracker(
                         self.munchlax.pokedex_db,
                         self.munchlax.nuz,
+                        munchlax=self.munchlax,
                     )
 
             if self.encounter_tracker is None:

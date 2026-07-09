@@ -11,6 +11,7 @@ from frontend.widgets.mainmenu import MainMenu
 from frontend.widgets.pokedexmenu import PokedexMenu
 from frontend.widgets.sessionsmenu import SessionMenu
 from frontend.widgets.settingsmenu import SettingsMenu
+from frontend.widgets.soullinkmenu import SoullinkMenu
 from frontend.widgets.updatemenu import Update
 from kivy.app import App
 from kivy.clock import Clock
@@ -74,6 +75,17 @@ class Screens(ScreenManager):
         self.add_widget(bag_menu)
         encounter_menu = EncounterMenu(configsave, pl, APP_VERSION)
         self.add_widget(encounter_menu)
+        soullink_menu = SoullinkMenu(munchlax, configsave, nuz, bh=bh)
+        self.add_widget(soullink_menu)
+
+        # Total-Wipe-Banner-Callback registrieren (Task #17)
+        from frontend.widgets.wipe_banner import TotalWipeBanner
+        def _open_wipe_banner(_violation):
+            def _pick_other():
+                self.current = "SoullinkMenu"
+            TotalWipeBanner(munchlax, configsave, bh=bh,
+                              on_pick_other=_pick_other).open()
+        munchlax.on_total_wipe_callback = lambda v: _open_wipe_banner(v)
         self.current = "Update"
         update_menu.check_for_update()
 

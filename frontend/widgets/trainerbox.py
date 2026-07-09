@@ -184,6 +184,7 @@ class TrainerBox(BoxLayout):
         detail.show(
             pokemon, edition, rando_data,
             back_callback=lambda: setattr(self.screen.pokemon_sm, 'current', 'TeamOverview'),
+            munchlax=self.munchlax,
         )
         detail.set_refresh_source(self.player_id, slot, self.munchlax, rando_getter)
         self.screen.pokemon_sm.current = "PokemonDetail"

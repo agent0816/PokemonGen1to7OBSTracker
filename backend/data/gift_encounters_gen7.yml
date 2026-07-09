@@ -1,0 +1,275 @@
+# Gift/Fossil/Static/One-Time Encounter-Definitionen für Gen 7
+# Keyed by zone_id (u16, Runtime-Wert aus encounter_zone_pointer)
+# dexnr wird NICHT geprüft — Randomizer ändert Species
+#
+# type: gift | fossil | egg | static | trade | one-time
+# count: wie viele Pokemon an diesem Ort vergeben werden
+# repeatable: true wenn mehrfach einlösbar
+# edition: [71=Sonne, 72=Mond, 73=Ultra Sonne, 74=Ultra Mond]
+# condition: optionale Bedingung (post_game, event)
+#
+# HINWEIS: encounter_zone_pointer für Gen 7 noch NICHT gefunden!
+#          Alle zone_ids müssen empirisch per zone_logger.py ermittelt werden.
+#          Bis dahin sind die Einträge als TODOs mit ???: auskommentiert.
+#          met_location_ids aus encounter_locations_gen7.yml als Referenz.
+#
+# Quelle: tools/research/gen7/nuzlocke-usum-data/encounters.json
+#         + Recherche-Agent SM-Delta-Ergebnis (2026-07-05)
+
+# ============================================================
+# SM + USUM — Gifts
+# ============================================================
+
+# Lili'i (Iki Town) — Alola-Starter (Bauz/Flamiau/Robball)
+# met_location: 22 (Lili'i)
+# ???:
+#   - type: gift
+#     name: Alola-Starter
+#     count: 1
+
+# Ohana-Farm (Paniola Ranch) — Eevee von NPC
+# met_location: 76 (Ohana-Farm)
+# ???:
+#   - type: gift
+#     name: Eevee
+#     count: 1
+
+# Route 15 — Porygon von Æther-Angestelltem
+# met_location: 112 (Route 15)
+# ???:
+#   - type: gift
+#     name: Porygon
+#     count: 1
+
+# Sonnenkreis-See / Mondscheiben-See — Cosmog (Post-Game)
+# met_location: 138 / 140 (versionsabhängig)
+# ???:
+#   - type: gift
+#     name: Cosmog
+#     count: 1
+#     condition: post_game
+
+# Æther-Paradies — Type:Null (Post-Game, SM)
+# In USUM: Alter Pfad von Poni (met_location 156)
+# met_location: 184 (SM) / 156 (USUM)
+# ???:
+#   - type: gift
+#     name: Type:Null
+#     count: 1
+#     condition: post_game
+
+# ============================================================
+# USUM-exklusiv — Gifts
+# ============================================================
+
+# Fossilien-Center (Route 8 Bereich) — 10 Fossilien käuflich
+# met_location: 56 (Route 8)
+# ???:
+#   - type: fossil
+#     name: Fossil-Kauf
+#     count: 10
+#     repeatable: true
+#     edition: [73, 74]
+
+# Route 16 — Zygarde-10% von Dexio
+# met_location: 114 (Route 16)
+# ???:
+#   - type: gift
+#     name: Zygarde-10%
+#     count: 1
+#     edition: [73, 74]
+
+# Dorf des Seevolkes (Seafolk Village) — Aerodactyl von NPC
+# met_location: 168 (Dorf des Seevolkes)
+# ???:
+#   - type: gift
+#     name: Aerodactyl
+#     count: 1
+#     edition: [73, 74]
+
+# Ultrametropolis — Poipole (Story-Geschenk)
+# met_location: 202 (Ultrametropolis)
+# ???:
+#   - type: gift
+#     name: Poipole
+#     count: 1
+#     edition: [73, 74]
+
+# ============================================================
+# SM + USUM — Static / One-Time Encounters
+# ============================================================
+
+# Mahalo-Bergpfad — Cover-Legendär
+# SM: Solgaleo (71) / Lunala (72) in Story
+# USUM: Solgaleo (73) / Lunala (74) in Story
+# met_location: 24 (Mahalo-Bergpfad)
+# ???:
+#   - type: static
+#     name: Solgaleo/Lunala
+#     count: 1
+
+# Ruinen des Krieges — Kapu-Riki (Tapu Koko)
+# met_location: 28 (Ruinen des Krieges)
+# ???:
+#   - type: static
+#     name: Kapu-Riki
+#     count: 1
+
+# Ruinen des Lebens — Kapu-Fala (Tapu Lele)
+# met_location: 90 (Ruinen des Lebens)
+# ???:
+#   - type: static
+#     name: Kapu-Fala
+#     count: 1
+
+# Ruinen des Gedeihens — Kapu-Toro (Tapu Bulu)
+# met_location: 136 (Ruinen des Gedeihens)
+# ???:
+#   - type: static
+#     name: Kapu-Toro
+#     count: 1
+
+# Ruinen der Heimkehr — Kapu-Kime (Tapu Fini)
+# met_location: 176 (Ruinen der Heimkehr)
+# ???:
+#   - type: static
+#     name: Kapu-Kime
+#     count: 1
+
+# Mount Lanakila — Necrozma (Post-Game)
+# met_location: 142 (Mount Lanakila)
+# ???:
+#   - type: static
+#     name: Necrozma
+#     count: 1
+#     condition: post_game
+
+# ============================================================
+# SM + USUM — Overworld One-Time Encounters
+# ============================================================
+
+# Hauholi City — Hypno (One-Time, USUM Polizeiquest)
+# met_location: 16 (Hauholi City)
+# ???:
+#   - type: one-time
+#     name: Hypno
+#     count: 1
+#     edition: [73, 74]
+
+# Hauholi City — Bewear (One-Time, USUM)
+# met_location: 16 (Hauholi City)
+# ???:
+#   - type: one-time
+#     name: Bewear
+#     count: 1
+#     edition: [73, 74]
+
+# Trainerschule — Nebulak + Driftlon (One-Time, USUM)
+# met_location: 227 (Trainerschule)
+# ???:
+#   - type: one-time
+#     name: Nebulak/Driftlon
+#     count: 2
+#     edition: [73, 74]
+
+# Route 8 — Wimpod ×1 (One-Time)
+# met_location: 56 (Route 8)
+# ???:
+#   - type: one-time
+#     name: Wimpod
+#     count: 1
+
+# Konikoni City — Ditto ×2 (One-Time)
+# met_location: 70 (Konikoni City)
+# ???:
+#   - type: one-time
+#     name: Ditto
+#     count: 2
+
+# Hanohano-Strand (Hano Beach) — Sandygast (One-Time)
+# met_location: 62 (Hanohano-Strand)
+# ???:
+#   - type: one-time
+#     name: Sandygast
+#     count: 1
+
+# Beschwerlicher Pfad (Poni Gauntlet) — Wimpod (One-Time)
+# met_location: 166 (Beschwerlicher Pfad)
+# ???:
+#   - type: one-time
+#     name: Wimpod
+#     count: 1
+
+# ============================================================
+# USUM-exklusiv — Static Encounters
+# ============================================================
+
+# Wald von Poni (Poni Grove) — Stakataka (UM) / Blacephalon (US)
+# met_location: 160 (Wald von Poni)
+# ???:
+#   - type: static
+#     name: Stakataka/Blacephalon
+#     count: 1
+#     edition: [73, 74]
+
+# Finalhöhle (Resolution Cave) — Zygarde 50% (USUM)
+# In SM: nur Zygarde-Zellen, kein Fang
+# met_location: 178 (Finalhöhle)
+# ???:
+#   - type: static
+#     name: Zygarde
+#     count: 1
+#     edition: [73, 74]
+
+# ============================================================
+# SM + USUM — NPC-Tausche (für Vollständigkeit)
+# ============================================================
+
+# Royal Avenue — Schmerbe (Barboach) Tausch
+# met_location: 72 (Avenue Royale)
+# ???:
+#   - type: trade
+#     name: Schmerbe-Tausch
+#     count: 1
+
+# Route 2 — Hawlucha Tausch
+# met_location: 10 (Route 2)
+# ???:
+#   - type: trade
+#     name: Hawlucha-Tausch
+#     count: 1
+
+# Route 5 — Fledermausal (Noibat) Tausch
+# met_location: 50 (Route 5)
+# ???:
+#   - type: trade
+#     name: Fledermausal-Tausch
+#     count: 1
+
+# Route 8 — Arbok Tausch
+# met_location: 56 (Route 8)
+# ???:
+#   - type: trade
+#     name: Arbok-Tausch
+#     count: 1
+
+# Malihe City — Paragoni (Phantump) Tausch
+# met_location: 128 (Malihe City)
+# ???:
+#   - type: trade
+#     name: Paragoni-Tausch
+#     count: 1
+
+# Dorf des Seevolkes — Schalellos (Shellos) Tausch
+# met_location: 168 (Dorf des Seevolkes)
+# ???:
+#   - type: trade
+#     name: Schalellos-Tausch
+#     count: 1
+
+# Beschwerlicher Pfad — Tauros Tausch
+# met_location: 166 (Beschwerlicher Pfad)
+# ???:
+#   - type: trade
+#     name: Tauros-Tausch
+#     count: 1

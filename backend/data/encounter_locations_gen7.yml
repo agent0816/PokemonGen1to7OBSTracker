@@ -1,0 +1,365 @@
+# Encounter-Locations für Gen 7 (SM + USUM)
+# met_location_id -> Name + Games
+# Quelle: PKHeX text_sm_00000_de.txt (0-indexed line = met_location_id, Blank-Zeilen mitzählen!)
+# SM: 71=Sonne, 72=Mond | USUM: 73=Ultra Sonne, 74=Ultra Mond
+# met_location_ids 0-193 existieren in SM+USUM, ab 194 nur USUM
+
+# ── Mele-Mele ──────────────────────────────────────────
+
+4:
+  name: Route 1
+  games: [71, 72, 73, 74]
+
+5:
+  name: Hauholi-Stadtrand
+  games: [71, 72, 73, 74]
+
+8:
+  name: Route 3
+  games: [71, 72, 73, 74]
+
+10:
+  name: Route 2
+  games: [71, 72, 73, 74]
+
+12:
+  name: Kala'e-Bucht
+  games: [71, 72, 73, 74]
+
+14:
+  name: Meer von Mele-Mele
+  games: [71, 72, 73, 74]
+
+16:
+  name: Hauholi City
+  games: [71, 72, 73, 74]
+
+24:
+  name: Mahalo-Bergpfad
+  games: [71, 72, 73, 74]
+
+28:
+  name: Ruinen des Krieges
+  games: [71, 72, 73, 74]
+
+32:
+  name: Tenkarat-Hügel
+  games: [71, 72, 73, 74]
+
+34:
+  name: Tenkarat-Hügel
+  games: [71, 72, 73, 74]
+
+36:
+  name: Hauholi-Friedhof
+  games: [71, 72, 73, 74]
+
+38:
+  name: Mele-Mele-Blumenmeer
+  games: [71, 72, 73, 74]
+
+40:
+  name: Meereshöhle
+  games: [71, 72, 73, 74]
+
+42:
+  name: Beerenfelder
+  games: [71, 72, 73, 74]
+
+44:
+  name: Vegetationshöhle
+  games: [71, 72, 73, 74]
+
+# ── Akala ───────────────────────────────────────────────
+
+48:
+  name: Route 4
+  games: [71, 72, 73, 74]
+
+50:
+  name: Route 5
+  games: [71, 72, 73, 74]
+
+52:
+  name: Route 6
+  games: [71, 72, 73, 74]
+
+54:
+  name: Route 7
+  games: [71, 72, 73, 74]
+
+56:
+  name: Route 8
+  games: [71, 72, 73, 74]
+
+58:
+  name: Route 9
+  games: [71, 72, 73, 74]
+
+62:
+  name: Hanohano-Strand
+  games: [71, 72, 73, 74]
+
+66:
+  name: Ohana
+  games: [71, 72, 73, 74]
+
+70:
+  name: Konikoni City
+  games: [71, 72, 73, 74]
+
+74:
+  name: Hügel des Gedenkens
+  games: [71, 72, 73, 74]
+
+76:
+  name: Ohana-Farm
+  games: [71, 72, 73, 74]
+
+80:
+  name: Wela-Vulkanpark
+  games: [71, 72, 73, 74]
+
+84:
+  name: Plätscherhügel
+  games: [71, 72, 73, 74]
+
+88:
+  name: Schattendschungel
+  games: [71, 72, 73, 74]
+
+90:
+  name: Ruinen des Lebens
+  games: [71, 72, 73, 74]
+
+92:
+  name: Akala-Küstenstreifen
+  games: [71, 72, 73, 74]
+
+96:
+  name: Digda-Tunnel
+  games: [71, 72, 73, 74]
+
+# ── Ula-Ula ─────────────────────────────────────────────
+
+102:
+  name: Route 10
+  games: [71, 72, 73, 74]
+
+104:
+  name: Route 11
+  games: [71, 72, 73, 74]
+
+106:
+  name: Strand von Ula-Ula
+  games: [71, 72, 73, 74]
+
+108:
+  name: Route 13
+  games: [71, 72, 73, 74]
+
+110:
+  name: Dorf der Kapu
+  games: [71, 72, 73, 74]
+
+112:
+  name: Route 15 (Wasserweg)
+  games: [71, 72, 73, 74]
+
+114:
+  name: Route 16
+  games: [71, 72, 73, 74]
+
+116:
+  name: Route 17
+  games: [71, 72, 73, 74]
+
+118:
+  name: Route 12
+  games: [71, 72, 73, 74]
+
+120:
+  name: Haina-Wüste
+  games: [71, 72, 73, 74]
+
+122:
+  name: Route 14
+  games: [71, 72, 73, 74]
+
+124:
+  name: Ula-Ula-Blumenmeer
+  games: [71, 72, 73, 74]
+
+128:
+  name: Malihe City
+  games: [71, 72, 73, 74]
+
+130:
+  name: Malihe-Ziergarten
+  games: [71, 72, 73, 74]
+
+132:
+  name: Hokulani-Berg
+  games: [71, 72, 73, 74]
+
+134:
+  name: Glühberg
+  games: [71, 72, 73, 74]
+
+136:
+  name: Ruinen des Gedeihens
+  games: [71, 72, 73, 74]
+
+138:
+  name: Sonnenkreis-See
+  games: [71, 72, 73, 74]
+
+140:
+  name: Mondscheiben-See
+  games: [71, 72, 73, 74]
+
+142:
+  name: Mount Lanakila
+  games: [71, 72, 73, 74]
+
+147:
+  name: Verlassener Laden
+  games: [71, 72, 73, 74]
+
+# ── Poni ────────────────────────────────────────────────
+
+152:
+  name: Poni-Blumenmeer
+  games: [71, 72, 73, 74]
+
+154:
+  name: Wildnis von Poni
+  games: [71, 72, 73, 74]
+
+156:
+  name: Alter Pfad von Poni
+  games: [71, 72, 73, 74]
+
+158:
+  name: Felsenküste von Poni
+  games: [71, 72, 73, 74]
+
+160:
+  name: Wald von Poni
+  games: [71, 72, 73, 74]
+
+162:
+  name: Ebene von Poni
+  games: [71, 72, 73, 74]
+
+164:
+  name: Küste von Poni
+  games: [71, 72, 73, 74]
+
+166:
+  name: Beschwerlicher Pfad
+  games: [71, 72, 73, 74]
+
+168:
+  name: Dorf des Seevolkes
+  games: [71, 72, 73, 74]
+
+170:
+  name: Canyon von Poni
+  games: [71, 72, 73, 74]
+
+176:
+  name: Ruinen der Heimkehr
+  games: [71, 72, 73, 74]
+
+178:
+  name: Finalhöhle
+  games: [71, 72, 73, 74]
+
+180:
+  name: Kokowei-Eiland
+  games: [71, 72, 73, 74]
+
+# ── Sonstige (SM + USUM) ───────────────────────────────
+
+172:
+  name: Sonnenkreis-Podium
+  games: [71, 72, 73, 74]
+
+174:
+  name: Mondscheiben-Podium
+  games: [71, 72, 73, 74]
+
+184:
+  name: Æther-Paradies
+  games: [71, 72, 73, 74]
+
+186:
+  name: Ultratiefsee
+  games: [71, 72, 73, 74]
+
+# ── USUM-exklusiv (met_id >= 194) ──────────────────────
+
+194:
+  name: Big Wave Beach
+  games: [73, 74]
+
+196:
+  name: Strandhöhle
+  games: [73, 74]
+
+198:
+  name: Kantai-Strand
+  games: [73, 74]
+
+200:
+  name: Strand von Poni
+  games: [73, 74]
+
+202:
+  name: Ultrametropolis
+  games: [73, 74]
+
+206:
+  name: Ultrakraftwerk
+  games: [73, 74]
+
+208:
+  name: Ultratal
+  games: [73, 74]
+
+210:
+  name: Ultrawüste
+  games: [73, 74]
+
+212:
+  name: Ultrawald
+  games: [73, 74]
+
+214:
+  name: Ultradschungel
+  games: [73, 74]
+
+216:
+  name: Ultrawolkenkratzer
+  games: [73, 74]
+
+218:
+  name: Ultradimension Zero
+  games: [73, 74]
+
+222:
+  name: Tunnel in der Ebene
+  games: [73, 74]
+
+224:
+  name: Pikachu-Tal
+  games: [73, 74]
+
+227:
+  name: Trainerschule
+  games: [73, 74]
+
+228:
+  name: Spaltberg-Tunnel
+  games: [73, 74]

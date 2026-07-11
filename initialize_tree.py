@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 import yaml
 
@@ -300,6 +301,40 @@ def update_session(sessionpath, default=False):
         else:
             new_nuz=Path(f"{sessionpath}/default/nuzlocke.yml")
             load_config(nuzlocke, nuz, new_path=new_nuz)
+
+    session_root = Path(f"{sessionpath}/default") if default else Path(sessionpath)
+    ensure_runs_dir(session_root)
+    detect_legacy_encounter_archives(session_root)
+
+def ensure_runs_dir(session_root: Path):
+    runs = session_root / "runs"
+    if not runs.exists():
+        runs.mkdir(parents=True, exist_ok=True)
+
+def detect_legacy_encounter_archives(session_root: Path):
+    """Meldet alte encounters_archived_* Tabellen. Nur INFO-Log, kein Umbau."""
+    db_path = session_root / "pokemon.db"
+    if not db_path.exists():
+        return
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            rows = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name LIKE 'encounters_archived_%'"
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return
+    if rows:
+        names = [r[0] for r in rows]
+        print(
+            f"[initialize_tree] {session_root.name}: "
+            f"{len(names)} legacy encounters_archived_* Tabellen gefunden "
+            f"({', '.join(names[:3])}{'...' if len(names) > 3 else ''}). "
+            "Bleiben unangetastet."
+        )
 
 if __name__ == '__main__':
     init_config_folder()

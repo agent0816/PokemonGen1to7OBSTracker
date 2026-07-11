@@ -22,6 +22,10 @@ class EncounterResult:
     is_dupes_skip: bool
     has_balls: bool
     already_logged: bool
+    # True → Caller (bizhawk/citrahandler) muss send_soullink_token_earned auf
+    # dem Event-Loop-Thread triggern. process_gift_encounter selbst läuft im
+    # run_in_executor-Worker-Thread und kann kein asyncio.create_task rufen.
+    token_earned: bool = False
 
 
 class EncounterTracker:
@@ -243,7 +247,15 @@ class EncounterTracker:
 
     def process_wild_encounter(self, owner: str, edition: int,
                                 opponent: dict, route: int) -> EncounterResult:
-        """Prüft Nuzlocke-Regeln und persistiert Wild-Encounter."""
+        """Prüft Nuzlocke-Regeln und persistiert Wild-Encounter.
+
+        Läuft komplett unter ``pokedex_db.access_lock`` (RLock), damit
+        ``_check_nuzlocke_flags`` (mehrere einzelne @_serialized-Reads) und
+        ``insert_encounter`` (Write) als eine Einheit gegen echte
+        Nebenläufigkeit anderer Executor-Tasks atomar bleiben. Sonst könnten
+        z.B. zwei nahezu zeitgleiche Wild-Encounters beide den
+        Species-Dupes-Check bestehen, bevor einer committet.
+        """
         dexnr = opponent["dexnr"]
         lvl = opponent["lvl"]
         shiny = opponent["shiny"]
@@ -257,25 +269,26 @@ class EncounterTracker:
         has_balls = False
 
         try:
-            has_balls, is_first, is_shiny_override, is_dupes_skip = \
-                self._check_nuzlocke_flags(owner, edition, route, dexnr, shiny, method)
+            with self.pokedex_db.access_lock:
+                has_balls, is_first, is_shiny_override, is_dupes_skip = \
+                    self._check_nuzlocke_flags(owner, edition, route, dexnr, shiny, method)
 
-            inserted = self.pokedex_db.insert_encounter(
-                personality=personality,
-                owner=owner,
-                edition=edition,
-                route=route,
-                dexnr=dexnr,
-                lvl=lvl,
-                shiny=shiny,
-                is_first=is_first or is_shiny_override,
-                is_shiny_override=is_shiny_override,
-                is_dupes_skip=is_dupes_skip,
-                has_balls=has_balls,
-                method=method,
-                outcome=outcome,
-            )
-            already_logged = not inserted
+                inserted = self.pokedex_db.insert_encounter(
+                    personality=personality,
+                    owner=owner,
+                    edition=edition,
+                    route=route,
+                    dexnr=dexnr,
+                    lvl=lvl,
+                    shiny=shiny,
+                    is_first=is_first or is_shiny_override,
+                    is_shiny_override=is_shiny_override,
+                    is_dupes_skip=is_dupes_skip,
+                    has_balls=has_balls,
+                    method=method,
+                    outcome=outcome,
+                )
+                already_logged = not inserted
 
         except Exception as err:
             self.logger.error(f"process_wild_encounter fehlgeschlagen: {type(err)},{err}")
@@ -321,47 +334,51 @@ class EncounterTracker:
         is_dupes_skip = False
         has_balls = False
 
+        # Wie process_wild_encounter: Read-Prüfungen + Insert unter einem
+        # Lock-Halt, damit parallele Executor-Tasks nicht beide durch die
+        # Nuzlocke-Checks laufen, bevor eine committet hat.
         try:
-            has_balls, is_first, is_shiny_override, is_dupes_skip = \
-                self._check_nuzlocke_flags(
-                    owner, edition, route, dexnr, shiny, method
-                )
+            with self.pokedex_db.access_lock:
+                has_balls, is_first, is_shiny_override, is_dupes_skip = \
+                    self._check_nuzlocke_flags(
+                        owner, edition, route, dexnr, shiny, method
+                    )
 
-            inserted = self.pokedex_db.insert_encounter(
-                personality=personality,
-                owner=owner,
-                edition=edition,
-                route=route,
-                dexnr=dexnr,
-                lvl=lvl,
-                shiny=shiny,
-                is_first=is_first,
-                is_shiny_override=is_shiny_override,
-                is_dupes_skip=is_dupes_skip,
-                has_balls=has_balls,
-                method=method,
-                outcome=outcome,
-            )
-            already_logged = not inserted
+                inserted = self.pokedex_db.insert_encounter(
+                    personality=personality,
+                    owner=owner,
+                    edition=edition,
+                    route=route,
+                    dexnr=dexnr,
+                    lvl=lvl,
+                    shiny=shiny,
+                    is_first=is_first,
+                    is_shiny_override=is_shiny_override,
+                    is_dupes_skip=is_dupes_skip,
+                    has_balls=has_balls,
+                    method=method,
+                    outcome=outcome,
+                )
+                already_logged = not inserted
 
         except Exception as err:
             self.logger.error(f"process_gift_encounter fehlgeschlagen: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
 
+        token_earned = False
         if not already_logged:
             self.logger.info(
                 f"Gift-Encounter: map_header={map_header_id} "
                 f"gift='{matched_gift.get('name', '?')}' method={method} "
                 f"dex={dexnr} lv={lvl}"
             )
-            # Token-Earn: bei method='token' auf dem Server registrieren
+            # Token-Earn: bei method='token' Flag setzen — Caller triggert den
+            # send_soullink_token_earned-Coroutine auf dem Event-Loop-Thread.
+            # process_gift_encounter läuft aus run_in_executor im Worker-Thread,
+            # asyncio.create_task würde hier deterministisch scheitern
+            # ("no running event loop").
             if method == "token" and self.munchlax is not None and self.nuz.get("rule_token_rule", False):
-                try:
-                    import asyncio
-                    asyncio.create_task(self.munchlax.send_soullink_token_earned(owner))
-                    self.logger.info(f"Token-Earn ausgelöst für {owner}")
-                except Exception as err:
-                    self.logger.warning(f"send_soullink_token_earned failed: {err}")
+                token_earned = True
 
         return EncounterResult(
             dexnr=dexnr, lvl=lvl, shiny=shiny, route=route,
@@ -370,6 +387,7 @@ class EncounterTracker:
             is_shiny_override=is_shiny_override,
             is_dupes_skip=is_dupes_skip,
             has_balls=has_balls, already_logged=already_logged,
+            token_earned=token_earned,
         )
 
     def update_outcome(self, personality: int, owner: str, outcome: str) -> bool:

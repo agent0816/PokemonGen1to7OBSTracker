@@ -80,6 +80,13 @@ class SettingsMenu(Screen):
 
         self.scrollview.save_changes()
 
+    def on_enter(self, *args):
+        # Run-Historie beim Öffnen des Settings-Screens neu einlesen.
+        try:
+            self.scrollview._refresh_run_history()
+        except Exception as err:
+            logger.debug(f"refresh_run_history on_enter failed: {err}")
+
     def jump_to(self, scrollview, jump_id):
         scroll_max_height = scrollview.children[0].height
         new_scrollheight = scrollview.ids[jump_id].y
@@ -433,6 +440,35 @@ class ScrollSettings(ScrollView):
             text_id_name="output_path", text_validate_function=None,
             browse_function=self.browse)
 
+        # --- Run-Historie ---
+        run_history_header = Label(text="Run-Historie", size_hint=(1, None),
+                                    size=(0, "20dp"), font_size="18sp")
+        randomizer_box.add_widget(run_history_header)
+
+        active_run_row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                                     size=(0, "30dp"), padding=("5dp", 0), spacing="10dp")
+        active_run_label = Label(text="(kein aktiver Run)", size_hint_x=.7)
+        self.ids["active_run_label"] = weakref.proxy(active_run_label)
+        active_run_row.add_widget(active_run_label)
+        end_run_button = Button(text="Run manuell beenden", size_hint_x=.3,
+                                 on_press=lambda inst: self._end_run_manual())
+        end_run_button.disabled = True
+        self.ids["end_run_button"] = weakref.proxy(end_run_button)
+        active_run_row.add_widget(end_run_button)
+        randomizer_box.add_widget(active_run_row)
+
+        run_list_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing="4dp")
+        run_list_box.bind(minimum_height=run_list_box.setter('height'))  # type: ignore
+        self.ids["run_list_box"] = weakref.proxy(run_list_box)
+        randomizer_box.add_widget(run_list_box)
+
+        refresh_row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                                  size=(0, "30dp"), padding=("5dp", 0))
+        refresh_button = Button(text="Run-Historie aktualisieren", size_hint=(1, 1),
+                                 on_press=lambda inst: self._refresh_run_history())
+        refresh_row.add_widget(refresh_button)
+        randomizer_box.add_widget(refresh_row)
+
         box.add_widget(randomizer_box)
 
         logging_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing="20dp")
@@ -705,7 +741,7 @@ class ScrollSettings(ScrollView):
     def open_randomizer_gui(self):
         from backend.controller.randomizer_controller import RandomizerController
         self.save_changes()
-        rc = RandomizerController(self.rnd, self.pl)
+        rc = RandomizerController(self.rnd, self.pl, configsave=self.configsave)
         success, error = rc.open_gui()
         if not success:
             box = BoxLayout(orientation='vertical')
@@ -715,6 +751,164 @@ class ScrollSettings(ScrollView):
             popup = Popup(title='Fehler', content=box, size_hint=(None, None), size=(500, 200))
             btn.bind(on_release=popup.dismiss)
             popup.open()
+
+    def _get_run_manager(self):
+        from backend.controller.run_manager import RunManager
+        if self.configsave is None:
+            return None
+        try:
+            # str() nötig: configsave ist MutableString (frontend.app), Path()
+            # akzeptiert das nicht direkt. Kein Caching — Session-Wechsel
+            # mutiert configsave in-place.
+            return RunManager(str(self.configsave))
+        except Exception as err:
+            logger.error(f"RunManager-Init im Settings-UI fehlgeschlagen: {err}")
+            return None
+
+    def _refresh_run_history(self):
+        rm = self._get_run_manager()
+        run_list_box = self.ids.get("run_list_box")
+        active_label = self.ids.get("active_run_label")
+        end_button = self.ids.get("end_run_button")
+        if run_list_box is None or active_label is None or end_button is None:
+            return
+        run_list_box.clear_widgets()
+        if rm is None:
+            active_label.text = "(Session-Pfad fehlt)"
+            end_button.disabled = True
+            return
+
+        active = rm.get_active_run()
+        if active is None:
+            active_label.text = "(kein aktiver Run)"
+            end_button.disabled = True
+        else:
+            slots = [str(r.get("player_slot")) for r in (active.get("roms") or [])]
+            active_label.text = (
+                f"Aktiv: {active.get('run_id', '?')} — "
+                f"Slots {','.join(slots) or '-'} — seit {active.get('start_ts', '?')}"
+            )
+            end_button.disabled = False
+
+        runs = rm.list_runs()
+        # Neueste zuerst
+        for entry in reversed(runs):
+            run_list_box.add_widget(self._build_run_row(entry))
+
+    def _build_run_row(self, entry: dict):
+        row = BoxLayout(orientation='vertical', size_hint_y=None, spacing="2dp",
+                         padding=("5dp", "4dp"))
+        row.bind(minimum_height=row.setter('height'))  # type: ignore
+
+        run_id = entry.get("run_id", "?")
+        idx = entry.get("run_index", "?")
+        reason = entry.get("end_reason") or "(aktiv)"
+        start = entry.get("start_ts", "?")
+        end = entry.get("end_ts") or "-"
+        dur = entry.get("duration_seconds")
+        dur_txt = f"{dur}s" if isinstance(dur, int) else "-"
+        wipe = entry.get("team_wipe") or {}
+        wipe_txt = f" wipe={wipe.get('player_id')}" if wipe.get("player_id") else ""
+
+        header = Label(
+            text=f"#{idx} {run_id} — {reason} — {start} → {end} ({dur_txt}){wipe_txt}",
+            size_hint_y=None, height="24dp", halign="left", valign="middle",
+        )
+        header.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+        row.add_widget(header)
+
+        roms = entry.get("roms") or []
+        for rom_entry in roms:
+            slot = rom_entry.get("player_slot")
+            subdir_name = rom_entry.get("subdir") or f"p{slot}"
+            run_path = entry.get("_path") or ""
+            slot_dir = os.path.join(run_path, subdir_name)
+            rom_path = os.path.join(slot_dir, rom_entry.get("rom_file") or "")
+            log_path = os.path.join(slot_dir, rom_entry.get("log_file") or "randomizer.log")
+
+            slot_row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                                    size=(0, "26dp"), spacing="6dp")
+            slot_row.add_widget(Label(text=f"Slot {slot}", size_hint_x=.15))
+            slot_row.add_widget(Button(
+                text="Log öffnen", size_hint_x=.25,
+                on_press=lambda inst, p=log_path: self._open_path(p),
+            ))
+            slot_row.add_widget(Button(
+                text="ROM-Pfad kopieren", size_hint_x=.3,
+                on_press=lambda inst, p=rom_path: self._copy_to_clipboard(p),
+            ))
+            slot_row.add_widget(Button(
+                text="Ordner öffnen", size_hint_x=.3,
+                on_press=lambda inst, p=slot_dir: self._open_path(p),
+            ))
+            row.add_widget(slot_row)
+
+        return row
+
+    def _open_path(self, path: str):
+        if not path or not os.path.exists(path):
+            self._info_popup("Fehler", f"Pfad nicht gefunden:\n{path}")
+            return
+        try:
+            os.startfile(path)  # type: ignore[attr-defined]
+        except Exception as err:
+            logger.error(f"os.startfile({path}) failed: {err}")
+            self._info_popup("Fehler", f"Konnte Pfad nicht öffnen:\n{err}")
+
+    def _copy_to_clipboard(self, text: str):
+        Clipboard.copy(text or "")
+        self._info_popup("Kopiert", text or "(leer)")
+
+    def _info_popup(self, title: str, text: str):
+        box = BoxLayout(orientation='vertical')
+        box.add_widget(Label(text=text))
+        btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
+        box.add_widget(btn)
+        popup = Popup(title=title, content=box, size_hint=(None, None), size=(500, 200))
+        btn.bind(on_release=popup.dismiss)
+        popup.open()
+
+    def _end_run_manual(self):
+        if self.munchlax is None:
+            self._info_popup("Fehler", "Munchlax nicht verfügbar.")
+            return
+
+        confirm_box = BoxLayout(orientation='vertical', spacing="10dp")
+        confirm_box.add_widget(Label(text="Aktiven Run wirklich beenden?"))
+        btn_row = BoxLayout(orientation='horizontal', size_hint_y=.4, spacing="10dp")
+        yes_btn = Button(text="Ja, beenden")
+        no_btn = Button(text="Abbrechen")
+        btn_row.add_widget(yes_btn)
+        btn_row.add_widget(no_btn)
+        confirm_box.add_widget(btn_row)
+        popup = Popup(title="Run beenden", content=confirm_box,
+                        size_hint=(None, None), size=(500, 200))
+
+        def _yes(*_):
+            popup.dismiss()
+            asyncio.create_task(self._do_end_run_manual())
+        yes_btn.bind(on_release=_yes)
+        no_btn.bind(on_release=lambda *_: popup.dismiss())
+        popup.open()
+
+    async def _do_end_run_manual(self):
+        # Blockierendes I/O (SQLite VACUUM INTO, shutil.copy2) im Executor —
+        # analog zum bestehenden _do_update_sprites-Muster.
+        loop = asyncio.get_event_loop()
+        try:
+            run_id = await loop.run_in_executor(
+                None, self.munchlax.end_run_manual, "manual")
+        except Exception as err:
+            logger.error(f"end_run_manual failed: {err}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self._info_popup("Fehler", f"Run beenden fehlgeschlagen:\n{err}")
+            return
+        if run_id:
+            self._info_popup("Run beendet", f"Run {run_id} als 'manual' abgeschlossen.")
+        else:
+            self._info_popup("Hinweis", "Kein aktiver Run vorhanden.")
+        self._refresh_run_history()
 
     def import_randomizer_log(self):
         log_path = fd.askopenfilename(

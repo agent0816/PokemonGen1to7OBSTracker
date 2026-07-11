@@ -873,7 +873,37 @@ class Bizhawk:
 
     def _handle_new_pokemon(self, client_id: str, player: int, edition,
                             pokemons, new_pvs: list[int]):
-        """Prüft ob neue Pokemon Gift-Encounters sind (nicht aus Kampf)."""
+        """Prüft ob neue Pokemon Gift-Encounters sind (nicht aus Kampf).
+
+        Wird als Callback aus dem sync-Kontext (_persist_teams → Munchlax-Callback)
+        aufgerufen. Die DB-Arbeit (process_gift_encounter läuft unter
+        PokedexDB.access_lock) darf den Event-Loop-Thread nicht blocken —
+        daher als Task in den Loop schieben.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError as err:
+            # Kein Loop laufend — Fallback synchron (Testkontext)
+            self.logger.debug(f"_handle_new_pokemon: kein Loop, sync fallback: {err}")
+            self._process_new_pokemon_sync(client_id, player, edition, pokemons, new_pvs)
+            return
+        loop.create_task(self._handle_new_pokemon_async(
+            client_id, player, edition, pokemons, new_pvs))
+
+    async def _handle_new_pokemon_async(self, client_id: str, player: int, edition,
+                                          pokemons, new_pvs: list[int]):
+        try:
+            await self._handle_new_pokemon_async_impl(
+                client_id, player, edition, pokemons, new_pvs)
+        except Exception as err:
+            # Fire-and-forget-Task — Exceptions dürfen nicht stumm sterben
+            # (CLAUDE.md: asyncio-Tasks brauchen try/except).
+            self.logger.error(
+                f"_handle_new_pokemon_async failed: {type(err).__name__},{err}")
+            self.logger.error(traceback.format_exc())
+
+    async def _handle_new_pokemon_async_impl(self, client_id: str, player: int, edition,
+                                               pokemons, new_pvs: list[int]):
         battle_pv = self._last_battle_pv.get(client_id)
         non_battle_pvs = [pv for pv in new_pvs if pv != battle_pv]
         if not non_battle_pvs or self.encounter_tracker is None:
@@ -886,6 +916,7 @@ class Bizhawk:
             self.munchlax.pl.get('your_name', ''), str(player)
         )
 
+        loop = asyncio.get_event_loop()
         for pv in non_battle_pvs:
             pokemon = None
             for p in pokemons[:6]:
@@ -899,16 +930,24 @@ class Bizhawk:
             if dexnr == 0 or dexnr == "egg":
                 continue
 
-            result = self.encounter_tracker.process_gift_encounter(
-                owner=owner,
-                edition=int(edition),
-                personality=pv,
-                dexnr=int(dexnr) if isinstance(dexnr, (int, str)) and str(dexnr).isdigit() else 0,
-                lvl=pokemon.lvl or 1,
-                shiny=bool(pokemon.shiny),
-                route=getattr(pokemon, "route", 0) or 0,
-                map_header_id=map_header or 0,
-            )
+            try:
+                result = await loop.run_in_executor(
+                    None,
+                    lambda pv=pv, pokemon=pokemon, dexnr=dexnr: self.encounter_tracker.process_gift_encounter(
+                        owner=owner,
+                        edition=int(edition),
+                        personality=pv,
+                        dexnr=int(dexnr) if isinstance(dexnr, (int, str)) and str(dexnr).isdigit() else 0,
+                        lvl=pokemon.lvl or 1,
+                        shiny=bool(pokemon.shiny),
+                        route=getattr(pokemon, "route", 0) or 0,
+                        map_header_id=map_header or 0,
+                    ),
+                )
+            except Exception as err:
+                self.logger.error(f"process_gift_encounter async failed: {err}")
+                self.logger.error(traceback.format_exc())
+                continue
             if result and not result.already_logged:
                 self.logger.info(
                     f"Gift erkannt: dex={dexnr} lv={pokemon.lvl} "
@@ -929,6 +968,42 @@ class Bizhawk:
                     "method": result.method,
                     "outcome": result.outcome,
                 }))
+            if result and result.token_earned:
+                # Trigger auf dem Event-Loop-Thread — process_gift_encounter im
+                # Executor-Worker konnte kein asyncio.create_task rufen.
+                self.logger.info(f"Token-Earn ausgelöst für {owner}")
+                asyncio.create_task(self.munchlax.send_soullink_token_earned(owner))
+
+    def _process_new_pokemon_sync(self, client_id: str, player: int, edition,
+                                    pokemons, new_pvs: list[int]):
+        """Sync-Fallback für Testkontexte ohne laufenden asyncio-Loop."""
+        battle_pv = self._last_battle_pv.get(client_id)
+        non_battle_pvs = [pv for pv in new_pvs if pv != battle_pv]
+        if not non_battle_pvs or self.encounter_tracker is None:
+            return
+        map_header = self._last_map_header.get(client_id, 0)
+        from backend.classes.pokedex_db import PokedexDB
+        owner = PokedexDB.build_owner(
+            self.munchlax.pl.get('your_name', ''), str(player)
+        )
+        for pv in non_battle_pvs:
+            pokemon = None
+            for p in pokemons[:6]:
+                if getattr(p, "personality", None) is not None and int(p.personality) == pv:
+                    pokemon = p
+                    break
+            if pokemon is None:
+                continue
+            dexnr = pokemon.dexnr
+            if dexnr == 0 or dexnr == "egg":
+                continue
+            self.encounter_tracker.process_gift_encounter(
+                owner=owner, edition=int(edition), personality=pv,
+                dexnr=int(dexnr) if isinstance(dexnr, (int, str)) and str(dexnr).isdigit() else 0,
+                lvl=pokemon.lvl or 1, shiny=bool(pokemon.shiny),
+                route=getattr(pokemon, "route", 0) or 0,
+                map_header_id=map_header or 0,
+            )
 
     async def _check_encounter_outcome(self, client_id: str, player: int,
                                         edition: int):

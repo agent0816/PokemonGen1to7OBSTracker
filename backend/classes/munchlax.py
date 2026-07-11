@@ -9,6 +9,7 @@ import traceback
 from backend.bag_decoder import BagItem
 from backend.classes.obs import OBS
 from backend.classes.pokedex_db import PokedexDB
+from backend.controller.run_manager import RunManager
 from backend.logging_setup import get_logger
 
 # Mindestabstand zwischen automatischen Box-Refreshs pro Spieler.
@@ -74,6 +75,7 @@ class Munchlax:
         # {owner: {earned, used, active_route, active_edition}}
         self.soullink_tokens: dict[str, dict] = {}
         self._wipe_signaled: dict = {}
+        self._last_wipe_player_id: int | str | None = None
         self.on_total_wipe_callback = None
         # HP-Consistency: pro (player_id, personality) → {last_max_hp, last_lvl, zero_reads}.
         # Filtert kurze RAM-Fluktuationen und Gen-6/7-Battle-RAM-Ausreißer, bevor ein
@@ -212,11 +214,11 @@ class Munchlax:
                         self.remote_connection_names.clear()
                         self.remote_connection_names.update(data.get("names", {}))
                     elif msg_type == "encounter_sync":
-                        self._handle_remote_encounters(data.get("encounters", []))
+                        await self._handle_remote_encounters(data.get("encounters", []))
                     elif msg_type == "encounter_outcome":
-                        self._handle_remote_outcome(data)
+                        await self._handle_remote_outcome(data)
                     elif msg_type == "bag_sync":
-                        self._handle_remote_bag(data)
+                        await self._handle_remote_bag(data)
                     elif msg_type == "soullink_config":
                         self.soullink_config = data.get("config", {}) or {}
                         self.logger.info(
@@ -652,6 +654,7 @@ class Munchlax:
         if self._wipe_signaled.get(player_id):
             return True  # bereits gemeldet
         self._wipe_signaled[player_id] = True
+        self._last_wipe_player_id = player_id
         self.logger.warning(f"Total Wipe erkannt für player_id={player_id}")
         if self.is_connected:
             try:
@@ -670,32 +673,146 @@ class Munchlax:
                 self.logger.warning(f"total_wipe send failed: {err}")
         return True
 
-    def archive_active_run(self) -> str | None:
-        """Archiviert die aktive encounters-Tabelle unter encounters_archived_<ts>.
-
-        Wird von Frontend-Wipe-Banner "Bei Null starten" gerufen. Legt eine
-        Kopie an und leert die aktive Tabelle.
+    def get_run_manager(self) -> RunManager | None:
+        """Baut den RunManager pro Aufruf frisch gegen den aktuellen
+        Session-Pfad. configsave ist eine langlebige MutableString-Referenz,
+        deren .text bei Session-Wechsel in-place mutiert — ein gecachter
+        RunManager würde auf den alten Session-Ordner zeigen.
         """
-        self._ensure_pokedex_db()
-        if self.pokedex_db is None or self.pokedex_db.connection is None:
+        if self.configsave is None:
+            self.logger.warning("get_run_manager: configsave nicht gesetzt")
             return None
         try:
-            from datetime import datetime, timezone
-            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            archive_name = f"encounters_archived_{ts}"
-            conn = self.pokedex_db.connection
-            conn.execute(f"CREATE TABLE IF NOT EXISTS {archive_name} AS SELECT * FROM encounters")
-            conn.execute("DELETE FROM encounters")
-            conn.commit()
-            self.logger.info(f"Aktive encounters archiviert als {archive_name}")
-            # Debounce zurücksetzen
-            if getattr(self, "_wipe_signaled", None) is not None:
-                self._wipe_signaled.clear()
-            return archive_name
+            return RunManager(str(self.configsave))
         except Exception as err:
-            self.logger.error(f"archive_active_run failed: {type(err)},{err}")
-            self.logger.error(f"{traceback.format_exc()}")
+            self.logger.error(f"RunManager-Init fehlgeschlagen: {type(err).__name__},{err}")
+            self.logger.error(traceback.format_exc())
             return None
+
+    def archive_active_run(self) -> str | None:
+        """Schließt den aktuell aktiven Run wegen Total-Wipe ab.
+
+        Ruft RunManager.finalize_active_run mit reason='total_wipe' und
+        wipe_player_id (aus check_total_wipe gemerkt). Legt einen DB-Snapshot
+        als Datei im Run-Ordner ab (via VACUUM INTO), leert danach die
+        encounters-Tabelle und setzt die Wipe-Debounce zurück.
+
+        Rückgabe: run_id oder None wenn kein aktiver Run existiert / Fehler.
+        """
+        return self._finalize_run(reason="total_wipe",
+                                   wipe_player_id=self._last_wipe_player_id)
+
+    def end_run_manual(self, reason: str = "manual") -> str | None:
+        """Beendet den aktuell aktiven Run auf Benutzeraktion (Button im UI).
+
+        Kein wipe_player_id, aber ansonsten identisches Verhalten zu
+        archive_active_run (DB-Snapshot + encounters leeren).
+        """
+        return self._finalize_run(reason=reason, wipe_player_id=None)
+
+    def _serialize_final_teams(self) -> dict:
+        """Serialisiert den letzten bekannten Team-Zustand pro Spieler für die
+        run_meta.yml. Format:
+
+        ``{"players": {"<pid>": {"name": ..., "edition": ..., "slots": [
+            {"slot": 1, "dexnr": 25, "nickname": "Pikachu", "lvl": 30}, ...
+        ]}}}``
+
+        Leere Slots werden mit ``None``-Feldern eingefügt, damit die Länge (6)
+        erhalten bleibt.
+        """
+        teams_src = self.sorted_teams or self.unsorted_teams or {}
+        out_players: dict[str, dict] = {}
+        for pid, team in teams_src.items():
+            slots: list[dict] = []
+            for idx, slot in enumerate(list(team or [])[:6], start=1):
+                if slot is None:
+                    slots.append({"slot": idx, "dexnr": None,
+                                    "nickname": None, "lvl": None})
+                    continue
+                if isinstance(slot, dict):
+                    dex = slot.get("dexnr")
+                    nick = slot.get("nickname")
+                    lvl = slot.get("lvl")
+                else:
+                    dex = getattr(slot, "dexnr", None)
+                    nick = getattr(slot, "nickname", None)
+                    lvl = getattr(slot, "lvl", None)
+                slots.append({
+                    "slot": idx,
+                    "dexnr": dex if dex not in (0, "egg", None) else dex,
+                    "nickname": nick or None,
+                    "lvl": lvl,
+                })
+            out_players[str(pid)] = {
+                "name": self.player_names.get(pid, ""),
+                "edition": self.editions.get(pid, ""),
+                "slots": slots,
+            }
+        return {"players": out_players}
+
+    def _finalize_run(self, reason: str,
+                     wipe_player_id: int | str | None) -> str | None:
+        rm = self.get_run_manager()
+        if rm is None:
+            self.logger.error("_finalize_run: RunManager nicht verfügbar")
+            return None
+        active = rm.get_active_run()
+        if active is None:
+            self.logger.info("_finalize_run: kein aktiver Run vorhanden")
+            return None
+
+        self._ensure_pokedex_db()
+        db_path = None
+        # _finalize_run läuft aus einem run_in_executor-Worker-Thread. Direkte
+        # Zugriffe auf self.pokedex_db.connection sowie das VACUUM INTO durch
+        # RunManager greifen auf dieselbe SQLite-Datei zu wie parallele
+        # alter_teams-Executor-Calls. access_lock (RLock) serialisiert.
+        if self.pokedex_db is not None:
+            try:
+                with self.pokedex_db.access_lock:
+                    if self.pokedex_db.connection is not None:
+                        self.pokedex_db.connection.commit()
+                    db_path = self.pokedex_db.db_path
+            except Exception as err:
+                self.logger.warning(f"_finalize_run: pokedex_db commit failed: {err}")
+
+        final_teams = self._serialize_final_teams()
+        # Snapshot + DELETE FROM encounters unter EINEM Lock-Halt, damit
+        # zwischen Snapshot und Leerung kein zusätzlicher Encounter über einen
+        # anderen Executor-Call reinschneit und dann verloren geht.
+        # Ok für Event-Loop-Kontention, weil alle DB-Caller (alter_teams,
+        # _handle_remote_*, _handle_new_pokemon) über run_in_executor laufen.
+        run_id = None
+        if self.pokedex_db is not None:
+            with self.pokedex_db.access_lock:
+                run_id = rm.finalize_active_run(reason=reason,
+                                                 wipe_player_id=wipe_player_id,
+                                                 pokedex_db_path=db_path,
+                                                 final_teams=final_teams)
+                try:
+                    if (run_id is not None
+                            and self.pokedex_db.connection is not None):
+                        self.pokedex_db.connection.execute("DELETE FROM encounters")
+                        self.pokedex_db.connection.commit()
+                except Exception as err:
+                    self.logger.warning(
+                        f"_finalize_run: encounters leeren failed: {err}")
+        else:
+            run_id = rm.finalize_active_run(reason=reason,
+                                             wipe_player_id=wipe_player_id,
+                                             pokedex_db_path=db_path,
+                                             final_teams=final_teams)
+
+        if run_id is None:
+            self.logger.error("_finalize_run: finalize_active_run gab None zurück")
+            return None
+
+        if getattr(self, "_wipe_signaled", None) is not None:
+            self._wipe_signaled.clear()
+        self._last_wipe_player_id = None
+        self.logger.info(f"Run abgeschlossen: {run_id} reason={reason}")
+        return run_id
 
     def _is_pokemon_dead(self, player_id, slot) -> bool:
         """Consistency-Check für HP=0.
@@ -848,35 +965,57 @@ class Munchlax:
         except Exception as err:
             self.logger.warning(f"send_bag_sync failed: {err}")
 
-    def _handle_remote_encounters(self, encounters: list[dict]):
+    async def _handle_remote_encounters(self, encounters: list[dict]):
+        # DB-Calls über run_in_executor, weil sync_encounter unter dem
+        # PokedexDB.access_lock läuft und der Event-Loop-Thread sonst bei
+        # Kontention mit _finalize_run einfriert.
         self._ensure_pokedex_db()
         if self.pokedex_db is None or self.pokedex_db.connection is None:
             return
+        loop = asyncio.get_event_loop()
         count = 0
         for enc in encounters:
-            if self.pokedex_db.sync_encounter(enc):
+            try:
+                inserted = await loop.run_in_executor(
+                    None, self.pokedex_db.sync_encounter, enc)
+            except Exception as err:
+                self.logger.warning(f"sync_encounter failed: {err}")
+                continue
+            if inserted:
                 count += 1
         if count:
-            self.logger.info(f"Remote-Encounters empfangen: {count} von {len(encounters)} eingefügt/aktualisiert")
+            self.logger.info(
+                f"Remote-Encounters empfangen: {count} von {len(encounters)} "
+                f"eingefügt/aktualisiert")
 
-    def _handle_remote_outcome(self, data: dict):
+    async def _handle_remote_outcome(self, data: dict):
         self._ensure_pokedex_db()
         if self.pokedex_db is None or self.pokedex_db.connection is None:
             return
-        self.pokedex_db.update_encounter_outcome(
-            data["personality"], data["owner"], data["outcome"]
-        )
+        loop = asyncio.get_event_loop()
+        try:
+            await loop.run_in_executor(
+                None, self.pokedex_db.update_encounter_outcome,
+                data["personality"], data["owner"], data["outcome"])
+        except Exception as err:
+            self.logger.warning(f"update_encounter_outcome failed: {err}")
 
-    def _handle_remote_bag(self, data: dict):
+    async def _handle_remote_bag(self, data: dict):
         self._ensure_pokedex_db()
         if self.pokedex_db is None or self.pokedex_db.connection is None:
             return
         owner = data.get("owner", "")
         edition = data.get("edition", "")
         pockets = data.get("pockets", {})
+        loop = asyncio.get_event_loop()
         for pocket_key, items_raw in pockets.items():
             bag_items = [BagItem(id=item_id, qty=qty) for item_id, qty in items_raw]
-            self.pokedex_db.upsert_bag_pocket(owner, edition, pocket_key, bag_items)
+            try:
+                await loop.run_in_executor(
+                    None, self.pokedex_db.upsert_bag_pocket,
+                    owner, edition, pocket_key, bag_items)
+            except Exception as err:
+                self.logger.warning(f"upsert_bag_pocket failed: {err}")
         self.logger.info(
             f"Remote-Bag empfangen: owner={owner} edition={edition} "
             f"pockets={list(pockets.keys())}"

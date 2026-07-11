@@ -136,7 +136,7 @@ class CitraHandler:
                 self.update_teams(new_data)
                 self.update_stats(update_data)
 
-                self._process_encounter_tick()
+                await self._process_encounter_tick()
 
                 # Periodischer Bag-Refresh alle 5 s. Der eigentliche Read
                 # laeuft als Background-Task, der Pockets in bag_request_queue
@@ -636,23 +636,23 @@ class CitraHandler:
         zone_bytes = self.citra_instance.read_memory(zone_ptr, 2)
         return int.from_bytes(zone_bytes, "little")
 
-    def _process_encounter_tick(self):
+    async def _process_encounter_tick(self):
         in_wild = self._current_battle_kind == self.pointer["wild_value"]
         in_battle = in_wild or self._current_battle_kind == self.pointer["trainer_value"]
 
         if in_wild and not self._encounter_processed:
             self._encounter_processed = True
             self._in_wild_battle = True
-            self._read_and_process_encounter()
+            await self._read_and_process_encounter()
         elif not in_battle and self._in_wild_battle:
             self._in_wild_battle = False
             self._encounter_processed = False
-            self._check_encounter_outcome()
+            await self._check_encounter_outcome()
         elif not in_battle:
             self._encounter_processed = False
-            self._check_gift_encounters()
+            await self._check_gift_encounters()
 
-    def _read_and_process_encounter(self):
+    async def _read_and_process_encounter(self):
         try:
             enc_ptr = self.pointer.get("encounter_pokemon", 0)
             if not enc_ptr:
@@ -681,7 +681,9 @@ class CitraHandler:
                 self.munchlax.pl.get('your_name', ''), str(self.player_number)
             )
 
-            result = self._encounter_tracker.process_wild_encounter(
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, self._encounter_tracker.process_wild_encounter,
                 owner, self.edition, opp, route
             )
 
@@ -714,7 +716,7 @@ class CitraHandler:
             self.logger.error(f"Encounter-Read fehlgeschlagen: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
 
-    def _check_encounter_outcome(self):
+    async def _check_encounter_outcome(self):
         try:
             battle_pv = self._last_battle_pv
             self._last_battle_pv = None
@@ -735,7 +737,10 @@ class CitraHandler:
 
             outcome = "caught" if int(battle_pv) in team_pvs else "not_caught"
 
-            updated = self._encounter_tracker.update_outcome(int(battle_pv), owner, outcome)
+            loop = asyncio.get_event_loop()
+            updated = await loop.run_in_executor(
+                None, self._encounter_tracker.update_outcome,
+                int(battle_pv), owner, outcome)
             if updated:
                 self.logger.info(f"Encounter-Outcome: PV={battle_pv:#x} → {outcome}")
                 asyncio.create_task(
@@ -745,7 +750,7 @@ class CitraHandler:
             self.logger.error(f"Outcome-Check fehlgeschlagen: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
 
-    def _check_gift_encounters(self):
+    async def _check_gift_encounters(self):
         if self.player_number is None:
             return
 
@@ -773,6 +778,7 @@ class CitraHandler:
             self.munchlax.pl.get('your_name', ''), str(self.player_number)
         )
 
+        loop = asyncio.get_event_loop()
         for pv in new_pvs:
             if pv == self._last_battle_pv:
                 continue
@@ -789,16 +795,24 @@ class CitraHandler:
             if dexnr == 0 or dexnr == "egg":
                 continue
 
-            result = self._encounter_tracker.process_gift_encounter(
-                owner=owner,
-                edition=int(self.edition),
-                personality=pv,
-                dexnr=int(dexnr) if isinstance(dexnr, (int, str)) and str(dexnr).isdigit() else 0,
-                lvl=pokemon.lvl or 1,
-                shiny=bool(pokemon.shiny),
-                route=getattr(pokemon, "route", 0) or 0,
-                map_header_id=zone_id,
-            )
+            try:
+                result = await loop.run_in_executor(
+                    None,
+                    lambda pv=pv, pokemon=pokemon, dexnr=dexnr: self._encounter_tracker.process_gift_encounter(
+                        owner=owner,
+                        edition=int(self.edition),
+                        personality=pv,
+                        dexnr=int(dexnr) if isinstance(dexnr, (int, str)) and str(dexnr).isdigit() else 0,
+                        lvl=pokemon.lvl or 1,
+                        shiny=bool(pokemon.shiny),
+                        route=getattr(pokemon, "route", 0) or 0,
+                        map_header_id=zone_id,
+                    ),
+                )
+            except Exception as err:
+                self.logger.error(f"process_gift_encounter async failed: {err}")
+                self.logger.error(traceback.format_exc())
+                continue
             if result and not result.already_logged:
                 self.logger.info(
                     f"Gift erkannt: dex={dexnr} lv={pokemon.lvl} "
@@ -819,6 +833,11 @@ class CitraHandler:
                     "method": result.method,
                     "outcome": result.outcome,
                 }))
+            if result and result.token_earned:
+                # Trigger auf dem Event-Loop-Thread — process_gift_encounter im
+                # Executor-Worker konnte kein asyncio.create_task rufen.
+                self.logger.info(f"Token-Earn ausgelöst für {owner}")
+                asyncio.create_task(self.munchlax.send_soullink_token_earned(owner))
 
     async def _auto_reconnect(self) -> bool:
         delays = [10, 20, 40]

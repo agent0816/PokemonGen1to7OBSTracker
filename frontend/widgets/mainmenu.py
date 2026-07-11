@@ -129,7 +129,7 @@ class MainMenu(Screen):
 
         self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov, overlay_server)
         self.connection = ConnectionController(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl, overlay_server)
-        self.randomizer = RandomizerController(rnd, pl)
+        self.randomizer = RandomizerController(rnd, pl, configsave=configsave)
 
         super().__init__(**kwargs)
         self.name = "MainMenu"

@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import threading
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,34 +13,56 @@ from backend.logging_setup import get_logger
 CURRENT_SCHEMA_VERSION = 5
 
 
+def _serialized(func):
+    """Serialisiert PokedexDB-Methoden über ``self.access_lock``. RLock, damit
+    verschachtelte Aufrufe (z.B. ``upsert_team`` → ``upsert_pokemon``) nicht
+    deadlocken."""
+    def wrapper(self, *args, **kwargs):
+        with self.access_lock:
+            return func(self, *args, **kwargs)
+    wrapper.__name__ = func.__name__
+    wrapper.__doc__ = func.__doc__
+    return wrapper
+
+
 class PokedexDB:
     def __init__(self, session_path):
         self.session_path = Path(session_path)
         self.db_path = self.session_path / "pokemon.db"
         self.connection: sqlite3.Connection | None = None
+        # RLock serialisiert Zugriffe auf ``self.connection`` zwischen mehreren
+        # Worker-Threads. Notwendig, seit ``Munchlax._finalize_run`` per
+        # ``run_in_executor`` aus dem UI-Callback läuft und damit parallel zu
+        # ``alter_teams``-Executor-Calls treffen kann. Wer außerhalb dieser
+        # Klasse direkt auf ``self.connection`` zugreift, muss den Lock manuell
+        # halten (``with pokedex_db.access_lock:``).
+        self.access_lock = threading.RLock()
         self.logger = get_logger(__name__, './logs/pokedex_db.log')
 
     def connect(self):
-        try:
-            self.session_path.mkdir(parents=True, exist_ok=True)
-            # check_same_thread=False: Zugriffe laufen über run_in_executor und werden
-            # vom Caller serialisiert (siehe Munchlax.alter_teams).
-            self.connection = sqlite3.connect(self.db_path, check_same_thread=False)
-            self.connection.row_factory = sqlite3.Row
-            self._migrate()
-            self.logger.info(f"PokedexDB verbunden: {self.db_path}")
-        except Exception as err:
-            self.logger.error(f"PokedexDB connect failed: {type(err)},{err}")
-            self.logger.error(f"{traceback.format_exc()}")
-            self.connection = None
+        with self.access_lock:
+            try:
+                self.session_path.mkdir(parents=True, exist_ok=True)
+                # check_same_thread=False: DB-Zugriffe laufen aus mehreren Executor-
+                # Threads (alter_teams, _finalize_run). Serialisierung erfolgt über
+                # ``self.access_lock``.
+                self.connection = sqlite3.connect(self.db_path, check_same_thread=False)
+                self.connection.row_factory = sqlite3.Row
+                self._migrate()
+                self.logger.info(f"PokedexDB verbunden: {self.db_path}")
+            except Exception as err:
+                self.logger.error(f"PokedexDB connect failed: {type(err)},{err}")
+                self.logger.error(f"{traceback.format_exc()}")
+                self.connection = None
 
     def close(self):
-        if self.connection:
-            try:
-                self.connection.close()
-            except Exception as err:
-                self.logger.warning(f"PokedexDB close failed: {type(err)},{err}")
-            self.connection = None
+        with self.access_lock:
+            if self.connection:
+                try:
+                    self.connection.close()
+                except Exception as err:
+                    self.logger.warning(f"PokedexDB close failed: {type(err)},{err}")
+                self.connection = None
 
     def _migrate(self):
         assert self.connection is not None
@@ -216,6 +239,7 @@ class PokedexDB:
     def build_owner(your_name: str, client_id: str) -> str:
         return f"{your_name}_{client_id}"
 
+    @_serialized
     def upsert_pokemon(self, owner: str, edition, pokemon: Pokemon) -> str:
         """Gibt 'inserted', 'updated' oder 'skipped' zurück."""
         if self.connection is None:
@@ -293,6 +317,7 @@ class PokedexDB:
             self.logger.error(f"{traceback.format_exc()}")
             return "skipped"
 
+    @_serialized
     def upsert_team(self, owner: str, edition, team) -> tuple[int, list]:
         """Gibt (written_count, new_personalities) zurück.
 
@@ -311,6 +336,7 @@ class PokedexDB:
                     new_pvs.append(int(pv))
         return written, new_pvs
 
+    @_serialized
     def get_lvls_by_personalities(self, personalities: list[int]) -> dict[int, int]:
         """Liefert pro PV das zuletzt gespeicherte Level (last_seen DESC).
 
@@ -339,6 +365,7 @@ class PokedexDB:
             self.logger.warning(f"{traceback.format_exc()}")
             return result
 
+    @_serialized
     def get_all(self, owner: str | None = None, edition=None, shiny_only: bool = False):
         if self.connection is None:
             return []
@@ -364,6 +391,7 @@ class PokedexDB:
 
     # -- Bag (Schema v2) -----------------------------------------------------
 
+    @_serialized
     def upsert_bag_pocket(self, owner: str, edition, pocket: str,
                           items: list[BagItem]) -> bool:
         """Synchronisiert eine Pocket vollstaendig: ersetzt den bisherigen
@@ -412,6 +440,7 @@ class PokedexDB:
             self.logger.error(f"{traceback.format_exc()}")
             return False
 
+    @_serialized
     def get_bag_inventory(self, owner: str, edition=None,
                           pocket: str | None = None) -> list[dict]:
         if self.connection is None:
@@ -434,6 +463,7 @@ class PokedexDB:
             self.logger.error(f"{traceback.format_exc()}")
             return []
 
+    @_serialized
     def get_bag_first_seen(self, owner: str, edition=None) -> dict[int, str]:
         """Liefert {item_id: first_seen_iso} fuer (owner, edition).
 
@@ -459,6 +489,7 @@ class PokedexDB:
 
     # -- Encounters (Schema v3) ------------------------------------------------
 
+    @_serialized
     def insert_encounter(self, personality: int, owner: str, edition: int,
                          route: int, dexnr: int, lvl: int, shiny: bool,
                          is_first: bool, is_shiny_override: bool,
@@ -493,6 +524,7 @@ class PokedexDB:
             self.logger.error(f"{traceback.format_exc()}")
             return False
 
+    @_serialized
     def update_encounter_outcome(self, personality: int, owner: str,
                                   outcome: str) -> bool:
         if self.connection is None:
@@ -511,6 +543,7 @@ class PokedexDB:
             self.logger.error(f"{traceback.format_exc()}")
             return False
 
+    @_serialized
     def sync_encounter(self, enc: dict) -> bool:
         """INSERT OR REPLACE für Remote-Encounters. Überschreibt bei PK-Kollision."""
         if self.connection is None:
@@ -542,6 +575,7 @@ class PokedexDB:
             self.logger.error(f"{traceback.format_exc()}")
             return False
 
+    @_serialized
     def get_route_status(self, owner: str, edition=None) -> list[dict]:
         if self.connection is None:
             return []
@@ -564,6 +598,7 @@ class PokedexDB:
             self.logger.error(f"{traceback.format_exc()}")
             return []
 
+    @_serialized
     def has_encounter_on_route(self, owner: str, edition: int,
                                route: int) -> bool:
         """True wenn Route bereits einen First-Encounter hat (Nuzlocke-Zwecke).
@@ -589,6 +624,7 @@ class PokedexDB:
             self.logger.error(f"{traceback.format_exc()}")
             return False
 
+    @_serialized
     def is_species_family_caught(self, owner: str,
                                   family_members: list[int]) -> bool:
         if self.connection is None or not family_members:
@@ -608,6 +644,7 @@ class PokedexDB:
             self.logger.error(f"{traceback.format_exc()}")
             return False
 
+    @_serialized
     def has_catching_balls(self, owner: str, edition) -> bool:
         """Prüft ob der Spieler JEMALS einen Ball besessen hat (bag_first_seen).
 
@@ -630,6 +667,7 @@ class PokedexDB:
             self.logger.error(f"{traceback.format_exc()}")
             return False
 
+    @_serialized
     def get_encounters(self, owner: str, edition=None) -> list[dict]:
         if self.connection is None:
             return []

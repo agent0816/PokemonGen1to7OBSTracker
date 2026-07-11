@@ -12,6 +12,7 @@ Desktop-Tracker, der Pokemon-Teams live aus Emulatoren (Gen 1–7) ausliest und 
 - **Multi-Player-Sessions** (bis zu 4 Spieler) — lokal oder remote via eigenem asyncio-TCP-Server (`Arceus`)
 - **Team-, Boxen- und Bag-Ansicht** in der GUI, Detailview pro Pokemon (Stats, Moves, Ability, Nature)
 - **Encounter-Tracking (Nuzlocke)** für Gen 3–6, Gen 7 in Arbeit — Wild + Gift/Fossil, Routen-Status via YAML-LUTs
+- **Randomizer-Runs pro Session**: pro lokalem Spieler wird ein ROM erzeugt, ROM/Log/Encounter-DB werden pro Run archiviert. Ein Run endet bei Total-Wipe, per manuellem Button oder mit dem nächsten Randomize-Vorgang
 - **Sprite-Repo-Integration** (git clone/pull) — Fork unter [agent0816/sprites](https://github.com/agent0816/sprites)
 - **Auto-Updater** über tufup
 - **ROM-Hack-Support**: erste Anbindung für Renegade Platinum (English-Pointer-Override)
@@ -60,7 +61,7 @@ Beim ersten Start öffnet sich der Sprite-Setup-Popup: Repo wird von [agent0816/
 
 ## Sessions
 
-Konfiguration liegt pro Session unter `backend/config/<session_name>/` mit fünf YAMLs (`sprites`, `bh_config`, `obs_config`, `player`, `remote`). Sessions per **Session-Menü** anlegen/wechseln/löschen.
+Konfiguration liegt pro Session unter `backend/config/<session_name>/` mit acht YAMLs (`sprites`, `bh_config`, `obs_config`, `player`, `remote`, `randomizer`, `overlay`, `nuzlocke`), der SQLite-DB `pokemon.db` und dem `runs/`-Ordner (Randomizer-Run-Historie). Sessions per **Session-Menü** anlegen/wechseln/löschen.
 
 ## Architektur (Kurz)
 

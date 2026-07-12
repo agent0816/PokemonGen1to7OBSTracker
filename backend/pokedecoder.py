@@ -305,16 +305,20 @@ def _decode_gen4_string(raw: bytes) -> str:
 
 
 def _decode_gen5_string(raw: bytes) -> str:
-    result = b""
+    # Gen 5 Nicknames sind UTF-16LE, terminiert mit 0xFFFF
+    buf = bytearray()
     for i in range(0, len(raw) - 1, 2):
         if raw[i] == 0xFF and raw[i + 1] == 0xFF:
             break
-        result += raw[i:i + 2]
-    return result.decode("iso-8859-1", errors="ignore").replace("\u0000", "")
+        buf += raw[i:i + 2]
+    return buf.decode("utf-16-le", errors="ignore").split("\u0000")[0]
 
 
 def _decode_gen67_string(raw: bytes) -> str:
-    return raw.decode("iso-8859-1", errors="ignore").split("\u0000\u0000")[0].replace("\u0000", "")
+    # Gen 6/7 Nicknames sind UTF-16LE, terminiert mit 0x0000
+    length = len(raw) - (len(raw) % 2)
+    text = raw[:length].decode("utf-16-le", errors="ignore")
+    return text.split("\u0000")[0]
 
 
 def _is_empty_gen3plus_slot(data: bytes) -> bool:

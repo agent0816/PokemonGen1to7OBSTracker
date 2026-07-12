@@ -29,3 +29,8 @@ version.py
 release_to_github.ps1
 tools/
 tests/
+# Twitch-Extension (Node/TS)
+twitch_extension/**/node_modules/
+twitch_extension/**/dist/
+twitch_extension/**/.env
+twitch_extension/**/.env.local

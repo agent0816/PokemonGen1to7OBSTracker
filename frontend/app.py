@@ -28,6 +28,7 @@ from backend.classes.citrahandler import CitraHandler
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
 from backend.classes.overlay_server import OverlayServer
+from backend.classes.twitch_extension_client import TwitchExtensionClient
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, 'logs/frontend.log')
@@ -145,6 +146,11 @@ class TrackerApp(App):
         if os.path.exists(nuz_path):
             with open(nuz_path) as file:
                 self.nuz = yaml.safe_load(file) or {}
+        self.tw = {}
+        tw_path = f"{self.configsave}twitch_ext.yml"
+        if os.path.exists(tw_path):
+            with open(tw_path) as file:
+                self.tw = yaml.safe_load(file) or {}
         self.session_list = []
         with open(f"{self.configsave}../session_list.yml") as file:
             self.session_list = yaml.safe_load(file)
@@ -163,7 +169,7 @@ class TrackerApp(App):
             if self.rem["start_server"]
             else self.rem["server_port"]
         )
-        self.munchlax = Munchlax(ip_to_connect, port_to_connect, self.rem, self.sp, self.pl, self.configsave, self.nuz)
+        self.munchlax = Munchlax(ip_to_connect, port_to_connect, self.rem, self.sp, self.pl, self.configsave, self.nuz, self.tw)
         self.obs_websocket = OBS(
             self.obs["host"],
             self.obs["port"],
@@ -175,6 +181,11 @@ class TrackerApp(App):
 
         self.overlay_server = OverlayServer(self.munchlax, self.sp, self.obs, self.ov)
         self.munchlax.overlay_server = self.overlay_server
+
+        # Twitch-Extension-Push (EBS). Lifecycle-Start/Stop läuft parallel zum
+        # OverlayServer im connection_controller — hier nur die Instanz.
+        self.twitch_ext_client = TwitchExtensionClient(self.munchlax, self.tw)
+        self.munchlax.twitch_ext_client = self.twitch_ext_client
 
         arguments = [
             self.arceus,

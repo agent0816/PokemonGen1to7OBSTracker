@@ -1,0 +1,78 @@
+/* Skeleton-Styles — bewusst minimal. Das echte UI ist Phase 3
+   (kompakter Balken unten + aufklappbares Panel Team/Bag/Pokedex). */
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    /* Extensions laufen transparent über dem Video. */
+    background: transparent;
+    color: #fff;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12px;
+    overflow: hidden;
+}
+
+#root {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    max-height: 40vh;
+    padding: 8px 10px;
+    background: rgba(0, 0, 0, 0.72);
+    border-radius: 6px;
+    overflow-y: auto;
+    text-shadow: 0 1px 2px #000;
+}
+
+#root.collapsed pre,
+#root.collapsed #last-event {
+    display: none;
+}
+
+#status-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #666;
+}
+
+.dot-connected     { background: #4caf50; }
+.dot-disconnected  { background: #f44336; }
+.dot-waiting       { background: #ff9800; }
+
+pre {
+    margin-top: 6px;
+    padding: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 40vh;
+    overflow: auto;
+}
+
+.hdr {
+    margin-top: 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    opacity: 0.7;
+    letter-spacing: 0.5px;
+}

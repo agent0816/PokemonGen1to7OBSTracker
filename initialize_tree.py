@@ -251,6 +251,29 @@ def update_session(sessionpath, default=False):
         else:
             new_ov=Path(f"{sessionpath}/default/overlay.yml")
             load_config(overlay, ov, new_path=new_ov)
+    twitch_ext = Path(f'{sessionpath}/twitch_ext.yml')
+    tw = {
+        # Push an eigenen Extension Backend Service (EBS) unter twitch_extension/ebs.
+        # Deaktiviert per Default — Streamer aktiviert bewusst pro Session.
+        "enabled": False,
+        "ebs_url": "http://localhost:8081",
+        "ingest_secret": "",
+        # Twitch Broadcaster-User-ID des Ziel-Channels; später via Pairing-Code
+        # aus dem Config-Panel gefüllt (Phase 4 der TODO_twitch_extension.md).
+        "channel_id": "",
+    }
+    if not twitch_ext.exists():
+        if not default:
+            save_config(twitch_ext, tw)
+        else:
+            new_tw = Path(f"{sessionpath}/default/twitch_ext.yml")
+            save_config(new_tw, tw)
+    else:
+        if not default:
+            load_config(twitch_ext, tw)
+        else:
+            new_tw = Path(f"{sessionpath}/default/twitch_ext.yml")
+            load_config(twitch_ext, tw, new_path=new_tw)
     nuzlocke = Path(f'{sessionpath}/nuzlocke.yml')
     nuz = {
         "enabled": False,

@@ -55,6 +55,11 @@ class ConnectionController:
         if not self.munchlax.is_connected:
             task = asyncio.create_task(self.munchlax.connect())
             self.logger.info("Munchlax-Client wird verbunden.")
+            # Twitch-Extension-Push parallel starten. Start() prüft intern auf
+            # enabled=True und schluckt Fehler — kein Guard nötig.
+            tw_client = getattr(self.munchlax, "twitch_ext_client", None)
+            if tw_client:
+                asyncio.create_task(tw_client.start())
             return task
 
     def disconnect_client(self):
@@ -62,6 +67,9 @@ class ConnectionController:
         if self.munchlax.is_connected:
             asyncio.create_task(self.munchlax.disconnect())
             self.logger.info("Munchlax-Client wird getrennt.")
+        tw_client = getattr(self.munchlax, "twitch_ext_client", None)
+        if tw_client:
+            asyncio.create_task(tw_client.stop())
 
     # --- BizHawk ---
 
@@ -112,5 +120,8 @@ class ConnectionController:
         ]
         if self.overlay_server:
             tasks.append(asyncio.create_task(self.overlay_server.stop()))
+        tw_client = getattr(self.munchlax, "twitch_ext_client", None)
+        if tw_client:
+            tasks.append(asyncio.create_task(tw_client.stop()))
         asyncio.create_task(asyncio.wait(tasks, timeout=3))
         self.logger.info("Alle Verbindungen werden getrennt.")

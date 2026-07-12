@@ -22,7 +22,7 @@ BOX_REFRESH_THROTTLE_SECONDS = 5.0
 WIPE_ZERO_READ_THRESHOLD = 5
 
 class Munchlax:
-    def __init__(self, host, port, rem, sp, pl, configsave=None, nuz=None):
+    def __init__(self, host, port, rem, sp, pl, configsave=None, nuz=None, tw=None):
         self.client_id = rem.get("client_id", 0)
         if self.client_id == 0:
             self.client_id = self.generate_hashed_id()
@@ -57,6 +57,11 @@ class Munchlax:
         self.is_connected = False
         self.obs: OBS | None = None
         self.overlay_server = None
+        # Twitch-Extension-Push (EBS). Wird beim Verbinden gesetzt, wenn die
+        # Session-Config `twitch_ext.enabled=True` hat. Siehe
+        # backend/classes/twitch_extension_client.py.
+        self.tw = tw or {}
+        self.twitch_ext_client = None
         self.rando_tm_moves: dict[int, str] | None = None
         self.rando_hm_moves: dict[int, str] | None = None
         self.rando_abilities_gen3: dict[int, list[int]] | None = None
@@ -323,6 +328,8 @@ class Munchlax:
                             await self.obs.change_badges(player)
                         if self.overlay_server and self.overlay_server.is_connected:
                             await self.overlay_server.notify_update(player, "badges")
+                        if self.twitch_ext_client and self.twitch_ext_client.enabled:
+                            asyncio.create_task(self.twitch_ext_client.push_team(player))
                 await self._persist_teams(self.unsorted_teams)
                 if new_teams != self.sorted_teams or not self.initialized:
                     for player in new_teams:
@@ -333,6 +340,8 @@ class Munchlax:
                             self.sorted_teams[player] = new_teams[player]
                             if self.overlay_server and self.overlay_server.is_connected:
                                 await self.overlay_server.notify_update(player, "team")
+                            if self.twitch_ext_client and self.twitch_ext_client.enabled:
+                                asyncio.create_task(self.twitch_ext_client.push_team(player))
                             continue
 
                         diff = []
@@ -348,6 +357,8 @@ class Munchlax:
                         self.sorted_teams[player] = team
                         if self.overlay_server and self.overlay_server.is_connected:
                             await self.overlay_server.notify_update(player, "team", slot_mapping=slot_mapping)
+                        if self.twitch_ext_client and self.twitch_ext_client.enabled:
+                            asyncio.create_task(self.twitch_ext_client.push_team(player))
             except (UnicodeEncodeError, UnicodeDecodeError) as err:
                 self.logger.warning(f"Unicode error:{type(err)},{err}")
                 self.logger.warning(f"{traceback.format_exc()}")

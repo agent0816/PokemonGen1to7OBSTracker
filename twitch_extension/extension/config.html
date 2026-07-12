@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pokemon Tracker — Config</title>
+    <link rel="stylesheet" href="css/viewer.css">
+    <script src="https://extension-files.twitch.tv/helper/v1/twitch-ext.min.js"></script>
+    <style>
+        /* Config-Panel läuft NICHT über dem Video — hier deckenden Hintergrund. */
+        body { background: #18181b; padding: 16px; }
+        #cfg-root { max-width: 480px; }
+        h1 { font-size: 16px; margin-bottom: 12px; }
+        p { font-size: 13px; line-height: 1.4; margin-bottom: 10px; }
+        label { display: block; font-size: 12px; margin-bottom: 4px; opacity: 0.8; }
+        input[type=text] {
+            width: 100%; padding: 6px 8px; font-size: 13px;
+            background: #0e0e10; color: #fff; border: 1px solid #444; border-radius: 3px;
+        }
+        button {
+            margin-top: 10px; padding: 6px 14px; font-size: 13px;
+            background: #9147ff; color: #fff; border: 0; border-radius: 3px; cursor: pointer;
+        }
+        button:disabled { opacity: 0.5; cursor: default; }
+        #cfg-status { margin-top: 10px; font-size: 12px; opacity: 0.8; }
+    </style>
+</head>
+<body>
+    <div id="cfg-root">
+        <h1>Pokemon Tracker verbinden</h1>
+        <p>
+            Trage hier den <strong>Pairing-Code</strong> ein, den dir der Tracker
+            im Verbindungs-Screen anzeigt. Damit wird dein Twitch-Channel mit
+            deiner Tracker-Session verknüpft.
+        </p>
+        <label for="pairing-code">Pairing-Code</label>
+        <input type="text" id="pairing-code" autocomplete="off" placeholder="XXXX-XXXX" />
+        <button id="save-btn" disabled>Speichern</button>
+        <div id="cfg-status">Warte auf Twitch-Auth&hellip;</div>
+    </div>
+
+    <script src="ebs-endpoint.js"></script>
+    <script src="js/config.js"></script>
+</body>
+</html>

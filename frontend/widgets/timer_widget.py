@@ -28,8 +28,13 @@ def _format_hms(seconds: float) -> str:
 class TimerWidget(BoxLayout):
     def __init__(self, munchlax, **kwargs):
         super().__init__(orientation="vertical", size_hint_y=None,
-                          height="220dp", spacing="6dp", padding="4dp", **kwargs)
+                          height="244dp", spacing="6dp", padding="4dp", **kwargs)
         self.munchlax = munchlax
+        # Status-Label: zeigt "Server nicht verbunden" wenn Klick keinen Effekt hat.
+        self.connection_status_label = Label(
+            text="", font_size="12sp", size_hint_y=None, height="20dp",
+            color=(0.95, 0.4, 0.4, 1),
+        )
 
         # ---- Race-Timer ----
         self.add_widget(Label(text="Race-Timer", font_size="16sp",
@@ -51,6 +56,7 @@ class TimerWidget(BoxLayout):
         timer_btns.add_widget(Button(text="Reset",
                                        on_press=lambda *_: self._send_async(self._send_timer_reset())))
         self.add_widget(timer_btns)
+        self.add_widget(self.connection_status_label)
 
         # ---- Countdown ----
         self.add_widget(Label(text="Countdown (z.B. YouTube-Take)", font_size="14sp",
@@ -90,6 +96,10 @@ class TimerWidget(BoxLayout):
     # ----- Send-Wrapper -----
 
     def _send_async(self, coro):
+        if not getattr(self.munchlax, "is_connected", False):
+            self.connection_status_label.text = "Server nicht verbunden — Timer-Aktion verworfen"
+            coro.close()
+            return
         async def _runner():
             try:
                 await coro
@@ -139,6 +149,9 @@ class TimerWidget(BoxLayout):
 
     def _refresh_display(self, _dt):
         try:
+            if getattr(self.munchlax, "is_connected", False) and self.connection_status_label.text:
+                # Verbindung wieder da → alte Warnung wegräumen.
+                self.connection_status_label.text = ""
             elapsed = self.munchlax.current_timer_elapsed()
             running = bool(self.munchlax.timer_state.get("running")) if self.munchlax.timer_state else False
             suffix = "" if running else " (Pause)"

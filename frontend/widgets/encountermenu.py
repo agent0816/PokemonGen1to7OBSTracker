@@ -167,6 +167,12 @@ class EncounterMenu(Screen):
             header_row.add_widget(Label(text=f"[b]{title}[/b]", markup=True, size_hint_x=width))
         root.add_widget(header_row)
 
+        self.empty_hint = Label(
+            text="", size_hint_y=None, height=0, opacity=0,
+            color=(0.7, 0.7, 0.7, 1), font_size="14sp",
+        )
+        root.add_widget(self.empty_hint)
+
         scroll = ScrollView(do_scroll_x=False, do_scroll_y=True)
         self.rows_grid = GridLayout(
             cols=1, size_hint_y=None,
@@ -297,6 +303,18 @@ class EncounterMenu(Screen):
         enc_count = sum(1 for r in rows if not r["is_open"])
         open_count = sum(1 for r in rows if r["is_open"])
         self.count_label.text = f"{enc_count} Encounters, {open_count} offen"
+
+        if not rows:
+            if not self._encounters:
+                self.empty_hint.text = "Noch keine Encounters — Nuzlocke starten oder auf Aktualisieren klicken."
+            else:
+                self.empty_hint.text = "Kein Treffer mit aktuellen Filtern."
+            self.empty_hint.height = 60
+            self.empty_hint.opacity = 1
+        else:
+            self.empty_hint.text = ""
+            self.empty_hint.height = 0
+            self.empty_hint.opacity = 0
 
         self._render_rows(rows)
 

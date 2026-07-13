@@ -503,6 +503,7 @@ class Munchlax:
 
     async def _send_timer_message(self, msg: dict):
         if not self.is_connected:
+            self.logger.info(f"timer msg '{msg.get('type')}' verworfen — nicht verbunden")
             return
         try:
             async with self.writer_lock:

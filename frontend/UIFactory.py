@@ -76,6 +76,35 @@ def create_text_and_browse_button(rootwidget,ids,
         ids[browse_id_name] = weakref.proxy(browse)
     box.add_widget(browse)
 
+_STATE_TEXT = {
+    "connected": "verbunden",
+    "warning": "instabil",
+    "disconnected": "nicht verbunden",
+}
+
+
+def create_connection_status_with_state_text(box, connectionStatusCircle, *value,
+                                              ids=None, id=None,
+                                              text_size_hint=(None, 1), text_width="120dp"):
+    """Kreis + dynamisches Text-Label (verbunden/instabil/nicht verbunden) nebeneinander."""
+    inner = BoxLayout(orientation='horizontal', spacing="5dp")
+    circle = connectionStatusCircle(*value, size_hint=(None, None), size=(20, 20))
+    if ids and id:
+        ids[id] = weakref.proxy(circle)
+    inner.add_widget(circle)
+    text_label = Label(
+        text=_STATE_TEXT.get(circle.connection_state, ""),
+        size_hint=text_size_hint, width=text_width,
+    )
+
+    def _update_text(_instance, value):
+        text_label.text = _STATE_TEXT.get(value, "")
+
+    circle.bind(connection_state=_update_text)
+    inner.add_widget(text_label)
+    box.add_widget(inner)
+
+
 def create_connection_status(box, connectionStatusCircle, *value, ids=None, id = None):
     connection_status = connectionStatusCircle(*value, size_hint = (None, None), size=(20,20))
     connection_status_anchor = AnchorLayout()

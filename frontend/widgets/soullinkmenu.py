@@ -24,6 +24,13 @@ logger = get_logger(__name__, './logs/soullinkmenu.log')
 
 TEAM_LETTERS = ["A", "B", "C", "D"]
 
+# Backend erwartet die Roh-Keys ("off"/"coop"/"versus", "full_chain"/"rotating").
+# Im UI zeigen wir Klartext-Labels und übersetzen an den Grenzen.
+MODE_LABELS = {"off": "aus", "coop": "Coop", "versus": "Versus"}
+MODE_LABEL_TO_VALUE = {v: k for k, v in MODE_LABELS.items()}
+STRATEGY_LABELS = {"full_chain": "Volle Kette", "rotating": "Rotierend"}
+STRATEGY_LABEL_TO_VALUE = {v: k for k, v in STRATEGY_LABELS.items()}
+
 
 class OwnerRow(BoxLayout):
     """Eine Zeile: Owner-String (TextInput) + optionale Team-Auswahl."""
@@ -73,13 +80,22 @@ class SoullinkMenu(Screen):
         self._preset_choices = preset_choices(self._presets)
         self._preset_label_to_id = {label: pid for pid, label in self._preset_choices}
 
-        root = BoxLayout(orientation="vertical", padding="10dp", spacing="10dp")
+        # Screen-Root: Header oben fix, Rest scrollt (Content-Höhe > Fensterhöhe).
+        screen_root = BoxLayout(orientation="vertical")
 
-        header = BoxLayout(orientation="horizontal", size_hint_y=None, height="40dp")
-        header.add_widget(Label(text="Soullink & Timer", font_size="20sp"))
-        back_btn = Button(text="Zurück", size_hint_x=0.2, on_press=self._go_back)
+        header = BoxLayout(orientation="horizontal", size_hint_y=None, height="40dp",
+                            padding=("10dp", "5dp"), spacing="10dp")
+        back_btn = Button(text="Zurück zum Hauptmenü", size_hint_x=0.3, on_press=self._go_back)
         header.add_widget(back_btn)
-        root.add_widget(header)
+        header.add_widget(Label(text="Soullink & Timer", font_size="20sp"))
+        screen_root.add_widget(header)
+
+        scroll_all = ScrollView(size_hint=(1, 1), do_scroll_x=False)
+        root = BoxLayout(orientation="vertical", padding="10dp", spacing="10dp",
+                          size_hint_y=None)
+        root.bind(minimum_height=root.setter("height"))
+        scroll_all.add_widget(root)
+        screen_root.add_widget(scroll_all)
 
         # Preset-Auswahl
         preset_row = BoxLayout(orientation="horizontal", size_hint_y=None,
@@ -97,9 +113,10 @@ class SoullinkMenu(Screen):
         config_row = BoxLayout(orientation="horizontal", size_hint_y=None,
                                 height="40dp", spacing="6dp")
         config_row.add_widget(Label(text="Modus:", size_hint_x=0.15))
+        mode_value = self.nuz.get("soullink_mode", "off") or "off"
         self.mode_spinner = Spinner(
-            text=self.nuz.get("soullink_mode", "off") or "off",
-            values=["off", "coop", "versus"],
+            text=MODE_LABELS.get(mode_value, MODE_LABELS["off"]),
+            values=list(MODE_LABELS.values()),
             size_hint_x=0.20,
         )
         self.mode_spinner.bind(text=self._on_mode_changed)
@@ -115,18 +132,19 @@ class SoullinkMenu(Screen):
         config_row.add_widget(self.player_count_spinner)
 
         config_row.add_widget(Label(text="Strategie:", size_hint_x=0.15))
+        strategy_value = self.nuz.get("soullink_link_strategy", "full_chain") or "full_chain"
         self.strategy_spinner = Spinner(
-            text=self.nuz.get("soullink_link_strategy", "full_chain") or "full_chain",
-            values=["full_chain", "rotating"],
+            text=STRATEGY_LABELS.get(strategy_value, STRATEGY_LABELS["full_chain"]),
+            values=list(STRATEGY_LABELS.values()),
             size_hint_x=0.20,
         )
         config_row.add_widget(self.strategy_spinner)
         root.add_widget(config_row)
 
-        # Owner-Zeilen
+        # Owner-Zeilen — feste Höhe damit im Outer-Scroll konsistent bleibt.
         self.owner_area = BoxLayout(orientation="vertical", size_hint_y=None, spacing="4dp")
         self.owner_area.bind(minimum_height=self.owner_area.setter("height"))
-        scroll = ScrollView(size_hint_y=0.5)
+        scroll = ScrollView(size_hint_y=None, height="180dp")
         scroll.add_widget(self.owner_area)
         root.add_widget(scroll)
         self._rebuild_owner_rows()
@@ -189,7 +207,7 @@ class SoullinkMenu(Screen):
         self.timer_widget = TimerWidget(munchlax)
         root.add_widget(self.timer_widget)
 
-        self.add_widget(root)
+        self.add_widget(screen_root)
 
         # Bei aktivem Ready-Flow: Modus initial anwenden
         Clock.schedule_once(lambda dt: self._on_mode_changed(self.mode_spinner, self.mode_spinner.text), 0)
@@ -212,7 +230,7 @@ class SoullinkMenu(Screen):
         expected = self.nuz.get("soullink_expected_owners", []) or []
         self.owner_area.clear_widgets()
         self._owner_rows = []
-        show_team = (self.mode_spinner.text == "versus")
+        show_team = (self._mode_value() == "versus")
         for i in range(count):
             owner = existing_owners[i] if i < len(existing_owners) else (
                 expected[i] if i < len(expected) else ""
@@ -226,9 +244,15 @@ class SoullinkMenu(Screen):
             self.owner_area.add_widget(row)
 
     def _on_mode_changed(self, spinner, value):
-        show_team = (value == "versus")
+        show_team = (MODE_LABEL_TO_VALUE.get(value, value) == "versus")
         for row in self._owner_rows:
             row.set_team_visible(show_team)
+
+    def _mode_value(self) -> str:
+        return MODE_LABEL_TO_VALUE.get(self.mode_spinner.text, "off")
+
+    def _strategy_value(self) -> str:
+        return STRATEGY_LABEL_TO_VALUE.get(self.strategy_spinner.text, "full_chain")
 
     def _on_player_count_changed(self, spinner, value):
         self._rebuild_owner_rows()
@@ -236,7 +260,8 @@ class SoullinkMenu(Screen):
     def _collect_config(self) -> dict:
         owners = [r.owner for r in self._owner_rows if r.owner]
         team_map = {}
-        if self.mode_spinner.text == "versus":
+        mode_value = self._mode_value()
+        if mode_value == "versus":
             for r in self._owner_rows:
                 if r.owner:
                     team_map[r.owner] = r.team
@@ -244,9 +269,9 @@ class SoullinkMenu(Screen):
         # Enforcement (Ersttyp-Clash etc.) auslesen kann.
         rules = {k: v for k, v in self.nuz.items() if k.startswith("rule_")}
         return {
-            "mode": self.mode_spinner.text,
+            "mode": mode_value,
             "player_count": len(owners),
-            "link_strategy": self.strategy_spinner.text,
+            "link_strategy": self._strategy_value(),
             "team_membership": team_map,
             "expected_owners": owners,
             "rules": rules,
@@ -264,9 +289,11 @@ class SoullinkMenu(Screen):
             self.status_label.text = f"Fehler: {err}"
 
     def _load_from_nuz(self):
-        self.mode_spinner.text = self.nuz.get("soullink_mode", "off") or "off"
+        mode_value = self.nuz.get("soullink_mode", "off") or "off"
+        self.mode_spinner.text = MODE_LABELS.get(mode_value, MODE_LABELS["off"])
         self.player_count_spinner.text = str(self.nuz.get("soullink_player_count", 2) or 2)
-        self.strategy_spinner.text = self.nuz.get("soullink_link_strategy", "full_chain") or "full_chain"
+        strategy_value = self.nuz.get("soullink_link_strategy", "full_chain") or "full_chain"
+        self.strategy_spinner.text = STRATEGY_LABELS.get(strategy_value, STRATEGY_LABELS["full_chain"])
         self._rebuild_owner_rows()
         self.status_label.text = "Aus Session geladen"
 

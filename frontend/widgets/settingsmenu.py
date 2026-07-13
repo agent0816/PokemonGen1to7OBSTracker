@@ -337,9 +337,9 @@ class ScrollSettings(ScrollView):
         grid.bind(minimum_height=grid.setter('height')) #type: ignore
         
         grid.add_widget(Label(text="Deine öffentliche\nIpv4-Adresse", size_hint=(.5,None), size=(0,"30dp")))
-        grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ip]{self.externalIPv4}[/ref]", size_hint=(.5,None), size=(0,"30dp"), markup=True))
+        grid.add_widget(self._make_masked_ip_widget(self.externalIPv4, ref_id="ip"))
         grid.add_widget(Label(text="Deine öffentliche\nIpv6-Adresse", size_hint=(.5,None), size=(0,"30dp")))
-        grid.add_widget(Label(on_ref_press=self.clipboard,text=f"[ref=ipv6]{self.externalIPv6}[/ref]", size=(0,"30dp"), size_hint=(.5,None),markup=True))
+        grid.add_widget(self._make_masked_ip_widget(self.externalIPv6, ref_id="ipv6"))
         
         remote_box.add_widget(grid)
         box.add_widget(remote_box)
@@ -929,6 +929,30 @@ class ScrollSettings(ScrollView):
         popup = Popup(title=title, content=box, size_hint=(None, None), size=(500, 200))
         btn.bind(on_release=popup.dismiss)
         popup.open()
+
+    def _make_masked_ip_widget(self, value: str, ref_id: str) -> BoxLayout:
+        """Zeigt IP maskiert an; 'Anzeigen'-Button deckt auf. Verhindert Stream-Leaks."""
+        row = BoxLayout(orientation='horizontal', size_hint=(.5, None), size=(0, "30dp"), spacing="5dp")
+        label = Label(
+            text="••••••••" if value else "—",
+            markup=True, on_ref_press=self.clipboard, size_hint_x=.65,
+        )
+        toggle = Button(text="Anzeigen", size_hint_x=.35)
+        state = {"revealed": False}
+
+        def _toggle(_btn):
+            state["revealed"] = not state["revealed"]
+            if state["revealed"] and value:
+                label.text = f"[ref={ref_id}]{value}[/ref]"
+                toggle.text = "Verbergen"
+            else:
+                label.text = "••••••••" if value else "—"
+                toggle.text = "Anzeigen"
+
+        toggle.bind(on_press=_toggle)
+        row.add_widget(label)
+        row.add_widget(toggle)
+        return row
 
     def clipboard(self, instance, *args):
         result = (instance.text).split(']')[1].split('[')[0]

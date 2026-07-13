@@ -12,12 +12,12 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen, ScreenManager, NoTransition
+from frontend.widgets.pokemon_detail import PokemonDetailPanel
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.togglebutton import ToggleButton
 from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 from frontend.widgets.trainerbox import TrainerBox
-from frontend.widgets.pokemon_detail import PokemonDetailScreen
 from backend import pokedecoder
 from backend.classes.obs import OBS
 from backend.controller.connection_controller import ConnectionController
@@ -135,7 +135,7 @@ class MainMenu(Screen):
         self.name = "MainMenu"
 
         self.clear_button = Button(
-            text="Clients bereinigen", on_press=self.clear_clients
+            text="Alle Clients zurücksetzen", on_press=self.clear_clients
         )
 
         frame = BoxLayout(orientation="horizontal")
@@ -152,12 +152,17 @@ class MainMenu(Screen):
         self.pokemon_frame = ScrollView(do_scroll_y=False, do_scroll_x=True)
         self.create_pokemon_frame()
 
+        # Nested ScreenManager: TeamOverview ↔ eingebettetes PokemonDetailPanel.
+        # Detail sitzt so nur im rechten Frame-Bereich (nicht fullscreen wie
+        # der Top-Level-PokemonDetailScreen, den BoxMenu nutzt).
         team_screen = Screen(name="TeamOverview")
         team_screen.add_widget(self.pokemon_frame)
-        self.pokemon_detail_screen = PokemonDetailScreen(self.obs_websocket)
+        detail_screen = Screen(name="PokemonDetailInline")
+        self.pokemon_panel = PokemonDetailPanel(self.obs_websocket)
+        detail_screen.add_widget(self.pokemon_panel)
         self.pokemon_sm = ScreenManager(transition=NoTransition())
         self.pokemon_sm.add_widget(team_screen)
-        self.pokemon_sm.add_widget(self.pokemon_detail_screen)
+        self.pokemon_sm.add_widget(detail_screen)
 
         frame.add_widget(self.pokemon_sm)
         self.add_widget(frame)
@@ -221,7 +226,7 @@ class MainMenu(Screen):
 
         server_box.add_widget(server_or_client_check)
 
-        UI.create_connection_status(
+        UI.create_connection_status_with_state_text(
             server_box,
             ObjectConnectionStatusCircle,
             self.arceus,
@@ -236,7 +241,7 @@ class MainMenu(Screen):
         obs_box = BoxLayout(orientation="horizontal")
 
         obs_box.add_widget(Label(text="OBS status:"))
-        UI.create_connection_status(
+        UI.create_connection_status_with_state_text(
             obs_box, ObjectConnectionStatusCircle, self.obs_websocket
         )
 
@@ -244,7 +249,7 @@ class MainMenu(Screen):
 
         overlay_status_box = BoxLayout(orientation="horizontal")
         overlay_status_box.add_widget(Label(text="Overlay status:"))
-        UI.create_connection_status(
+        UI.create_connection_status_with_state_text(
             overlay_status_box, ObjectConnectionStatusCircle, self.overlay_server
         )
         status_box.add_widget(overlay_status_box)

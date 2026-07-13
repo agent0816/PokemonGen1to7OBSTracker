@@ -9,6 +9,7 @@ from frontend.widgets.boxmenu import BoxMenu
 from frontend.widgets.encountermenu import EncounterMenu
 from frontend.widgets.mainmenu import MainMenu
 from frontend.widgets.pokedexmenu import PokedexMenu
+from frontend.widgets.pokemon_detail import PokemonDetailScreen
 from frontend.widgets.sessionsmenu import SessionMenu
 from frontend.widgets.settingsmenu import SettingsMenu
 from frontend.widgets.soullinkmenu import SoullinkMenu
@@ -77,6 +78,8 @@ class Screens(ScreenManager):
         self.add_widget(encounter_menu)
         soullink_menu = SoullinkMenu(munchlax, configsave, nuz, bh=bh)
         self.add_widget(soullink_menu)
+        pokemon_detail = PokemonDetailScreen(obs_websocket)
+        self.add_widget(pokemon_detail)
 
         # Total-Wipe-Banner-Callback registrieren (Task #17)
         from frontend.widgets.wipe_banner import TotalWipeBanner

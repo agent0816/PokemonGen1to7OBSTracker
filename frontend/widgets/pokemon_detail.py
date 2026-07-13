@@ -1,9 +1,14 @@
-"""PokemonDetailScreen — Detailansicht für ein einzelnes Pokemon.
+"""PokemonDetailPanel + PokemonDetailScreen — Detailansicht für ein einzelnes Pokemon.
 
-Wird als Screen in einem nested ScreenManager eingebettet (in MainMenu und
-BoxMenu).  Zeigt alle verfügbaren Attribute eines Pokemon-Objekts aufgelöst
-in menschenlesbare Namen (deutsch).  Optional überlagert mit Daten aus dem
-Randomizer-Log.
+`PokemonDetailPanel` ist ein reusable BoxLayout mit der gesamten UI + Logik.
+Es kann direkt in andere Screens eingebettet werden (MainMenu bettet es rechts
+über dem Team-Overlay ein).  `PokemonDetailScreen` ist ein dünner Screen-Wrapper
+um ein Panel — wird als Top-Level-Screen für Full-Screen-Nutzung registriert
+(BoxMenu navigiert dorthin).  So teilen sich beide Nutzungen dieselbe Klasse,
+die Instanzen leben in unterschiedlichen Containern.
+
+Zeigt alle verfügbaren Attribute eines Pokemon-Objekts aufgelöst in menschen-
+lesbare Namen (deutsch).  Optional überlagert mit Daten aus dem Randomizer-Log.
 """
 import yaml
 from kivy.uix.boxlayout import BoxLayout
@@ -130,12 +135,14 @@ def _resolve_abilities_from_rando(rando_abilities: list[str]) -> list[str]:
     return result
 
 
-class PokemonDetailScreen(Screen):
-    """Detailansicht für ein einzelnes Pokemon."""
+class PokemonDetailPanel(BoxLayout):
+    """Detailansicht für ein einzelnes Pokemon — reusable Widget."""
 
     def __init__(self, obs_websocket, **kwargs):
+        kwargs.setdefault("orientation", "vertical")
+        kwargs.setdefault("padding", "10dp")
+        kwargs.setdefault("spacing", "5dp")
         super().__init__(**kwargs)
-        self.name = "PokemonDetail"
         self.obs_websocket = obs_websocket
         self._back_callback = None
         self._edition = 0
@@ -145,14 +152,12 @@ class PokemonDetailScreen(Screen):
         self._refresh_rando_getter = None
         self._last_pokemon = None
 
-        self.root_layout = BoxLayout(orientation="vertical", padding="10dp", spacing="5dp")
-
         header = BoxLayout(orientation="horizontal", size_hint_y=None, height="40dp")
         self.back_button = Button(text="Zurück", size_hint_x=0.2, on_press=self._on_back)
         header.add_widget(self.back_button)
         self.title_label = Label(text="Pokemon-Detail", font_size="18sp")
         header.add_widget(self.title_label)
-        self.root_layout.add_widget(header)
+        self.add_widget(header)
 
         scroll = ScrollView()
         self.detail_layout = BoxLayout(
@@ -160,9 +165,7 @@ class PokemonDetailScreen(Screen):
         )
         self.detail_layout.bind(minimum_height=self.detail_layout.setter("height"))
         scroll.add_widget(self.detail_layout)
-        self.root_layout.add_widget(scroll)
-
-        self.add_widget(self.root_layout)
+        self.add_widget(scroll)
 
     @property
     def _is_gen1(self) -> bool:
@@ -483,3 +486,32 @@ class PokemonDetailScreen(Screen):
     def _on_back(self, instance):
         if self._back_callback:
             self._back_callback()
+
+
+class PokemonDetailScreen(Screen):
+    """Dünner Screen-Wrapper um ein PokemonDetailPanel — für Full-Screen-Nutzung.
+
+    BoxMenu navigiert per Top-Level-ScreenManager hierher.  MainMenu bettet
+    stattdessen ein eigenes PokemonDetailPanel direkt in seinen Content-Bereich
+    ein (kein Wrapper) und behält so die halbseitige Anzeige über dem Team-
+    Overlay.
+    """
+
+    def __init__(self, obs_websocket, **kwargs):
+        super().__init__(**kwargs)
+        self.name = "PokemonDetail"
+        self.panel = PokemonDetailPanel(obs_websocket)
+        self.add_widget(self.panel)
+
+    def show(self, *args, **kwargs):
+        return self.panel.show(*args, **kwargs)
+
+    def set_refresh_source(self, *args, **kwargs):
+        return self.panel.set_refresh_source(*args, **kwargs)
+
+    def refresh_if_active(self):
+        return self.panel.refresh_if_active()
+
+    @property
+    def _refresh_player_id(self):
+        return self.panel._refresh_player_id

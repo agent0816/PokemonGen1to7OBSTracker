@@ -102,6 +102,12 @@ class PokedexMenu(Screen):
             header_row.add_widget(Label(text=f"[b]{title}[/b]", markup=True, size_hint_x=width))
         root.add_widget(header_row)
 
+        self.empty_hint = Label(
+            text="", size_hint_y=None, height=0, opacity=0,
+            color=(0.7, 0.7, 0.7, 1), font_size="14sp",
+        )
+        root.add_widget(self.empty_hint)
+
         scroll = ScrollView(do_scroll_x=False, do_scroll_y=True)
         self.rows_grid = GridLayout(cols=len(COLUMNS), size_hint_y=None, row_default_height="26dp", row_force_default=True)
         self.rows_grid.bind(minimum_height=self.rows_grid.setter("height"))
@@ -153,6 +159,19 @@ class PokedexMenu(Screen):
             filtered.append(row)
 
         self.count_label.text = f"{len(filtered)} Einträge"
+
+        if not filtered:
+            if not self._all_rows:
+                self.empty_hint.text = "Noch keine Pokemon in der Datenbank — auf Aktualisieren klicken."
+            else:
+                self.empty_hint.text = "Kein Treffer mit aktuellen Filtern."
+            self.empty_hint.height = 60
+            self.empty_hint.opacity = 1
+        else:
+            self.empty_hint.text = ""
+            self.empty_hint.height = 0
+            self.empty_hint.opacity = 0
+
         self._render_rows(filtered)
 
     def _render_rows(self, rows: list[dict]):

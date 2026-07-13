@@ -27,7 +27,7 @@ class PokemonBox(ButtonBehavior, BoxLayout):
 
         info_box = BoxLayout(orientation="vertical")
         
-        nickname = Label(text="nickname")
+        nickname = Label(text="— leer —")
         self.ids["Nickname"] = weakref.proxy(nickname)
         info_box.add_widget(nickname)
 
@@ -180,14 +180,20 @@ class TrainerBox(BoxLayout):
         if hasattr(self.screen, 'randomizer'):
             rando_data = self.screen.randomizer.get_log_data()
             rando_getter = self.screen.randomizer.get_log_data
-        detail = self.screen.pokemon_detail_screen
-        detail.show(
+        # MainMenu bettet Detail als Panel im nested ScreenManager ein (rechter
+        # Frame-Bereich, nicht fullscreen). Andere Container (SessionMenu über
+        # main_menu) fallen auf denselben Panel-Ref via self.screen zurück.
+        panel = getattr(self.screen, 'pokemon_panel', None)
+        sm = getattr(self.screen, 'pokemon_sm', None)
+        if panel is None or sm is None:
+            return
+        panel.show(
             pokemon, edition, rando_data,
-            back_callback=lambda: setattr(self.screen.pokemon_sm, 'current', 'TeamOverview'),
+            back_callback=lambda: setattr(sm, 'current', 'TeamOverview'),
             munchlax=self.munchlax,
         )
-        detail.set_refresh_source(self.player_id, slot, self.munchlax, rando_getter)
-        self.screen.pokemon_sm.current = "PokemonDetail"
+        panel.set_refresh_source(self.player_id, slot, self.munchlax, rando_getter)
+        sm.current = "PokemonDetailInline"
 
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos
@@ -271,11 +277,12 @@ class TrainerBox(BoxLayout):
 
         self.old_team = new_team
 
-        if (hasattr(self.screen, 'pokemon_sm')
-                and self.screen.pokemon_sm.current == "PokemonDetail"
-                and hasattr(self.screen, 'pokemon_detail_screen')
-                and self.screen.pokemon_detail_screen._refresh_player_id == self.player_id):
-            self.screen.pokemon_detail_screen.refresh_if_active()
+        panel = getattr(self.screen, 'pokemon_panel', None)
+        sm = getattr(self.screen, 'pokemon_sm', None)
+        if (panel is not None and sm is not None
+                and sm.current == "PokemonDetailInline"
+                and panel._refresh_player_id == self.player_id):
+            panel.refresh_if_active()
 
         badges = self.munchlax.badges[self.player_id]
         badge_string = f"{self.obs_websocket.conf['badges_path']}"

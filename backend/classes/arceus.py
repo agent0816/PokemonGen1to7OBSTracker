@@ -5,6 +5,16 @@ import traceback
 from backend.logging_setup import get_logger
 from backend.type_lookup import first_type, type_name
 
+# Modi mit aktiver Soullink-Logik (Links, Ersttyp-Clause, Trade-Detection).
+# Alles andere ("off" legacy, "nuzlocke", "disabled", "versus_ffa") bedeutet:
+# keine Cross-Owner-Checks auf dem Server.
+SOULLINK_MODES = ("coop", "versus")
+# Modi mit Versus-Scoreboard (badges/alive/deaths). "versus" aggregiert pro Team,
+# "versus_ffa" (jeder gegen jeden) pro Spieler — ohne Soullink-Links.
+VERSUS_MODES = ("versus", "versus_ffa")
+# Modi, deren Config beim Connect an neue Clients ausgeliefert wird.
+BROADCAST_MODES = ("coop", "versus", "versus_ffa")
+
 class Arceus:
     def __init__(self, host, port, rem):
         super().__init__()
@@ -294,7 +304,7 @@ class Arceus:
                 "encounters": list(self.encounters.values()),
             })
 
-        if self.soullink_config.get("mode", "off") != "off":
+        if self.soullink_config.get("mode", "off") in BROADCAST_MODES:
             await self.send_to_client(client_id, {
                 "type": "soullink_config",
                 "config": dict(self.soullink_config),
@@ -424,7 +434,7 @@ class Arceus:
         """Owner-Liste, mit denen dieser Owner verlinkt ist (unter Berücksichtigung von Mode/Team)."""
         cfg = self.soullink_config
         mode = cfg.get("mode", "off")
-        if mode == "off":
+        if mode not in SOULLINK_MODES:
             return []
         expected = list(cfg.get("expected_owners", []))
         if owner not in expected:
@@ -476,7 +486,7 @@ class Arceus:
 
     def _assign_link_group(self, enc: dict) -> dict | None:
         """Weist einem neuen Encounter eine Link-Group zu (falls Soullink aktiv + is_first)."""
-        if self.soullink_config.get("mode", "off") == "off":
+        if self.soullink_config.get("mode", "off") not in SOULLINK_MODES:
             return None
         if not enc.get("is_first"):
             return None
@@ -557,7 +567,7 @@ class Arceus:
         owner = data.get("owner")
         if personality is None or not owner:
             return None
-        if self.soullink_config.get("mode", "off") == "off":
+        if self.soullink_config.get("mode", "off") not in SOULLINK_MODES:
             # Ohne Soullink trotzdem Broadcast (Overlay/UI-Update), aber keine Partner-Logik.
             death = {
                 "personality": personality,
@@ -937,9 +947,13 @@ class Arceus:
         return {"badges": badges, "alive_count": alive_count}
 
     def _recompute_versus_state(self) -> bool:
-        """Rechnet Versus-Team-Aggregate neu. Gibt True zurück wenn sich was geändert hat."""
+        """Rechnet Versus-Aggregate neu. Gibt True zurück wenn sich was geändert hat.
+
+        "versus": Bucket pro Team (team_membership). "versus_ffa": Bucket pro
+        Spieler — jeder Owner ist sein eigenes "Team"."""
         cfg = self.soullink_config
-        if cfg.get("mode") != "versus":
+        mode = cfg.get("mode")
+        if mode not in VERSUS_MODES:
             if self.soullink_versus_state:
                 self.soullink_versus_state = {}
                 return True
@@ -948,7 +962,7 @@ class Arceus:
         expected = cfg.get("expected_owners", []) or []
         new_state: dict[str, dict] = {}
         for owner in expected:
-            team = team_map.get(owner)
+            team = owner if mode == "versus_ffa" else team_map.get(owner)
             if not team:
                 continue
             bucket = new_state.setdefault(team, {
@@ -1159,7 +1173,7 @@ class Arceus:
         Owner-Umzug. Cross-owner PID-Kollisionen sind selten genug, dass wir das als
         Trade-Indikator behandeln.
         """
-        if self.soullink_config.get("mode", "off") == "off":
+        if self.soullink_config.get("mode", "off") not in SOULLINK_MODES:
             return None
         pv = enc.get("personality")
         new_owner = enc.get("owner")

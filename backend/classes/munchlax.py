@@ -55,6 +55,7 @@ class Munchlax:
         self.host = host
         self.port = port
         self.is_connected = False
+        self.reconnecting = False  # True während _auto_reconnect läuft (UI-Grace)
         self.obs: OBS | None = None
         self.overlay_server = None
         self.rando_tm_moves: dict[int, str] | None = None
@@ -76,6 +77,10 @@ class Munchlax:
         self.soullink_tokens: dict[str, dict] = {}
         self._wipe_signaled: dict = {}
         self._last_wipe_player_id: int | str | None = None
+        # Death-Reporting: einmal gemeldete Tode (pv, owner) + Queue für Meldungen,
+        # die mangels Verbindung noch nicht raus sind (Flush beim nächsten Team-Tick).
+        self._reported_deaths: set[tuple[int, str]] = set()
+        self._pending_death_reports: list[dict] = []
         self.on_total_wipe_callback = None
         # HP-Consistency: pro (player_id, personality) → {last_max_hp, last_lvl, zero_reads}.
         # Filtert kurze RAM-Fluktuationen und Gen-6/7-Battle-RAM-Ausreißer, bevor ein
@@ -112,6 +117,8 @@ class Munchlax:
         self.soullink_versus_battles = []
         self.soullink_rule_violations = {}
         self.soullink_tokens = {}
+        self._reported_deaths = set()
+        self._pending_death_reports = []
         self.timer_state = {}
         self.timer_last_tick = None
         self.countdown_state = {}
@@ -613,7 +620,58 @@ class Munchlax:
         except Exception as err:
             self.logger.debug(f"notify_overlay_session {event_type} failed: {err}")
 
-    async def check_total_wipe(self, player_id, team) -> bool:
+    def _evaluate_team_deaths(self, player_id, team) -> list[tuple]:
+        """Ein `_is_pokemon_dead`-Pass über das Team. Gibt [(pv, dexnr, is_dead)] zurück.
+
+        WICHTIG: `_is_pokemon_dead` mutiert den Zero-Read-Zähler — pro Team-Tick
+        nur EINMAL aufrufen und das Ergebnis an Wipe-Check UND Death-Report geben.
+        """
+        result = []
+        for slot in team[:6] if team else []:
+            if slot is None:
+                continue
+            if isinstance(slot, dict):
+                dex = slot.get("dexnr")
+                pv = slot.get("personality")
+            else:
+                dex = getattr(slot, "dexnr", None)
+                pv = getattr(slot, "personality", None)
+            if not dex:
+                continue
+            result.append((pv, dex, self._is_pokemon_dead(player_id, slot)))
+        return result
+
+    async def _report_deaths(self, player_id, edition, dead_infos: list[tuple]):
+        """Meldet erkannte Einzel-Tode einmalig an den Server (soullink_death).
+
+        Debounce über `_reported_deaths` — lebt ein Pokemon wieder (Heilung/Revive
+        oder Fehl-Read), wird der Marker gelöscht und ein erneuter Tod wieder
+        gemeldet. Ohne Verbindung landet die Meldung in `_pending_death_reports`
+        und wird beim nächsten Team-Tick mit Verbindung nachgereicht.
+        """
+        owner = PokedexDB.build_owner(self.pl.get('your_name', ''), str(player_id))
+        for pv, dexnr, is_dead in dead_infos:
+            if pv is None:
+                continue
+            key = (pv, owner)
+            if is_dead:
+                if key in self._reported_deaths:
+                    continue
+                self._reported_deaths.add(key)
+                self.logger.info(f"Death erkannt: owner={owner} pv={pv} dexnr={dexnr}")
+                self._pending_death_reports.append(
+                    {"personality": pv, "owner": owner, "edition": edition}
+                )
+            else:
+                self._reported_deaths.discard(key)
+        if self.is_connected and self._pending_death_reports:
+            pending, self._pending_death_reports = self._pending_death_reports, []
+            for report in pending:
+                await self.send_soullink_death(
+                    report["personality"], report["owner"], edition=report["edition"]
+                )
+
+    async def check_total_wipe(self, player_id, team, dead_infos: list[tuple] | None = None) -> bool:
         """Prüft rule_restart_on_total_wipe: alle Team-Slots tot → Broadcast Warning.
 
         Debounce: nach einem erkannten Wipe wird `_wipe_signaled[player_id]=True`
@@ -623,23 +681,18 @@ class Munchlax:
         HP-Consistency (`_is_pokemon_dead`): filtert kurze RAM-Fluktuationen
         (Threshold: WIPE_ZERO_READ_THRESHOLD consecutive Zero-Reads) und
         Gen-6/7-Battle-RAM-Ausreißer (max_hp-Wechsel ohne plausibles Level-Up).
+
+        dead_infos: vorberechnetes Ergebnis aus `_evaluate_team_deaths` (ein Pass
+        pro Tick). Ohne Angabe wird selbst ausgewertet (Standalone-Aufruf).
         """
+        if not self._nuzlocke_rules_active():
+            return False
         if not self.nuz.get("rule_restart_on_total_wipe", False):
             return False
-        alive = 0
-        any_pokemon = False
-        for slot in team[:6] if team else []:
-            if slot is None:
-                continue
-            if isinstance(slot, dict):
-                dex = slot.get("dexnr")
-            else:
-                dex = getattr(slot, "dexnr", None)
-            if not dex:
-                continue
-            any_pokemon = True
-            if not self._is_pokemon_dead(player_id, slot):
-                alive += 1
+        if dead_infos is None:
+            dead_infos = self._evaluate_team_deaths(player_id, team)
+        any_pokemon = bool(dead_infos)
+        alive = sum(1 for (_pv, _dex, is_dead) in dead_infos if not is_dead)
         if not any_pokemon:
             # Team leer (z.B. vor ROM-Load) — kein Wipe, aber auch nicht als Wipe zaehlen.
             return False
@@ -882,8 +935,15 @@ class Munchlax:
         state["zero_reads"] = 0
         return False
 
+    def _nuzlocke_rules_active(self) -> bool:
+        """False bei soullink_mode 'disabled' — dann greifen keine Nuzlocke-Regeln.
+        Legacy-Wert 'off' und fehlender Key bedeuten 'nuzlocke' (Regeln aktiv)."""
+        return (self.nuz.get("soullink_mode") or "nuzlocke") != "disabled"
+
     def check_nickname_required(self, pokemon, edition, default_species_name) -> bool:
         """rule_nickname_required: prüft ob Nickname vom Default-Species-Namen abweicht."""
+        if not self._nuzlocke_rules_active():
+            return True
         if not self.nuz.get("rule_nickname_required", True):
             return True
         nickname = getattr(pokemon, "nickname", "") or ""
@@ -1049,7 +1109,12 @@ class Munchlax:
                 )
                 if new_pvs:
                     self._on_new_pokemon_detected(player, edition, pokemons, new_pvs)
-                await self.check_total_wipe(player, pokemons)
+                if self._nuzlocke_rules_active():
+                    # Ein _is_pokemon_dead-Pass pro Tick — Ergebnis geht an
+                    # Wipe-Check UND Death-Report (Zähler darf nur 1x hochzählen).
+                    dead_infos = self._evaluate_team_deaths(player, pokemons)
+                    await self.check_total_wipe(player, pokemons, dead_infos)
+                    await self._report_deaths(player, edition, dead_infos)
         except Exception as err:
             self.logger.error(f"_persist_teams failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
@@ -1193,18 +1258,22 @@ class Munchlax:
 
     async def _auto_reconnect(self):
         delays = [5, 10, 20]
-        for attempt, delay in enumerate(delays, 1):
-            self.logger.info(f"Auto-Reconnect Versuch {attempt}/{len(delays)} in {delay}s...")
-            await asyncio.sleep(delay)
-            if self.is_connected:
-                return
-            try:
-                await self.connect()
-                self.logger.info(f"Auto-Reconnect erfolgreich nach Versuch {attempt}.")
-                return
-            except Exception as err:
-                self.logger.warning(f"Auto-Reconnect Versuch {attempt} fehlgeschlagen: {err}")
-        self.logger.error("Auto-Reconnect aufgegeben nach 3 Versuchen.")
+        self.reconnecting = True
+        try:
+            for attempt, delay in enumerate(delays, 1):
+                self.logger.info(f"Auto-Reconnect Versuch {attempt}/{len(delays)} in {delay}s...")
+                await asyncio.sleep(delay)
+                if self.is_connected:
+                    return
+                try:
+                    await self.connect()
+                    self.logger.info(f"Auto-Reconnect erfolgreich nach Versuch {attempt}.")
+                    return
+                except Exception as err:
+                    self.logger.warning(f"Auto-Reconnect Versuch {attempt} fehlgeschlagen: {err}")
+            self.logger.error("Auto-Reconnect aufgegeben nach 3 Versuchen.")
+        finally:
+            self.reconnecting = False
 
     async def send_message(self, message):
         serialized_message = pickle.dumps(message)

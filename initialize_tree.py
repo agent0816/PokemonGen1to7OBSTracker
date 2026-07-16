@@ -260,8 +260,10 @@ def update_session(sessionpath, default=False):
         "shiny_clause": True,
         "dupes_clause": True,
         "encounter_methods_separate": False,
-        # Soullink-Modus + Struktur
-        "soullink_mode": "off",
+        # Soullink-Modus + Struktur. Werte: "disabled" (Tracker ohne Nuzlocke-Regeln),
+        # "nuzlocke" (Regeln aktiv, kein Soullink, Default), "coop", "versus" (Teams),
+        # "versus_ffa" (jeder gegen jeden, Scoreboard pro Spieler, kein Soullink).
+        "soullink_mode": "nuzlocke",
         "soullink_player_count": 2,
         "soullink_link_strategy": "full_chain",
         "soullink_team_membership": {},
@@ -296,6 +298,14 @@ def update_session(sessionpath, default=False):
             new_nuz=Path(f"{sessionpath}/default/nuzlocke.yml")
             save_config(new_nuz, nuz)
     else:
+        # Migration: alter Wert "off" hieß "Nuzlocke-Regeln aktiv, kein Soullink" —
+        # seit Einführung des echten Aus-Modus ("disabled") heißt dieser Zustand "nuzlocke".
+        # "off" wird von der UI nicht mehr geschrieben, die Umbenennung ist daher stabil.
+        with open(nuzlocke) as file:
+            cur_nuz = yaml.safe_load(file) or {}
+        if cur_nuz.get("soullink_mode") == "off":
+            cur_nuz["soullink_mode"] = "nuzlocke"
+            save_config(nuzlocke, cur_nuz)
         if not default:
             load_config(nuzlocke, nuz)
         else:

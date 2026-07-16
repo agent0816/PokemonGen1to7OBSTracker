@@ -24,11 +24,27 @@ logger = get_logger(__name__, './logs/nuzlockemenu.log')
 
 TEAM_LETTERS = ["A", "B", "C", "D"]
 
-# Backend erwartet die Roh-Keys ("off"/"coop"/"versus"). Im UI zeigen wir
-# Klartext-Labels und übersetzen an den Grenzen. "off" heißt in der UI
-# "Nuzlocke" (kein Soullink, nur Nuzlocke-Regeln aktiv).
-MODE_LABELS = {"off": "Nuzlocke", "coop": "Coop", "versus": "Versus"}
+# Backend erwartet die Roh-Keys ("nuzlocke"/"coop"/"versus"/"versus_ffa"/"disabled").
+# Im UI zeigen wir Klartext-Labels und übersetzen an den Grenzen.
+# "nuzlocke" = Regeln aktiv, kein Soullink (Default); "versus_ffa" = jeder gegen
+# jeden (kein Soullink, Scoreboard pro Spieler); "disabled" = Tracker ohne
+# Nuzlocke-Regeln (für normale Runs). Legacy-Wert "off" aus alten Configs/Peers
+# entspricht "nuzlocke" (Migration in initialize_tree).
+MODE_LABELS = {
+    "nuzlocke": "Nuzlocke",
+    "coop": "Coop",
+    "versus": "Versus (Teams)",
+    "versus_ffa": "Versus (jeder gegen jeden)",
+    "disabled": "Aus",
+}
 MODE_LABEL_TO_VALUE = {v: k for k, v in MODE_LABELS.items()}
+
+
+def normalize_mode(value) -> str:
+    """Übersetzt Legacy-/Leer-Werte auf den heutigen Modus-Schlüssel."""
+    if not value or value == "off":
+        return "nuzlocke"
+    return value if value in MODE_LABELS else "nuzlocke"
 
 
 class OwnerRow(BoxLayout):
@@ -112,9 +128,9 @@ class NuzlockeMenu(Screen):
         config_row = BoxLayout(orientation="horizontal", size_hint_y=None,
                                 height="40dp", spacing="6dp")
         config_row.add_widget(Label(text="Modus:", size_hint_x=0.15))
-        mode_value = self.nuz.get("soullink_mode", "off") or "off"
+        mode_value = normalize_mode(self.nuz.get("soullink_mode"))
         self.mode_spinner = Spinner(
-            text=MODE_LABELS.get(mode_value, MODE_LABELS["off"]),
+            text=MODE_LABELS[mode_value],
             values=list(MODE_LABELS.values()),
             size_hint_x=0.20,
         )
@@ -239,7 +255,7 @@ class NuzlockeMenu(Screen):
             row.set_team_visible(show_team)
 
     def _mode_value(self) -> str:
-        return MODE_LABEL_TO_VALUE.get(self.mode_spinner.text, "off")
+        return MODE_LABEL_TO_VALUE.get(self.mode_spinner.text, "nuzlocke")
 
     def _on_player_count_changed(self, spinner, value):
         self._rebuild_owner_rows()
@@ -276,8 +292,8 @@ class NuzlockeMenu(Screen):
             self.status_label.text = f"Fehler: {err}"
 
     def _load_from_nuz(self):
-        mode_value = self.nuz.get("soullink_mode", "off") or "off"
-        self.mode_spinner.text = MODE_LABELS.get(mode_value, MODE_LABELS["off"])
+        mode_value = normalize_mode(self.nuz.get("soullink_mode"))
+        self.mode_spinner.text = MODE_LABELS[mode_value]
         self.player_count_spinner.text = str(self.nuz.get("soullink_player_count", 2) or 2)
         self._rebuild_owner_rows()
         self.status_label.text = "Aus Session geladen"

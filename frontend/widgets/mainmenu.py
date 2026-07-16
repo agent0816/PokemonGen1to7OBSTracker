@@ -117,6 +117,8 @@ class MainMenu(Screen):
         self.munchlax = munchlax
         self.obs_websocket: OBS = obs_websocket
         self.overlay_server = overlay_server
+        # Zähler für Button-Text-Downgrade (3-Poll-Grace gegen Flackern beim Verbinden)
+        self._btn_sync_strikes = {"client": 0, "obs": 0}
         self.sp = sp
         self.rem = rem
         self.bh = bh
@@ -195,6 +197,7 @@ class MainMenu(Screen):
         buttons_box.add_widget(server_client_button)
 
         obs_connect = Button(text="OBS verbinden", on_press=self.toggle_obs)
+        self.ids["obs_button"] = weakref.proxy(obs_connect)
         buttons_box.add_widget(obs_connect)
 
         self.overlay_button = Button(text="Overlay starten", on_press=self.toggle_overlay)
@@ -440,7 +443,37 @@ class MainMenu(Screen):
 
         self.pokemon_frame.add_widget(box)
 
+    def _sync_connection_button_texts(self):
+        """Setzt Verbindungs-Button-Texte zurück, wenn eine Verbindung endgültig weg ist
+        (fehlgeschlagener Auto-Reconnect, OBS extern beendet). 3-Poll-Grace verhindert
+        Flackern während laufender Connects; munchlax.reconnecting überbrückt den
+        Auto-Reconnect (~35s)."""
+        btn = self.ids.get("server_client_button")
+        if (btn is not None and not self.rem["start_server"]
+                and btn.text == "Client beenden"
+                and not self.munchlax.is_connected
+                and not self.munchlax.reconnecting):
+            self._btn_sync_strikes["client"] += 1
+            if self._btn_sync_strikes["client"] >= 3:
+                btn.text = "Client starten"
+                self._btn_sync_strikes["client"] = 0
+                logger.info("Client-Button zurückgesetzt: Verbindung weg, kein Auto-Reconnect aktiv")
+        else:
+            self._btn_sync_strikes["client"] = 0
+
+        obs_btn = self.ids.get("obs_button")
+        if (obs_btn is not None and obs_btn.text == "OBS trennen"
+                and not self.obs_websocket.is_connected):
+            self._btn_sync_strikes["obs"] += 1
+            if self._btn_sync_strikes["obs"] >= 3:
+                obs_btn.text = "OBS verbinden"
+                self._btn_sync_strikes["obs"] = 0
+                logger.info("OBS-Button zurückgesetzt: WebSocket-Verbindung weg")
+        else:
+            self._btn_sync_strikes["obs"] = 0
+
     def change_munchlax_status(self, box):
+        self._sync_connection_button_texts()
         if self.rem["start_server"]:
             for client_id in self.arceus.munchlax_status:
                 name = self.arceus.munchlax_names[client_id]

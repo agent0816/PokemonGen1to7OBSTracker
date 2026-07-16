@@ -1,6 +1,25 @@
 # Soullink-Regel-Presets. NuzlockeMenu läst sie über backend/soullink_presets.py
 # und wendet die Rule-Keys direkt auf das nuzlocke.yml-Dict an (flach, rule_*).
 
+standard_nuzlocke:
+  label: "Standard Nuzlocke (ohne Soullink)"
+  description: >
+    Klassisches Nuzlocke ohne Verlinkung: erster Encounter pro Route,
+    Tod ist endgültig, Nickname-Pflicht. Dupes-Retry + Shiny-Clause aktiv,
+    keine Token-/Ersttyp-Regeln (entspricht Standard 2-Way ohne Soullink).
+  soullink_mode: nuzlocke
+  rules:
+    rule_run_start_on_ball: true
+    rule_dead_pokemon_unusable: true
+    rule_one_encounter_per_area: true
+    rule_must_catch_first_encounter: true
+    rule_nickname_required: true
+    rule_species_clause_cross_players: false
+    rule_same_species_retry: true
+    rule_token_rule: false
+    rule_shiny_clause_always_catchable: true
+    rule_restart_on_total_wipe: false
+
 standard_2way:
   label: "Standard 2-Way Soullink"
   description: >
@@ -41,6 +60,26 @@ versus_2v2:
     rule_shiny_clause_always_catchable: true
     rule_same_species_retry: false
     rule_token_rule: false
+
+versus_ffa:
+  label: "Versus – Jeder gegen jeden"
+  description: >
+    Unabhängige Nuzlocke-Runs im Wettkampf: kein Soullink, keine Links.
+    Scoreboard (Orden, lebende Pokemon, Tode) pro Spieler statt pro Team.
+    Standard-Nuzlocke-Regeln, Total-Wipe scheidet aus.
+  soullink_mode: versus_ffa
+  rules:
+    rule_run_start_on_ball: true
+    rule_dead_pokemon_unusable: true
+    rule_restart_on_total_wipe: true
+    rule_one_encounter_per_area: true
+    rule_must_catch_first_encounter: true
+    rule_nickname_required: true
+    rule_species_clause_cross_players: false
+    rule_same_species_retry: true
+    rule_token_rule: false
+    rule_first_type_clause_linked: false
+    rule_shiny_clause_always_catchable: true
 
 coop_3way:
   label: "3-Way Coop"

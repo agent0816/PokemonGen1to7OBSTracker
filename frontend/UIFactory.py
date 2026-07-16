@@ -11,8 +11,8 @@ def create_label_and_Textbox(rootwidget, ids,
                             label_text='label_text', label_size_hint=(.2,1), 
                             multiline=False, password=False, text_size_hint=(.8,1),
                             text_box_id=None, text_validate_function=None,
-                            is_port=False):
-    
+                            is_port=False, reveal_toggle=False):
+
     box = BoxLayout(orientation='horizontal', size_hint_y=box_size_hint_y, size=box_size, padding=box_padding, spacing=box_spacing)
     box.add_widget(Label(text=label_text, size_hint=label_size_hint))
     textInput = TextInput(size_hint=text_size_hint, password=password, multiline=multiline, write_tab=False)
@@ -21,6 +21,14 @@ def create_label_and_Textbox(rootwidget, ids,
     if text_box_id is not None:
         ids[text_box_id] = weakref.proxy(textInput)
     box.add_widget(textInput)
+    if reveal_toggle:
+        # Aufdeck-Button für maskierte Felder (Stream-Leak-Schutz, vgl. _make_masked_ip_widget)
+        toggle = Button(text="Anzeigen", size_hint=(.15, 1))
+        def _toggle_reveal(btn, ti=textInput):
+            ti.password = not ti.password
+            btn.text = "Anzeigen" if ti.password else "Verbergen"
+        toggle.bind(on_press=_toggle_reveal)
+        box.add_widget(toggle)
     if is_port:
         box.add_widget(Label(size_hint_x=.7))
     rootwidget.add_widget(box)

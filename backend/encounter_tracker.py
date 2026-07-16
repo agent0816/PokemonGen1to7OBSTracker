@@ -59,6 +59,11 @@ class EncounterTracker:
             f"{len(self.family_members)} Familien"
         )
 
+    def _nuzlocke_rules_active(self) -> bool:
+        """False bei soullink_mode 'disabled' — Tracker läuft dann ohne Nuzlocke-Regeln.
+        Legacy-Wert 'off' und fehlender Key bedeuten 'nuzlocke' (Regeln aktiv)."""
+        return (self.nuz.get("soullink_mode") or "nuzlocke") != "disabled"
+
     def _has_active_token_credit(self, owner: str, edition, route) -> bool:
         if not self.nuz.get("rule_token_rule", False):
             return False
@@ -140,6 +145,12 @@ class EncounterTracker:
         - rule_same_species_retry            → überschreibt dupes_clause (Preset-Kompat)
         - rule_run_start_on_ball             → run beginnt erst mit erstem Ball
         """
+        # Modus "disabled": Encounter werden weiter geloggt (Statistik), aber keine
+        # Regel greift — kein Ball-Gate, kein Shiny-/Dupes-/Ersttyp-Retry.
+        if not self._nuzlocke_rules_active():
+            is_first = not self.pokedex_db.has_encounter_on_route(owner, edition, route)
+            return True, is_first, False, False
+
         has_balls = self.pokedex_db.has_catching_balls(owner, edition)
         if self.nuz.get("rule_run_start_on_ball", True) and not has_balls:
             # Ohne Ball zählt nichts — is_first=False verhindert Link + DB-First-Marker

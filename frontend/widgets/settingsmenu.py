@@ -325,8 +325,9 @@ class ScrollSettings(ScrollView):
         ueberschrift_client = Label(text="Client Einstellungen", size_hint=(.4, None), size=(0,"20dp"), font_size="17sp")
         remote_box.add_widget(ueberschrift_client)
 
-        UI.create_label_and_Textbox(remote_box, self.ids, 
-                            label_text='IP-Adresse', 
+        # Ziel-Server-IP maskiert (potenziell öffentliche IP eines Mitspielers — Stream-Leak-Schutz)
+        UI.create_label_and_Textbox(remote_box, self.ids,
+                            label_text='IP-Adresse', password=True, reveal_toggle=True,
                             text_box_id='ip_server',text_validate_function=self.save_changes)
         
         UI.create_label_and_Textbox(remote_box, self.ids, 

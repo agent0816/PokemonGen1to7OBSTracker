@@ -345,7 +345,7 @@ class OverlayServer:
     def _soullink_filter_active(self) -> bool:
         """True wenn nicht-vollständig gelinkte Pokemon versteckt werden sollen."""
         cfg = getattr(self.munchlax, "soullink_config", None) or {}
-        if cfg.get("mode", "off") == "off":
+        if cfg.get("mode", "off") not in ("coop", "versus"):
             return False
         return bool(self.ov.get("hide_incomplete_links", True))
 

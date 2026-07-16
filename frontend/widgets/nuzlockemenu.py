@@ -1,4 +1,4 @@
-"""SoullinkMenu — Modus/Player-Count/Team + eingebettetes Timer/Countdown-Widget."""
+"""NuzlockeMenu — Nuzlocke/Soullink-Modus, Regel-Presets, Timer/Countdown, Snapshots."""
 
 import asyncio
 import traceback
@@ -19,17 +19,16 @@ from backend.snapshot_manager import SnapshotManager
 from backend.soullink_presets import load_presets, apply_preset, preset_choices
 from frontend.widgets.timer_widget import TimerWidget
 
-logger = get_logger(__name__, './logs/soullinkmenu.log')
+logger = get_logger(__name__, './logs/nuzlockemenu.log')
 
 
 TEAM_LETTERS = ["A", "B", "C", "D"]
 
-# Backend erwartet die Roh-Keys ("off"/"coop"/"versus", "full_chain"/"rotating").
-# Im UI zeigen wir Klartext-Labels und übersetzen an den Grenzen.
-MODE_LABELS = {"off": "aus", "coop": "Coop", "versus": "Versus"}
+# Backend erwartet die Roh-Keys ("off"/"coop"/"versus"). Im UI zeigen wir
+# Klartext-Labels und übersetzen an den Grenzen. "off" heißt in der UI
+# "Nuzlocke" (kein Soullink, nur Nuzlocke-Regeln aktiv).
+MODE_LABELS = {"off": "Nuzlocke", "coop": "Coop", "versus": "Versus"}
 MODE_LABEL_TO_VALUE = {v: k for k, v in MODE_LABELS.items()}
-STRATEGY_LABELS = {"full_chain": "Volle Kette", "rotating": "Rotierend"}
-STRATEGY_LABEL_TO_VALUE = {v: k for k, v in STRATEGY_LABELS.items()}
 
 
 class OwnerRow(BoxLayout):
@@ -67,10 +66,10 @@ class OwnerRow(BoxLayout):
         return self.team_spinner.text or "A"
 
 
-class SoullinkMenu(Screen):
+class NuzlockeMenu(Screen):
     def __init__(self, munchlax, configsave, nuz: dict, bh: dict | None = None, **kwargs):
         super().__init__(**kwargs)
-        self.name = "SoullinkMenu"
+        self.name = "NuzlockeMenu"
         self.munchlax = munchlax
         self.configsave = configsave
         self.nuz = nuz
@@ -87,7 +86,7 @@ class SoullinkMenu(Screen):
                             padding=("10dp", "5dp"), spacing="10dp")
         back_btn = Button(text="Zurück zum Hauptmenü", size_hint_x=0.3, on_press=self._go_back)
         header.add_widget(back_btn)
-        header.add_widget(Label(text="Soullink & Timer", font_size="20sp"))
+        header.add_widget(Label(text="Nuzlocke & Timer", font_size="20sp"))
         screen_root.add_widget(header)
 
         scroll_all = ScrollView(size_hint=(1, 1), do_scroll_x=False)
@@ -130,15 +129,6 @@ class SoullinkMenu(Screen):
         )
         self.player_count_spinner.bind(text=self._on_player_count_changed)
         config_row.add_widget(self.player_count_spinner)
-
-        config_row.add_widget(Label(text="Strategie:", size_hint_x=0.15))
-        strategy_value = self.nuz.get("soullink_link_strategy", "full_chain") or "full_chain"
-        self.strategy_spinner = Spinner(
-            text=STRATEGY_LABELS.get(strategy_value, STRATEGY_LABELS["full_chain"]),
-            values=list(STRATEGY_LABELS.values()),
-            size_hint_x=0.20,
-        )
-        config_row.add_widget(self.strategy_spinner)
         root.add_widget(config_row)
 
         # Owner-Zeilen — feste Höhe damit im Outer-Scroll konsistent bleibt.
@@ -251,9 +241,6 @@ class SoullinkMenu(Screen):
     def _mode_value(self) -> str:
         return MODE_LABEL_TO_VALUE.get(self.mode_spinner.text, "off")
 
-    def _strategy_value(self) -> str:
-        return STRATEGY_LABEL_TO_VALUE.get(self.strategy_spinner.text, "full_chain")
-
     def _on_player_count_changed(self, spinner, value):
         self._rebuild_owner_rows()
 
@@ -271,7 +258,7 @@ class SoullinkMenu(Screen):
         return {
             "mode": mode_value,
             "player_count": len(owners),
-            "link_strategy": self._strategy_value(),
+            "link_strategy": "full_chain",
             "team_membership": team_map,
             "expected_owners": owners,
             "rules": rules,
@@ -292,8 +279,6 @@ class SoullinkMenu(Screen):
         mode_value = self.nuz.get("soullink_mode", "off") or "off"
         self.mode_spinner.text = MODE_LABELS.get(mode_value, MODE_LABELS["off"])
         self.player_count_spinner.text = str(self.nuz.get("soullink_player_count", 2) or 2)
-        strategy_value = self.nuz.get("soullink_link_strategy", "full_chain") or "full_chain"
-        self.strategy_spinner.text = STRATEGY_LABELS.get(strategy_value, STRATEGY_LABELS["full_chain"])
         self._rebuild_owner_rows()
         self.status_label.text = "Aus Session geladen"
 

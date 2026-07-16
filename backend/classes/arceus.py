@@ -435,8 +435,7 @@ class Arceus:
             if my_team is None:
                 return []
             return [o for o in expected if team_map.get(o) == my_team]
-        # coop: full_chain = alle. rotating in erster Version wie full_chain,
-        # dedizierte Rotation-Auswertung kommt mit Coop-3/4-Task.
+        # coop: full_chain = alle expected owners werden gelinkt.
         return list(expected)
 
     def _compute_link_state(self, link: dict) -> str:

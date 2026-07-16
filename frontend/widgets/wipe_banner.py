@@ -2,7 +2,7 @@
 
 Zeigt drei Handlungs-Optionen:
 - "Letzten Snapshot laden" — nutzt SnapshotManager, restore neuester Eintrag
-- "Anderen Snapshot wählen" — schließt Popup, User navigiert zu SoullinkMenu
+- "Anderen Snapshot wählen" — schließt Popup, User navigiert zu NuzlockeMenu
 - "Bei Null starten" — archiviert encounters-Tabelle, aktive DB-Reset
 """
 

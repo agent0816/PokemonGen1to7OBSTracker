@@ -1,4 +1,4 @@
-# Soullink-Regel-Presets. SoullinkMenu läst sie über backend/soullink_presets.py
+# Soullink-Regel-Presets. NuzlockeMenu läst sie über backend/soullink_presets.py
 # und wendet die Rule-Keys direkt auf das nuzlocke.yml-Dict an (flach, rule_*).
 
 standard_2way:

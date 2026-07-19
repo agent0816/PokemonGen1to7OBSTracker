@@ -120,7 +120,7 @@ def decode_opponent_gen45(data: bytes) -> dict | None:
 
 
 def decode_opponent_gen3(data: bytes) -> dict | None:
-    """Dekodiert Species, Level, Shiny, Personality und met_location
+    """Dekodiert Species, Level, Shiny, Personality, met_location und current HP
     aus einem Gen-3-Party-Slot (100 Bytes)."""
     if len(data) < 100:
         return None
@@ -143,6 +143,8 @@ def decode_opponent_gen3(data: bytes) -> dict | None:
 
     lvl = data[84]
     met_location = unshuffled_bytes[0x25]
+    # current HP liegt unverschlüsselt bei 0x56 (u16 LE) im Party-Struct.
+    current_hp = int.from_bytes(data[0x56:0x58], "little")
 
     return {
         "dexnr": dexnr,
@@ -150,6 +152,7 @@ def decode_opponent_gen3(data: bytes) -> dict | None:
         "shiny": shiny_value < 8,
         "personality": personality,
         "met_location": met_location,
+        "current_hp": current_hp,
     }
 
 

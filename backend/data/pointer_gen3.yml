@@ -27,6 +27,16 @@
 # Pocket-Sizes (R/S=20/20/16/64/46, E=30/30/16/64/46, FR-BG=42/30/13/58/43 slots).
 # bag_pc: 50 Slots in allen Editionen.
 # Pointer per tools/find_bag_ptr.py auf deutschen ROMs verifiziert.
+#
+# Encounter-Outcome-Check (Fix 2 + 3):
+#   partycountpointer:          statische u8-Adresse der aktuellen Party-Groesse
+#                               (gPlayerPartyCount). Verifiziert per Dump-Diff.
+#   currentbox_pointer:         statische u8-Adresse der aktiven PC-Box (nur R/S).
+#   currentbox_indirect_offset: bei E/FR/BG liegt currentBox relativ zum
+#                               dereferenzierten box_pointer_indirect (Offset 0).
+#                               Der Indirect-Pointer bewegt sich innerhalb einer
+#                               Session — muss bei jedem Read neu dereferenziert
+#                               werden.
 31:
   pointer: 0x3004370
   box_pointer: 0x20300A4
@@ -36,6 +46,10 @@
   battlerscountpointer: 0x02024A68
   battleopponentidpointer: 0x0202FF5E
   battleopponentpointer: 0x030045C0
+  # gPlayerPartyCount (u8) — Outcome-Check nach Kampfende
+  partycountpointer: 0x03004360
+  # currentBox (u8) — statisch bei R/S, box_pointer - 4
+  currentbox_pointer: 0x020300A0
   languages:
     1096308292:
       badgepointer: 0x2026a54
@@ -54,6 +68,8 @@
   battlerscountpointer: 0x02024A68
   battleopponentidpointer: 0x0202FF5E
   battleopponentpointer: 0x030045C0
+  partycountpointer: 0x03004360
+  currentbox_pointer: 0x020300A0
   languages:
     1096306756:
       badgepointer: 0x2026a54
@@ -73,6 +89,11 @@
   battlerscountpointer: 0x0202406C
   battleopponentidpointer: 0x02038BCA
   battleopponentpointer: 0x02024744
+  # gPlayerPartyCount (u8) — statisch trotz Save-Block-Relocation
+  partycountpointer: 0x020244E9
+  # currentBox (u8): *(box_pointer_indirect) + currentbox_indirect_offset
+  # Header vor Box-Payload; box_pointer_offset (=4) trennt Header vom Payload.
+  currentbox_indirect_offset: 0x0
   languages:
     1112556868:
       badgepointer: 0x03005d8c
@@ -93,6 +114,8 @@
   battlerscountpointer: 0x02023BCC
   battleopponentidpointer: 0x020386AE
   battleopponentpointer: 0x0202402C
+  partycountpointer: 0x02024029
+  currentbox_indirect_offset: 0x0
   languages:
     1112560197:
       badgepointer: 0x3005008
@@ -115,6 +138,8 @@
   battlerscountpointer: 0x02023BCC
   battleopponentidpointer: 0x020386AE
   battleopponentpointer: 0x0202402C
+  partycountpointer: 0x02024029
+  currentbox_indirect_offset: 0x0
   languages:
     1112557380:
       badgepointer: 0x3004F58

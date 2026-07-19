@@ -40,6 +40,16 @@ class Bizhawk:
         self._encounter_inflight: dict[str, bool] = {}
         self._last_battle_pv: dict[str, int | None] = {}
         self._last_map_header: dict[str, int] = {}
+        # Vor Kampfstart gecachte Party-Groesse; nach Kampfende gegen den
+        # aktuellen Wert diffed (Fix 2: Party-Count-Diff → deckt Fang mit
+        # freiem Party-Slot auch dann ab, wenn PID-in-Team-Check aus Race-
+        # Gruenden noch nicht griff).
+        self._last_party_count: dict[str, int] = {}
+        # Wird von update_teams gesetzt und von _check_encounter_outcome
+        # gewartet — verhindert die Race zwischen "in_battle=false" (Kampfende)
+        # und dem nächsten Party-Read (60-Tick-Slot). Ohne dieses Signal würde
+        # der Outcome-Check gegen die Party-Momentaufnahme vor dem Fang laufen.
+        self._team_updated_events: dict[str, asyncio.Event] = {}
         self.encounter_tracker = None
         # Serialisiert Bag-IO pro Client — Reads und Schreibvorgaenge duerfen
         # sich nicht ueberschneiden, sonst lesen wir ein halb-geschriebenes
@@ -74,6 +84,13 @@ class Bizhawk:
             def update_teams(msg):
                 team: list[Pokemon] = pokedecoder.team(msg, edition)
                 teams = self.munchlax.bizhawk_teams
+                # Signal an _check_encounter_outcome, dass ein frischer
+                # Party-Read vorliegt — auch wenn sich nichts geändert hat.
+                # Ohne dieses Set würde ein hängender Outcome-Task ins Timeout
+                # laufen, sobald der Spieler nach dem Kampf nichts weiter tut.
+                ev = self._team_updated_events.get(client_id)
+                if ev is not None:
+                    ev.set()
                 # Vor dem Update den alten Dex-Stand merken — wenn sich die
                 # Tupel-Identität ändert (Pokemon ins/aus PC verschoben,
                 # Tausch, Fang, Evolution), triggern wir später einen
@@ -134,6 +151,8 @@ class Bizhawk:
             # aus der YAML ermitteln kann, ohne es selbst zu cachen.
             self.edition_per_client[client_id] = edition
             self.language_per_client[client_id] = language
+            # Frisch initialisiertes Event pro Client — braucht laufenden Loop.
+            self._team_updated_events[client_id] = asyncio.Event()
 
             # Pointer-Satz aus YAML bestimmen und an Lua zurückschicken (Phase 3)
             pointers = bh_pointers.get_pointers(edition, language if language else None)
@@ -817,6 +836,13 @@ class Bizhawk:
             if map_header is not None:
                 self._last_map_header[client_id] = map_header
 
+            # Party-Groesse vor dem Kampf einfrieren — der Outcome-Check
+            # vergleicht spaeter gegen den Wert nach Kampfende (Fix 2).
+            if edition < 40:
+                pc_before = await self._read_party_count(client_id, edition)
+                if pc_before is not None:
+                    self._last_party_count[client_id] = pc_before
+
             if self.encounter_tracker is None:
                 self.munchlax._ensure_pokedex_db()
                 if self.munchlax.pokedex_db is not None:
@@ -1005,30 +1031,233 @@ class Bizhawk:
                 map_header_id=map_header or 0,
             )
 
+    async def _read_party_count(self, client_id: str, edition: int) -> int | None:
+        """Liest gPlayerPartyCount (u8) — Adresse aus partycountpointer."""
+        try:
+            language = self.language_per_client.get(client_id)
+            pointers = bh_pointers.get_pointers(edition, language)
+            pc_ptr = pointers.get("partycountpointer", 0)
+            if not pc_ptr:
+                return None
+            queue = self.box_request_queues.get(client_id)
+            if queue is None:
+                return None
+            loop = asyncio.get_event_loop()
+            fut = loop.create_future()
+            queue.append(("boxw", pc_ptr, 1, fut, ""))
+            data = await fut
+            return data[0]
+        except Exception as err:
+            self.logger.error(f"Party-Count-Read fehlgeschlagen: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return None
+
+    async def _scan_active_box_gen3(self, client_id: str, edition: int,
+                                      battle_pv: int) -> str | None:
+        """Scannt aktive PC-Box in Gen 3 nach battle_pv (PID-Match).
+
+        Return "caught", wenn PID im ersten Slot-Chunk der aktiven Box liegt.
+        None bei leerer Box, PID nicht gefunden, oder Read-Fehler.
+
+        Leere Slots werden per PID==0-Heuristik erkannt (Gen 3 loescht
+        entlassene Slots komplett). Suche stoppt am ersten leeren Slot.
+        """
+        try:
+            language = self.language_per_client.get(client_id)
+            pointers = bh_pointers.get_pointers(edition, language)
+            queue = self.box_request_queues.get(client_id)
+            if queue is None:
+                return None
+            loop = asyncio.get_event_loop()
+
+            # Box-Basis aufloesen: R/S static, E/FR/BG per indirect-Pointer.
+            # Indirect-Pointer bewegt sich innerhalb einer Session, deshalb
+            # bei jedem Scan neu dereferenzieren.
+            box_indirect = pointers.get("box_pointer_indirect", 0)
+            static_box_ptr = pointers.get("box_pointer", 0)
+            static_cb_ptr = pointers.get("currentbox_pointer", 0)
+            box_pointer_offset = pointers.get("box_pointer_offset", 0)
+            cb_indirect_offset = pointers.get("currentbox_indirect_offset", 0)
+
+            if box_indirect:
+                ptr_fut = loop.create_future()
+                queue.append(("boxw", box_indirect, 4, ptr_fut, ""))
+                deref = int.from_bytes(await ptr_fut, "little")
+                currentbox_addr = deref + cb_indirect_offset
+                box_base = deref + box_pointer_offset
+            elif static_box_ptr and static_cb_ptr:
+                currentbox_addr = static_cb_ptr
+                box_base = static_box_ptr
+            else:
+                self.logger.debug("Box-Scan: keine Box-Pointer verfuegbar")
+                return None
+
+            cb_fut = loop.create_future()
+            queue.append(("boxw", currentbox_addr, 1, cb_fut, ""))
+            current_box = (await cb_fut)[0]
+
+            box_count = pointers.get("box_count", 14)
+            if current_box >= box_count:
+                self.logger.warning(
+                    f"Box-Scan: currentBox={current_box} ausserhalb 0..{box_count-1}"
+                )
+                return None
+
+            box_stride = pointers.get("box_stride", 0x960)
+            slot_size = pokedecoder.box_slot_size(edition)
+            slots = pokedecoder.slots_per_box(edition)
+            active_box_addr = box_base + current_box * box_stride
+
+            box_fut = loop.create_future()
+            queue.append(("boxw", active_box_addr, slot_size * slots, box_fut, ""))
+            box_bytes = await box_fut
+
+            for i in range(slots):
+                slot_start = i * slot_size
+                pid = int.from_bytes(box_bytes[slot_start:slot_start + 4], "little")
+                if pid == 0:
+                    # Erster leerer Slot markiert das Ende der belegten Slots.
+                    break
+                if pid == int(battle_pv):
+                    self.logger.info(
+                        f"Box-Scan: PV={battle_pv:#x} in Box {current_box} "
+                        f"Slot {i} gefunden -> caught"
+                    )
+                    return "caught"
+            return None
+        except Exception as err:
+            self.logger.error(f"Box-Scan fehlgeschlagen: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return None
+
+    async def _probe_opponent_hp_gen3(self, client_id: str, edition: int,
+                                        battle_pv: int) -> str | None:
+        """Liest PID + current HP am Opponent-Slot neu.
+
+        Return-Werte:
+          - "not_caught": PID matched noch und HP ist 0 → Gegner ist ausgeknockt,
+            konnte also nicht gefangen worden sein
+          - None: Slot bereits überschrieben (PID mismatch) oder HP > 0 →
+            Signal nicht eindeutig, Caller nutzt Team/Box-Fallback
+        """
+        try:
+            language = self.language_per_client.get(client_id)
+            pointers = bh_pointers.get_pointers(edition, language)
+            opp_ptr = pointers.get("battleopponentpointer", 0)
+            if not opp_ptr:
+                return None
+            queue = self.box_request_queues.get(client_id)
+            if queue is None:
+                return None
+            loop = asyncio.get_event_loop()
+
+            pid_fut = loop.create_future()
+            queue.append(("boxw", opp_ptr, 4, pid_fut, ""))
+            hp_fut = loop.create_future()
+            queue.append(("boxw", opp_ptr + 0x56, 2, hp_fut, ""))
+
+            pid_bytes = await pid_fut
+            hp_bytes = await hp_fut
+            pid_now = int.from_bytes(pid_bytes, "little")
+            hp_now = int.from_bytes(hp_bytes, "little")
+
+            if pid_now != int(battle_pv):
+                self.logger.debug(
+                    f"HP-Probe: PID gewechselt ({pid_now:#x} != {battle_pv:#x}), "
+                    f"kein sicheres Signal"
+                )
+                return None
+            if hp_now == 0:
+                self.logger.info(
+                    f"HP-Probe: PV={battle_pv:#x} HP=0 → not_caught"
+                )
+                return "not_caught"
+            return None
+        except Exception as err:
+            self.logger.error(f"HP-Probe fehlgeschlagen: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return None
+
     async def _check_encounter_outcome(self, client_id: str, player: int,
                                         edition: int):
-        """Prüft nach Kampfende ob das Gegner-Pokemon gefangen wurde."""
+        """Prüft nach Kampfende ob das Gegner-Pokemon gefangen wurde.
+
+        Kaskade (Gen 3):
+          1. HP-Probe: Gegner-HP=0 mit gleicher PID → not_caught (deterministisch)
+          2. Team-Refresh abwarten (Event)
+          3. Party-PV-Check gegen bizhawk_teams
+          4. Party-Count-Diff gegen Wert vor Kampfstart (Fix 2)
+          5. Aktive PC-Box scannen (Fix 3) — deckt volle Party ab
+          Fallback: not_caught
+        """
         try:
             battle_pv = self._last_battle_pv.pop(client_id, None)
+            party_count_before = self._last_party_count.pop(client_id, None)
             if battle_pv is None or self.encounter_tracker is None:
                 return
 
-            team = self.munchlax.bizhawk_teams.get(player, [])
-            team_pvs = set()
-            for p in team[:6]:
-                pv = getattr(p, "personality", None)
-                if pv is not None:
-                    team_pvs.add(int(pv))
+            outcome: str | None = None
+
+            # Fix 1: HP-Probe (Gen 3). Erkennt KO-Fall (Gegner gefaintet), bei
+            # dem der Fang unmöglich war.
+            if edition < 40:
+                outcome = await self._probe_opponent_hp_gen3(
+                    client_id, edition, int(battle_pv)
+                )
+
+            # Fix 4: auf nächsten Team-Refresh warten, sonst läuft der PV-Check
+            # gegen den Party-Snapshot von VOR dem Fang (Race zwischen
+            # in_battle-Flanke und dem 60-Tick-Team-Poll).
+            if outcome is None:
+                event = self._team_updated_events.get(client_id)
+                if event is not None:
+                    event.clear()
+                    try:
+                        await asyncio.wait_for(event.wait(), timeout=2.0)
+                    except asyncio.TimeoutError:
+                        self.logger.warning(
+                            f"Outcome-Check {client_id}: kein Team-Refresh "
+                            f"binnen 2s, nutze aktuellen bizhawk_teams-Stand"
+                        )
+
+                team = self.munchlax.bizhawk_teams.get(player, [])
+                team_pvs = set()
+                for p in team[:6]:
+                    pv = getattr(p, "personality", None)
+                    if pv is not None:
+                        team_pvs.add(int(pv))
+
+                if int(battle_pv) in team_pvs:
+                    outcome = "caught"
+                else:
+                    outcome = "not_caught"
+
+                # Fix 2: Party-Count-Diff. Wenn Team-Check "not_caught" sagt,
+                # aber die Party zwischen Kampfstart und -ende gewachsen ist,
+                # ist das Pokemon trotzdem gefangen (Race-Sicherung).
+                if outcome == "not_caught" and edition < 40 and party_count_before is not None:
+                    count_after = await self._read_party_count(client_id, edition)
+                    if count_after is not None and count_after > party_count_before:
+                        self.logger.info(
+                            f"Party-Count-Diff: {party_count_before}->{count_after} "
+                            f"-> caught"
+                        )
+                        outcome = "caught"
+
+                # Fix 3: aktive PC-Box scannen. Bei voller Party landet ein
+                # frisch gefangenes Pokemon direkt in der Box, ohne Party-
+                # Count zu erhoehen. Nur Gen 3.
+                if outcome == "not_caught" and edition < 40:
+                    box_result = await self._scan_active_box_gen3(
+                        client_id, edition, int(battle_pv)
+                    )
+                    if box_result == "caught":
+                        outcome = "caught"
 
             from backend.classes.pokedex_db import PokedexDB
             owner = PokedexDB.build_owner(
                 self.munchlax.pl.get('your_name', ''), str(player)
             )
-
-            if int(battle_pv) in team_pvs:
-                outcome = "caught"
-            else:
-                outcome = "not_caught"
 
             loop = asyncio.get_event_loop()
             updated = await loop.run_in_executor(
@@ -1056,6 +1285,8 @@ class Bizhawk:
                     fut.set_exception(ConnectionError(f"Emulator {client_id} disconnected"))
         self.edition_per_client.pop(client_id, None)
         self.language_per_client.pop(client_id, None)
+        self._team_updated_events.pop(client_id, None)
+        self._last_party_count.pop(client_id, None)
 
         if client_id in self.bizhawks:
             self.bizhawks[client_id] = None

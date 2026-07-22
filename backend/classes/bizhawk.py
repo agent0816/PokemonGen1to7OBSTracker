@@ -1,4 +1,5 @@
 import asyncio
+import re
 import traceback
 from backend.classes.munchlax import Munchlax
 from backend.classes.Pokemon import Pokemon
@@ -7,6 +8,20 @@ import backend.bh_pointers as bh_pointers
 import backend.bag_decoder as bag_decoder
 from backend.encounter_tracker import EncounterTracker
 from backend.logging_setup import get_logger
+
+# Mindest-BizHawk-Version für die genutzten Lua-APIs (KeraLua-Baseline ab 2.9).
+MIN_BH_VERSION: tuple[int, int] = (2, 9)
+
+
+def _parse_bh_version(raw: str) -> tuple[int, int] | None:
+    """Zieht (major, minor) aus einem BizHawk-Versionsstring wie '2.9.1' oder '2.11'."""
+    if not raw:
+        return None
+    m = re.match(r'\s*(\d+)\.(\d+)', raw)
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
 
 class Bizhawk:
     def __init__(self, host, port, bh):
@@ -136,8 +151,23 @@ class Bizhawk:
             # edition_length = int((await reader.read(2)).decode())
             edition = int((await self.receive_messages(reader)).decode())
             language = int((await self.receive_messages(reader)).decode())
+            bh_version_raw = (await self.receive_messages(reader)).decode()
             player = int(client_id[7:])
-            self.logger.debug(f"Handshake: client={client_id}, edition={edition}, language={language}, player={player}")
+            self.logger.debug(f"Handshake: client={client_id}, edition={edition}, language={language}, bh_version={bh_version_raw}, player={player}")
+
+            bh_version = _parse_bh_version(bh_version_raw)
+            if bh_version is None:
+                self.logger.warning(
+                    f"BizHawk-Version von {client_id} nicht parsebar ('{bh_version_raw}') — akzeptiere trotzdem"
+                )
+            elif bh_version < MIN_BH_VERSION:
+                min_str = f"{MIN_BH_VERSION[0]}.{MIN_BH_VERSION[1]}"
+                got_str = f"{bh_version[0]}.{bh_version[1]}"
+                self.logger.error(
+                    f"BizHawk {bh_version_raw} von {client_id} zu alt (min {min_str}). Trenne Verbindung."
+                )
+                await self.send_messages(writer, f"UNSUPPORTED:min={min_str},got={got_str}")
+                raise Exception(f"BizHawk-Version {bh_version_raw} < {min_str}")
 
             name = self.munchlax.pl.get('your_name', '')
             if name:

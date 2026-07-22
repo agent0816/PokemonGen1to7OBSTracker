@@ -102,6 +102,27 @@ local function send_game_info(gameversion, language)
     comm.socketServerSend(tostring(language))
 end
 
+-- BizHawk-Version an Python melden, damit der Tracker zu alte Emulatoren ablehnen kann.
+-- pcall, weil sehr alte BizHawks client.getversion() eventuell nicht anbieten.
+local function send_bh_version()
+    local ok, v = pcall(client.getversion)
+    if not ok or not v then
+        v = "unknown"
+    end
+    comm.socketServerSend(tostring(v))
+    logging.info("sent BizHawk version: " .. tostring(v))
+end
+
+-- Zeigt den Ablehnungsgrund dauerhaft im Emulator an und hält das Skript an,
+-- damit der User weiß, dass er ein Update braucht.
+local function halt_with_message(msg)
+    logging.error(msg)
+    while true do
+        gui.drawText(10, 10, msg, "red", "black", 12)
+        emu.frameadvance()
+    end
+end
+
 -- Pointer-Satz von Python empfangen (Format: "key=0xHEX;key=0xHEX;...")
 local function receive_pointer_config()
     pointer = nil
@@ -115,6 +136,9 @@ local function receive_pointer_config()
     battleopponentidpointer = nil
     local pointer_config = comm.socketServerResponse()
     logging.info("received pointer config: " .. tostring(pointer_config))
+    if pointer_config and pointer_config:sub(1, 12) == "UNSUPPORTED:" then
+        halt_with_message("BizHawk-Version nicht unterstuetzt (" .. pointer_config .. ") - bitte Emulator aktualisieren.")
+    end
     if pointer_config and pointer_config ~= "" then
         for pair in string.gmatch(pointer_config, "[^;]+") do
             local k, v = string.match(pair, "([^=]+)=(.+)")
@@ -425,6 +449,7 @@ end
 function main()
     local gameversion, language, length, domain = detect_game()
     send_game_info(gameversion, language)
+    send_bh_version()
     receive_pointer_config()
     local state = init_state(gameversion, length, domain)
 

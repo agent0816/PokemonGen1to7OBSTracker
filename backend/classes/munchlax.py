@@ -384,6 +384,28 @@ class Munchlax:
             self.logger.error(f"_ensure_pokedex_db failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
 
+    def close_pokedex_db(self) -> bool:
+        """Schliesst die aktive PokedexDB-Verbindung (falls offen) und nullt
+        die Referenz. Muss vor Datei-Operationen auf ``pokemon.db`` (Snapshot
+        Restore, Backup-Import) aufgerufen werden, sonst blockiert der
+        Windows-File-Lock das Zurueckschreiben. Rueckgabe ``True`` wenn
+        vorher eine Verbindung existierte.
+
+        Exceptions aus ``PokedexDB.close`` werden bewusst geschluckt und nur
+        gewarnt, damit Aufrufer wie ``disconnect`` (Host/Port-Reset,
+        Reconnect-Zweig) auch bei kaputter DB-Verbindung noch fertig laufen.
+        Die Referenz wird in jedem Fall auf ``None`` gesetzt, damit der
+        naechste ``_ensure_pokedex_db``-Call eine frische Verbindung baut.
+        """
+        if self.pokedex_db is None:
+            return False
+        try:
+            self.pokedex_db.close()
+        except Exception as err:
+            self.logger.warning(f"close_pokedex_db: close failed: {err}")
+        self.pokedex_db = None
+        return True
+
     async def update_bag(self, player, edition, pockets):
         """Persistiert die ausgelesenen Bag-Pockets pro Player in die PokedexDB.
 
@@ -1246,9 +1268,7 @@ class Munchlax:
                     pass
                 self.logger.info(f"Client {self.client_id} hat sich disconnectet.")
 
-                if self.pokedex_db is not None:
-                    self.pokedex_db.close()
-                    self.pokedex_db = None
+                self.close_pokedex_db()
 
                 self.host = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
                 self.port = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]

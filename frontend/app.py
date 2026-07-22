@@ -76,7 +76,7 @@ class Screens(ScreenManager):
         self.add_widget(bag_menu)
         encounter_menu = EncounterMenu(configsave, pl, APP_VERSION)
         self.add_widget(encounter_menu)
-        nuzlocke_menu = NuzlockeMenu(munchlax, configsave, nuz, bh=bh)
+        nuzlocke_menu = NuzlockeMenu(munchlax, configsave, nuz, bh=bh, bizhawk=bizhawk)
         self.add_widget(nuzlocke_menu)
         pokemon_detail = PokemonDetailScreen(obs_websocket)
         self.add_widget(pokemon_detail)
@@ -87,7 +87,8 @@ class Screens(ScreenManager):
             def _pick_other():
                 self.current = "NuzlockeMenu"
             TotalWipeBanner(munchlax, configsave, bh=bh,
-                              on_pick_other=_pick_other).open()
+                              on_pick_other=_pick_other,
+                              bizhawk=bizhawk, rnd=rnd, pl=pl).open()
         munchlax.on_total_wipe_callback = lambda v: _open_wipe_banner(v)
         self.current = "Update"
         update_menu.check_for_update()

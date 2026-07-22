@@ -31,9 +31,14 @@ from pathlib import Path
 
 import yaml
 
+from backend.controller.run_manager import RunManager
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, './logs/snapshot_manager.log')
+
+# BizHawk-Save-Remap greift nur fuer Gen 1-5. Gen 6/7 laufen auf Azahar/Citra
+# und schreiben immer in die feste Title-ID-Save-Datei → kein Rename noetig.
+_REMAP_GENERATIONS = {1, 2, 3, 4, 5}
 
 
 class SnapshotManager:
@@ -164,13 +169,30 @@ class SnapshotManager:
                 logger.error(f"DB restore fehlgeschlagen: {err}")
                 return False
 
-        # Emulator-Saves zurückschreiben (Best-Effort)
+        # Emulator-Saves zurückschreiben (Best-Effort).
+        # Gen 1-5 (BizHawk): wenn ein aktiver Randomizer-Run existiert, wird
+        # der Save auf die neue Run-ROM gemappt (Datei bekommt den neuen
+        # Basename). Sonst / bei Citra-Saves greift der Legacy-Fallback auf
+        # ``original_path``.
         for save in meta.get("save_backups", []):
             src = snap_dir / save.get("backup_file", "")
-            dst_path = save.get("original_path")
-            if not dst_path or not src.exists():
+            if not src.exists():
+                continue
+            dst_path = None
+            if save.get("type") == "bizhawk_saveram":
+                remapped = self._resolve_target_saveram_path(save)
+                if remapped is not None:
+                    dst_path = str(remapped)
+                    logger.info(
+                        f"Snapshot-Remap aktiv: {save.get('rom_basename')} -> {remapped.name}"
+                    )
+            if dst_path is None:
+                dst_path = save.get("original_path")
+            if not dst_path:
+                logger.warning(f"Save restore: kein Ziel-Pfad fuer {src.name}")
                 continue
             try:
+                Path(dst_path).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst_path)
                 logger.info(f"Save restore: {src} -> {dst_path}")
             except Exception as err:
@@ -199,12 +221,21 @@ class SnapshotManager:
             dst = snap_dir / f"bizhawk_{bh_path.name}"
             try:
                 shutil.copy2(bh_path, dst)
-                saves.append({
+                entry = {
                     "type": "bizhawk_saveram",
                     "original_path": str(bh_path),
                     "backup_file": dst.name,
-                })
-                logger.info(f"BizHawk SaveRAM gesichert: {bh_path}")
+                    "rom_basename": bh_path.stem,
+                }
+                slot, gen = self._resolve_local_slot_and_gen()
+                if slot is not None:
+                    entry["player_slot"] = slot
+                if gen is not None:
+                    entry["generation"] = gen
+                saves.append(entry)
+                logger.info(
+                    f"BizHawk SaveRAM gesichert: {bh_path} (slot={slot}, gen={gen})"
+                )
             except Exception as err:
                 logger.warning(f"BizHawk SaveRAM-Kopie fehlgeschlagen: {err}")
 
@@ -326,6 +357,96 @@ class SnapshotManager:
                             if f.is_file():
                                 results.append({"title_id": tid, "path": f})
         return results
+
+    def _resolve_local_slot_and_gen(self) -> tuple[int | None, int | None]:
+        """Ermittelt den lokalen Player-Slot (erster nicht-remote-Slot aus
+        ``pl``) und die zugehoerige Generation aus ``munchlax.editions``.
+
+        Rueckgabe ``(None, None)`` falls munchlax fehlt oder Slot/Edition nicht
+        bestimmbar sind — der Snapshot wird dann ohne diese Felder geschrieben
+        und beim Restore auf den Legacy-Fallback (`original_path`) zurueckfallen.
+        """
+        if self.munchlax is None:
+            return (None, None)
+        pl = getattr(self.munchlax, "pl", None) or {}
+        try:
+            count = int(pl.get("player_count", 1) or 1)
+        except (TypeError, ValueError):
+            count = 1
+        local_slot: int | None = None
+        for slot in range(1, count + 1):
+            if pl.get(f"remote_{slot}", False):
+                continue
+            local_slot = slot
+            break
+        if local_slot is None:
+            return (None, None)
+        editions = getattr(self.munchlax, "editions", {}) or {}
+        edition = editions.get(local_slot)
+        if edition is None:
+            try:
+                edition = editions.get(str(local_slot))
+            except Exception:
+                edition = None
+        gen: int | None = None
+        try:
+            if edition is not None:
+                gen = int(edition) // 10
+        except (TypeError, ValueError):
+            gen = None
+        return (local_slot, gen)
+
+    def _resolve_target_saveram_path(self, save_entry: dict) -> Path | None:
+        """Fuer Gen 1-5: Ziel-Pfad der SaveRAM im **aktuellen** Randomizer-Run.
+
+        Sucht den aktiven Run per ``RunManager.get_active_run`` und leitet den
+        Save-Pfad aus dem Slot-ROM-Namen ab — genau umgekehrt zu
+        ``_resolve_bizhawk_save_path``: der neue Basename ersetzt den alten,
+        SaveRAM-Ordner-Konvention (``<BH-Dir>/<System>/SaveRAM/``) wird
+        beibehalten wenn moeglich, sonst Fallback auf ``<rom-dir>/<basename>.SaveRAM``.
+
+        Rueckgabe ``None`` → Restore soll auf ``original_path`` zurueckfallen
+        (kein aktiver Run, Slot fehlt, oder Pfad nicht ermittelbar).
+        """
+        gen = save_entry.get("generation")
+        if gen not in _REMAP_GENERATIONS:
+            return None
+        slot = save_entry.get("player_slot")
+        if slot is None:
+            return None
+        try:
+            rm = RunManager(str(self.session_path))
+        except Exception as err:
+            logger.warning(f"RunManager-Init fuer Remap fehlgeschlagen: {err}")
+            return None
+        active = rm.get_active_run()
+        if active is None:
+            logger.info("Snapshot-Remap: kein aktiver Run — Fallback auf original_path")
+            return None
+        try:
+            paths = rm.get_run_paths(active["run_id"])
+        except Exception as err:
+            logger.warning(f"get_run_paths fehlgeschlagen: {err}")
+            return None
+        slot_entry = paths.get("roms", {}).get(int(slot))
+        if not slot_entry:
+            logger.info(
+                f"Snapshot-Remap: keine ROM fuer slot {slot} im aktiven Run {active['run_id']}"
+            )
+            return None
+        new_rom = Path(slot_entry.get("rom", ""))
+        if not new_rom.name:
+            return None
+        new_basename = new_rom.stem
+        # (1) BizHawk-Standard-Ordner
+        bh_dir = self._bizhawk_working_dir()
+        system = _system_from_rom(new_rom)
+        if bh_dir and system:
+            target_dir = bh_dir / system / "SaveRAM"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            return target_dir / f"{new_basename}.SaveRAM"
+        # (2) Fallback: neben der ROM ablegen
+        return new_rom.with_name(f"{new_basename}.SaveRAM")
 
     def _collect_team_snapshot(self) -> dict:
         if self.munchlax is None:

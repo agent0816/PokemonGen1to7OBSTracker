@@ -70,6 +70,10 @@ class Bizhawk:
         # sich nicht ueberschneiden, sonst lesen wir ein halb-geschriebenes
         # Pocket oder allokieren denselben leeren Slot doppelt.
         self._bag_io_locks: dict[str, asyncio.Lock] = {}
+        # On-demand SaveRAM-Flush pro Client: flush_saveram() setzt das Flag,
+        # der Tick-Loop sendet einmalig "saveRAM" und triggert das Event.
+        self._flush_requested: dict[str, bool] = {}
+        self._flush_done: dict[str, asyncio.Event] = {}
 
         self.logger = get_logger(__name__, './logs/bizhawk.log')
     
@@ -213,12 +217,18 @@ class Bizhawk:
                 try:
                     data = (await self.receive_messages(reader)).decode()
                     self.logger.debug(f"Tick {counter}: client={client_id}, in_battle={in_battle}, queue_len={len(self.box_request_queues.get(client_id, []))}")
-                    if (counter == 1 and self.bh["save_automatically"]) or self.about_to_exit:
+                    flush_on_request = self._flush_requested.get(client_id, False)
+                    if (counter == 1 and self.bh["save_automatically"]) or self.about_to_exit or flush_on_request:
                         if self.about_to_exit:
                             self.about_to_exit = False
                         await self.send_messages(writer, "saveRAM")
                         msg = (await self.receive_messages(reader)).decode()
                         self.logger.info(f"Bizhawk {client_id}: {msg}")
+                        if flush_on_request:
+                            self._flush_requested[client_id] = False
+                            event = self._flush_done.get(client_id)
+                            if event is not None:
+                                event.set()
                     elif counter % 60 == 0:
                         await self.send_messages(writer, "team")
                         msg = await reader.read(length)
@@ -289,6 +299,53 @@ class Bizhawk:
             self.logger.error(f"{traceback.format_exc()}")
 
         await self.disconnect(client_id)
+
+    async def flush_saveram(self, client_id: str, timeout: float = 3.0) -> bool:
+        """Erzwingt SaveRAM-Flush im BizHawk-Client und wartet auf Bestaetigung.
+
+        Setzt das Flush-Flag; der Tick-Loop im ``handle_bizhawk`` sendet beim
+        naechsten Frame den ``saveRAM``-Befehl (Lua ruft ``client.saveram()``)
+        und markiert das ``asyncio.Event`` als gesetzt. Wichtig fuer
+        DS-Titel (Gen 4/5), bei denen BizHawk den in-game gespeicherten Stand
+        erst mit dem Flush auf ``<basename>.SaveRAM`` schreibt.
+        """
+        if client_id not in self.bizhawks:
+            self.logger.info(f"flush_saveram: client {client_id} nicht verbunden")
+            return False
+        event = asyncio.Event()
+        self._flush_done[client_id] = event
+        self._flush_requested[client_id] = True
+        try:
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+            self.logger.info(f"flush_saveram: client {client_id} bestaetigt")
+            return True
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                f"flush_saveram: timeout ({timeout}s) fuer client {client_id}"
+            )
+            return False
+        except Exception as err:
+            self.logger.error(f"flush_saveram fehlgeschlagen ({client_id}): {err}")
+            self.logger.error(traceback.format_exc())
+            return False
+        finally:
+            self._flush_requested[client_id] = False
+            self._flush_done.pop(client_id, None)
+
+    async def flush_all_saverams(self, timeout: float = 3.0) -> dict[str, bool]:
+        """Flush SaveRAM fuer alle verbundenen BizHawk-Clients parallel."""
+        client_ids = list(self.bizhawks.keys())
+        if not client_ids:
+            self.logger.info("flush_all_saverams: keine verbundenen Clients")
+            return {}
+        results = await asyncio.gather(
+            *(self.flush_saveram(cid, timeout) for cid in client_ids),
+            return_exceptions=True,
+        )
+        return {
+            cid: (r if isinstance(r, bool) else False)
+            for cid, r in zip(client_ids, results)
+        }
 
     async def read_all_boxes(self, client_id: str) -> list[bytes]:
         """Liest alle PC-Boxen des Clients aus dem Emulator-Speicher.

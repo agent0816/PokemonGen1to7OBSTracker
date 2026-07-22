@@ -30,18 +30,36 @@ logger = get_logger(__name__, 'logs/frontend.log')
 
 
 class BizhawkSavePopup(Popup):
-    def __init__(self, bizhawk_instances, bizhawk_button, bizhawk, **kwargs):
+    """Bestaetigungs-Popup "Hast du gespeichert?".
+
+    Historisch fest an den BizHawk-Beenden-Flow gekoppelt (Ja → BizHawk
+    stoppen + Button-Text umschalten). Mit ``on_confirm`` uebernimmt das
+    Popup einen beliebigen Ja-Callback (z. B. Snapshot-Create) und laesst
+    ``bizhawk_instances``/``bizhawk``/``bizhawk_button`` optional.
+
+    ``on_confirm``-Vertrag: Callable ohne Argumente. Rueckgabe darf sein:
+    (a) ``None`` — sync-Callback, alles bereits erledigt.
+    (b) Eine Coroutine — Popup wrappt sie mit ``asyncio.create_task``.
+    Aufrufer sollen keine bereits geschedulten ``Task``-Objekte
+    zurueckgeben; der Sync/Async-Wrap ist Aufgabe des Popups.
+    """
+
+    def __init__(self, bizhawk_instances=None, bizhawk_button=None,
+                 bizhawk=None, on_confirm=None,
+                 title_override: str | None = None,
+                 text_override: str | None = None, **kwargs):
         super().__init__(**kwargs)
         self.bizhawk_instances = bizhawk_instances
         self.bizhawk_button = bizhawk_button
         self.bizhawk = bizhawk
+        self._on_confirm = on_confirm
         self.canceled = False
 
-        self.title = "Speichern nicht vergessen!"
+        self.title = title_override or "Speichern nicht vergessen!"
         self.size_hint = (0.8, 0.4)
 
         layout = BoxLayout(orientation="vertical")
-        layout.add_widget(Label(text="Hast du gespeichert??"))
+        layout.add_widget(Label(text=text_override or "Hast du gespeichert??"))
 
         btn_layout = BoxLayout(size_hint_y=None, height="50dp", spacing="5dp")
         btn_yes = Button(text="Ja", on_press=self.on_yes)
@@ -54,8 +72,26 @@ class BizhawkSavePopup(Popup):
         self.content = layout
 
     def on_yes(self, instance):
+        if self._on_confirm is not None:
+            try:
+                result = self._on_confirm()
+                if asyncio.iscoroutine(result):
+                    asyncio.create_task(result)
+            except Exception as err:
+                # Rescue-Semantik: schlaegt die on_confirm-Aktion synchron
+                # fehl (z.B. Coroutine-Erzeugung wirft), markieren wir das
+                # Popup als canceled, damit der dismiss-Handler des
+                # Aufrufers UI-Zustaende (gesperrte Buttons etc.) wieder
+                # freigeben kann. Ohne dieses Flag haenge der Aufrufer im
+                # "warte auf Flow-finally"-Zweig fest.
+                self.canceled = True
+                logger.error(f"BizhawkSavePopup on_confirm failed: {err}")
+                logger.error(traceback.format_exc())
+            finally:
+                self.dismiss()
+            return
+        # Legacy-Flow: BizHawk-Beenden
         asyncio.create_task(self.bizhawk.stop_and_terminate(self.bizhawk_instances))
-
         self.bizhawk_button.text = "Bizhawk starten"
         self.dismiss()
 

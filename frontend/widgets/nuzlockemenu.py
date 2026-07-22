@@ -18,6 +18,7 @@ from backend.logging_setup import get_logger
 from backend.snapshot_manager import SnapshotManager
 from backend.soullink_presets import load_presets, apply_preset, preset_choices
 from frontend.widgets.timer_widget import TimerWidget
+from frontend.widgets.mainmenu import BizhawkSavePopup
 
 logger = get_logger(__name__, './logs/nuzlockemenu.log')
 
@@ -83,13 +84,15 @@ class OwnerRow(BoxLayout):
 
 
 class NuzlockeMenu(Screen):
-    def __init__(self, munchlax, configsave, nuz: dict, bh: dict | None = None, **kwargs):
+    def __init__(self, munchlax, configsave, nuz: dict, bh: dict | None = None,
+                 bizhawk=None, **kwargs):
         super().__init__(**kwargs)
         self.name = "NuzlockeMenu"
         self.munchlax = munchlax
         self.configsave = configsave
         self.nuz = nuz
         self.bh = bh or {}
+        self.bizhawk = bizhawk
         self._owner_rows: list[OwnerRow] = []
         self._presets = load_presets()
         self._preset_choices = preset_choices(self._presets)
@@ -195,8 +198,9 @@ class NuzlockeMenu(Screen):
         snap_header.add_widget(Label(text="Snapshot Label:", size_hint_x=0.20))
         self.snapshot_label_input = TextInput(text="manual", multiline=False, size_hint_x=0.30)
         snap_header.add_widget(self.snapshot_label_input)
-        snap_header.add_widget(Button(text="Snapshot erstellen", size_hint_x=0.25,
-                                        on_press=lambda *_: self._create_snapshot()))
+        self.snapshot_create_button = Button(text="Snapshot erstellen", size_hint_x=0.25,
+                                                on_press=lambda *_: self._create_snapshot())
+        snap_header.add_widget(self.snapshot_create_button)
         snap_header.add_widget(Button(text="Liste aktualisieren", size_hint_x=0.25,
                                         on_press=lambda *_: self._refresh_snapshot_list()))
         root.add_widget(snap_header)
@@ -350,8 +354,60 @@ class NuzlockeMenu(Screen):
 
     def _create_snapshot(self):
         label = (self.snapshot_label_input.text or "manual").strip() or "manual"
-        self.status_label.text = "Snapshot wird erstellt..."
-        asyncio.create_task(self._create_snapshot_async(label))
+        # Button waehrend Popup + Flow sperren, sonst startet ein Doppelklick
+        # zwei parallele Flush+Create-Flows: der zweite ueberschreibt das
+        # asyncio.Event im Flush-Dict pro client_id und laesst den ersten
+        # ins Timeout laufen ("SaveRAM-Flush teils fehlgeschlagen"-Fehler
+        # obwohl der Flush selbst geklappt hat).
+        self.snapshot_create_button.disabled = True
+        # Popup vorschalten: der User muss bestaetigen dass in-game gespeichert
+        # wurde. Bei "Ja" flushen wir zuerst die SaveRAM (wichtig fuer Gen 4/5,
+        # bei denen BizHawk sonst mit einem stale Puffer arbeitet) und legen
+        # dann den Snapshot an. Bei "Nein" wird abgebrochen.
+        popup = BizhawkSavePopup(
+            title_override="Snapshot vorbereiten",
+            text_override="Hast du im Spiel gespeichert?\n"
+                           "(Ohne in-game-Save enthaelt der Snapshot einen alten Stand.)",
+            # on_confirm gibt Coroutine zurueck — BizhawkSavePopup.on_yes
+            # wrappt sie via asyncio.create_task. Kein Task-Objekt direkt
+            # zurueckgeben, sonst umgeht der Aufrufer den Vertrag.
+            on_confirm=lambda: self._flush_and_create_snapshot_async(label),
+        )
+        # on_cancel setzt canceled=True — Status + Button-Reset via on_dismiss.
+        popup.bind(on_dismiss=lambda p: self._on_snapshot_popup_dismiss(p))
+        self.status_label.text = "Warte auf Bestaetigung..."
+        popup.open()
+
+    def _on_snapshot_popup_dismiss(self, popup):
+        if getattr(popup, "canceled", False):
+            self._set_status("Snapshot abgebrochen — bitte erst in-game speichern.")
+            self.snapshot_create_button.disabled = False
+        # Bei "Ja" bleibt der Button gesperrt — der Flush+Create-Flow
+        # gibt ihn im Finally-Zweig von _flush_and_create_snapshot_async frei.
+
+    async def _flush_and_create_snapshot_async(self, label: str):
+        try:
+            self._set_status("SaveRAM wird geflusht...")
+            if self.bizhawk is not None:
+                try:
+                    results = await self.bizhawk.flush_all_saverams(timeout=3.0)
+                    if results:
+                        failed = [cid for cid, ok in results.items() if not ok]
+                        if failed:
+                            logger.warning(f"SaveRAM-Flush teils fehlgeschlagen: {failed}")
+                        # BizHawk schreibt asynchron auf Disk — kurzer Puffer,
+                        # damit die SaveRAM-Datei sicher aktualisiert ist.
+                        await asyncio.sleep(0.2)
+                    else:
+                        logger.info("Kein BizHawk-Client verbunden — Flush uebersprungen")
+                except Exception as err:
+                    logger.error(f"flush_all_saverams failed: {err}")
+                    logger.error(traceback.format_exc())
+            await self._create_snapshot_async(label)
+        finally:
+            def _reenable(_dt):
+                self.snapshot_create_button.disabled = False
+            Clock.schedule_once(_reenable, 0)
 
     async def _create_snapshot_async(self, label: str):
         try:
@@ -410,13 +466,7 @@ class NuzlockeMenu(Screen):
 
     async def _restore_snapshot_async(self, snap_id: str):
         try:
-            db = getattr(self.munchlax, "pokedex_db", None)
-            if db is not None:
-                try:
-                    db.close()
-                except Exception as err:
-                    logger.warning(f"pokedex_db close vor restore: {err}")
-                self.munchlax.pokedex_db = None
+            self.munchlax.close_pokedex_db()
             sm = self._snapshot_manager()
             loop = asyncio.get_event_loop()
             ok = await loop.run_in_executor(None, sm.restore, snap_id)

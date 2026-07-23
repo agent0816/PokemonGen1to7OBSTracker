@@ -129,6 +129,30 @@ coop_4way_usum:
     rule_same_species_retry: false
     rule_token_rule: false
 
+coop_4way_gen3:
+  label: "4-Way Coop (Gen 3)"
+  description: >
+    Vier Spieler auf Rubin/Saphir/Smaragd/Feuerrot/Blattgrün, alle verlinkt.
+    Ersttyp-Clause + Static-Ausnahme, ein Ersttyp pro Team, Shiny-Clause,
+    Restart bei Total-Wipe. Keine Gen-6/7-spezifischen Regeln (Doubles,
+    Dragon-Rage, Randomized-Movesets).
+  soullink_mode: coop
+  soullink_player_count: 4
+  soullink_link_strategy: full_chain
+  rules:
+    rule_run_start_on_ball: true
+    rule_dead_pokemon_unusable: true
+    rule_restart_on_total_wipe: true
+    rule_one_encounter_per_area: true
+    rule_must_catch_first_encounter: true
+    rule_nickname_required: true
+    rule_first_type_clause_linked: true
+    rule_first_type_clause_static_exception: true
+    rule_single_type_per_team: true
+    rule_shiny_clause_always_catchable: true
+    rule_same_species_retry: false
+    rule_token_rule: false
+
 custom:
   label: "Custom (freie Auswahl)"
   description: "Kein Preset — bestehende Rule-Werte bleiben."

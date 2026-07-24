@@ -71,6 +71,9 @@ class Munchlax:
         self.soullink_deaths: dict[tuple[int, str], dict] = {}
         self.soullink_versus_state: dict[str, dict] = {}
         self.soullink_versus_battles: list[dict] = []
+        # Team-State (modus-unabhängig) fürs Overlay. Owner-Rohdaten pro Team;
+        # Aggregation (AND, Region-Gruppierung) macht das Overlay selbst.
+        self.soullink_team_state: dict[str, dict] = {}
         self.soullink_rule_violations: dict[tuple[str, str], dict] = {}
         # Token-State pro Owner (Server-authoritativ, Cache).
         # {owner: {earned, used, active_route, active_edition}}
@@ -115,6 +118,7 @@ class Munchlax:
         self.soullink_deaths = {}
         self.soullink_versus_state = {}
         self.soullink_versus_battles = []
+        self.soullink_team_state = {}
         self.soullink_rule_violations = {}
         self.soullink_tokens = {}
         self._reported_deaths = set()
@@ -256,6 +260,38 @@ class Munchlax:
                             "state": self.soullink_versus_state,
                             "battles": self.soullink_versus_battles,
                         })
+                    elif msg_type == "soullink_team_state":
+                        self.soullink_team_state = data.get("state", {}) or {}
+                        self.logger.info(
+                            f"soullink_team_state empfangen: teams={list(self.soullink_team_state.keys())}"
+                        )
+                        await self._notify_overlay_session("soullink_team_state", {
+                            "state": self.soullink_team_state,
+                        })
+                        team_ids = list(self.soullink_team_state.keys())
+                        if self.overlay_server is not None:
+                            notifier = getattr(self.overlay_server, "notify_team_update", None)
+                            if callable(notifier):
+                                for team_id in team_ids:
+                                    try:
+                                        await notifier(team_id, "badges")
+                                    except Exception as err:
+                                        self.logger.warning(f"notify_team_update failed: {err}")
+                        if self.obs is not None:
+                            team_updater = getattr(self.obs, "change_team_badges", None)
+                            if callable(team_updater) and team_ids:
+                                # Parallel per gather statt sequenzielles await:
+                                # ein langsamer OBS-Call darf die Empfangsschleife
+                                # nicht fuer die Summe aller Team-Batches blockieren.
+                                # return_exceptions=True damit ein Fehler die
+                                # uebrigen Teams nicht abbricht.
+                                results = await asyncio.gather(
+                                    *(team_updater(team_id) for team_id in team_ids),
+                                    return_exceptions=True,
+                                )
+                                for team_id, result in zip(team_ids, results):
+                                    if isinstance(result, Exception):
+                                        self.logger.warning(f"change_team_badges({team_id}) failed: {result}")
                     elif msg_type == "soullink_versus_battle":
                         battle = data.get("battle") or {}
                         self.soullink_versus_battles.append(battle)

@@ -8,6 +8,7 @@ from aiohttp import web
 
 from backend.classes.pokedex_db import PokedexDB
 from backend.logging_setup import get_logger
+from backend.team_id import slug_team_id
 from backend.tm_type_resolver import resolve_tm_hm_sprite
 
 EDITION_SUBPATH = {
@@ -60,6 +61,8 @@ class OverlayServer:
         # Session-weite SSE-Queues (nicht an player_id gebunden) für Soullink
         # und Race-/Countdown-Timer. Overlay-Seite /timer verbindet sich hier.
         self._session_sse_queues: list[asyncio.Queue] = []
+        # Team-SSE-Queues für Team-Badge-Overlay pro team_id.
+        self._team_sse_queues: dict[str, list[asyncio.Queue]] = {}
 
         self.logger = get_logger(__name__, './logs/overlay_server.log')
 
@@ -97,6 +100,7 @@ class OverlayServer:
             self.app = None
             self._sse_queues.clear()
             self._session_sse_queues.clear()
+            self._team_sse_queues.clear()
 
     def _setup_routes(self):
         self.app.router.add_get('/player/{player_id}', self._handle_team_page)
@@ -106,6 +110,11 @@ class OverlayServer:
         self.app.router.add_get('/sprite/{player_id}/{slot}', self._handle_sprite)
         self.app.router.add_get('/item/{player_id}/{slot}', self._handle_item)
         self.app.router.add_get('/badge_img/{player_id}/{index}', self._handle_badge_img)
+        # Team-Badge-Overlay (AND ueber alle Owner eines Teams, Region-Gruppierung).
+        self.app.router.add_get('/team/{team_id}/badges', self._handle_team_badges_page)
+        self.app.router.add_get('/team/{team_id}/badges/data', self._handle_team_badges_data)
+        self.app.router.add_get('/team/{team_id}/badges/events', self._handle_team_sse)
+        self.app.router.add_get('/team_badge_img/{team_id}/{region}/{index}', self._handle_team_badge_img)
         # Session-Events (Timer, Countdown, Soullink) + Overlay-Seite /timer
         self.app.router.add_get('/session/events', self._handle_session_sse)
         self.app.router.add_get('/session/state', self._handle_session_state)
@@ -143,6 +152,30 @@ class OverlayServer:
         for player_id in list(self._sse_queues.keys()):
             await self.notify_update(player_id, "team")
             await self.notify_update(player_id, "badges")
+        for team_id in list(self._team_sse_queues.keys()):
+            await self.notify_team_update(team_id, "badges")
+
+    async def notify_team_update(self, team_id: str, update_type: str):
+        """Pusht ein SSE-Event an alle /team/{team_id}/badges/events-Clients."""
+        queues = self._team_sse_queues.get(team_id, [])
+        if not queues:
+            return
+        payload = self._build_team_badges_payload(team_id)
+        try:
+            data = json.dumps(payload, ensure_ascii=False, default=str)
+        except Exception as err:
+            self.logger.warning(f"notify_team_update serialize failed: {err}")
+            return
+        event = f"event: {update_type}\ndata: {data}\n\n"
+        dead = []
+        for q in queues:
+            try:
+                q.put_nowait(event)
+            except asyncio.QueueFull:
+                dead.append(q)
+        for q in dead:
+            if q in queues:
+                queues.remove(q)
 
     async def notify_session_event(self, event_type: str, payload: dict):
         """Verteilt Session-Events (Timer/Countdown/Soullink) an alle /session/events-Clients."""
@@ -268,6 +301,110 @@ class OverlayServer:
             "animate_reorder": self.ov.get('animate_reorder', False),
             "animation_duration_ms": self.ov.get('animation_duration_ms', 300),
         }
+
+    # --- Team-Badge-Aggregation ---
+
+    def _local_team_state(self) -> dict[str, dict]:
+        """Fallback wenn kein soullink_team_state vom Server vorliegt: baut
+        einen Solo-Team-Bucket aus lokalen badges/editions. team_id = Slug des
+        lokalen Owners; alle lokalen player_ids wandern hinein."""
+        m = self.munchlax
+        try:
+            player_ids = sorted((getattr(m, "badges", {}) or {}).keys())
+        except Exception:
+            player_ids = []
+        if not player_ids:
+            return {}
+        owner = self._owner_for_local_player(player_ids[0]) or "local"
+        team_id = slug_team_id(owner)
+        badges_val = None
+        edition_val = None
+        for pid in player_ids:
+            b = (getattr(m, "badges", {}) or {}).get(pid)
+            if isinstance(b, int) and (badges_val is None or b > badges_val):
+                badges_val = b
+            e = (getattr(m, "editions", {}) or {}).get(pid)
+            if e is not None:
+                edition_val = e
+        return {team_id: {
+            "team_id": team_id,
+            "owners": [owner],
+            "badges_by_owner": {owner: badges_val},
+            "editions_by_owner": {owner: edition_val},
+            "player_ids_by_owner": {owner: player_ids},
+        }}
+
+    def _compute_team_badge_view(self, bucket: dict) -> dict:
+        """Aggregiert einen Team-Bucket zu Region-Rows. Pro Region: badges_and
+        aus AND aller Owner-Bitmasks in dieser Region (offline/unbekannt=0)."""
+        team_id = bucket.get("team_id") or ""
+        owners = list(bucket.get("owners", []) or [])
+        editions_by_owner = bucket.get("editions_by_owner", {}) or {}
+        badges_by_owner = bucket.get("badges_by_owner", {}) or {}
+        region_order: list[str] = []
+        region_owners: dict[str, list[str]] = {}
+        for owner in owners:
+            edition = editions_by_owner.get(owner)
+            if edition is None:
+                continue
+            region = BADGE_REGION.get(edition, '')
+            if not region:
+                continue
+            if region not in region_owners:
+                region_owners[region] = []
+                region_order.append(region)
+            region_owners[region].append(owner)
+        rows = []
+        for region in region_order:
+            r_owners = region_owners[region]
+            badge_count = 16 if region == 'johto' else 8
+            mask_all = (1 << badge_count) - 1
+            badges_and = mask_all
+            for o in r_owners:
+                v = badges_by_owner.get(o)
+                badges_and &= v if isinstance(v, int) else 0
+            badges = []
+            for i in range(badge_count):
+                earned = bool(badges_and & (1 << i))
+                badges.append({
+                    "index": i,
+                    "earned": earned,
+                    "url": f"/team_badge_img/{team_id}/{region}/{i}?v={badges_and}",
+                })
+            rows.append({
+                "region": region,
+                "badge_count": badge_count,
+                "badges_and": badges_and,
+                "owners": r_owners,
+                "badges": badges,
+            })
+        return {
+            "team_id": team_id,
+            "owners": owners,
+            "rows": rows,
+        }
+
+    def _get_team_bucket(self, team_id: str) -> dict | None:
+        m = self.munchlax
+        team_state = getattr(m, "soullink_team_state", {}) or {}
+        if not team_state:
+            team_state = self._local_team_state()
+        return team_state.get(team_id)
+
+    def _build_team_badges_payload(self, team_id: str) -> dict:
+        bucket = self._get_team_bucket(team_id)
+        if not bucket:
+            return {
+                "team_id": team_id,
+                "owners": [],
+                "rows": [],
+                "show_badges": self.sp.get('show_badges', False),
+                "badge_layout": self.ov.get('badge_layout', 'horizontal'),
+            }
+        view = self._compute_team_badge_view(bucket)
+        view["show_badges"] = self.sp.get('show_badges', False)
+        view["badge_layout"] = self.ov.get('badge_layout', 'horizontal')
+        return view
 
     def _link_id_by_personality(self, owner: str) -> dict[int, int]:
         """Mapping PID→link_id für alle Members des gegebenen Owners."""
@@ -406,10 +543,23 @@ class OverlayServer:
     async def _handle_badges_page(self, request: web.Request) -> web.Response:
         player_id = int(request.match_info['player_id'])
         badge_layout = request.query.get('layout', 'horizontal')
-        if badge_layout not in ('horizontal', 'vertical', '2x4', '4x2'):
+        if badge_layout not in ('horizontal', 'vertical', '2x4', '4x2', '4x4'):
             badge_layout = 'horizontal'
         html = self._render_badges_html(player_id, badge_layout)
         return web.Response(text=html, content_type='text/html')
+
+    async def _handle_team_badges_page(self, request: web.Request) -> web.Response:
+        team_id = slug_team_id(request.match_info['team_id'])
+        badge_layout = request.query.get('layout', 'horizontal')
+        if badge_layout not in ('horizontal', 'vertical', '2x4', '4x2', '4x4'):
+            badge_layout = 'horizontal'
+        html = self._render_team_badges_html(team_id, badge_layout)
+        return web.Response(text=html, content_type='text/html')
+
+    async def _handle_team_badges_data(self, request: web.Request) -> web.Response:
+        team_id = slug_team_id(request.match_info['team_id'])
+        payload = self._build_team_badges_payload(team_id)
+        return web.json_response(payload)
 
     async def _handle_state(self, request: web.Request) -> web.Response:
         player_id = int(request.match_info['player_id'])
@@ -489,6 +639,48 @@ class OverlayServer:
 
         return response
 
+    async def _handle_team_sse(self, request: web.Request) -> web.StreamResponse:
+        team_id = slug_team_id(request.match_info['team_id'])
+        response = web.StreamResponse(
+            status=200,
+            reason='OK',
+            headers={
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*',
+            },
+        )
+        await response.prepare(request)
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=50)
+        self._team_sse_queues.setdefault(team_id, []).append(queue)
+        self.logger.info(f"Team-SSE-Client verbunden für Team {team_id}")
+
+        # Initial-Snapshot
+        try:
+            snap = self._build_team_badges_payload(team_id)
+            init = f"event: snapshot\ndata: {json.dumps(snap, ensure_ascii=False, default=str)}\n\n"
+            await response.write(init.encode('utf-8'))
+        except Exception as err:
+            self.logger.warning(f"team SSE initial snapshot failed: {err}")
+
+        try:
+            while True:
+                event = await queue.get()
+                await response.write(event.encode('utf-8'))
+        except (asyncio.CancelledError, ConnectionResetError):
+            pass
+        finally:
+            queues = self._team_sse_queues.get(team_id)
+            if queues and queue in queues:
+                queues.remove(queue)
+            if queues is not None and not queues:
+                self._team_sse_queues.pop(team_id, None)
+            self.logger.info(f"Team-SSE-Client getrennt für Team {team_id}")
+
+        return response
+
     async def _handle_sprite(self, request: web.Request) -> web.Response:
         player_id = int(request.match_info['player_id'])
         slot = int(request.match_info['slot'])
@@ -532,6 +724,32 @@ class OverlayServer:
         if not region:
             return web.Response(status=404, text="Unbekannte Edition")
         earned = bool(badges_val & (1 << index))
+        suffix = '' if earned else 'empty'
+        file_path = str(Path(badges_path) / f"{region}{index + 1}{suffix}.png")
+        return self._serve_resolved_file(file_path)
+
+    async def _handle_team_badge_img(self, request: web.Request) -> web.Response:
+        team_id = slug_team_id(request.match_info['team_id'])
+        region = request.match_info['region']
+        try:
+            index = int(request.match_info['index'])
+        except (TypeError, ValueError):
+            return web.Response(status=400, text="Index ungültig")
+        badges_path = self.sp.get('badges_path', '')
+        if not badges_path:
+            return web.Response(status=404, text="Badges-Pfad nicht konfiguriert")
+        bucket = self._get_team_bucket(team_id)
+        if not bucket:
+            return web.Response(status=404, text="Team nicht bekannt")
+        view = self._compute_team_badge_view(bucket)
+        row = next((r for r in view.get("rows", []) if r.get("region") == region), None)
+        if not row:
+            return web.Response(status=404, text="Region nicht im Team")
+        badges_and = int(row.get("badges_and", 0))
+        badge_count = int(row.get("badge_count", 8))
+        if index < 0 or index >= badge_count:
+            return web.Response(status=404, text="Index out of range")
+        earned = bool(badges_and & (1 << index))
         suffix = '' if earned else 'empty'
         file_path = str(Path(badges_path) / f"{region}{index + 1}{suffix}.png")
         return self._serve_resolved_file(file_path)
@@ -984,6 +1202,10 @@ body {{ background: transparent; font-family: 'Segoe UI', Arial, sans-serif; ove
 #badges.layout-vertical {{ display: flex; flex-direction: column; align-items: center; }}
 #badges.layout-2x4 {{ display: grid; grid-template-columns: repeat(2, auto); justify-items: center; }}
 #badges.layout-4x2 {{ display: grid; grid-template-columns: repeat(4, auto); justify-items: center; }}
+/* 4x4 == visuell identisch mit 4x2 (repeat(4,auto) legt Zeilen aus Item-Anzahl fest).
+   Als eigener Layout-Name gefuehrt, damit Streamer explizit den Johto-16-Orden-Case
+   wählen können statt sich auf implizites Row-Overflow bei 4x2 zu verlassen. */
+#badges.layout-4x4 {{ display: grid; grid-template-columns: repeat(4, auto); justify-items: center; }}
 .badge {{ width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }}
 .badge.not-earned {{ opacity: 0.4; }}
 </style>
@@ -1018,6 +1240,70 @@ es.addEventListener('badges', function(e) {{
 }});
 es.addEventListener('team', function(e) {{
     // Badge-Overlay ignoriert Team-Events
+}});
+</script>
+</body>
+</html>"""
+
+    def _render_team_badges_html(self, team_id: str, badge_layout: str = 'horizontal') -> str:
+        # Query-Layout gewinnt zur Laufzeit, badge_layout aus URL nur als Default-Fallback.
+        team_id_js = json.dumps(team_id)
+        return f"""<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ background: transparent; font-family: 'Segoe UI', Arial, sans-serif; overflow: hidden; }}
+#rows {{ display: flex; flex-direction: column; gap: 6px; padding: 4px; }}
+.badges-row {{ gap: 4px; }}
+.badges-row.layout-horizontal {{ display: flex; align-items: center; flex-wrap: wrap; }}
+.badges-row.layout-vertical {{ display: flex; flex-direction: column; align-items: center; }}
+.badges-row.layout-2x4 {{ display: grid; grid-template-columns: repeat(2, auto); justify-items: center; }}
+.badges-row.layout-4x2 {{ display: grid; grid-template-columns: repeat(4, auto); justify-items: center; }}
+/* 4x4 visuell identisch mit 4x2 (siehe Player-Renderer). Eigener Layout-Name als
+   Johto-Alias, damit Streamer explizit den 16-Orden-Fall wählen können. */
+.badges-row.layout-4x4 {{ display: grid; grid-template-columns: repeat(4, auto); justify-items: center; }}
+.badge {{ width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }}
+.badge.not-earned {{ opacity: 0.4; }}
+</style>
+</head>
+<body>
+<div id="rows"></div>
+<script>
+const TEAM_ID = {team_id_js};
+const QUERY_LAYOUT = new URLSearchParams(window.location.search).get('layout');
+
+function renderTeamBadges(data) {{
+    const container = document.getElementById('rows');
+    container.innerHTML = '';
+    if (!data.show_badges) return;
+    const layout = QUERY_LAYOUT || data.badge_layout || 'horizontal';
+    const rows = data.rows || [];
+    for (const row of rows) {{
+        const rowEl = document.createElement('div');
+        rowEl.className = 'badges-row layout-' + layout;
+        rowEl.dataset.region = row.region;
+        for (const b of (row.badges || [])) {{
+            const img = document.createElement('img');
+            img.className = 'badge' + (b.earned ? '' : ' not-earned');
+            img.src = b.url;
+            rowEl.appendChild(img);
+        }}
+        container.appendChild(rowEl);
+    }}
+}}
+
+fetch('/team/' + encodeURIComponent(TEAM_ID) + '/badges/data')
+    .then(r => r.json())
+    .then(data => renderTeamBadges(data));
+
+const es = new EventSource('/team/' + encodeURIComponent(TEAM_ID) + '/badges/events');
+es.addEventListener('snapshot', function(e) {{
+    renderTeamBadges(JSON.parse(e.data));
+}});
+es.addEventListener('badges', function(e) {{
+    renderTeamBadges(JSON.parse(e.data));
 }});
 </script>
 </body>

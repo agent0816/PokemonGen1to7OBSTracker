@@ -1372,6 +1372,73 @@ class OBS():
 
             await self.ws.call_batch(batch)
 
+    async def change_team_badges(self, team_id: str):
+        """Aktualisiert Team-Badge-Scene-Items in OBS. Aggregat = bitwise AND
+        aller Owner-Bitmasks pro Region. Input-Namens-Konvention:
+        `team_{team_id}_{region}_{i+1}` (1-basiert, i=0..badge_count-1).
+
+        Streamer legt die Inputs so an, wie er will (nur eine Region → nur
+        eine Row; mehrere Regionen → Zeilen pro Region). Fehlende Inputs
+        werden von OBS ignoriert (SetInputSettings 600er-Response), das ist
+        gewollt: kein Fehler wenn Streamer die Region nicht angelegt hat.
+        """
+        from backend.classes.overlay_server import BADGE_REGION
+        if not self.conf.get('show_badges'):
+            return
+        if not self.ws or not self.ws.is_identified():
+            self.is_connected = False
+            return
+        team_state = getattr(self.munchlax, 'soullink_team_state', {}) or {}
+        bucket = team_state.get(team_id)
+        if not bucket:
+            return
+        owners = list(bucket.get('owners', []) or [])
+        editions_by_owner = bucket.get('editions_by_owner', {}) or {}
+        badges_by_owner = bucket.get('badges_by_owner', {}) or {}
+
+        region_owners: dict[str, list[str]] = {}
+        for owner in owners:
+            edition = editions_by_owner.get(owner)
+            if edition is None:
+                continue
+            region = BADGE_REGION.get(edition, '')
+            if not region:
+                continue
+            region_owners.setdefault(region, []).append(owner)
+        if not region_owners:
+            return
+
+        badge_path = self.conf['badges_path'] if not self.conf['obs_2_pc'] else self.conf['badges_obs_path']
+        self.logger.info(f"change_team_badges ausgeführt: team_id={team_id}, regions={list(region_owners.keys())}")
+
+        batch = []
+        for region, r_owners in region_owners.items():
+            badge_count = 16 if region == 'johto' else 8
+            mask_all = (1 << badge_count) - 1
+            badges_and = mask_all
+            for o in r_owners:
+                v = badges_by_owner.get(o)
+                badges_and &= v if isinstance(v, int) else 0
+            for i in range(badge_count):
+                input_name = f"team_{team_id}_{region}_{i + 1}"
+                if badges_and & (1 << i):
+                    file_name = f"{region}{i + 1}.png"
+                else:
+                    file_name = f"{region}{i + 1}empty.png"
+                batch.append(
+                    simpleobsws.Request(
+                        "SetInputSettings",
+                        {
+                            "inputName": input_name,
+                            "inputSettings": {
+                                "file": badge_path + '/' + file_name,
+                            },
+                        },
+                    )
+                )
+        if batch:
+            await self.ws.call_batch(batch)
+
     def get_sprite(self, pokemon, anim, edition, two_pc=False):
         if two_pc:
             common_path = self.conf['common_obs_path']

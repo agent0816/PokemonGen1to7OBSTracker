@@ -3,6 +3,7 @@ import pickle
 import time
 import traceback
 from backend.logging_setup import get_logger
+from backend.team_id import slug_team_id
 from backend.type_lookup import first_type, type_name
 
 # Modi mit aktiver Soullink-Logik (Links, Ersttyp-Clause, Trade-Detection).
@@ -14,6 +15,11 @@ SOULLINK_MODES = ("coop", "versus")
 VERSUS_MODES = ("versus", "versus_ffa")
 # Modi, deren Config beim Connect an neue Clients ausgeliefert wird.
 BROADCAST_MODES = ("coop", "versus", "versus_ffa")
+
+# Grace-Period für Owner im _team_owner_cache: nach Disconnect noch so lange
+# als "known" führen, damit Heartbeat-Blips das Team-Overlay nicht kippen.
+# Danach: Cache-Eintrag entfernen, Owner verschwindet aus dem Team-Bucket.
+TEAM_OWNER_CACHE_GRACE_SECONDS = 300
 
 class Arceus:
     def __init__(self, host, port, rem):
@@ -62,6 +68,18 @@ class Arceus:
         self.soullink_tokens: dict[str, dict] = {}
         # Versus-State: aggregierte Team-Stats (badges_min, deaths, alive_count).
         self.soullink_versus_state: dict[str, dict] = {}
+        # Team-State fürs Overlay (modus-unabhängig). Basiert auf
+        # _effective_team_membership() + je Owner Rohdaten (badges/edition/pids),
+        # das Overlay aggregiert selbst (AND, Region-Gruppierung).
+        self.soullink_team_state: dict[str, dict] = {}
+        # Owner-Cache last-seen: {owner: {"badges", "edition", "last_seen"}}.
+        # Puffert kurzzeitige Disconnects/Heartbeat-Blips, damit die AND-Aggregation
+        # im Overlay nicht sofort auf 0 fällt und alle Regionen als leer anzeigt.
+        # Wird nur mit echten Werten aktualisiert, nie mit None überschrieben.
+        # Prune nach TEAM_OWNER_CACHE_GRACE_SECONDS ohne Sichtung (siehe
+        # _prune_team_owner_cache), damit Session-Wechsel/dauerhafter Disconnect
+        # keine Ghost-Owner im Team-State hinterlassen.
+        self._team_owner_cache: dict[str, dict] = {}
         # History manueller PvP-Runden zwischen Teams.
         self.soullink_versus_battles: list[dict] = []
         # Race-Timer (server-authoritativ). Ticks werden im Background-Task
@@ -187,6 +205,8 @@ class Arceus:
                         f"players={self.soullink_config.get('expected_owners')}"
                     )
                     asyncio.create_task(self.broadcast_soullink_config())
+                    if self._recompute_team_state():
+                        asyncio.create_task(self.broadcast_soullink_team_state())
                 elif isinstance(data, dict) and data.get("type") == "soullink_death":
                     payload = self._process_death(data)
                     if payload is not None:
@@ -267,13 +287,18 @@ class Arceus:
                         asyncio.create_task(self.broadcast_player_names())
                     if self._recompute_versus_state():
                         asyncio.create_task(self.broadcast_soullink_versus_state())
+                    if self._recompute_team_state():
+                        asyncio.create_task(self.broadcast_soullink_team_state())
                     auto_splits = self._detect_badge_splits(client_id, data)
                     if auto_splits:
                         for split in auto_splits:
                             self.logger.info(f"Auto-Split (Badge): {split['label']}")
                         asyncio.create_task(self.broadcast_timer_state())
             except ConnectionResetError:
-                pass
+                # Reader ist tot, weitere receive_message-Aufrufe wuerden nur
+                # noch denselben Fehler in Busy-Loop werfen. Schleife verlassen,
+                # damit der regulaere disconnect_client-Pfad greift.
+                break
             except pickle.UnpicklingError as exc:
                 self.logger.error(f"Fehler beim Entpacken der Daten: {type(exc)},{exc}")
                 self.logger.error(f"{traceback.format_exc()}")
@@ -286,73 +311,96 @@ class Arceus:
 
     async def update_all_clients(self, client_id):
         old_teams = self.teams.copy()
-        self.logger.debug(f"Initiales Team-Update an Client {client_id}: {len(self.teams)} Spieler")
-        await self.send_to_client(client_id, self.teams)
+        # Onboarding-Sequenz komplett in try/except gehuellt: Task laeuft ohne
+        # Referenz + ohne add_done_callback (siehe start-Aufruf), eine Exception
+        # in einem der send_to_client-Aufrufe wuerde den Task sonst lautlos
+        # sterben lassen und der Client bekaeme unvollstaendiges Onboarding
+        # (z.B. nie sein team_state) ohne Spur im Log. Sync-Review Runde 6.
+        try:
+            self.logger.debug(f"Initiales Team-Update an Client {client_id}: {len(self.teams)} Spieler")
+            await self.send_to_client(client_id, self.teams)
 
-        # Box-Stand einmal an den frisch verbundenen Client schicken, damit
-        # remote betrachtete BoxMenüs sofort den letzten bekannten Cache haben.
-        for player_id, boxes in list(self.boxes.items()):
-            await self.send_to_client(client_id, {
-                "type": "boxes_update",
-                "player_id": player_id,
-                "boxes": boxes,
-            })
+            # Box-Stand einmal an den frisch verbundenen Client schicken, damit
+            # remote betrachtete BoxMenüs sofort den letzten bekannten Cache haben.
+            for player_id, boxes in list(self.boxes.items()):
+                await self.send_to_client(client_id, {
+                    "type": "boxes_update",
+                    "player_id": player_id,
+                    "boxes": boxes,
+                })
 
-        if self.encounters:
-            await self.send_to_client(client_id, {
-                "type": "encounter_sync",
-                "encounters": list(self.encounters.values()),
-            })
+            if self.encounters:
+                await self.send_to_client(client_id, {
+                    "type": "encounter_sync",
+                    "encounters": list(self.encounters.values()),
+                })
 
-        if self.soullink_config.get("mode", "off") in BROADCAST_MODES:
-            await self.send_to_client(client_id, {
-                "type": "soullink_config",
-                "config": dict(self.soullink_config),
-            })
-        for link in list(self.soullink_links.values()):
-            await self.send_to_client(client_id, {
-                "type": "soullink_link_state",
-                "link": link,
-            })
-        for death in list(self.soullink_deaths.values()):
-            await self.send_to_client(client_id, {
-                "type": "soullink_death",
-                "death": death,
-            })
-        for violation in list(self.soullink_rule_violations.values()):
-            await self.send_to_client(client_id, {
-                "type": "soullink_rule_violation",
-                "violation": violation,
-            })
-        if self.soullink_tokens:
-            await self.send_to_client(client_id, {
-                "type": "soullink_tokens",
-                "tokens": dict(self.soullink_tokens),
-            })
-        if self.soullink_versus_state:
-            await self.send_to_client(client_id, {
-                "type": "soullink_versus_state",
-                "state": self.soullink_versus_state,
-                "battles": list(self.soullink_versus_battles),
-            })
-        if self.timer_state.get("start_ts") is not None:
-            await self.send_to_client(client_id, {
-                "type": "timer_state",
-                "timer": self._timer_snapshot(),
-            })
-        if self.countdown_state.get("duration_seconds", 0.0) > 0:
-            await self.send_to_client(client_id, {
-                "type": "countdown_state",
-                "countdown": self._countdown_snapshot(),
-            })
+            if self.soullink_config.get("mode", "off") in BROADCAST_MODES:
+                await self.send_to_client(client_id, {
+                    "type": "soullink_config",
+                    "config": dict(self.soullink_config),
+                })
+            for link in list(self.soullink_links.values()):
+                await self.send_to_client(client_id, {
+                    "type": "soullink_link_state",
+                    "link": link,
+                })
+            for death in list(self.soullink_deaths.values()):
+                await self.send_to_client(client_id, {
+                    "type": "soullink_death",
+                    "death": death,
+                })
+            for violation in list(self.soullink_rule_violations.values()):
+                await self.send_to_client(client_id, {
+                    "type": "soullink_rule_violation",
+                    "violation": violation,
+                })
+            if self.soullink_tokens:
+                await self.send_to_client(client_id, {
+                    "type": "soullink_tokens",
+                    "tokens": dict(self.soullink_tokens),
+                })
+            if self.soullink_versus_state:
+                await self.send_to_client(client_id, {
+                    "type": "soullink_versus_state",
+                    "state": self.soullink_versus_state,
+                    "battles": list(self.soullink_versus_battles),
+                })
+            # Team-State (modus-unabhängig, siehe _compute_team_state) — beim Connect
+            # einmal ausliefern. Entweder-oder-Muster gegen Duplikat:
+            # - Aenderung durch den Connect → Broadcast an alle (inkl. neuer Client)
+            #   als create_task (fire-and-forget), damit ein langsamer/haengender
+            #   Fremd-Client die restlichen Onboarding-Sends nicht blockiert.
+            # - State stable → gezielter direct-send an neuen Client.
+            if self._recompute_team_state():
+                asyncio.create_task(self.broadcast_soullink_team_state())
+            elif self.soullink_team_state:
+                await self.send_to_client(client_id, {
+                    "type": "soullink_team_state",
+                    "state": self.soullink_team_state,
+                })
+            if self.timer_state.get("start_ts") is not None:
+                await self.send_to_client(client_id, {
+                    "type": "timer_state",
+                    "timer": self._timer_snapshot(),
+                })
+            if self.countdown_state.get("duration_seconds", 0.0) > 0:
+                await self.send_to_client(client_id, {
+                    "type": "countdown_state",
+                    "countdown": self._countdown_snapshot(),
+                })
 
-        for (bag_owner, bag_edition), pockets in list(self.bags.items()):
-            await self.send_to_client(client_id, {
-                "type": "bag_sync",
-                "owner": bag_owner,
-                "edition": bag_edition,
-                "pockets": pockets,
-            })
+            for (bag_owner, bag_edition), pockets in list(self.bags.items()):
+                await self.send_to_client(client_id, {
+                    "type": "bag_sync",
+                    "owner": bag_owner,
+                    "edition": bag_edition,
+                    "pockets": pockets,
+                })
+        except Exception as exc:
+            self.logger.error(f"update_all_clients Onboarding an {client_id} abgebrochen: {type(exc)},{exc}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return
 
         while True:
             try:
@@ -1004,6 +1052,137 @@ class Arceus:
             except Exception as exc:
                 self.logger.error(f"broadcast_soullink_versus_state an {client_id} failed: {exc}")
 
+    def _effective_team_membership(self) -> dict[str, str]:
+        """owner → team_id. Bei aktivem Soullink aus config; sonst jeder Owner
+        sein eigenes Team. Für Standard-Nuzlocke/Off ergibt sich {owner: owner}
+        aus verbundenen Clients + expected_owners."""
+        cfg = self.soullink_config
+        mode = cfg.get("mode", "off")
+        if mode == "coop":
+            raw = cfg.get("team_membership", {}) or {}
+            if raw:
+                return {o: slug_team_id(t) for o, t in raw.items()}
+            # Coop-Fallback: NuzlockeMenu fuellt team_membership derzeit nur im
+            # versus-Zweig. Ohne diese Zuordnung waere das gesamte Team-Feature
+            # fuer den Coop-Kern-Anwendungsfall wirkungslos. Alle expected_owners
+            # in einen gemeinsamen Bucket 'coop' schuetten.
+            return {o: "coop" for o in (cfg.get("expected_owners", []) or []) if o}
+        if mode == "versus":
+            raw = cfg.get("team_membership", {}) or {}
+            return {o: slug_team_id(t) for o, t in raw.items()}
+        if mode == "versus_ffa":
+            return {o: slug_team_id(o) for o in (cfg.get("expected_owners", []) or [])}
+        owners: set[str] = set()
+        for cid in self.munchlaxes.keys():
+            try:
+                o = self._owner_for_client(cid)
+                if o:
+                    owners.add(o)
+            except Exception:
+                pass
+        for o in (cfg.get("expected_owners", []) or []):
+            if o:
+                owners.add(o)
+        # Zusätzlich alle jemals gesehenen Owner aus dem Team-Owner-Cache. Sonst
+        # verschwindet bei kurzem Disconnect eines Owners im off-Modus der
+        # gesamte Team-Bucket aus dem State — für ein Regie-/Spectator-Overlay
+        # sieht das wie "Team weg" aus statt "Werte unverändert".
+        for o in self._team_owner_cache.keys():
+            if o:
+                owners.add(o)
+        return {o: slug_team_id(o) for o in owners}
+
+    def _prune_team_owner_cache(self):
+        """Entfernt Cache-Einträge deren Grace-Period abgelaufen ist. Owner die
+        aktuell verbunden oder in expected_owners sind bekommen frisches
+        last_seen; alle anderen sterben nach TEAM_OWNER_CACHE_GRACE_SECONDS.
+        """
+        now = time.time()
+        connected_owners: set[str] = set()
+        for cid in list(self.munchlaxes.keys()):
+            try:
+                o = self._owner_for_client(cid)
+                if o:
+                    connected_owners.add(o)
+            except Exception:
+                pass
+        expected = set(self.soullink_config.get("expected_owners", []) or [])
+        alive = connected_owners | expected
+        for owner in list(self._team_owner_cache.keys()):
+            entry = self._team_owner_cache[owner]
+            if owner in alive:
+                entry["last_seen"] = now
+                continue
+            if now - entry.get("last_seen", now) > TEAM_OWNER_CACHE_GRACE_SECONDS:
+                del self._team_owner_cache[owner]
+
+    def _compute_team_state(self) -> dict[str, dict]:
+        """Baut team_state aus effektiver Membership + self.teams. Owner-Rohdaten,
+        Aggregation (AND, Region) macht das Overlay.
+
+        Fällt für disconnected/blip-artige Owner auf `self._team_owner_cache`
+        zurück, damit das Team-Badge-Overlay nicht bei jedem Heartbeat-Aussetzer
+        alle Regionen auf 0 kippt.
+        """
+        self._prune_team_owner_cache()
+        membership = self._effective_team_membership()
+        new_state: dict[str, dict] = {}
+        now = time.time()
+        for owner, team_id in membership.items():
+            bucket = new_state.setdefault(team_id, {
+                "team_id": team_id,
+                "owners": [],
+                "badges_by_owner": {},
+                "editions_by_owner": {},
+                "player_ids_by_owner": {},
+            })
+            if owner in bucket["owners"]:
+                continue
+            bucket["owners"].append(owner)
+            cid = self._find_client_for_owner(owner)
+            player_ids = sorted(self.client_player_ids.get(cid, set())) if cid else []
+            bucket["player_ids_by_owner"][owner] = player_ids
+            badges_val = None
+            edition_val = None
+            for pid in player_ids:
+                team = self.teams.get(pid)
+                if not team:
+                    continue
+                if len(team) > 6 and team[6] is not None and isinstance(team[6], int):
+                    if badges_val is None or team[6] > badges_val:
+                        badges_val = team[6]
+                if len(team) > 7 and team[7] is not None:
+                    edition_val = team[7]
+            cached = self._team_owner_cache.setdefault(owner, {"badges": None, "edition": None, "last_seen": now})
+            if badges_val is not None:
+                cached["badges"] = badges_val
+            if edition_val is not None:
+                cached["edition"] = edition_val
+            if cid is not None:
+                cached["last_seen"] = now
+            bucket["badges_by_owner"][owner] = badges_val if badges_val is not None else cached["badges"]
+            bucket["editions_by_owner"][owner] = edition_val if edition_val is not None else cached["edition"]
+        return new_state
+
+    def _recompute_team_state(self) -> bool:
+        """True wenn sich state geändert hat."""
+        new_state = self._compute_team_state()
+        if new_state == self.soullink_team_state:
+            return False
+        self.soullink_team_state = new_state
+        return True
+
+    async def broadcast_soullink_team_state(self):
+        message = {
+            "type": "soullink_team_state",
+            "state": self.soullink_team_state,
+        }
+        for client_id in list(self.munchlaxes.keys()):
+            try:
+                await self.send_to_client(client_id, message)
+            except Exception as exc:
+                self.logger.error(f"broadcast_soullink_team_state an {client_id} failed: {exc}")
+
     async def broadcast_soullink_versus_battle(self, battle: dict):
         message = {"type": "soullink_versus_battle", "battle": battle}
         for client_id in list(self.munchlaxes.keys()):
@@ -1253,6 +1432,10 @@ class Arceus:
                 self.client_player_ids.pop(client_id, None)
         asyncio.create_task(self.broadcast_connection_status())
         asyncio.create_task(self.broadcast_player_names())
+        if self._recompute_team_state():
+            asyncio.create_task(self.broadcast_soullink_team_state())
+        if self._recompute_versus_state():
+            asyncio.create_task(self.broadcast_soullink_versus_state())
 
     # async def send_message(self, writer, message):
     #     serialized_message = pickle.dumps(message)
@@ -1333,22 +1516,30 @@ class Arceus:
 
     async def check_heartbeats(self):
         while True:
-            now = time.time()
-            to_disconnect = []
-            for client_id, last_heartbeat in list(self.munchlax_heartbeats.items()):
-                if now - last_heartbeat > 5.1:
-                    self.logger.warning(f"Client {client_id} hat seit {now - last_heartbeat} Sekunden keinen Heartbeat gesendet!")
-                    self.heartbeat_counts[client_id] += 1
-                    if self.heartbeat_counts[client_id] > 3:
-                        to_disconnect.append(client_id)
+            # Try/except um den gesamten Iterations-Body, weil disconnect_client
+            # synchrone _recompute_team_state/_recompute_versus_state aufruft.
+            # Eine Exception dort darf den Heartbeat-Monitor nicht dauerhaft killen
+            # (sonst laufen tote Clients ewig weiter, siehe Sync-Review Runde 6).
+            try:
+                now = time.time()
+                to_disconnect = []
+                for client_id, last_heartbeat in list(self.munchlax_heartbeats.items()):
+                    if now - last_heartbeat > 5.1:
+                        self.logger.warning(f"Client {client_id} hat seit {now - last_heartbeat} Sekunden keinen Heartbeat gesendet!")
+                        self.heartbeat_counts[client_id] += 1
+                        if self.heartbeat_counts[client_id] > 3:
+                            to_disconnect.append(client_id)
+                        else:
+                            self.munchlax_status[client_id] = "warning"
                     else:
-                        self.munchlax_status[client_id] = "warning"
-                else:
-                    self.heartbeat_counts[client_id] = 0
-                    self.munchlax_status[client_id] = "connected"
-            for client_id in to_disconnect:
-                await self.disconnect_client(client_id)
-            await self.broadcast_connection_status()
+                        self.heartbeat_counts[client_id] = 0
+                        self.munchlax_status[client_id] = "connected"
+                for client_id in to_disconnect:
+                    await self.disconnect_client(client_id)
+                await self.broadcast_connection_status()
+            except Exception as exc:
+                self.logger.error(f"check_heartbeats Iteration abgebrochen: {type(exc)},{exc}")
+                self.logger.error(f"{traceback.format_exc()}")
             await asyncio.sleep(5)
     
     async def start(self):

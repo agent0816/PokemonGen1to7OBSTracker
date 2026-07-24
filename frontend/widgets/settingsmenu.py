@@ -13,8 +13,10 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.togglebutton import ToggleButton
 from backend.classes.obs import OBS
+from backend.classes.pokedex_db import PokedexDB
 from backend.controller.settings_controller import SettingsController
 from backend.sprite_repo import clone_sprite_repo, pull_sprite_repo, is_sprite_repo, get_repo_root_from_subpath, apply_sprite_paths
+from backend.team_id import slug_team_id
 from frontend.widgets.mainmenu import TrainerBox
 from frontend.widgets.sprite_setup_popup import SpriteSetupPopup
 import frontend.UIFactory as UI
@@ -281,7 +283,7 @@ class ScrollSettings(ScrollView):
         layout_grid.add_widget(Label(text="Badge-Layout", size_hint_x=.2))
         badge_layout_spinner = Spinner(
             text=self.ov.get('badge_layout', 'horizontal'),
-            values=('horizontal', 'vertical', '2x4', '4x2'),
+            values=('horizontal', 'vertical', '2x4', '4x2', '4x4'),
             size_hint_x=.3,
         )
         badge_layout_spinner.bind(text=lambda inst, val: self._on_layout_changed(val))
@@ -1150,9 +1152,16 @@ class ScrollSettings(ScrollView):
         badge_layout = self.ids["overlay_badge_layout"].text if "overlay_badge_layout" in self.ids else self.ov.get('badge_layout', 'horizontal')
         player_count = self.pl.get('player_count', 1)
 
-        grid = GridLayout(cols=2, size_hint_y=None, spacing="20dp", padding=("0dp", "10dp"))
-        grid.bind(minimum_height=grid.setter('height'))
-        self.ids["overlay_link_grid"] = weakref.proxy(grid)
+        # Container haelt Player-Grid + Team-Grid getrennt. Kivy GridLayout fuellt
+        # Zellen strikt nach Einfuegereihenfolge — Player- und Team-Cells duerfen
+        # nicht in dieselbe Grid haengen, sonst rutschen sie in dieselbe Zeile
+        # (z.B. Solo mit 1 Spieler + 1 Team-Cell → beide nebeneinander statt untereinander).
+        container = BoxLayout(orientation='vertical', size_hint_y=None, spacing="10dp", padding=("0dp", "10dp"))
+        container.bind(minimum_height=container.setter('height'))
+        self.ids["overlay_link_grid"] = weakref.proxy(container)
+
+        player_grid = GridLayout(cols=1, size_hint_y=None, spacing="10dp")
+        player_grid.bind(minimum_height=player_grid.setter('height'))
 
         team_layout_param = f"?layout={layout}" if layout != 'horizontal' else ""
         badge_layout_param = f"?layout={badge_layout}" if badge_layout != 'horizontal' else ""
@@ -1166,9 +1175,79 @@ class ScrollSettings(ScrollView):
                 on_press=lambda inst, url=team_url: self._copy_overlay_url(url)))
             player_cell.add_widget(Button(text="Badges", size_hint_x=.35,
                 on_press=lambda inst, url=badge_url: self._copy_overlay_url(url)))
-            grid.add_widget(player_cell)
+            player_grid.add_widget(player_cell)
 
-        overlay_box.add_widget(grid)
+        container.add_widget(player_grid)
+
+        # Team-Badge-URLs (AND ueber Team-Owner + Region-Gruppierung).
+        # Bei aktivem Soullink: distinct team_ids aus soullink_team_membership.
+        # Sonst: 1 impliziter Solo-Team-Slug fuer den lokalen Owner.
+        team_ids = self._resolve_team_ids()
+        if team_ids:
+            team_header = Label(text="Team-Overlays", size_hint_y=None, height="30dp", bold=True)
+            container.add_widget(team_header)
+            team_grid = GridLayout(cols=1, size_hint_y=None, spacing="10dp")
+            team_grid.bind(minimum_height=team_grid.setter('height'))
+            for team_id, team_label in team_ids:
+                team_badge_url = f"http://localhost:{port}/team/{team_id}/badges{badge_layout_param}"
+                team_cell = BoxLayout(orientation='horizontal', size_hint_y=None, height="40dp", spacing="10dp")
+                team_cell.add_widget(Label(text=team_label, size_hint_x=.3))
+                team_cell.add_widget(Label(text="", size_hint_x=.35))
+                team_cell.add_widget(Button(text="Team-Badges", size_hint_x=.35,
+                    on_press=lambda inst, url=team_badge_url: self._copy_overlay_url(url)))
+                team_grid.add_widget(team_cell)
+            container.add_widget(team_grid)
+
+        overlay_box.add_widget(container)
+
+    def _resolve_team_ids(self) -> list[tuple[str, str]]:
+        """Liefert [(team_id_slug, label)] fuer den Team-Badge-URL-Bereich.
+
+        - Soullink coop/versus: distinct team_ids aus soullink_team_membership,
+          Label = raw team_id (vor Slug).
+        - versus_ffa: pro expected_owner ein Team, Label = owner-Name.
+        - Off/Nuzlocke: 1 impliziter Solo-Team-Slug (lokaler Owner), Label = "Team".
+        """
+        mode = (self.nuz.get("soullink_mode") or "off").lower()
+        if mode == "coop":
+            team_map = self.nuz.get("soullink_team_membership", {}) or {}
+            if team_map:
+                distinct: dict[str, str] = {}
+                for _owner, raw_team in team_map.items():
+                    if raw_team is None:
+                        continue
+                    slug = slug_team_id(raw_team)
+                    if slug not in distinct:
+                        distinct[slug] = str(raw_team)
+                return [(slug, f"Team {label}") for slug, label in distinct.items()]
+            # Coop-Fallback spiegelt arceus._effective_team_membership:
+            # bei leerem team_membership (NuzlockeMenu befuellt es nur fuer versus)
+            # alle expected_owners in ein Bucket "coop". Slug muss literal "coop"
+            # sein, sonst URL-Mismatch zum Server.
+            expected = self.nuz.get("soullink_expected_owners", []) or []
+            if expected:
+                return [("coop", "Team (Coop)")]
+            return []
+        if mode == "versus":
+            team_map = self.nuz.get("soullink_team_membership", {}) or {}
+            distinct: dict[str, str] = {}
+            for _owner, raw_team in team_map.items():
+                if raw_team is None:
+                    continue
+                slug = slug_team_id(raw_team)
+                if slug not in distinct:
+                    distinct[slug] = str(raw_team)
+            return [(slug, f"Team {label}") for slug, label in distinct.items()]
+        if mode == "versus_ffa":
+            expected = self.nuz.get("soullink_expected_owners", []) or []
+            return [(slug_team_id(o), f"Team {o}") for o in expected if o]
+        owner = self._local_owner_string()
+        return [(slug_team_id(owner), "Team (Solo)")]
+
+    def _local_owner_string(self) -> str:
+        your_name = self.pl.get('your_name', '') if self.pl else ''
+        client_id = str(self.rem.get('client_id', 0)) if self.rem else '0'
+        return PokedexDB.build_owner(your_name, client_id)
 
     def _on_layout_changed(self, value):
         self.save_changes()

@@ -268,6 +268,19 @@ class OverlayServer:
                 entry["item_url"] = f"/item/{player_id}/{slot}?v={pkmn.item}"
             team_data.append(entry)
 
+        # Duplikate in identity_key uniquifizieren (Cheat-Teams mit identischer
+        # PV, Eier vor PV-Roll etc.). Sonst kollidiert die Node-Map im Frontend
+        # und nur ein Slot bleibt sichtbar.
+        seen_keys: dict[str, int] = {}
+        for entry in team_data:
+            k = entry.get("identity_key")
+            if k is None:
+                continue
+            if k in seen_keys:
+                entry["identity_key"] = f"{k}_slot{entry['slot']}"
+            else:
+                seen_keys[k] = 1
+
         # Sortierung anwenden (Task #14): leere Slots ans Ende, sonst je nach sort_mode.
         team_data = self._apply_slot_sort(team_data, link_id_by_pv)
 
@@ -306,8 +319,11 @@ class OverlayServer:
 
     def _local_team_state(self) -> dict[str, dict]:
         """Fallback wenn kein soullink_team_state vom Server vorliegt: baut
-        einen Solo-Team-Bucket aus lokalen badges/editions. team_id = Slug des
-        lokalen Owners; alle lokalen player_ids wandern hinein."""
+        Team-Buckets aus lokalen badges/editions + nuzlocke.yml-Preset. Ohne
+        Preset-Awareness liefe /team/coop/badges ins Leere (team_id = slug(owner)
+        matcht nicht die URL, die das Overlay-Menü aus dem Preset erzeugt).
+        Spiegelt arceus._effective_team_membership fuer den serverlosen Fall.
+        """
         m = self.munchlax
         try:
             player_ids = sorted((getattr(m, "badges", {}) or {}).keys())
@@ -315,8 +331,16 @@ class OverlayServer:
             player_ids = []
         if not player_ids:
             return {}
-        owner = self._owner_for_local_player(player_ids[0]) or "local"
-        team_id = slug_team_id(owner)
+        # local_owner-Matching gegen nuz.soullink_expected_owners. Diese sind
+        # reine Namen ("Stephan"), _owner_for_local_player liefert dagegen
+        # build_owner-Format ("Stephan_<client_id>") — direkter Vergleich matcht
+        # nie. Deshalb hier pl.your_name als Match-Owner nutzen.
+        try:
+            local_owner = (getattr(m, "pl", {}) or {}).get("your_name") or ""
+        except AttributeError:
+            local_owner = ""
+        if not local_owner:
+            local_owner = self._owner_for_local_player(player_ids[0]) or "local"
         badges_val = None
         edition_val = None
         for pid in player_ids:
@@ -326,13 +350,78 @@ class OverlayServer:
             e = (getattr(m, "editions", {}) or {}).get(pid)
             if e is not None:
                 edition_val = e
-        return {team_id: {
-            "team_id": team_id,
-            "owners": [owner],
-            "badges_by_owner": {owner: badges_val},
-            "editions_by_owner": {owner: edition_val},
-            "player_ids_by_owner": {owner: player_ids},
-        }}
+
+        def _empty_bucket(tid: str) -> dict:
+            return {
+                "team_id": tid,
+                "owners": [],
+                "badges_by_owner": {},
+                "editions_by_owner": {},
+                "player_ids_by_owner": {},
+            }
+
+        def _add_owner(bucket: dict, owner: str):
+            if not owner or owner in bucket["owners"]:
+                return
+            bucket["owners"].append(owner)
+            if owner == local_owner:
+                bucket["badges_by_owner"][owner] = badges_val
+                bucket["editions_by_owner"][owner] = edition_val
+                bucket["player_ids_by_owner"][owner] = player_ids
+            else:
+                bucket["badges_by_owner"][owner] = None
+                bucket["editions_by_owner"][owner] = None
+                bucket["player_ids_by_owner"][owner] = []
+
+        nuz = getattr(m, "nuz", {}) or {}
+        mode = (nuz.get("soullink_mode") or "off").lower()
+        team_map = nuz.get("soullink_team_membership", {}) or {}
+        expected = nuz.get("soullink_expected_owners", []) or []
+
+        if mode == "coop":
+            buckets: dict[str, dict] = {}
+            if team_map:
+                for owner, raw_team in team_map.items():
+                    if raw_team is None:
+                        continue
+                    tid = slug_team_id(raw_team)
+                    _add_owner(buckets.setdefault(tid, _empty_bucket(tid)), owner)
+            else:
+                # NuzlockeMenu befuellt team_membership nur im versus-Zweig;
+                # ohne Mapping alle expected_owners in ein Bucket "coop"
+                # (analog arceus._effective_team_membership).
+                tid = "coop"
+                bucket = buckets.setdefault(tid, _empty_bucket(tid))
+                if expected:
+                    for owner in expected:
+                        _add_owner(bucket, owner)
+                else:
+                    _add_owner(bucket, local_owner)
+            return buckets
+
+        if mode == "versus":
+            buckets = {}
+            for owner, raw_team in team_map.items():
+                if raw_team is None:
+                    continue
+                tid = slug_team_id(raw_team)
+                _add_owner(buckets.setdefault(tid, _empty_bucket(tid)), owner)
+            return buckets
+
+        if mode == "versus_ffa":
+            buckets = {}
+            for owner in expected:
+                if not owner:
+                    continue
+                tid = slug_team_id(owner)
+                _add_owner(buckets.setdefault(tid, _empty_bucket(tid)), owner)
+            return buckets
+
+        # off/nuzlocke: Solo-Bucket wie zuvor
+        tid = slug_team_id(local_owner)
+        bucket = _empty_bucket(tid)
+        _add_owner(bucket, local_owner)
+        return {tid: bucket}
 
     def _compute_team_badge_view(self, bucket: dict) -> dict:
         """Aggregiert einen Team-Bucket zu Region-Rows. Pro Region: badges_and
@@ -385,11 +474,17 @@ class OverlayServer:
         }
 
     def _get_team_bucket(self, team_id: str) -> dict | None:
+        # Server-State hat Prio (kennt tatsaechliche Owner-Rohdaten). Wenn
+        # team_id dort nicht existiert, faellt auf _local_team_state zurueck —
+        # das kennt den Coop-Preset aus nuz auch dann, wenn der Server die
+        # Preset-Config noch nicht gespiegelt hat.
         m = self.munchlax
         team_state = getattr(m, "soullink_team_state", {}) or {}
-        if not team_state:
-            team_state = self._local_team_state()
-        return team_state.get(team_id)
+        bucket = team_state.get(team_id) if team_state else None
+        if bucket is None:
+            local_state = self._local_team_state()
+            bucket = local_state.get(team_id)
+        return bucket
 
     def _build_team_badges_payload(self, team_id: str) -> dict:
         bucket = self._get_team_bucket(team_id)
@@ -1207,7 +1302,6 @@ body {{ background: transparent; font-family: 'Segoe UI', Arial, sans-serif; ove
    wählen können statt sich auf implizites Row-Overflow bei 4x2 zu verlassen. */
 #badges.layout-4x4 {{ display: grid; grid-template-columns: repeat(4, auto); justify-items: center; }}
 .badge {{ width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }}
-.badge.not-earned {{ opacity: 0.4; }}
 </style>
 </head>
 <body>
@@ -1265,7 +1359,6 @@ body {{ background: transparent; font-family: 'Segoe UI', Arial, sans-serif; ove
    Johto-Alias, damit Streamer explizit den 16-Orden-Fall wählen können. */
 .badges-row.layout-4x4 {{ display: grid; grid-template-columns: repeat(4, auto); justify-items: center; }}
 .badge {{ width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }}
-.badge.not-earned {{ opacity: 0.4; }}
 </style>
 </head>
 <body>

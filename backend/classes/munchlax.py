@@ -1214,15 +1214,32 @@ class Munchlax:
         return mapping
 
     def sort(self, liste, key):
+        # Original-Slot als Tiebreaker mitfuehren, sonst kippt die Reihenfolge
+        # bei gleichen Sort-Keys (z.B. sort=route mit flackernder met_location)
+        # zwischen Ticks — im Overlay sichtbar als vertauschte Slots.
         key = key.lower().replace('.', '')
-        if key == 'dexnr':
-            return sorted(sorted(liste), key=lambda a: a)
         if key == 'team':
-            return liste
-        if key == 'lvl':
-            return sorted(sorted(liste), key=lambda a: - a.lvl if a.dexnr != 0 else 999999)
-        if key == 'route':
-            return sorted(sorted(liste), key=lambda a: a.route if a.dexnr != 0 else 999999)
+            return list(liste)
+        indexed = list(enumerate(liste))
+        if key == 'dexnr':
+            indexed.sort(key=lambda ip: (
+                999999 if ip[1].dexnr == 0 else (0 if ip[1].dexnr == 'egg' else 1),
+                0 if ip[1].dexnr in (0, 'egg') else ip[1].dexnr,
+                ip[0],
+            ))
+        elif key == 'lvl':
+            indexed.sort(key=lambda ip: (
+                999999 if ip[1].dexnr == 0 else -ip[1].lvl,
+                ip[0],
+            ))
+        elif key == 'route':
+            indexed.sort(key=lambda ip: (
+                999999 if ip[1].dexnr == 0 else ip[1].route,
+                ip[0],
+            ))
+        else:
+            return list(liste)
+        return [p for _, p in indexed]
 
     def change_order(self, *args):
         for team in self.sorted_teams:

@@ -307,22 +307,48 @@ local function append_badges(msg, state)
             badges = badges >> 7
             msg[#msg + 1] = badges & 0xFFFFFFFF
         elseif state.gameversion == 33 then
-            badges = memory.read_u32_le(badgepointer, state.domain) + 0x137C
-            badges = memory.read_u16_le(badges, state.domain)
-            badges = badges >> 7
-            msg[#msg + 1] = badges & 0xFFFFFFFF
+            local base = memory.read_u32_le(badgepointer, state.domain)
+            -- Guard: am Titelbildschirm ist der SaveBlock2-Pointer noch 0 → Deref
+            -- landet im BIOS-Bereich und crasht den GBA-Core.
+            if base >= 0x02000000 and base < 0x03000000 then
+                badges = memory.read_u16_le(base + 0x137C, state.domain)
+                badges = badges >> 7
+                msg[#msg + 1] = badges & 0xFFFFFFFF
+            else
+                msg[#msg + 1] = 0
+            end
         elseif state.gameversion > 33 then
-            badges = memory.read_u32_le(badgepointer, state.domain) + 0xFE4
-            badges = memory.readbyte(badges, state.domain)
-            msg[#msg + 1] = badges
+            local base = memory.read_u32_le(badgepointer, state.domain)
+            if base >= 0x02000000 and base < 0x03000000 then
+                msg[#msg + 1] = memory.readbyte(base + 0xFE4, state.domain)
+            else
+                msg[#msg + 1] = 0
+            end
         end
     end
     if state.gameversion > 40 and state.gameversion < 50 then
-        local badges = (memory.read_u32_le(badgepointer, state.domain) & 0xFFFFFF) + 0x20
-        badges = (memory.read_u32_le(badges, state.domain) & 0xFFFFFF) + badgeoffset
-        msg[#msg + 1] = memory.readbyte(badges, state.domain)
-        if state.gameversion > 43 then
-            msg[#msg + 1] = memory.readbyte(badges + 0x5, state.domain)
+        local base1 = memory.read_u32_le(badgepointer, state.domain) & 0xFFFFFF
+        -- Guard: uninitialisierter Storage-Pointer würde den zweiten Deref auf
+        -- eine BIOS-nahe Adresse zeigen lassen; DS-Core reagiert darauf teils
+        -- mit Freeze.
+        if base1 >= 0x02000000 then
+            local base2 = (memory.read_u32_le(base1 + 0x20, state.domain) & 0xFFFFFF) + badgeoffset
+            if base2 >= 0x02000000 then
+                msg[#msg + 1] = memory.readbyte(base2, state.domain)
+                if state.gameversion > 43 then
+                    msg[#msg + 1] = memory.readbyte(base2 + 0x5, state.domain)
+                end
+            else
+                msg[#msg + 1] = 0
+                if state.gameversion > 43 then
+                    msg[#msg + 1] = 0
+                end
+            end
+        else
+            msg[#msg + 1] = 0
+            if state.gameversion > 43 then
+                msg[#msg + 1] = 0
+            end
         end
     end
     if state.gameversion > 50 then

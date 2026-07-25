@@ -250,6 +250,9 @@ class Bizhawk:
                         asyncio.create_task(
                             self._refresh_map_header(client_id, edition)
                         )
+                        # Echo an Lua, sonst haengt socketServerResponse() —
+                        # ohne Response kein frameadvance und BizHawk friert ein.
+                        await self.send_messages(writer, data)
                     elif counter % 60 == 3 and in_battle and edition > 50:
                         await self.send_messages(writer, "stat_aktualisieren")
                         data = (await self.receive_messages(reader)).decode()
@@ -447,6 +450,17 @@ class Bizhawk:
                     f"*0x{indirect_addr:08X}=0x{deref:08X} +0x{indirect_offset:X} "
                     f"-> Box-Basis 0x{effective_base:08X}"
                 )
+                # Guard analog zu read_bag_pockets: am Titelbildschirm ist der
+                # Storage-Pointer noch 0 oder Garbage. Ohne Guard queuen wir 14
+                # Box-Reads mit Adresse ~0x0, Lua liest aus dem BIOS-Bereich und
+                # BizHawk friert ein.
+                if deref < 0x02000000:
+                    self.logger.debug(
+                        f"Indirekter Box-Pointer 0x{deref:08X} ausserhalb RAM "
+                        f"(edition={edition}) — Save vermutlich noch nicht geladen, "
+                        f"ueberspringe Box-Refresh."
+                    )
+                    return []
             else:
                 effective_base = box_pointer
             slot_size = pokedecoder.box_slot_size(edition)
@@ -1367,7 +1381,7 @@ class Bizhawk:
         # nicht ewig hängt, wenn der Emulator während der Abfrage wegbricht.
         queue = self.box_request_queues.pop(client_id, None)
         if queue:
-            for _, _, _, fut in queue:
+            for _, _, _, fut, _ in queue:
                 if not fut.done():
                     fut.set_exception(ConnectionError(f"Emulator {client_id} disconnected"))
         self.edition_per_client.pop(client_id, None)

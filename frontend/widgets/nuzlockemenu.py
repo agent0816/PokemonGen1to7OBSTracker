@@ -257,12 +257,14 @@ class NuzlockeMenu(Screen):
         show_team = (MODE_LABEL_TO_VALUE.get(value, value) == "versus")
         for row in self._owner_rows:
             row.set_team_visible(show_team)
+        self._auto_push_config()
 
     def _mode_value(self) -> str:
         return MODE_LABEL_TO_VALUE.get(self.mode_spinner.text, "nuzlocke")
 
     def _on_player_count_changed(self, spinner, value):
         self._rebuild_owner_rows()
+        self._auto_push_config()
 
     def _collect_config(self) -> dict:
         owners = [r.owner for r in self._owner_rows if r.owner]
@@ -294,6 +296,19 @@ class NuzlockeMenu(Screen):
             logger.error(f"send_soullink_config failed: {type(err)},{err}")
             logger.error(f"{traceback.format_exc()}")
             self.status_label.text = f"Fehler: {err}"
+
+    def _auto_push_config(self):
+        """Auto-Push nach struktureller Aenderung (Preset/Mode/Count/Save).
+        Silent-No-Op wenn Munchlax nicht connected — send_soullink_config
+        returned dann eh sofort. Owner-Text-Aenderungen loesen KEIN Auto-Push
+        (waere pro Tastendruck) — der 'Config an Server senden'-Button bleibt
+        dafuer."""
+        if not getattr(self.munchlax, "is_connected", False):
+            return
+        try:
+            self._send_config()
+        except Exception as err:
+            logger.warning(f"auto-push config failed: {err}")
 
     def _load_from_nuz(self):
         mode_value = normalize_mode(self.nuz.get("soullink_mode"))
@@ -503,6 +518,7 @@ class NuzlockeMenu(Screen):
         apply_preset(self.nuz, preset)
         self._load_from_nuz()
         self.status_label.text = f"Preset '{preset.get('label', pid)}' angewendet (noch nicht gespeichert)"
+        self._auto_push_config()
 
     def _save_to_nuz(self):
         cfg = self._collect_config()
@@ -518,3 +534,7 @@ class NuzlockeMenu(Screen):
         except Exception as err:
             logger.error(f"nuzlocke.yml speichern failed: {type(err)},{err}")
             self.status_label.text = f"Speichern-Fehler: {err}"
+        # Nach Save auch pushen — Owner-Texte sind persistiert, Server bekommt
+        # sauberen Snapshot inkl. moeglicher Owner-Aenderungen die _on_mode/
+        # _on_player_count nicht mitgekriegt haben (die pushen ohne Owner-Save).
+        self._auto_push_config()

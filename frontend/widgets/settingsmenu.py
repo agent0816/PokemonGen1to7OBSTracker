@@ -1,5 +1,6 @@
 import asyncio
 import os
+import socket
 import weakref
 from kivy.core.clipboard import Clipboard
 from kivy.uix.boxlayout import BoxLayout
@@ -283,7 +284,7 @@ class ScrollSettings(ScrollView):
         layout_grid.add_widget(Label(text="Badge-Layout", size_hint_x=.2))
         badge_layout_spinner = Spinner(
             text=self.ov.get('badge_layout', 'horizontal'),
-            values=('horizontal', 'vertical', '2x4', '4x2', '4x4'),
+            values=('horizontal', 'vertical', '2x4', '4x2', '4x4', '2x4-center', '4x2-center', '4x4-center'),
             size_hint_x=.3,
         )
         badge_layout_spinner.bind(text=lambda inst, val: self._on_layout_changed(val))
@@ -645,6 +646,12 @@ class ScrollSettings(ScrollView):
                 self.obs_sprites_ausklappen(ausklappbutton_obs, float_box)
 
         self.obs_ausklapp_button_zeigen_oder_verstecken(instance)
+
+        # Overlay-Links neu bauen, damit LAN-Buttons synchron zum Checkbox-State
+        # ein-/ausgeblendet werden. Nur wenn Overlay-Grid schon existiert (nach
+        # initialem UI-Aufbau) — sonst haengt der Rebuild vor dem Erstbuild.
+        if "overlay_link_grid" in self.ids:
+            self._update_overlay_links()
 
         if not initializing:
             self.save_changes()
@@ -1160,21 +1167,46 @@ class ScrollSettings(ScrollView):
         container.bind(minimum_height=container.setter('height'))
         self.ids["overlay_link_grid"] = weakref.proxy(container)
 
+        # Zwei Host-Varianten fuer Copy-Buttons: localhost fuer Single-PC-Setup,
+        # LAN-IP fuer Zwei-PC-Streaming (OBS auf Streaming-PC laedt Overlay vom
+        # Game-PC). LAN-IP-Buttons nur wenn "Streamsetup mit zwei PCs"-Checkbox
+        # aktiv ist — Checkbox-State direkt lesen statt sp['obs_2_pc'], damit
+        # Toggle sofort greift ohne Zwischen-Save.
+        two_pc = False
+        if "obs_sprites_check" in self.ids:
+            two_pc = self.ids.obs_sprites_check.state == 'down'
+        else:
+            two_pc = bool(self.sp.get('obs_2_pc'))
+        hosts: list[tuple[str, str]] = [("Lokal", "localhost")]
+        lan_ip = ""
+        if two_pc:
+            lan_ip = self._detect_lan_ip()
+            if lan_ip and lan_ip != "localhost":
+                hosts.append(("LAN", lan_ip))
+        if two_pc:
+            if lan_ip:
+                hint_text = f"LAN-IP: {lan_ip} — 'LAN'-Buttons fuer OBS auf Streaming-PC im gleichen Netz."
+            else:
+                hint_text = "LAN-IP nicht ermittelbar."
+        else:
+            hint_text = "Fuer Zwei-PC-Setup: Checkbox 'Streamsetup mit zwei PCs' bei Sprite-Pfaden aktivieren."
+        container.add_widget(Label(text=hint_text, size_hint_y=None, height="30dp"))
+
         player_grid = GridLayout(cols=1, size_hint_y=None, spacing="10dp")
         player_grid.bind(minimum_height=player_grid.setter('height'))
 
         team_layout_param = f"?layout={layout}" if layout != 'horizontal' else ""
         badge_layout_param = f"?layout={badge_layout}" if badge_layout != 'horizontal' else ""
         for p in range(1, player_count + 1):
-            team_url = f"http://localhost:{port}/player/{p}{team_layout_param}"
-            badge_url = f"http://localhost:{port}/player/{p}/badges{badge_layout_param}"
-
             player_cell = BoxLayout(orientation='horizontal', size_hint_y=None, height="40dp", spacing="10dp")
-            player_cell.add_widget(Label(text=f"Spieler {p}", size_hint_x=.3))
-            player_cell.add_widget(Button(text="Pokemon", size_hint_x=.35,
-                on_press=lambda inst, url=team_url: self._copy_overlay_url(url)))
-            player_cell.add_widget(Button(text="Badges", size_hint_x=.35,
-                on_press=lambda inst, url=badge_url: self._copy_overlay_url(url)))
+            player_cell.add_widget(Label(text=f"Spieler {p}", size_hint_x=.2))
+            for host_label, host in hosts:
+                team_url = f"http://{host}:{port}/player/{p}{team_layout_param}"
+                badge_url = f"http://{host}:{port}/player/{p}/badges{badge_layout_param}"
+                player_cell.add_widget(Button(text=f"Pokemon ({host_label})", size_hint_x=.4 / len(hosts),
+                    on_press=lambda inst, url=team_url: self._copy_overlay_url(url)))
+                player_cell.add_widget(Button(text=f"Badges ({host_label})", size_hint_x=.4 / len(hosts),
+                    on_press=lambda inst, url=badge_url: self._copy_overlay_url(url)))
             player_grid.add_widget(player_cell)
 
         container.add_widget(player_grid)
@@ -1189,16 +1221,29 @@ class ScrollSettings(ScrollView):
             team_grid = GridLayout(cols=1, size_hint_y=None, spacing="10dp")
             team_grid.bind(minimum_height=team_grid.setter('height'))
             for team_id, team_label in team_ids:
-                team_badge_url = f"http://localhost:{port}/team/{team_id}/badges{badge_layout_param}"
                 team_cell = BoxLayout(orientation='horizontal', size_hint_y=None, height="40dp", spacing="10dp")
-                team_cell.add_widget(Label(text=team_label, size_hint_x=.3))
-                team_cell.add_widget(Label(text="", size_hint_x=.35))
-                team_cell.add_widget(Button(text="Team-Badges", size_hint_x=.35,
-                    on_press=lambda inst, url=team_badge_url: self._copy_overlay_url(url)))
+                team_cell.add_widget(Label(text=team_label, size_hint_x=.2))
+                for host_label, host in hosts:
+                    team_badge_url = f"http://{host}:{port}/team/{team_id}/badges{badge_layout_param}"
+                    team_cell.add_widget(Button(text=f"Team-Badges ({host_label})", size_hint_x=.8 / len(hosts),
+                        on_press=lambda inst, url=team_badge_url: self._copy_overlay_url(url)))
                 team_grid.add_widget(team_cell)
             container.add_widget(team_grid)
 
         overlay_box.add_widget(container)
+
+    @staticmethod
+    def _detect_lan_ip() -> str:
+        """Ermittelt die outbound-LAN-IP ohne tatsaechlichen Netzwerkverkehr.
+        UDP-Socket-Connect wertet nur die Routing-Tabelle aus."""
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+        except Exception:
+            return ""
+        finally:
+            s.close()
 
     def _resolve_team_ids(self) -> list[tuple[str, str]]:
         """Liefert [(team_id_slug, label)] fuer den Team-Badge-URL-Bereich.

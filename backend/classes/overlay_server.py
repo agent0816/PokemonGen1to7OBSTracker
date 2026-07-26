@@ -638,7 +638,8 @@ class OverlayServer:
     async def _handle_badges_page(self, request: web.Request) -> web.Response:
         player_id = int(request.match_info['player_id'])
         badge_layout = request.query.get('layout', 'horizontal')
-        if badge_layout not in ('horizontal', 'vertical', '2x4', '4x2', '4x4'):
+        if badge_layout not in ('horizontal', 'vertical', '2x4', '4x2', '4x4',
+                                '2x4-center', '4x2-center', '4x4-center'):
             badge_layout = 'horizontal'
         html = self._render_badges_html(player_id, badge_layout)
         return web.Response(text=html, content_type='text/html')
@@ -646,7 +647,8 @@ class OverlayServer:
     async def _handle_team_badges_page(self, request: web.Request) -> web.Response:
         team_id = slug_team_id(request.match_info['team_id'])
         badge_layout = request.query.get('layout', 'horizontal')
-        if badge_layout not in ('horizontal', 'vertical', '2x4', '4x2', '4x4'):
+        if badge_layout not in ('horizontal', 'vertical', '2x4', '4x2', '4x4',
+                                '2x4-center', '4x2-center', '4x4-center'):
             badge_layout = 'horizontal'
         html = self._render_team_badges_html(team_id, badge_layout)
         return web.Response(text=html, content_type='text/html')
@@ -1295,12 +1297,18 @@ body {{ background: transparent; font-family: 'Segoe UI', Arial, sans-serif; ove
 #badges {{ gap: 4px; padding: 4px; }}
 #badges.layout-horizontal {{ display: flex; align-items: center; flex-wrap: wrap; }}
 #badges.layout-vertical {{ display: flex; flex-direction: column; align-items: center; }}
-#badges.layout-2x4 {{ display: grid; grid-template-columns: repeat(2, auto); justify-items: center; }}
-#badges.layout-4x2 {{ display: grid; grid-template-columns: repeat(4, auto); justify-items: center; }}
+#badges.layout-2x4 {{ display: grid; grid-template-columns: repeat(2, auto); justify-content: start; }}
+#badges.layout-4x2 {{ display: grid; grid-template-columns: repeat(4, auto); justify-content: start; }}
 /* 4x4 == visuell identisch mit 4x2 (repeat(4,auto) legt Zeilen aus Item-Anzahl fest).
    Als eigener Layout-Name gefuehrt, damit Streamer explizit den Johto-16-Orden-Case
    wählen können statt sich auf implizites Row-Overflow bei 4x2 zu verlassen. */
-#badges.layout-4x4 {{ display: grid; grid-template-columns: repeat(4, auto); justify-items: center; }}
+#badges.layout-4x4 {{ display: grid; grid-template-columns: repeat(4, auto); justify-content: start; }}
+/* *-center: gleiche Grid-Struktur, aber Badges gleichmaessig ueber die Overlay-Breite
+   verteilt (1fr-Tracks + justify-items:center). Streamer skaliert die Browser-Source
+   in OBS auf die gewuenschte Breite, dann sitzen die Orden zentriert in ihren Zellen. */
+#badges.layout-2x4-center {{ display: grid; grid-template-columns: repeat(2, 1fr); justify-items: center; }}
+#badges.layout-4x2-center {{ display: grid; grid-template-columns: repeat(4, 1fr); justify-items: center; }}
+#badges.layout-4x4-center {{ display: grid; grid-template-columns: repeat(4, 1fr); justify-items: center; }}
 .badge {{ width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }}
 </style>
 </head>
@@ -1353,11 +1361,16 @@ body {{ background: transparent; font-family: 'Segoe UI', Arial, sans-serif; ove
 .badges-row {{ gap: 4px; }}
 .badges-row.layout-horizontal {{ display: flex; align-items: center; flex-wrap: wrap; }}
 .badges-row.layout-vertical {{ display: flex; flex-direction: column; align-items: center; }}
-.badges-row.layout-2x4 {{ display: grid; grid-template-columns: repeat(2, auto); justify-items: center; }}
-.badges-row.layout-4x2 {{ display: grid; grid-template-columns: repeat(4, auto); justify-items: center; }}
+.badges-row.layout-2x4 {{ display: grid; grid-template-columns: repeat(2, auto); justify-content: start; }}
+.badges-row.layout-4x2 {{ display: grid; grid-template-columns: repeat(4, auto); justify-content: start; }}
 /* 4x4 visuell identisch mit 4x2 (siehe Player-Renderer). Eigener Layout-Name als
    Johto-Alias, damit Streamer explizit den 16-Orden-Fall wählen können. */
-.badges-row.layout-4x4 {{ display: grid; grid-template-columns: repeat(4, auto); justify-items: center; }}
+.badges-row.layout-4x4 {{ display: grid; grid-template-columns: repeat(4, auto); justify-content: start; }}
+/* *-center: 1fr-Tracks verteilen Zellenbreite gleichmaessig ueber die Overlay-Breite,
+   justify-items:center zentriert das Badge in seiner Zelle. */
+.badges-row.layout-2x4-center {{ display: grid; grid-template-columns: repeat(2, 1fr); justify-items: center; }}
+.badges-row.layout-4x2-center {{ display: grid; grid-template-columns: repeat(4, 1fr); justify-items: center; }}
+.badges-row.layout-4x4-center {{ display: grid; grid-template-columns: repeat(4, 1fr); justify-items: center; }}
 .badge {{ width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }}
 </style>
 </head>

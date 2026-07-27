@@ -74,12 +74,14 @@ STATUS_COLORS = {
 }
 
 STATUS_TEXT = {
-    "caught":    "✓ gefangen",
-    "obtained":  "✓ erhalten",
-    "not_caught": "✗ verpasst",
-    "unknown":   "⏳ offen",
-    "dupes":     "↷ dupe",
-    "open":      "— offen",
+    # ASCII-Symbole statt Unicode-Glyphs: Kivy-Default-Font (Roboto) hat kein
+    # Glyph fuer ✓✗⏳↷— und rendert Ersatz-Kaestchen.
+    "caught":    "[+] gefangen",
+    "obtained":  "[+] erhalten",
+    "not_caught": "[x] verpasst",
+    "unknown":   "[?] offen",
+    "dupes":     "[/] dupe",
+    "open":      "[-] offen",
 }
 
 
@@ -91,6 +93,10 @@ def _species_name(dexnr) -> str:
 
 
 def _location_name(route_id: int, edition: int = 0) -> str:
+    # STARTER_ROUTE (-1) ist der virtuelle Slot fuer den Starter — Label
+    # ohne "Route "-Prefix, damit er im Encounter-Menue klar erkennbar ist.
+    if route_id == -1:
+        return "Starter"
     gen = _edition_to_gen(edition)
     locs = _ENCOUNTER_LOCATIONS.get(gen, {})
     loc = locs.get(route_id)
@@ -140,9 +146,13 @@ class EncounterMenu(Screen):
         filter_bar = BoxLayout(orientation="horizontal", size_hint_y=None, height="40dp", spacing="10dp")
 
         filter_bar.add_widget(Label(text="Spieler:", size_hint_x=0.07))
-        player_values = ["alle"] + [str(i) for i in range(1, max(1, self.pl.get("player_count", 1)) + 1)]
-        self.player_spinner = Spinner(text="1", values=player_values, size_hint_x=0.08)
-        self.player_spinner.bind(text=lambda _i, _v: self._reload())
+        # Values sind Owner-Composite-Keys (PokedexDB.build_owner-Format
+        # "{your_name}_{client_id}") — reine Player-Nummern ("1", "2") matchten
+        # nichts, weil die DB-Spalte owner den Composite speichert. Default
+        # "alle" analog zu bagmenu, damit Erstsicht keinen Filter mitzieht.
+        # Values-Update kommt aus _update_player_spinner nach _load_from_db.
+        self.player_spinner = Spinner(text="alle", values=["alle"], size_hint_x=0.12)
+        self.player_spinner.bind(text=lambda _i, _v: self._apply_filters())
         filter_bar.add_widget(self.player_spinner)
 
         filter_bar.add_widget(Label(text="Edition:", size_hint_x=0.07))
@@ -190,9 +200,13 @@ class EncounterMenu(Screen):
     def _reload(self):
         self._encounters = self._load_from_db()
         self._update_edition_spinner()
+        self._update_player_spinner()
         self._apply_filters()
 
     def _load_from_db(self) -> list[dict]:
+        # DB-Load lädt IMMER alle Encounters — Player-Filter greift jetzt in
+        # _apply_filters gegen die Owner-Composite-Werte. Sonst brauchten wir
+        # bei jedem Spinner-Wechsel einen frischen DB-Round-Trip.
         if self.configsave is None:
             return []
         session_path = Path(str(self.configsave))
@@ -201,21 +215,30 @@ class EncounterMenu(Screen):
             db.connect()
             if db.connection is None:
                 return []
-            player_filter = (self.player_spinner.text or "alle").strip()
-            if player_filter == "alle":
-                cursor = db.connection.cursor()
-                cursor.execute(
-                    "SELECT * FROM encounters ORDER BY route, timestamp"
-                )
-                return [dict(row) for row in cursor.fetchall()]
-            else:
-                return db.get_encounters(owner=player_filter)
+            cursor = db.connection.cursor()
+            cursor.execute(
+                "SELECT * FROM encounters ORDER BY route, timestamp"
+            )
+            return [dict(row) for row in cursor.fetchall()]
         except Exception as err:
             logger.error(f"EncounterMenu DB-Load failed: {type(err)},{err}")
             logger.error(f"{traceback.format_exc()}")
             return []
         finally:
             db.close()
+
+    def _update_player_spinner(self):
+        """Baut Spinner-Values aus distincten Owner-Composite-Keys der aktuell
+        geladenen Encounters. 'alle' bleibt immer erste Option."""
+        owners: set[str] = set()
+        for enc in self._encounters:
+            o = str(enc.get("owner", "") or "").strip()
+            if o:
+                owners.add(o)
+        values = ["alle"] + sorted(owners)
+        self.player_spinner.values = values
+        if self.player_spinner.text not in values:
+            self.player_spinner.text = "alle"
 
     def _update_edition_spinner(self):
         editions: set[int] = set()
@@ -243,10 +266,14 @@ class EncounterMenu(Screen):
 
     def _apply_filters(self):
         edition_filter = self._parse_edition_filter()
+        player_filter = (self.player_spinner.text or "alle").strip()
         query = (self.search_input.text or "").strip().lower()
 
         encountered_routes: dict[int, list[dict]] = {}
         for enc in self._encounters:
+            if player_filter != "alle":
+                if str(enc.get("owner", "") or "") != player_filter:
+                    continue
             if edition_filter is not None:
                 try:
                     if int(enc.get("edition", 0)) != edition_filter:
@@ -363,7 +390,7 @@ class EncounterMenu(Screen):
             text=str(row["lvl"]) if row["lvl"] else "", size_hint_x=COLUMNS[3][1],
         ))
         row_layout.add_widget(Label(
-            text="★" if row["shiny"] else "", size_hint_x=COLUMNS[4][1],
+            text="*" if row["shiny"] else "", size_hint_x=COLUMNS[4][1],
         ))
         row_layout.add_widget(Label(
             text=row["method"], size_hint_x=COLUMNS[5][1],

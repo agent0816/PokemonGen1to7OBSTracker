@@ -8,6 +8,12 @@ import yaml
 
 from backend.logging_setup import get_logger
 
+# Sentinel-Route fuer virtuellen Starter-Encounter. DB schema hat route als
+# INTEGER NOT NULL — daher keine String-Route moeglich ohne Migration. -1
+# kollidiert nicht mit echten Routen (>=0). UI/Overlay muss diese Route auf
+# Label "Starter" mappen.
+STARTER_ROUTE = -1
+
 
 @dataclass
 class EncounterResult:
@@ -399,6 +405,55 @@ class EncounterTracker:
             is_dupes_skip=is_dupes_skip,
             has_balls=has_balls, already_logged=already_logged,
             token_earned=token_earned,
+        )
+
+    def process_starter_encounter(self, owner: str, edition: int,
+                                    personality: int, dexnr: int, lvl: int,
+                                    shiny: bool) -> EncounterResult | None:
+        """Loggt Starter als virtuellen Encounter mit route=STARTER_ROUTE (-1).
+
+        Nur einbuchen wenn owner+edition noch KEINEN Encounter hat — sonst
+        wuerde bei jedem Team-Reset ein zweiter Starter dazukommen. Die
+        Nuzlocke-Regeln (rule_run_start_on_ball, Dupes-Clause etc.) werden
+        hier bewusst NICHT durchlaufen: der Starter geht dem ersten Ball
+        immer voraus und muss zaehlen, damit die Encounter-Kette vollstaendig
+        ist. is_first=True, has_balls wird trotzdem ausgelesen (Statistik).
+        """
+        try:
+            with self.pokedex_db.access_lock:
+                if self.pokedex_db.has_any_encounter(owner, edition):
+                    return None
+                has_balls = self.pokedex_db.has_catching_balls(owner, edition)
+                inserted = self.pokedex_db.insert_encounter(
+                    personality=personality,
+                    owner=owner,
+                    edition=edition,
+                    route=STARTER_ROUTE,
+                    dexnr=dexnr,
+                    lvl=lvl,
+                    shiny=shiny,
+                    is_first=True,
+                    is_shiny_override=False,
+                    is_dupes_skip=False,
+                    has_balls=has_balls,
+                    method="starter",
+                    outcome="obtained",
+                )
+                if not inserted:
+                    return None
+        except Exception as err:
+            self.logger.error(f"process_starter_encounter fehlgeschlagen: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return None
+
+        self.logger.info(
+            f"Starter-Encounter: dex={dexnr} lv={lvl} owner={owner} edition={edition}"
+        )
+        return EncounterResult(
+            dexnr=dexnr, lvl=lvl, shiny=shiny, route=STARTER_ROUTE,
+            method="starter", outcome="obtained",
+            is_first=True, is_shiny_override=False, is_dupes_skip=False,
+            has_balls=has_balls, already_logged=False, token_earned=False,
         )
 
     def update_outcome(self, personality: int, owner: str, outcome: str) -> bool:

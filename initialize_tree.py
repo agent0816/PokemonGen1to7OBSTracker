@@ -125,7 +125,7 @@ def update_session(sessionpath, default=False):
             load_config(sprites, sp, new_path=new_sprites)
     player = Path(f'{sessionpath}/player.yml')
     pl = {
-        "obs_1":True,
+        "obs_1":False,
         "obs_2":False,
         "obs_3":False,
         "obs_4":False,
@@ -268,6 +268,11 @@ def update_session(sessionpath, default=False):
         "soullink_link_strategy": "full_chain",
         "soullink_team_membership": {},
         "soullink_expected_owners": [],
+        # Zuletzt im Preset-Spinner gewaehlte ID. Wird beim Session-Wechsel /
+        # App-Start ausgelesen damit der Spinner den vorherigen Zustand zeigt.
+        # Kein Auto-Apply — apply_preset laeuft nur wenn User "Preset anwenden"
+        # klickt oder beim Session-Wechsel via _load_from_nuz die UI neu befuellt.
+        "soullink_preset_id": "",
         "soullink_death_sync": True,
         "soullink_box_sync": True,
         # Regeln (aus echten Regelwerken, alle als Checkbox konfigurierbar)

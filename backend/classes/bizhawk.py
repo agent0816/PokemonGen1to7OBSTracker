@@ -233,16 +233,23 @@ class Bizhawk:
                         await self.send_messages(writer, "team")
                         msg = await reader.read(length)
                         update_teams(msg)
-                    elif counter % 60 == 2 and not in_battle:
+                    elif counter % 60 == 2:
+                        # Immer pollen (auch waehrend in_battle=True), sonst
+                        # bleibt Gen <=4 nach erstem True fuer immer stuck —
+                        # kein weiterer Poll, kein Outcome-Check, kein neuer
+                        # Encounter-Trigger. Kanten-Detection ueber prev/new.
+                        prev_in_battle = in_battle
                         await self.send_messages(writer, "in_battle")
                         data = (await self.receive_messages(reader)).decode()
                         in_battle = data == "true"
-                        if in_battle and not self._encounter_inflight.get(client_id):
+                        if (in_battle and not prev_in_battle
+                                and not self._encounter_inflight.get(client_id)):
                             self._encounter_inflight[client_id] = True
                             asyncio.create_task(
                                 self._read_encounter_data(client_id, player, edition)
                             )
-                        elif not in_battle and self._last_battle_pv.get(client_id) is not None:
+                        elif (not in_battle and prev_in_battle
+                                and self._last_battle_pv.get(client_id) is not None):
                             asyncio.create_task(
                                 self._check_encounter_outcome(client_id, player, edition)
                             )
@@ -256,7 +263,9 @@ class Bizhawk:
                     elif counter % 60 == 3 and in_battle and edition > 50:
                         await self.send_messages(writer, "stat_aktualisieren")
                         data = (await self.receive_messages(reader)).decode()
-                        in_battle = False
+                        # in_battle NICHT resetten: der %60==2-Poll ist jetzt
+                        # authoritative. Sonst kaeme naechster Poll edge False->True
+                        # und wuerde _read_encounter_data ein zweites Mal starten.
                         update_stats(data)
                     elif counter % 300 == 30:
                         # Periodischer Bag-Refresh: alle 5 s einen async Task
@@ -1033,7 +1042,24 @@ class Bizhawk:
                                                pokemons, new_pvs: list[int]):
         battle_pv = self._last_battle_pv.get(client_id)
         non_battle_pvs = [pv for pv in new_pvs if pv != battle_pv]
-        if not non_battle_pvs or self.encounter_tracker is None:
+        if not non_battle_pvs:
+            return
+
+        # EncounterTracker lazy initialisieren — bisher nur in _read_encounter_data,
+        # das aber nur bei Wild-Kaempfen laeuft. Ohne vorherigen Wild-Kampf war
+        # der Tracker None und Starter/Gift-Encounter wurden komplett verworfen.
+        if self.encounter_tracker is None:
+            self.munchlax._ensure_pokedex_db()
+            if self.munchlax.pokedex_db is not None:
+                self.encounter_tracker = EncounterTracker(
+                    self.munchlax.pokedex_db,
+                    self.munchlax.nuz,
+                    munchlax=self.munchlax,
+                )
+        if self.encounter_tracker is None:
+            self.logger.warning(
+                "PokedexDB nicht verfuegbar, Starter/Gift-Encounter uebersprungen"
+            )
             return
 
         map_header = self._last_map_header.get(client_id, 0)
@@ -1044,6 +1070,63 @@ class Bizhawk:
         )
 
         loop = asyncio.get_event_loop()
+
+        # Starter-Detection: erster Encounter fuer owner+edition ist der
+        # Starter. Wird VOR der Gift-Encounter-Schleife gecheckt, damit ein
+        # Gift-YAML-Match ihn nicht ueberlaeuft. process_starter_encounter ist
+        # idempotent (has_any_encounter-Guard), also mehrfache Aufrufe pro
+        # Session sind sicher.
+        try:
+            has_any = await loop.run_in_executor(
+                None, self.encounter_tracker.pokedex_db.has_any_encounter,
+                owner, int(edition)
+            )
+        except Exception as err:
+            self.logger.warning(f"Starter-Detection has_any_encounter failed: {err}")
+            has_any = True  # bei Fehler NICHT als Starter behandeln
+        if not has_any:
+            first_pv = non_battle_pvs[0]
+            first_pokemon = None
+            for p in pokemons[:6]:
+                if getattr(p, "personality", None) is not None and int(p.personality) == first_pv:
+                    first_pokemon = p
+                    break
+            if first_pokemon is not None:
+                dex = first_pokemon.dexnr
+                if dex and dex != "egg" and str(dex).isdigit() and int(dex) != 0:
+                    try:
+                        starter_result = await loop.run_in_executor(
+                            None,
+                            lambda pv=first_pv, pk=first_pokemon, dx=dex: self.encounter_tracker.process_starter_encounter(
+                                owner=owner,
+                                edition=int(edition),
+                                personality=pv,
+                                dexnr=int(dx),
+                                lvl=pk.lvl or 1,
+                                shiny=bool(pk.shiny),
+                            ),
+                        )
+                    except Exception as err:
+                        self.logger.error(f"process_starter_encounter async failed: {err}")
+                        self.logger.error(traceback.format_exc())
+                        starter_result = None
+                    if starter_result is not None and not starter_result.already_logged:
+                        asyncio.create_task(self.munchlax.send_encounter_sync({
+                            "personality": int(first_pv),
+                            "owner": owner,
+                            "edition": int(edition),
+                            "route": int(starter_result.route),
+                            "dexnr": int(starter_result.dexnr),
+                            "lvl": int(starter_result.lvl),
+                            "shiny": int(starter_result.shiny),
+                            "is_first": int(starter_result.is_first),
+                            "is_shiny_override": int(starter_result.is_shiny_override),
+                            "is_dupes_skip": int(starter_result.is_dupes_skip),
+                            "has_balls": int(starter_result.has_balls),
+                            "method": starter_result.method,
+                            "outcome": starter_result.outcome,
+                        }))
+
         for pv in non_battle_pvs:
             pokemon = None
             for p in pokemons[:6]:

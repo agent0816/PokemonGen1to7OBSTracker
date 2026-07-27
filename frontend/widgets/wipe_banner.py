@@ -80,6 +80,13 @@ class TotalWipeBanner(Popup):
             on_press=lambda *_: self._reset_run(),
         )
         btn_row.add_widget(self.reset_button)
+        # Test-/Notausgang: schliesst Popup ohne Aktion. Wipe-State bleibt
+        # bestehen, Popup kann bei naechstem Wipe-Signal wieder aufpoppen.
+        self.cancel_button = Button(
+            text="Abbrechen (nur Test — Wipe-State bleibt)",
+            on_press=lambda *_: self.dismiss(),
+        )
+        btn_row.add_widget(self.cancel_button)
         content.add_widget(btn_row)
 
         self.status_label = Label(text="", size_hint_y=None, height="30dp")

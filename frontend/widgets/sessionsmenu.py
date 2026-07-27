@@ -1,7 +1,11 @@
+import asyncio
+import shutil
+import traceback
 from pathlib import Path
 import pathvalidate
 import weakref
 import yaml
+from backend.logging_setup import get_logger
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.floatlayout import FloatLayout
@@ -15,6 +19,8 @@ from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.togglebutton import ToggleButton
+
+logger = get_logger(__name__, 'logs/frontend.log')
 
 class DeleteSessionPopup(Popup):
     def __init__(self, session_menu, session_name, **kwargs):
@@ -39,21 +45,59 @@ class DeleteSessionPopup(Popup):
         self.content = layout
 
     def on_yes(self, instance):
-        self.session_menu.session_list_names.remove(self.session_name)
-        self.session_menu.session_list_box.update_session_box()
-
         directory_to_delete = self.session_menu.configsave.text.replace("default", self.session_name).replace(" ", "_")
-
         path_to_delete = Path(directory_to_delete)
 
+        # rmtree in Executor: Sessions mit grosser runs/-Historie (ROMs,
+        # Snapshots) koennten die UI sonst mehrere Sekunden einfrieren.
+        # UI-Update (Liste + Session-Box) erst NACH erfolgreichem Loeschen,
+        # sonst verschwindet die Session bei Fehler stumm aus der UI.
         if path_to_delete.exists():
-            for entry in path_to_delete.iterdir():
-                if entry.is_file():
-                    entry.unlink()
-
-            path_to_delete.rmdir()
+            asyncio.create_task(self._rmtree_async(path_to_delete))
+        else:
+            self._finalize_removal_ui()
 
         self.dismiss()
+
+    def _finalize_removal_ui(self):
+        try:
+            self.session_menu.session_list_names.remove(self.session_name)
+        except ValueError:
+            pass
+        self.session_menu.session_list_box.update_session_box()
+
+    async def _rmtree_async(self, path_to_delete: Path):
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, shutil.rmtree, str(path_to_delete))
+        except Exception as err:
+            logger.error(f"Session-Ordner '{path_to_delete}' konnte nicht gelöscht werden: {err}")
+            logger.error(traceback.format_exc())
+            self._show_delete_error_popup(path_to_delete, err)
+            return
+        self._finalize_removal_ui()
+
+    def _show_delete_error_popup(self, path: Path, err: Exception):
+        try:
+            layout = BoxLayout(orientation="vertical", padding="10dp", spacing="10dp")
+            layout.add_widget(Label(
+                text=(
+                    f"Session '{self.session_name}' konnte nicht geloescht werden.\n\n"
+                    f"Pfad: {path}\n"
+                    f"Fehler: {err}\n\n"
+                    "Session bleibt in der Liste — Datei evtl. gesperrt (Antivirus, "
+                    "offene ROM/DB). Bitte Prozesse schliessen und erneut versuchen."
+                ),
+            ))
+            btn = Button(text="OK", size_hint_y=None, height="40dp")
+            popup = Popup(title="Loeschen fehlgeschlagen", content=layout,
+                          size_hint=(0.7, 0.5))
+            btn.bind(on_press=popup.dismiss)
+            layout.add_widget(btn)
+            popup.open()
+        except Exception as popup_err:
+            logger.error(f"Fehler-Popup konnte nicht angezeigt werden: {popup_err}")
+            logger.error(traceback.format_exc())
 
 class CreateSessionPopup(Popup):
     def __init__(self, sessionmenu, **kwargs):
@@ -522,6 +566,16 @@ class SessionMenu(Screen):
                 self.main_menu.create_pokemon_frame()
                 self.main_menu.update_munchlax_connection_circle()
                 self.main_menu.init_config()
+                # NuzlockeMenu-UI aus frisch geladenem nuz-Dict befuellen —
+                # sonst zeigt der Screen beim naechsten Oeffnen noch Werte der
+                # vorherigen Session (Mode/PlayerCount/Owners/Preset-Spinner).
+                # nuz wurde in load_session_config bereits in-place aktualisiert.
+                try:
+                    nuz_screen = self.manager.get_screen("NuzlockeMenu")
+                    nuz_screen._load_from_nuz()
+                except Exception as err:
+                    logger.error(f"NuzlockeMenu-Reload nach Session-Wechsel fehlgeschlagen: {err}")
+                    logger.error(traceback.format_exc())
                 self.manager.current = "MainMenu"
 
     def load_session_config(self, default=False):

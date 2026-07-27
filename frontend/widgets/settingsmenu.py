@@ -2,10 +2,15 @@ import asyncio
 import os
 import socket
 import weakref
+from kivy.animation import Animation
+from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
+from kivy.core.window import Window
+from kivy.graphics import Color, RoundedRectangle
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
@@ -20,11 +25,52 @@ from backend.sprite_repo import clone_sprite_repo, pull_sprite_repo, is_sprite_r
 from backend.team_id import slug_team_id
 from frontend.widgets.mainmenu import TrainerBox
 from frontend.widgets.sprite_setup_popup import SpriteSetupPopup
+from frontend.widgets.file_picker import pick_file, pick_directory
 import frontend.UIFactory as UI
-import tkinter.filedialog as fd
 from backend.logging_setup import get_logger, set_console_level, get_console_level
 
 logger = get_logger(__name__, 'logs/frontend.log')
+
+
+def _show_toast(text: str, duration: float = 1.5, fade: float = 0.4):
+    """Nicht-modaler Toast am unteren Fensterrand.
+
+    Statt Popup, das den User zum OK-Klick zwingt: Label mit dunklem Hintergrund
+    unten, faded nach ``duration`` Sekunden ueber ``fade`` weg und wird dann
+    aus dem Window entfernt. Reusable fuer weitere kurze Status-Meldungen.
+    """
+    try:
+        label = Label(
+            text=text,
+            size_hint=(None, None),
+            font_size='14sp',
+            color=(1, 1, 1, 1),
+            padding=("14dp", "8dp"),
+        )
+        # Groesse aus Textmass ableiten, mit Padding drum.
+        label.texture_update()
+        tw, th = label.texture_size
+        label.size = (tw + 28, th + 16)
+        label.pos = ((Window.width - label.width) / 2, 40)
+        # Abgerundetes Rechteck als Hintergrund via canvas.before. Material
+        # Green matched HP-Voll (trainerbox.py) — signalisiert Success.
+        with label.canvas.before:
+            Color(0.3, 0.69, 0.31, 0.92)
+            bg = RoundedRectangle(pos=label.pos, size=label.size, radius=[8])
+
+        def _sync_bg(_inst, _val):
+            bg.pos = label.pos
+            bg.size = label.size
+        label.bind(pos=_sync_bg, size=_sync_bg)
+        Window.add_widget(label)
+
+        def _fade_out(_dt):
+            anim = Animation(opacity=0, duration=fade)
+            anim.bind(on_complete=lambda *_: Window.remove_widget(label))
+            anim.start(label)
+        Clock.schedule_once(_fade_out, duration)
+    except Exception as err:
+        logger.warning(f"_show_toast fallback (kein Toast): {err}")
 
 class SettingsMenu(Screen):
     def __init__(self, arceus, bizhawk, munchlax, obs_websocket, overlay_server, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, app_version, **kwargs):
@@ -497,29 +543,33 @@ class ScrollSettings(ScrollView):
 
         box.add_widget(logging_box)
 
-        # --- Nuzlocke ---
-        nuzlocke_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing="20dp")
+        # --- Nuzlocke (Deep-Link ins Nuzlocke-Menue) ---
+        # Alte Legacy-Checkboxen (enabled/shiny_clause/... schrieben Keys, die
+        # Backend nicht mehr primaer liest — Config-Drift). Neue Regel-UI
+        # (rule_*) liegt komplett im NuzlockeMenu. Hier nur Deep-Link.
+        nuzlocke_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing="10dp")
         nuzlocke_box.bind(minimum_height=nuzlocke_box.setter('height'))
         self.ids["nuzlocke"] = weakref.proxy(nuzlocke_box)
 
         ueberschrift_nuzlocke = Label(text="Nuzlocke", size_hint=(1, None), size=(0, "20dp"), font_size="20sp")
         nuzlocke_box.add_widget(ueberschrift_nuzlocke)
 
-        nuzlocke_checks = [
-            ("nuz_enabled", "Nuzlocke aktiviert"),
-            ("nuz_shiny_clause", "Shiny-Clause"),
-            ("nuz_dupes_clause", "Dupes-Clause (inkl. Entwicklungen)"),
-            ("nuz_gifts_additional", "Geschenke sind zusätzlich"),
-            ("nuz_fossils_repeatable", "Fossile mehrfach einlösbar"),
-            ("nuz_static_separate", "Statische Encounters separat"),
-        ]
-        for check_id, label_text in nuzlocke_checks:
-            row = BoxLayout(orientation='horizontal', size_hint_y=None, size=(0, "30dp"), padding=("5dp", 0))
-            row.add_widget(Label(text=label_text, size_hint_x=.8))
-            cb = CheckBox(size_hint_x=.2)
-            self.ids[check_id] = weakref.proxy(cb)
-            row.add_widget(cb)
-            nuzlocke_box.add_widget(row)
+        nuz_hint = Label(
+            text=("Modus, Preset, Regeln (Total-Wipe-Neustart, Shiny-/Dupes-Clause, "
+                    "Token-Regel, Ersttyp-Clause etc.), Owner-Zuweisung, Snapshots und "
+                    "Timer werden im Nuzlocke-Menue konfiguriert."),
+            size_hint_y=None, height="60dp", halign="left", valign="top",
+        )
+        nuz_hint.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+        nuzlocke_box.add_widget(nuz_hint)
+
+        nuz_open_btn = Button(
+            text="Nuzlocke-Menue oeffnen",
+            size_hint=(None, None), size=("220dp", "40dp"),
+            pos_hint={"x": 0},
+            on_press=lambda inst: self._open_nuzlocke_menu(),
+        )
+        nuzlocke_box.add_widget(nuz_open_btn)
 
         box.add_widget(nuzlocke_box)
 
@@ -537,7 +587,7 @@ class ScrollSettings(ScrollView):
             UI.create_text_and_browse_button(game_sprites_box,self.ids,
                                     box_size_hint_y=None,
                                     label_text=text,
-                                    text_id_name=id, text_validate_function=None,
+                                    text_id_name=id, text_validate_function=self.save_changes,
                                     browse_function=self.browse)
         
         sprite_box.add_widget(game_sprites_box)
@@ -554,7 +604,7 @@ class ScrollSettings(ScrollView):
             UI.create_text_and_browse_button(obs_sprites_box,self.ids,
                                     box_size_hint_y=None,
                                     label_text=f"{text} OBS",
-                                    text_id_name=f"{id}_obs", text_validate_function=None,
+                                    text_id_name=f"{id}_obs", text_validate_function=self.save_changes,
                                     browse_function=self.browse)
         
         sprite_box.add_widget(obs_sprites_box)
@@ -565,6 +615,10 @@ class ScrollSettings(ScrollView):
             self.set_game_sprites(sprite_box)
             self.load_game_sprites_config()
         else:
+            # Vor dem Remove eingetippte Pfade sichern — ToggleButton hat
+            # state bereits auf 'normal' geschaltet, save_changes-Gate
+            # (games_ausklappen.state == 'down') greift also nicht mehr.
+            self._flush_game_sprites_to_sp()
             instance.text = ">"
             games = self.ids["game_sprites"]
             sprite_box.remove_widget(games)
@@ -575,9 +629,35 @@ class ScrollSettings(ScrollView):
             self.set_obs_sprites(obs_sprite_box)
             self.load_obs_sprites_config()
         else:
+            self._flush_obs_sprites_to_sp()
             instance.text = ">"
             games = self.ids["obs_sprites"]
             obs_sprite_box.remove_widget(games)
+
+    def _flush_game_sprites_to_sp(self):
+        """Liest aktuell sichtbare Spiel-Sprite-TextInputs und persistiert sie."""
+        try:
+            for _, game_id in self.games.items():
+                widget = self.ids.get(game_id)
+                if widget is None:
+                    continue
+                sp_key = game_id.split('_', 1)[1]
+                self.sp[sp_key] = widget.text
+            self.controller.save_sprites(self.sp)
+        except Exception as err:
+            logger.error(f"_flush_game_sprites_to_sp: {err}")
+
+    def _flush_obs_sprites_to_sp(self):
+        try:
+            for _, game_id in self.games.items():
+                widget = self.ids.get(f"{game_id}_obs")
+                if widget is None:
+                    continue
+                sp_key = game_id.split('_', 1)[1] + '_obs'
+                self.sp[sp_key] = widget.text
+            self.controller.save_sprites(self.sp)
+        except Exception as err:
+            logger.error(f"_flush_obs_sprites_to_sp: {err}")
 
     def ausklapp_button_zeigen_oder_verstecken(self, instance, initializing=False):
         ausklappbutton = self.ids["games_ausklappen"]
@@ -607,6 +687,10 @@ class ScrollSettings(ScrollView):
     def obs_2_pcs_setup(self, instance, initializing=False):
         float_box = self.ids["obs_sprites_box"]
         if (instance.state == 'down') or (self.sp['obs_2_pc'] and initializing):
+            # Vor Rebuild leeren, sonst stapeln sich Widgets bei erneutem
+            # load_config (z.B. Hauptmenue -> Standardeinstellungen zweimal).
+            for child in float_box.children.copy():
+                float_box.remove_widget(child)
 
             UI.create_text_and_browse_button(float_box,self.ids,
                                     box_id_name='common_obs_path_box', 
@@ -747,6 +831,19 @@ class ScrollSettings(ScrollView):
                 button.trigger_action(0)
                 button.state = 'normal'
                 button.disabled = was_disabled 
+
+    def _open_nuzlocke_menu(self):
+        """Wechselt auf den NuzlockeMenu-Screen. Vorher save_changes, damit
+        strukturelle Aenderungen aus dem Settings-Screen persistiert sind
+        bevor NuzlockeMenu sein _load_from_nuz macht."""
+        try:
+            self.save_changes()
+        except Exception as err:
+            logger.warning(f"_open_nuzlocke_menu: save_changes failed: {err}")
+        try:
+            self.settingsscreen.manager.current = "NuzlockeMenu"
+        except Exception as err:
+            logger.error(f"_open_nuzlocke_menu: switch to NuzlockeMenu failed: {err}")
 
     def open_randomizer_gui(self):
         from backend.controller.randomizer_controller import RandomizerController
@@ -921,10 +1018,13 @@ class ScrollSettings(ScrollView):
         self._refresh_run_history()
 
     def import_randomizer_log(self):
-        log_path = fd.askopenfilename(
+        pick_file(
+            on_select=self._process_randomizer_log,
+            filters=['*.log'],
             title="Randomizer-Log importieren",
-            filetypes=[("Log-Dateien", "*.log"), ("Alle Dateien", "*.*")]
         )
+
+    def _process_randomizer_log(self, log_path: str):
         if not log_path:
             return
         main_menu = self.settingsscreen.manager.get_screen("MainMenu")
@@ -978,9 +1078,14 @@ class ScrollSettings(ScrollView):
         popup.open()
 
     def create_obs_helper_package(self):
+        pick_directory(
+            on_select=self._build_obs_helper_package,
+            title="Zielordner für OBS-PC Paket wählen",
+        )
+
+    def _build_obs_helper_package(self, target: str):
         import shutil
         import yaml as _yaml
-        target = fd.askdirectory(title="Zielordner für OBS-PC Paket wählen")
         if not target:
             return
 
@@ -1073,11 +1178,9 @@ class ScrollSettings(ScrollView):
         popup.open()
 
     def browse(self, widget, modus):
-        if modus == 'file':
-            path = fd.askopenfilename()
-        else:
-            path = fd.askdirectory()
-        if path:
+        def _apply(path: str):
+            if not path:
+                return
             if self.ids["games_ausklappen"].state == 'down':
                 games = [self.ids[id] for text, id in self.games.items()]
                 common_path = self.sp['common_path']
@@ -1085,11 +1188,17 @@ class ScrollSettings(ScrollView):
                 games = [self.ids[f"{id}_obs"] for text, id in self.games.items()]
                 common_path = self.sp['common_obs_path']
             else:
-                games=[]
+                games = []
                 common_path = self.sp['common_path']
             stripped_path = path.replace(common_path, "", 1) if widget in games else path
             widget.text = stripped_path
             self.save_changes()
+
+        current = widget.text or None
+        if modus == 'file':
+            pick_file(on_select=_apply, start_path=current, title="Datei auswählen")
+        else:
+            pick_directory(on_select=_apply, start_path=current, title="Ordner auswählen")
     
     def load_config(self):
         sp = self.controller.load_sprites()
@@ -1141,13 +1250,7 @@ class ScrollSettings(ScrollView):
         self.ids["animation_duration_ms"].text = str(ov.get('animation_duration_ms', 300))
         self._update_overlay_links()
 
-        nuz = self.controller.load_nuzlocke()
-        self.ids["nuz_enabled"].state = 'down' if nuz.get('enabled', False) else 'normal'
-        self.ids["nuz_shiny_clause"].state = 'down' if nuz.get('shiny_clause', True) else 'normal'
-        self.ids["nuz_dupes_clause"].state = 'down' if nuz.get('dupes_clause', True) else 'normal'
-        self.ids["nuz_gifts_additional"].state = 'down' if nuz.get('gifts_are_additional', True) else 'normal'
-        self.ids["nuz_fossils_repeatable"].state = 'down' if nuz.get('fossils_repeatable', True) else 'normal'
-        self.ids["nuz_static_separate"].state = 'down' if nuz.get('static_encounters_separate', True) else 'normal'
+        # Nuzlocke: keine Legacy-Checkboxen mehr — NuzlockeMenu ist Source of Truth.
 
     def _build_overlay_buttons(self):
         overlay_box = self.ids["overlay"]
@@ -1299,13 +1402,10 @@ class ScrollSettings(ScrollView):
 
     def _copy_overlay_url(self, url):
         Clipboard.copy(url)
-        box = BoxLayout(orientation='vertical')
-        box.add_widget(Label(text=url))
-        btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
-        box.add_widget(btn)
-        popup = Popup(title='Link kopiert', content=box, size_hint=(None, None), size=(400, 150))
-        btn.bind(on_press=popup.dismiss)
-        popup.open()
+        # Auto-dismiss Toast unten am Fenster statt modales Popup — der User
+        # will nach dem Kopieren nicht noch OK klicken. Kivy hat keinen Toast,
+        # daher: Label mit Hintergrund via canvas.before, per Animation raus.
+        _show_toast(f"Link kopiert: {url}")
 
     def _update_overlay_links(self):
         self._build_overlay_buttons()
@@ -1399,15 +1499,8 @@ class ScrollSettings(ScrollView):
         })
         self._update_overlay_links()
 
-        # Nuzlocke-Einstellungen sammeln
-        self.controller.save_nuzlocke({
-            'enabled': self.ids["nuz_enabled"].state == 'down',
-            'shiny_clause': self.ids["nuz_shiny_clause"].state == 'down',
-            'dupes_clause': self.ids["nuz_dupes_clause"].state == 'down',
-            'gifts_are_additional': self.ids["nuz_gifts_additional"].state == 'down',
-            'fossils_repeatable': self.ids["nuz_fossils_repeatable"].state == 'down',
-            'static_encounters_separate': self.ids["nuz_static_separate"].state == 'down',
-        })
+        # Nuzlocke-Einstellungen: werden vom NuzlockeMenu direkt persistiert
+        # (App.save_config auf nuzlocke.yml). Hier nichts zu speichern.
 
         # UI-Aktualisierungen (bleiben in der View)
         main_menu = self.settingsscreen.manager.get_screen("MainMenu")

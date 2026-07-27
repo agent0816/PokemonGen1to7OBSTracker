@@ -94,12 +94,19 @@ def apply_sprite_paths(sp: dict, repo_root: str):
     sp["common_path"] = common
     sp["items_path"] = items
     sp["badges_path"] = badges
-    sp["common_obs_path"] = common
-    sp["items_obs_path"] = items
-    sp["badges_obs_path"] = badges
 
     for edition, subpath in EDITION_DEFAULTS.items():
         sp[edition] = subpath
-        sp[f"{edition}_obs"] = subpath
 
-    logger.info(f"Sprite-Pfade gesetzt: common={common}, items={items}, badges={badges}")
+    # OBS-PC-Pfade nur setzen, wenn kein separater Streaming-PC konfiguriert ist.
+    # Bei 2-PC-Setup hat der OBS-PC eigene Klonpfade — die dürfen wir nicht mit
+    # unseren lokalen Pfaden überschreiben.
+    if not sp.get("obs_2_pc"):
+        sp["common_obs_path"] = common
+        sp["items_obs_path"] = items
+        sp["badges_obs_path"] = badges
+        for edition, subpath in EDITION_DEFAULTS.items():
+            sp[f"{edition}_obs"] = subpath
+        logger.info(f"Sprite-Pfade gesetzt (Single-PC): common={common}, items={items}, badges={badges}")
+    else:
+        logger.info(f"Sprite-Pfade gesetzt (Gaming-PC): common={common}, items={items}, badges={badges} — OBS-Pfade unangetastet (2-PC-Setup)")

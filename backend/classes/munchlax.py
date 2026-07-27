@@ -33,6 +33,10 @@ class Munchlax:
         self.badges = {}
         self.editions = {}
         self.player_names: dict[int, str] = {}
+        # Client-Namen unabhaengig von player_ids — wird vom Server mit jedem
+        # player_names-Broadcast mitgeliefert. Nuzlocke-Menue nutzt es fuer
+        # "Aus Clients uebernehmen" (funktioniert auch ohne BizHawk-Team).
+        self.client_names: dict[str, str] = {}
         self.remote_connection_status: dict[str, str] = {}
         self.remote_connection_names: dict[str, str] = {}
         # PC-Boxen pro Spieler: dict[player_id, list[list[Pokemon|None]]].
@@ -110,6 +114,7 @@ class Munchlax:
         self.editions = {}
         self.boxes = {}
         self.player_names.clear()
+        self.client_names.clear()
         self.remote_connection_status.clear()
         self.remote_connection_names.clear()
         self.initialized = False
@@ -218,12 +223,37 @@ class Munchlax:
                             )
                     elif msg_type == "player_names":
                         self.player_names = data.get("names", {})
-                        self.logger.info(f"player_names empfangen: {self.player_names}")
+                        # client_names (dict[client_id -> client_name]) fuellt der
+                        # Server unabhaengig von player_ids — enthaelt also auch
+                        # Clients, die noch kein BizHawk-Team gesendet haben.
+                        self.client_names = data.get("client_names", {}) or {}
+                        self.logger.info(
+                            f"player_names empfangen: {self.player_names}, "
+                            f"client_names: {self.client_names}"
+                        )
                     elif msg_type == "connection_status":
                         self.remote_connection_status.clear()
                         self.remote_connection_status.update(data.get("status", {}))
                         self.remote_connection_names.clear()
                         self.remote_connection_names.update(data.get("names", {}))
+                    elif msg_type == "slot_collision":
+                        # Server hat declared_player_ids abgelehnt weil ein anderer
+                        # Client bereits einen dieser Slots belegt. Callback ins
+                        # Frontend (Popup) und danach sauber disconnecten — der
+                        # User muss in seiner player.yml einen anderen Slot waehlen.
+                        requested = data.get("requested_slots", [])
+                        conflicts = data.get("conflicts", {})
+                        self.logger.error(
+                            f"slot_collision: angefordert={requested}, "
+                            f"kollidiert_mit={conflicts}"
+                        )
+                        cb = getattr(self, "on_slot_collision_callback", None)
+                        if callable(cb):
+                            try:
+                                cb(requested, conflicts)
+                            except Exception as err:
+                                self.logger.warning(f"on_slot_collision_callback: {err}")
+                        asyncio.create_task(self.disconnect(intentional=True))
                     elif msg_type == "encounter_sync":
                         await self._handle_remote_encounters(data.get("encounters", []))
                     elif msg_type == "encounter_outcome":
@@ -1286,11 +1316,37 @@ class Munchlax:
 
         async with self.writer_lock:
             await self.send_message(f"{name}_{self.client_id}")
+            # Netz-Slots aus pl deklarieren — funktioniert ohne BizHawk/Citra/Azahar.
+            # Server nutzt sie fuer client_player_ids/player_names und damit
+            # fuer die Sortierung im NuzlockeMenu ("Aus Clients uebernehmen").
+            # Bei Kollision antwortet der Server mit "slot_collision" (siehe
+            # alter_teams-Handler), was zu einem Popup + Disconnect fuehrt.
+            owned = self._owned_player_ids()
+            await self.send_message({"type": "declared_player_ids", "player_ids": owned})
+            self.logger.info(f"declared_player_ids gesendet: {owned}")
         self.is_connected = 'connected'
 
         self.heartbeat_task = asyncio.create_task(self.send_heartbeat())
         self.send_teams_task = asyncio.create_task(self.send_teams())
         self.alter_teams_task = asyncio.create_task(self.alter_teams())
+
+    def _owned_player_ids(self) -> list[int]:
+        """Lokale Netz-Slots dieses Clients aus pl: 1..player_count, exkl. remote_i=True.
+
+        Gleiche Regel wie in connection_controller._local_player_slots und
+        citrahandler.set_player_number, damit die Deklaration an den Server
+        mit den lokal gestarteten Emulator-Instanzen konsistent ist.
+        """
+        try:
+            count = int(self.pl.get("player_count", 1) or 1)
+        except (TypeError, ValueError):
+            count = 1
+        slots: list[int] = []
+        for slot in range(1, count + 1):
+            if self.pl.get(f"remote_{slot}", False):
+                continue
+            slots.append(slot)
+        return slots
 
     async def disconnect(self, intentional=True):
         self.initialized = False

@@ -1,13 +1,13 @@
 import asyncio
 import os
 import traceback
-import tkinter.filedialog as fd
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from backend.sprite_repo import clone_sprite_repo, apply_sprite_paths
 from backend.logging_setup import get_logger
+from frontend.widgets.file_picker import pick_directory
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
@@ -51,10 +51,13 @@ class SpriteSetupPopup(Popup):
         self.content = layout
 
     def on_download(self, instance):
-        target = fd.askdirectory(
+        pick_directory(
+            on_select=lambda target: self._start_clone(instance, target),
+            start_path=os.path.dirname(DEFAULT_CLONE_PATH),
             title="Zielordner für Sprite-Repository wählen",
-            initialdir=os.path.dirname(DEFAULT_CLONE_PATH)
         )
+
+    def _start_clone(self, instance, target: str):
         if not target:
             return
 

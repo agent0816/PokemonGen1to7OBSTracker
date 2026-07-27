@@ -599,6 +599,28 @@ class PokedexDB:
             return []
 
     @_serialized
+    def has_any_encounter(self, owner: str, edition: int) -> bool:
+        """True wenn owner+edition mindestens einen Encounter-Eintrag hat.
+
+        Wird fuer Starter-Detection genutzt: erst wenn diese Kombi noch
+        komplett leer ist, wird ein Team-Wachstum als Starter interpretiert.
+        Verhindert Doppel-Starter bei spaeteren Team-Aenderungen.
+        """
+        if self.connection is None:
+            return False
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT 1 FROM encounters WHERE owner = ? AND edition = ? LIMIT 1",
+                (owner, int(edition)),
+            )
+            return cursor.fetchone() is not None
+        except Exception as err:
+            self.logger.error(f"has_any_encounter failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    @_serialized
     def has_encounter_on_route(self, owner: str, edition: int,
                                route: int) -> bool:
         """True wenn Route bereits einen First-Encounter hat (Nuzlocke-Zwecke).

@@ -182,11 +182,17 @@ class PokedexMenu(Screen):
             self.rows_grid.add_widget(Label(text=species_name(dexnr), size_hint_x=COLUMNS[1][1]))
             self.rows_grid.add_widget(Label(text=str(row.get("nickname") or ""), size_hint_x=COLUMNS[2][1]))
             self.rows_grid.add_widget(Label(text=str(row.get("lvl") or ""), size_hint_x=COLUMNS[3][1]))
-            self.rows_grid.add_widget(Label(text="★" if row.get("shiny") else "", size_hint_x=COLUMNS[4][1]))
+            # ASCII statt Unicode-Star — Kivy Default-Font (Roboto) hat kein
+            # Glyph fuer ★ und rendert Kaestchen.
+            self.rows_grid.add_widget(Label(text="*" if row.get("shiny") else "", size_hint_x=COLUMNS[4][1]))
             self.rows_grid.add_widget(Label(text=str(row.get("edition") or ""), size_hint_x=COLUMNS[5][1]))
             self.rows_grid.add_widget(Label(text=str(row.get("owner") or ""), size_hint_x=COLUMNS[6][1]))
             self.rows_grid.add_widget(Label(text=str(row.get("item") or ""), size_hint_x=COLUMNS[7][1]))
-            self.rows_grid.add_widget(Label(text=str(row.get("route") or ""), size_hint_x=COLUMNS[8][1]))
+            raw_route = row.get("route")
+            # STARTER_ROUTE (-1) auf Label "Starter" mappen, sonst zeigt die
+            # Spalte "-1" was fuer den Nutzer verwirrend waere.
+            route_text = "Starter" if raw_route == -1 else str(raw_route or "")
+            self.rows_grid.add_widget(Label(text=route_text, size_hint_x=COLUMNS[8][1]))
             pv = row.get("personality")
             pv_text = f"{pv:08X}" if isinstance(pv, int) else ""
             self.rows_grid.add_widget(Label(text=pv_text, size_hint_x=COLUMNS[9][1]))

@@ -18,7 +18,7 @@ standard_nuzlocke:
     rule_same_species_retry: true
     rule_token_rule: false
     rule_shiny_clause_always_catchable: true
-    rule_restart_on_total_wipe: false
+    rule_restart_on_total_wipe: true
 
 standard_2way:
   label: "Standard 2-Way Soullink"

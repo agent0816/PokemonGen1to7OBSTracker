@@ -779,18 +779,83 @@ class CitraHandler:
         )
 
         loop = asyncio.get_event_loop()
-        for pv in new_pvs:
-            if pv == self._last_battle_pv:
-                continue
 
-            pokemon = None
+        # Starter-Detection: analog bizhawk.py — erster Encounter fuer
+        # owner+edition ist der Starter, mit virtueller Route STARTER_ROUTE.
+        try:
+            has_any = await loop.run_in_executor(
+                None, self._encounter_tracker.pokedex_db.has_any_encounter,
+                owner, int(self.edition)
+            )
+        except Exception as err:
+            self.logger.warning(f"Starter-Detection has_any_encounter failed: {err}")
+            has_any = True
+        if not has_any:
+            # Party-Slot-Reihenfolge statt Set-Hash-Order: sonst kann bei
+            # zwei neuen PVs im selben Poll-Tick ein falsches Pokemon als
+            # Starter geloggt werden.
+            first_pv = None
+            first_pokemon = None
             for p in team[:6]:
-                if getattr(p, "personality", None) is not None and int(p.personality) == pv:
-                    pokemon = p
+                pv = getattr(p, "personality", None)
+                if pv is None:
+                    continue
+                pv_int = int(pv)
+                if pv_int in new_pvs and pv_int != self._last_battle_pv:
+                    first_pv = pv_int
+                    first_pokemon = p
                     break
-            if pokemon is None:
-                continue
+            if first_pokemon is not None:
+                dex = first_pokemon.dexnr
+                if dex and dex != "egg" and str(dex).isdigit() and int(dex) != 0:
+                    try:
+                        starter_result = await loop.run_in_executor(
+                            None,
+                            lambda pv=first_pv, pk=first_pokemon, dx=dex: self._encounter_tracker.process_starter_encounter(
+                                owner=owner,
+                                edition=int(self.edition),
+                                personality=pv,
+                                dexnr=int(dx),
+                                lvl=pk.lvl or 1,
+                                shiny=bool(pk.shiny),
+                            ),
+                        )
+                    except Exception as err:
+                        self.logger.error(f"process_starter_encounter async failed: {err}")
+                        self.logger.error(traceback.format_exc())
+                        starter_result = None
+                    if starter_result is not None and not starter_result.already_logged:
+                        asyncio.create_task(self.munchlax.send_encounter_sync({
+                            "personality": int(first_pv),
+                            "owner": owner,
+                            "edition": int(self.edition),
+                            "route": int(starter_result.route),
+                            "dexnr": int(starter_result.dexnr),
+                            "lvl": int(starter_result.lvl),
+                            "shiny": int(starter_result.shiny),
+                            "is_first": int(starter_result.is_first),
+                            "is_shiny_override": int(starter_result.is_shiny_override),
+                            "is_dupes_skip": int(starter_result.is_dupes_skip),
+                            "has_balls": int(starter_result.has_balls),
+                            "method": starter_result.method,
+                            "outcome": starter_result.outcome,
+                        }))
 
+        # Party-Slot-Reihenfolge statt Set-Hash-Order — konsistent mit
+        # Starter-Fix. Bei zwei neuen Gift-PVs im selben Tick bleibt so die
+        # Verarbeitungsreihenfolge deterministisch.
+        for p in team[:6]:
+            pv_raw = getattr(p, "personality", None)
+            if pv_raw is None:
+                continue
+            pv = int(pv_raw)
+            if pv not in new_pvs or pv == self._last_battle_pv:
+                continue
+            # PV aus Set entfernen: bei Duplikat-PVs (Cheat-/Randomizer-Teams)
+            # sonst mehrfache process_gift_encounter-Aufrufe fuer dieselbe PV.
+            new_pvs.discard(pv)
+
+            pokemon = p
             dexnr = pokemon.dexnr
             if dexnr == 0 or dexnr == "egg":
                 continue

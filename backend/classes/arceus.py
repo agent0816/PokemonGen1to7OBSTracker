@@ -277,6 +277,49 @@ class Arceus:
                     bag_edition = data.get("edition", "")
                     self.bags[(bag_owner, bag_edition)] = data.get("pockets", {})
                     asyncio.create_task(self.broadcast_bag_sync(client_id, data))
+                elif isinstance(data, dict) and data.get("type") == "declared_player_ids":
+                    # Client meldet welche Netz-Slots (player_ids) er belegt,
+                    # abgeleitet aus seiner player.yml (nicht via BizHawk-Handshake).
+                    # Fuellt client_player_ids sofort, damit player_names auch ohne
+                    # verbundenen Emulator bekannt sind (Sortierung im NuzlockeMenu).
+                    try:
+                        raw_ids = data.get("player_ids", []) or []
+                        declared = {int(pid) for pid in raw_ids}
+                    except (TypeError, ValueError) as exc:
+                        self.logger.warning(
+                            f"declared_player_ids von {client_id} unlesbar: {data!r} ({exc})"
+                        )
+                        continue
+                    conflicts: dict[str, list[int]] = {}
+                    for other_cid, other_ids in self.client_player_ids.items():
+                        if other_cid == client_id:
+                            continue
+                        overlap = declared & (other_ids or set())
+                        if overlap:
+                            other_name = self.munchlax_names.get(other_cid, other_cid)
+                            conflicts[other_name] = sorted(overlap)
+                    if conflicts:
+                        self.logger.warning(
+                            f"declared_player_ids von {client_id} ({self.munchlax_names.get(client_id, '')}) "
+                            f"kollidiert: angefordert={sorted(declared)}, kollisionen={conflicts}"
+                        )
+                        try:
+                            await self.send_to_client(client_id, {
+                                "type": "slot_collision",
+                                "requested_slots": sorted(declared),
+                                "conflicts": conflicts,
+                            })
+                        except Exception as exc:
+                            self.logger.warning(f"slot_collision-Antwort an {client_id} failed: {exc}")
+                        # Handler-Loop verlassen — anschliessender disconnect_client
+                        # entfernt den Client vollstaendig (Namen, Locks, State).
+                        break
+                    if declared != self.client_player_ids.get(client_id, set()):
+                        self.client_player_ids[client_id] = declared
+                        self.logger.info(
+                            f"declared_player_ids von {client_id} akzeptiert: {sorted(declared)}"
+                        )
+                        asyncio.create_task(self.broadcast_player_names())
                 else:
                     for player, team in data.items(): #type: ignore
                         if player not in self.teams or self.teams[player] != team:
@@ -960,8 +1003,18 @@ class Arceus:
         return f"{name}_{client_id}"
 
     def _find_client_for_owner(self, owner: str) -> str | None:
+        # Exakter Match auf voll-qualifizierten Owner ("name_<cid>") — greift in
+        # off/versus/nuzlocke, wo _effective_team_membership diesen Format nutzt.
         for cid in self.munchlaxes.keys():
             if self._owner_for_client(cid) == owner:
+                return cid
+        # Fallback: Match auf blossen Client-Namen. Der Coop-Fallback in
+        # _effective_team_membership liefert kurze Namen aus expected_owners
+        # ("Stephan" statt "Stephan_<cid>") — ohne diesen Match findet
+        # _compute_team_state keinen Client und Badges/Editions bleiben None,
+        # das Team-Badge-Overlay zeigt dann nichts.
+        for cid in self.munchlaxes.keys():
+            if self.munchlax_names.get(cid, "") == owner:
                 return cid
         return None
 
@@ -1101,9 +1154,15 @@ class Arceus:
         connected_owners: set[str] = set()
         for cid in list(self.munchlaxes.keys()):
             try:
-                o = self._owner_for_client(cid)
-                if o:
-                    connected_owners.add(o)
+                # Beide Namensformate ins alive-Set: voll-qualifiziert ("name_<cid>",
+                # off/versus/nuzlocke) und blosser Name ("name", coop-Fallback via
+                # expected_owners). Sonst prunen wir gerade den Coop-Cache weg.
+                full = self._owner_for_client(cid)
+                if full:
+                    connected_owners.add(full)
+                short = self.munchlax_names.get(cid, "")
+                if short:
+                    connected_owners.add(short)
             except Exception:
                 pass
         expected = set(self.soullink_config.get("expected_owners", []) or [])
@@ -1140,6 +1199,11 @@ class Arceus:
                 continue
             bucket["owners"].append(owner)
             cid = self._find_client_for_owner(owner)
+            if cid is None:
+                self.logger.debug(
+                    f"_compute_team_state: kein aktiver Client für Owner '{owner}' "
+                    f"(Team '{team_id}') — Werte aus _team_owner_cache"
+                )
             player_ids = sorted(self.client_player_ids.get(cid, set())) if cid else []
             bucket["player_ids_by_owner"][owner] = player_ids
             badges_val = None
@@ -1507,7 +1571,15 @@ class Arceus:
             client_name = self.munchlax_names.get(cid, "")
             for pid in player_ids:
                 names[pid] = client_name
-        message = {"type": "player_names", "names": names}
+        # client_names ist unabhaengig von player_ids gefuellt — auch vor dem
+        # ersten Team-Empfang (kein BizHawk verbunden). Nuzlocke-Menue nutzt es
+        # fuer "Aus Clients uebernehmen", wo die Namen der verbundenen Clients
+        # reichen, auch ohne dass ein Spielstand geladen wurde.
+        message = {
+            "type": "player_names",
+            "names": names,
+            "client_names": dict(self.munchlax_names),
+        }
         for client_id in list(self.munchlaxes.keys()):
             try:
                 await self.send_to_client(client_id, message)

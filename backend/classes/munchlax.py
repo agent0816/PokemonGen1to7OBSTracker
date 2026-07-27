@@ -133,6 +133,104 @@ class Munchlax:
         self.countdown_state = {}
         self.countdown_last_tick = None
 
+    def _clear_session_runtime_state(self):
+        """Setzt In-Memory-Session-Caches zurück, OHNE ``soullink_config`` zu
+        verlieren. Wird sowohl vom lokalen Reset (Host-Trigger) als auch vom
+        Remote-Handler (session_reset-Broadcast) gerufen — beide Pfade sollen
+        auf denselben Zustand kommen.
+
+        Behalten: ``player_names``, ``client_names``, ``remote_connection_*``
+        (Verbindungs-Metadaten, kein Session-Content) und ``soullink_config``.
+        """
+        self.bizhawk_teams = {}
+        self.sorted_teams = {}
+        self.unsorted_teams = {}
+        self.badges = {}
+        self.editions = {}
+        self.boxes = {}
+        self.initialized = False
+        self.soullink_links = {}
+        self.soullink_deaths = {}
+        self.soullink_versus_state = {}
+        self.soullink_versus_battles = []
+        self.soullink_team_state = {}
+        self.soullink_rule_violations = {}
+        self.soullink_tokens = {}
+        self._reported_deaths = set()
+        self._pending_death_reports = []
+        self._wipe_signaled = {}
+        self._last_wipe_player_id = None
+        self._pokemon_hp_state = {}
+        self._last_bag_hash = {}
+        self.last_box_refresh_at = {}
+
+    async def reset_session_data(self) -> tuple[bool, str]:
+        """Host-Trigger: löscht pokemon.db-Inhalte + In-Memory-Session-State,
+        informiert Server via ``session_reset``. Server broadcastet an Peers,
+        die dann ebenfalls ``_handle_remote_session_reset`` laufen lassen.
+
+        Rückgabe ``(ok, msg)`` für UI-Feedback. Bei Fehlern bleibt der In-
+        Memory-State trotzdem gecleart, damit der User nicht mit halb-altem
+        Zustand weiterläuft — die DB-Datei wird beim nächsten
+        ``_ensure_pokedex_db`` neu angelegt.
+        """
+        loop = asyncio.get_event_loop()
+        db_ok = True
+        try:
+            self._ensure_pokedex_db()
+            if self.pokedex_db is not None and self.pokedex_db.connection is not None:
+                db_ok = await loop.run_in_executor(None, self.pokedex_db.reset_all_data)
+        except Exception as err:
+            self.logger.error(f"reset_session_data DB failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            db_ok = False
+
+        self._clear_session_runtime_state()
+
+        if self.is_connected:
+            try:
+                async with self.writer_lock:
+                    await self.send_message({"type": "session_reset"})
+            except Exception as err:
+                self.logger.warning(f"session_reset senden failed: {err}")
+
+        await self._refresh_overlay_after_reset()
+
+        if db_ok:
+            self.logger.info("reset_session_data: DB geleert, State geleert, Server informiert")
+            return True, "Session-Daten zurückgesetzt"
+        return False, "DB-Reset fehlgeschlagen — In-Memory-State trotzdem geleert"
+
+    async def _handle_remote_session_reset(self):
+        """Wird vom Arceus-Broadcast ``session_reset`` getriggert. Lokale DB
+        + In-Memory-State analog zum Host-Reset entleeren; kein Rück-Broadcast.
+        """
+        self.logger.info("session_reset vom Server empfangen — DB + State leeren")
+        loop = asyncio.get_event_loop()
+        try:
+            self._ensure_pokedex_db()
+            if self.pokedex_db is not None and self.pokedex_db.connection is not None:
+                await loop.run_in_executor(None, self.pokedex_db.reset_all_data)
+        except Exception as err:
+            self.logger.error(f"remote session_reset DB failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+        self._clear_session_runtime_state()
+        await self._refresh_overlay_after_reset()
+
+    async def _refresh_overlay_after_reset(self):
+        """Overlay-Refresh nach Reset: alle bekannten player_ids + team_ids
+        triggern, damit Browser-Overlay sofort leere Slots zeigt statt bis
+        zum nächsten notify_update alte Cache-Daten zu halten."""
+        srv = self.overlay_server
+        if srv is None or not getattr(srv, "is_connected", False):
+            return
+        try:
+            notifier = getattr(srv, "notify_config_change", None)
+            if callable(notifier):
+                await notifier()
+        except Exception as err:
+            self.logger.warning(f"overlay notify_config_change nach reset failed: {err}")
+
     def should_auto_refresh_boxes(self, player_id: int) -> bool:
         """True wenn die Throttle-Drosselung einen automatischen Refresh erlaubt."""
         last = self.last_box_refresh_at.get(player_id, 0.0)
@@ -254,6 +352,8 @@ class Munchlax:
                             except Exception as err:
                                 self.logger.warning(f"on_slot_collision_callback: {err}")
                         asyncio.create_task(self.disconnect(intentional=True))
+                    elif msg_type == "session_reset":
+                        await self._handle_remote_session_reset()
                     elif msg_type == "encounter_sync":
                         await self._handle_remote_encounters(data.get("encounters", []))
                     elif msg_type == "encounter_outcome":
@@ -1196,7 +1296,19 @@ class Munchlax:
                     pokemons,
                 )
                 if new_pvs:
-                    self._on_new_pokemon_detected(player, edition, pokemons, new_pvs)
+                    # Nur für lokal betreute Player triggern. unsorted_teams enthält
+                    # nach Arceus-Broadcast auch remote Teams; ohne diesen Filter
+                    # würde jeder Tracker die Encounter aller anderen Tracker mit
+                    # dem eigenen your_name-Prefix persistieren und via
+                    # send_encounter_sync zurück broadcasten → n Tracker × n Player
+                    # = n² Duplikat-Einträge in der encounters-Tabelle.
+                    if player in self.bizhawk_teams:
+                        self._on_new_pokemon_detected(player, edition, pokemons, new_pvs)
+                    else:
+                        self.logger.debug(
+                            f"_persist_teams: skip encounter-detect für player={player} "
+                            f"(remote, lokale Slots: {list(self.bizhawk_teams.keys())})"
+                        )
                 if self._nuzlocke_rules_active():
                     # Ein _is_pokemon_dead-Pass pro Tick — Ergebnis geht an
                     # Wipe-Check UND Death-Report (Zähler darf nur 1x hochzählen).
@@ -1307,6 +1419,16 @@ class Munchlax:
         await self.disconnect(intentional=False)
     
     async def connect(self):
+        # Host/Port frisch aus rem-Dict lesen. Nach Session-Wechsel wird rem
+        # in-place aktualisiert, aber self.host/self.port tragen noch die beim
+        # __init__ kopierten Startwerte — Verbindung liefe sonst auf die
+        # alten Werte der vorherigen Session. Analog Bizhawk/Arceus.start.
+        if self.rem.get('start_server'):
+            self.host = '127.0.0.1'
+            self.port = self.rem.get('client_port', self.port)
+        else:
+            self.host = self.rem.get('server_ip_adresse', self.host)
+            self.port = self.rem.get('server_port', self.port)
         self.logger.info(f"Verbinde Munchlax zu ({self.host}, {self.port})")
         self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
         self.logger.info(f"Munchlax {self.client_id} bei Arceus({self.host},{self.port}) registriert")

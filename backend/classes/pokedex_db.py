@@ -235,9 +235,71 @@ class PokedexDB:
         )
         self.logger.info("PokedexDB Schema v5 angewendet (soullink_links + members)")
 
+    @_serialized
+    def reset_all_data(self) -> bool:
+        """Löscht ALLE Inhalte der Content-Tabellen. Schema + schema_version
+        bleiben erhalten. File wird nicht gelöscht — der Aufrufer kann direkt
+        weiterarbeiten, ohne connect neu aufzurufen.
+
+        Rückgabe True bei Erfolg. Nach Erfolg fährt sqlite ein VACUUM, damit
+        die Datei-Groesse tatsaechlich schrumpft (INSERT-heavy Sessions
+        hinterlassen sonst leere Pages).
+        """
+        if self.connection is None:
+            return False
+        tables = (
+            "soullink_link_members",
+            "soullink_links",
+            "encounters",
+            "bag_first_seen",
+            "bag_inventory",
+            "pokemon",
+        )
+        try:
+            cursor = self.connection.cursor()
+            for tbl in tables:
+                cursor.execute(f"DELETE FROM {tbl}")
+            self.connection.commit()
+            # VACUUM darf nicht in einer Transaction laufen — isolation_level
+            # kurzzeitig auf None schalten, dann restaurieren.
+            prev_isolation = self.connection.isolation_level
+            self.connection.isolation_level = None
+            try:
+                cursor.execute("VACUUM")
+            finally:
+                self.connection.isolation_level = prev_isolation
+            self.logger.info(f"PokedexDB reset_all_data: {len(tables)} Tabellen geleert + VACUUM")
+            return True
+        except Exception as err:
+            self.logger.error(f"reset_all_data failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
     @staticmethod
     def build_owner(your_name: str, client_id: str) -> str:
         return f"{your_name}_{client_id}"
+
+    @staticmethod
+    def owner_root(owner: str) -> str:
+        """Extrahiert Root-Namen aus build_owner-Format 'name_<player_slot>'.
+
+        Encounter/DB-Layer verwendet build_owner mit Player-Slot-Suffix, damit
+        derselbe Spieler mehrere BizHawk-Instanzen unterscheiden kann. Soullink-
+        Konfiguration (expected_owners) und Overlay-Team-Matching arbeiten
+        dagegen mit reinen Spielernamen ohne Slot. owner_root strippt den
+        letzten '_<int>'-Suffix; ist keiner vorhanden, wird der String
+        unverändert zurückgegeben. Rein-numerische Owner (Legacy-Team-DB nutzt
+        str(player_id) direkt) bleiben ebenfalls unverändert.
+        """
+        if not owner:
+            return owner
+        idx = owner.rfind("_")
+        if idx <= 0 or idx == len(owner) - 1:
+            return owner
+        suffix = owner[idx + 1:]
+        if not suffix.isdigit():
+            return owner
+        return owner[:idx]
 
     @_serialized
     def upsert_pokemon(self, owner: str, edition, pokemon: Pokemon) -> str:

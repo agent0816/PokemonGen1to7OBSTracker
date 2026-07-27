@@ -1477,12 +1477,21 @@ class Bizhawk:
             self.bizhawks_status[client_id] = False
     
     async def start(self, munchlax):
+        # Port/Host frisch aus bh-Dict ziehen. Ohne Sync: nach Session-Wechsel
+        # hat load_session_config zwar bh['port'] in-place aktualisiert, aber
+        # self.port trägt noch den beim __init__ kopierten Startwert — der
+        # Socket öffnet dann auf dem alten Port und die Lua-Handshakes
+        # scheitern still. Vorher half nur ein erneutes Speichern im
+        # Settings-Menü (löst SettingsController._update_bizhawk aus).
+        self.host = self.bh.get('host', self.host)
+        self.port = self.bh.get('port', self.port)
         self.server = await asyncio.start_server(
             self.handle_bizhawk, self.host, self.port)
 
         self.munchlax: Munchlax = munchlax
 
         self.is_connected = True
+        self.logger.info(f"Bizhawk-Server gestartet auf {self.host}:{self.port}")
         async with self.server:
             await self.server.serve_forever()
     

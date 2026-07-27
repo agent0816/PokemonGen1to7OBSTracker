@@ -106,7 +106,6 @@ class SettingsMenu(Screen):
             ("Remote", 'remote'),
             ("Spieler", 'player'),
             ("Randomizer", 'randomizer'),
-            ("Nuzlocke", 'nuzlocke'),
             ("Logging", 'logging'),
         ]
 
@@ -142,7 +141,7 @@ class SettingsMenu(Screen):
         
         if jump_id == "sprite":
             scrolling = 1
-        elif jump_id in ("player", "randomizer", "nuzlocke", "logging"):
+        elif jump_id in ("player", "randomizer", "logging"):
             scrolling = 0
         else:
             scrolling = new_scrollheight / scroll_max_height
@@ -543,36 +542,6 @@ class ScrollSettings(ScrollView):
 
         box.add_widget(logging_box)
 
-        # --- Nuzlocke (Deep-Link ins Nuzlocke-Menue) ---
-        # Alte Legacy-Checkboxen (enabled/shiny_clause/... schrieben Keys, die
-        # Backend nicht mehr primaer liest — Config-Drift). Neue Regel-UI
-        # (rule_*) liegt komplett im NuzlockeMenu. Hier nur Deep-Link.
-        nuzlocke_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing="10dp")
-        nuzlocke_box.bind(minimum_height=nuzlocke_box.setter('height'))
-        self.ids["nuzlocke"] = weakref.proxy(nuzlocke_box)
-
-        ueberschrift_nuzlocke = Label(text="Nuzlocke", size_hint=(1, None), size=(0, "20dp"), font_size="20sp")
-        nuzlocke_box.add_widget(ueberschrift_nuzlocke)
-
-        nuz_hint = Label(
-            text=("Modus, Preset, Regeln (Total-Wipe-Neustart, Shiny-/Dupes-Clause, "
-                    "Token-Regel, Ersttyp-Clause etc.), Owner-Zuweisung, Snapshots und "
-                    "Timer werden im Nuzlocke-Menue konfiguriert."),
-            size_hint_y=None, height="60dp", halign="left", valign="top",
-        )
-        nuz_hint.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
-        nuzlocke_box.add_widget(nuz_hint)
-
-        nuz_open_btn = Button(
-            text="Nuzlocke-Menue oeffnen",
-            size_hint=(None, None), size=("220dp", "40dp"),
-            pos_hint={"x": 0},
-            on_press=lambda inst: self._open_nuzlocke_menu(),
-        )
-        nuzlocke_box.add_widget(nuz_open_btn)
-
-        box.add_widget(nuzlocke_box)
-
         self.add_widget(box)
 
         self.obs_2_pcs_setup(obs_sprites_checkbox, initializing=True)
@@ -831,19 +800,6 @@ class ScrollSettings(ScrollView):
                 button.trigger_action(0)
                 button.state = 'normal'
                 button.disabled = was_disabled 
-
-    def _open_nuzlocke_menu(self):
-        """Wechselt auf den NuzlockeMenu-Screen. Vorher save_changes, damit
-        strukturelle Aenderungen aus dem Settings-Screen persistiert sind
-        bevor NuzlockeMenu sein _load_from_nuz macht."""
-        try:
-            self.save_changes()
-        except Exception as err:
-            logger.warning(f"_open_nuzlocke_menu: save_changes failed: {err}")
-        try:
-            self.settingsscreen.manager.current = "NuzlockeMenu"
-        except Exception as err:
-            logger.error(f"_open_nuzlocke_menu: switch to NuzlockeMenu failed: {err}")
 
     def open_randomizer_gui(self):
         from backend.controller.randomizer_controller import RandomizerController

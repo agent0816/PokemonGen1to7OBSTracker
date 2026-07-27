@@ -221,6 +221,16 @@ class MainMenu(Screen):
         change_session = Button(text="Session wechseln", on_press=self.change_session)
         logo_settings.add_widget(change_session)
 
+        # Session zurücksetzen: leert pokemon.db + In-Memory-Session-State +
+        # (falls verbunden) Server-Broadcast. Nur Host darf triggern; Non-Host
+        # sieht Popup-Hinweis. Config, Snapshots, Runs bleiben unangetastet.
+        self.reset_session_button = Button(
+            text="Session\nzurücksetzen",
+            background_color=(0.7, 0.4, 0.2, 1),
+            on_press=self._confirm_session_reset,
+        )
+        logo_settings.add_widget(self.reset_session_button)
+
         control_frame.add_widget(logo_settings)
 
         connections = BoxLayout(orientation="horizontal")
@@ -572,6 +582,85 @@ class MainMenu(Screen):
                     ids=self.ids,
                     id=client_id,
                 )
+
+    def _confirm_session_reset(self, instance):
+        """Bestätigungs-Popup vor unumkehrbarem DB-Wipe. Host-Only-Check:
+        Reset feuert nur wenn ``rem.start_server`` true — sonst hätte die
+        Nachricht mit dem Server-Cache eh keine Wirkung auf die anderen
+        Clients."""
+        if not self.rem.get("start_server"):
+            self._show_reset_popup(
+                "Nur der Host darf die Session zurücksetzen.\n"
+                "Bitte auf dem Host-Tracker klicken."
+            )
+            return
+        if getattr(self, "munchlax", None) is None:
+            self._show_reset_popup("Kein Munchlax-Objekt vorhanden.")
+            return
+
+        confirm = Popup(
+            title="Session zurücksetzen — irreversibel",
+            size_hint=(0.6, 0.4),
+            auto_dismiss=False,
+        )
+        box = BoxLayout(orientation="vertical", padding="10dp", spacing="8dp")
+        box.add_widget(Label(
+            text=(
+                "Alle Encounter, Teams, Bag-Items und Soullink-Links werden\n"
+                "gelöscht (auf allen verbundenen Trackern). Config, Snapshots\n"
+                "und Runs bleiben.\n\nWirklich fortfahren?"
+            ),
+            font_size="14sp",
+        ))
+        row = BoxLayout(orientation="horizontal", spacing="6dp",
+                         size_hint_y=None, height="44dp")
+        yes_btn = Button(text="Ja, zurücksetzen",
+                          background_color=(0.7, 0.2, 0.2, 1))
+        no_btn = Button(text="Abbrechen")
+
+        def _do_reset(*_):
+            confirm.dismiss()
+            # Button während laufender Aktion sperren, sonst startet ein
+            # Doppelklick einen zweiten reset_session_data-Aufruf parallel
+            # (analog Sperr-Muster in wipe_banner.py._lock_actions).
+            self.reset_session_button.disabled = True
+            task = asyncio.create_task(self._session_reset_async())
+            # Strong-Ref festhalten, damit GC den Task nicht abräumt bevor
+            # er läuft (Kivy-Loop hält keine Referenz; Muster wie
+            # self.connectors bei toggle_obs/toggle_overlay).
+            self.connectors.add(task)
+            task.add_done_callback(lambda t: self.connectors.discard(t))
+
+        yes_btn.bind(on_press=_do_reset)
+        no_btn.bind(on_press=lambda *_: confirm.dismiss())
+        row.add_widget(no_btn)
+        row.add_widget(yes_btn)
+        box.add_widget(row)
+        confirm.content = box
+        confirm.open()
+
+    async def _session_reset_async(self):
+        try:
+            try:
+                ok, msg = await self.munchlax.reset_session_data()
+            except Exception as err:
+                logger.error(f"reset_session_data failed: {type(err)},{err}")
+                logger.error(traceback.format_exc())
+                self._show_reset_popup(f"Fehler: {err}")
+                return
+            self._show_reset_popup(("OK — " if ok else "Fehler — ") + msg)
+        finally:
+            self.reset_session_button.disabled = False
+
+    def _show_reset_popup(self, text: str):
+        popup = Popup(title="Session-Reset", size_hint=(0.5, 0.3))
+        box = BoxLayout(orientation="vertical", padding="10dp", spacing="8dp")
+        box.add_widget(Label(text=text, font_size="14sp"))
+        ok = Button(text="OK", size_hint_y=None, height="40dp")
+        ok.bind(on_press=lambda *_: popup.dismiss())
+        box.add_widget(ok)
+        popup.content = box
+        popup.open()
 
     def change_session(self, instance):
         popup = BizhawkSavePopup(

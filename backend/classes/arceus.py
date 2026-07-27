@@ -2,6 +2,7 @@ import asyncio
 import pickle
 import time
 import traceback
+from backend.classes.pokedex_db import PokedexDB
 from backend.logging_setup import get_logger
 from backend.team_id import slug_team_id
 from backend.type_lookup import first_type, type_name
@@ -154,6 +155,13 @@ class Arceus:
                     else:
                         self.boxes[player_id] = boxes
                         asyncio.create_task(self.broadcast_boxes_update(client_id, player_id, boxes))
+                elif isinstance(data, dict) and data.get("type") == "session_reset":
+                    self.logger.info(
+                        f"session_reset von {client_id} — Server-State wird geleert und "
+                        f"an alle Peers broadcastet"
+                    )
+                    self._reset_session_state()
+                    asyncio.create_task(self.broadcast_session_reset(sender_id=client_id))
                 elif isinstance(data, dict) and data.get("type") == "encounter_sync":
                     encounters = data.get("encounters", [])
                     changed_links: list[dict] = []
@@ -522,17 +530,24 @@ class Arceus:
         return 0
 
     def _linked_owners_for(self, owner: str) -> list[str]:
-        """Owner-Liste, mit denen dieser Owner verlinkt ist (unter Berücksichtigung von Mode/Team)."""
+        """Owner-Liste, mit denen dieser Owner verlinkt ist (unter Berücksichtigung von Mode/Team).
+
+        Owner-Format-Normalisierung: Encounter-Sync liefert owner im
+        ``build_owner``-Format ``"name_<player_slot>"``, ``expected_owners``
+        speichert nur reine Namen. Direkter Vergleich matcht sonst nie.
+        Root-Extraktion via ``PokedexDB.owner_root``.
+        """
         cfg = self.soullink_config
         mode = cfg.get("mode", "off")
         if mode not in SOULLINK_MODES:
             return []
         expected = list(cfg.get("expected_owners", []))
-        if owner not in expected:
+        owner_key = PokedexDB.owner_root(owner)
+        if owner_key not in expected:
             return []
         if mode == "versus":
             team_map = cfg.get("team_membership", {}) or {}
-            my_team = team_map.get(owner)
+            my_team = team_map.get(owner_key)
             if my_team is None:
                 return []
             return [o for o in expected if team_map.get(o) == my_team]
@@ -576,15 +591,21 @@ class Arceus:
         return link
 
     def _assign_link_group(self, enc: dict) -> dict | None:
-        """Weist einem neuen Encounter eine Link-Group zu (falls Soullink aktiv + is_first)."""
+        """Weist einem neuen Encounter eine Link-Group zu (falls Soullink aktiv + is_first).
+
+        ``link["members"]`` verwendet Root-Owner (ohne Player-Slot-Suffix), damit
+        der Vergleich gegen ``expected_owners`` (reine Namen) funktioniert.
+        ``enc["owner"]`` kommt im ``build_owner``-Format ``"name_<player_slot>"``.
+        """
         if self.soullink_config.get("mode", "off") not in SOULLINK_MODES:
             return None
         if not enc.get("is_first"):
             return None
-        owner = enc.get("owner")
-        if not owner:
+        owner_raw = enc.get("owner")
+        if not owner_raw:
             return None
-        expected = self._linked_owners_for(owner)
+        owner = PokedexDB.owner_root(owner_raw)
+        expected = self._linked_owners_for(owner_raw)
         if len(expected) < 2:
             return None
         edition_gen = self._edition_to_gen(enc.get("edition"))
@@ -616,9 +637,14 @@ class Arceus:
         return link
 
     def _update_link_member_outcome(self, personality, owner, outcome) -> dict | None:
-        """Sucht Link-Group, in der (personality, owner) Mitglied ist, und aktualisiert outcome."""
+        """Sucht Link-Group, in der (personality, owner) Mitglied ist, und aktualisiert outcome.
+
+        ``owner`` kommt aus encounter_outcome-Payload im ``build_owner``-Format;
+        ``link["members"]`` verwendet Root-Owner (siehe ``_assign_link_group``).
+        """
+        owner_key = PokedexDB.owner_root(owner)
         for link in self.soullink_links.values():
-            member = link["members"].get(owner)
+            member = link["members"].get(owner_key)
             if member is None:
                 continue
             if member.get("personality") != personality:
@@ -631,10 +657,50 @@ class Arceus:
                 link["state"] = new_state
                 self.logger.info(
                     f"Soullink-Group {link['link_id']} state={new_state} "
-                    f"(outcome-update {owner}={outcome})"
+                    f"(outcome-update {owner_key}={outcome})"
                 )
             return link
         return None
+
+    def _reset_session_state(self):
+        """Löscht ALLEN Session-Content-Cache im Server, hält aber
+        ``soullink_config``, ``munchlaxes``, ``client_player_ids`` &
+        ``munchlax_names`` (Verbindungs-Metadaten, kein Session-Content).
+        Analog zu ``Munchlax._clear_session_runtime_state``.
+        """
+        self.teams = {}
+        self.boxes = {}
+        self.encounters = {}
+        self.bags = {}
+        self.soullink_links = {}
+        self.soullink_next_id = 1
+        self.soullink_deaths = {}
+        self.soullink_versus_state = {}
+        self.soullink_versus_battles = []
+        self.soullink_rule_violations = {}
+        self.soullink_tokens = {}
+        self._team_owner_cache = {}
+        self.logger.info("Arceus _reset_session_state: alle Session-Caches geleert")
+
+    async def broadcast_session_reset(self, sender_id: str | None = None):
+        """Session-Reset an alle verbundenen Clients. sender_id kriegt die
+        Nachricht bewusst mit — der Host, der den Reset getriggert hat, hat
+        zwar seinen State schon lokal gecleart, aber symmetrisches Handling
+        verhindert Drift wenn wir später mal auf Absender-Filter verzichten.
+        Failsafe: Fehler pro Client isolieren, sonst reisst ein toter Client
+        den restlichen Broadcast mit."""
+        message = {"type": "session_reset"}
+        for client_id in list(self.munchlaxes.keys()):
+            if client_id == sender_id:
+                # Host hat lokal bereits reset — kein zweiter Durchlauf, sonst
+                # bekommt der Host-Munchlax kurz nach dem eigenen Reset noch
+                # einen remote-session-reset-Broadcast → doppelt clear,
+                # harmlos, aber unnötig.
+                continue
+            try:
+                await self.send_to_client(client_id, message)
+            except Exception as exc:
+                self.logger.error(f"broadcast_session_reset an {client_id} failed: {exc}")
 
     async def broadcast_soullink_config(self):
         message = {"type": "soullink_config", "config": dict(self.soullink_config)}
@@ -653,11 +719,18 @@ class Arceus:
                 self.logger.error(f"broadcast_soullink_link_state an {client_id} failed: {exc}")
 
     def _process_death(self, data: dict) -> dict | None:
-        """Verarbeitet eine Todesmeldung: markiert Link-Members als dead und sammelt Partner."""
+        """Verarbeitet eine Todesmeldung: markiert Link-Members als dead und sammelt Partner.
+
+        Death-Cache und Broadcast-Payload verwenden den Root-Owner (ohne
+        Player-Slot-Suffix), damit sie zum Owner-Format in ``link["members"]``
+        passen. Sonst würde bei encounter-outcome=dead der Death-Eintrag unter
+        einem anderen Key liegen als der Link-Member.
+        """
         personality = data.get("personality")
-        owner = data.get("owner")
-        if personality is None or not owner:
+        owner_raw = data.get("owner")
+        if personality is None or not owner_raw:
             return None
+        owner = PokedexDB.owner_root(owner_raw)
         if self.soullink_config.get("mode", "off") not in SOULLINK_MODES:
             # Ohne Soullink trotzdem Broadcast (Overlay/UI-Update), aber keine Partner-Logik.
             death = {
@@ -1615,9 +1688,14 @@ class Arceus:
             await asyncio.sleep(5)
     
     async def start(self):
+        # Port frisch aus rem-Dict lesen. Nach Session-Wechsel wird
+        # rem['client_port'] in-place aktualisiert, aber self.port trägt noch
+        # den beim __init__ kopierten Startwert — ohne Sync öffnet der Socket
+        # auf dem alten Port. Analog Bizhawk.start.
+        self.port = self.rem.get('client_port', self.port)
         self.server = await asyncio.start_server(
             self.handle_munchlax, self.host, self.port)
-        
+
         self.logger.info(f"Arceus auf Port {self.port} gestartet")
         self.heartbeattask = asyncio.create_task(self.check_heartbeats())
         self.timer_task = asyncio.create_task(self.timer_tick_loop())

@@ -247,13 +247,18 @@ class EncounterTracker:
         links = getattr(self.munchlax, "soullink_links", None)
         if not isinstance(links, dict):
             return False
+        # expected_owners und link.members verwenden Root-Namen ohne
+        # Player-Slot-Suffix (siehe arceus._assign_link_group); der Caller
+        # übergibt owner im build_owner-Format. Vor dem Vergleich normalisieren.
+        from backend.classes.pokedex_db import PokedexDB
+        owner_key = PokedexDB.owner_root(owner)
         caught_like = {"caught", "obtained"}
         for link in links.values():
             expected = link.get("expected_owners", []) or []
-            if owner not in expected:
+            if owner_key not in expected:
                 continue
             for other_owner, member in (link.get("members") or {}).items():
-                if other_owner == owner:
+                if other_owner == owner_key:
                     continue
                 if member.get("outcome") not in caught_like:
                     continue

@@ -125,6 +125,7 @@ class OverlayServer:
     async def notify_update(self, player_id: int, update_type: str, slot_mapping: dict | None = None):
         queues = self._sse_queues.get(player_id, [])
         if not queues:
+            self.logger.debug(f"notify_update skip: player_id={player_id}, type={update_type}, keine SSE-Clients registriert (bekannt: {list(self._sse_queues.keys())})")
             return
         payload = self._build_full_payload(player_id)
         if slot_mapping is not None:
@@ -218,7 +219,12 @@ class OverlayServer:
         badges_val = self.munchlax.badges.get(player_id, 0)
         player_name = self.munchlax.player_names.get(player_id, f"Spieler {player_id}")
 
-        owner = self._owner_for_local_player(player_id)
+        # Für Link-Lookup den Root-Namen des tatsächlichen player_id-Owners
+        # verwenden. _owner_for_local_player lieferte hier vorher immer den
+        # eigenen Tracker-Owner — für Remote-Slots baute das einen falschen
+        # Namen und alle gelinkten Pokemon fielen als link_state=None durch,
+        # wurden per hide_incomplete_links weggeblendet.
+        owner = self._owner_root_for_player(player_id)
         hide_incomplete = self._soullink_filter_active()
         link_id_by_pv = self._link_id_by_personality(owner)
 
@@ -502,13 +508,19 @@ class OverlayServer:
         return view
 
     def _link_id_by_personality(self, owner: str) -> dict[int, int]:
-        """Mapping PID→link_id für alle Members des gegebenen Owners."""
+        """Mapping PID→link_id für alle Members des gegebenen Owners.
+
+        ``link["members"]`` verwendet Root-Owner (siehe ``arceus._assign_link_group``);
+        ``_owner_for_local_player`` liefert dagegen build_owner-Format. Vor dem
+        Lookup daher auf Root reduzieren.
+        """
         result: dict[int, int] = {}
         links = getattr(self.munchlax, "soullink_links", None)
         if not isinstance(links, dict):
             return result
+        owner_key = PokedexDB.owner_root(owner)
         for link in links.values():
-            member = (link.get("members") or {}).get(owner)
+            member = (link.get("members") or {}).get(owner_key)
             if not member:
                 continue
             pv = member.get("personality")
@@ -574,6 +586,25 @@ class OverlayServer:
             client_id = "0"
         return PokedexDB.build_owner(your_name, client_id)
 
+    def _owner_root_for_player(self, player_id: int) -> str:
+        """Root-Owner-Name für einen beliebigen player_id (auch Remote-Slots).
+
+        Für Link-Matching gegen ``soullink_links[*].members`` (dessen Keys der
+        Server nach Fix als Root-Namen wie ``"Server"``, ``"Client1"`` ablegt).
+        Quelle: ``munchlax.player_names`` (dict[player_id → root_name],
+        von Arceus broadcastet). Für den lokalen Tracker existiert der Eintrag
+        i.d.R.; Fallback auf ``pl.your_name`` deckt den Bootstrap-Moment, in dem
+        Munchlax den Broadcast noch nicht empfangen hat.
+        """
+        names = getattr(self.munchlax, "player_names", None) or {}
+        name = names.get(player_id)
+        if name:
+            return name
+        try:
+            return self.munchlax.pl.get("your_name", "") if self.munchlax.pl else ""
+        except AttributeError:
+            return ""
+
     def _soullink_filter_active(self) -> bool:
         """True wenn nicht-vollständig gelinkte Pokemon versteckt werden sollen."""
         cfg = getattr(self.munchlax, "soullink_config", None) or {}
@@ -582,15 +613,19 @@ class OverlayServer:
         return bool(self.ov.get("hide_incomplete_links", True))
 
     def _pokemon_link_state(self, pokemon, owner: str) -> str | None:
-        """Sucht (personality, owner) in soullink_links. Return: link.state oder None."""
+        """Sucht (personality, owner) in soullink_links. Return: link.state oder None.
+
+        Owner-Root-Konvention wie in ``_link_id_by_personality``.
+        """
         pv = getattr(pokemon, "personality", None)
         if pv is None:
             return None
         links = getattr(self.munchlax, "soullink_links", None)
         if not isinstance(links, dict):
             return None
+        owner_key = PokedexDB.owner_root(owner)
         for link in links.values():
-            member = (link.get("members") or {}).get(owner)
+            member = (link.get("members") or {}).get(owner_key)
             if not member:
                 continue
             if member.get("personality") == pv:
@@ -661,6 +696,13 @@ class OverlayServer:
     async def _handle_state(self, request: web.Request) -> web.Response:
         player_id = int(request.match_info['player_id'])
         payload = self._build_full_payload(player_id)
+        known_players = list(self.munchlax.sorted_teams.keys()) if self.munchlax else []
+        if player_id not in known_players:
+            self.logger.warning(f"/state: player_id={player_id} nicht in sorted_teams (bekannt: {known_players})")
+        else:
+            team = payload.get("team", [])
+            non_empty = sum(1 for p in team if p.get("dexnr", 0) != 0)
+            self.logger.debug(f"/state: player_id={player_id}, slots_belegt={non_empty}/{len(team)}, edition={payload.get('edition')}")
         return web.json_response(payload)
 
     async def _handle_session_state(self, request: web.Request) -> web.Response:
@@ -722,6 +764,20 @@ class OverlayServer:
             self._sse_queues[player_id] = []
         self._sse_queues[player_id].append(queue)
         self.logger.info(f"SSE-Client verbunden für Spieler {player_id}")
+
+        # Initial-Snapshot: neu verbundene Overlays bekommen sofort den aktuellen
+        # Team- und Badge-Zustand, ohne auf das nächste notify_update warten zu
+        # müssen. Ohne diesen Push bleibt das Overlay leer, wenn der Client
+        # nach dem letzten Team-Wechsel verbindet (typisch: Streamer öffnet
+        # Browser-Source erst nachdem Spieler den Starter bereits gewählt hat).
+        try:
+            payload = self._build_full_payload(player_id)
+            init_team = f"event: team\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            await response.write(init_team.encode('utf-8'))
+            init_badges = f"event: badges\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            await response.write(init_badges.encode('utf-8'))
+        except Exception as err:
+            self.logger.warning(f"player SSE initial snapshot failed (player_id={player_id}): {err}")
 
         try:
             while True:
@@ -884,8 +940,7 @@ body {{ background: transparent; font-family: 'Segoe UI', Arial, sans-serif; ove
 .slot {{ display: flex; flex-direction: column; align-items: center; min-width: 80px; }}
 .slot.empty {{ visibility: hidden; }}
 .sprite {{ width: 80px; height: 80px; object-fit: contain; image-rendering: pixelated; }}
-.nickname {{ color: #fff; font-size: 12px; text-align: center; text-shadow: 1px 1px 2px #000; white-space: nowrap; }}
-.level {{ color: #ffd700; font-size: 11px; text-shadow: 1px 1px 2px #000; }}
+.nickname {{ color: #fff; font-size: 18px; font-weight: bold; text-align: center; text-shadow: 2px 2px 3px #000, 0 0 4px #000; white-space: nowrap; }}
 .item-icon {{ width: 24px; height: 24px; object-fit: contain; image-rendering: pixelated; }}
 .hp-bar {{ width: 60px; height: 6px; background: #333; border-radius: 3px; overflow: hidden; margin-top: 2px; }}
 .hp-fill {{ height: 100%; transition: width 0.3s; }}
@@ -953,11 +1008,6 @@ function createSlotNode(p, data) {{
         div.appendChild(name);
     }}
 
-    const lvl = document.createElement('div');
-    lvl.className = 'level';
-    lvl.textContent = p.lvl != null ? 'Lv.' + p.lvl : '';
-    div.appendChild(lvl);
-
     if (data.show_hp_bars && p.max_hp > 0) {{
         const bar = document.createElement('div');
         bar.className = 'hp-bar';
@@ -1019,10 +1069,10 @@ function updateSlotContent(div, p, data) {{
         nameEl.remove();
     }}
 
-    let lvlEl = div.querySelector('.level');
-    if (lvlEl) {{
-        lvlEl.textContent = p.lvl != null ? 'Lv.' + p.lvl : '';
-    }}
+    // Level-Anzeige komplett entfernt (Nickname prominenter). Falls Legacy-DOM
+    // noch ein .level-Element aus einer alten Browser-Session hat, wegräumen.
+    let legacyLvl = div.querySelector('.level');
+    if (legacyLvl) legacyLvl.remove();
 
     let hpBar = div.querySelector('.hp-bar');
     if (data.show_hp_bars && p.max_hp > 0) {{

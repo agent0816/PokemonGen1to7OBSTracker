@@ -37,6 +37,7 @@ class TotalWipeBanner(Popup):
     def __init__(self, munchlax, configsave, bh: dict | None = None,
                   on_pick_other=None, bizhawk=None,
                   rnd: dict | None = None, pl: dict | None = None,
+                  rem: dict | None = None,
                   **kwargs):
         super().__init__(**kwargs)
         self.munchlax = munchlax
@@ -45,10 +46,14 @@ class TotalWipeBanner(Popup):
         self.bizhawk = bizhawk
         self.rnd = rnd
         self.pl = pl
+        # rem als explizite Konstruktor-Referenz statt Durchgriff auf
+        # munchlax.rem — passt zum Config-Dict-Muster (Referenzen sind
+        # In-Place aktualisiert, wer sie braucht bekommt sie direkt).
+        self.rem = rem
         self._on_pick_other = on_pick_other
 
         self.title = "TOTAL WIPE — Run-Ende erkannt"
-        self.size_hint = (0.7, 0.5)
+        self.size_hint = (0.7, 0.6)
         self.auto_dismiss = False
 
         content = BoxLayout(orientation="vertical", padding="10dp", spacing="8dp")
@@ -80,6 +85,14 @@ class TotalWipeBanner(Popup):
             on_press=lambda *_: self._reset_run(),
         )
         btn_row.add_widget(self.reset_button)
+        # Vollreset: unumkehrbar, deshalb rot markiert + Bestätigungs-Popup
+        # bevor die Aktion tatsächlich läuft.
+        self.full_reset_button = Button(
+            text="Alles frisch starten (kompletter Reset — DB leeren)",
+            background_color=(0.7, 0.2, 0.2, 1),
+            on_press=lambda *_: self._confirm_full_reset(),
+        )
+        btn_row.add_widget(self.full_reset_button)
         # Test-/Notausgang: schliesst Popup ohne Aktion. Wipe-State bleibt
         # bestehen, Popup kann bei naechstem Wipe-Signal wieder aufpoppen.
         self.cancel_button = Button(
@@ -96,7 +109,8 @@ class TotalWipeBanner(Popup):
 
     def _action_buttons(self) -> list:
         """Alle Action-Buttons als Liste — combo_button ist optional."""
-        buttons = [self.latest_button, self.other_button, self.reset_button]
+        buttons = [self.latest_button, self.other_button, self.reset_button,
+                    self.full_reset_button]
         if self.combo_button is not None:
             buttons.append(self.combo_button)
         return buttons
@@ -210,6 +224,67 @@ class TotalWipeBanner(Popup):
                 dismiss_delay = 0
             else:
                 self._set_status("Archivieren fehlgeschlagen")
+        finally:
+            self._schedule_finish(dismiss_delay)
+
+    def _confirm_full_reset(self):
+        """Bestätigungs-Popup vor unumkehrbarem DB-Wipe. Host-Only-Check:
+        Reset feuert nur, wenn dieser Tracker der Host ist (start_server=True);
+        Non-Host-Clients sehen eine Fehler-Statuszeile."""
+        rem = self.rem or {}
+        is_host = bool(rem.get("start_server"))
+        if not is_host:
+            self._set_status("Fehler: Nur der Host darf Session zurücksetzen")
+            return
+
+        confirm = Popup(
+            title="Kompletter Reset — irreversibel",
+            size_hint=(0.6, 0.4),
+            auto_dismiss=False,
+        )
+        box = BoxLayout(orientation="vertical", padding="10dp", spacing="8dp")
+        box.add_widget(Label(
+            text=(
+                "Alle Encounter, Teams, Bag-Items und Soullink-Links werden\n"
+                "gelöscht (auf allen verbundenen Trackern). Snapshots bleiben.\n\n"
+                "Wirklich fortfahren?"
+            ),
+            font_size="14sp",
+        ))
+        row = BoxLayout(orientation="horizontal", spacing="6dp",
+                         size_hint_y=None, height="44dp")
+        yes_btn = Button(text="Ja, Reset durchführen",
+                          background_color=(0.7, 0.2, 0.2, 1))
+        no_btn = Button(text="Abbrechen")
+        def _do_reset(*_):
+            confirm.dismiss()
+            self._full_reset()
+        yes_btn.bind(on_press=_do_reset)
+        no_btn.bind(on_press=lambda *_: confirm.dismiss())
+        row.add_widget(no_btn)
+        row.add_widget(yes_btn)
+        box.add_widget(row)
+        confirm.content = box
+        confirm.open()
+
+    def _full_reset(self):
+        self._lock_actions()
+        self.status_label.text = "Kompletter Reset läuft..."
+        asyncio.create_task(self._full_reset_async())
+
+    async def _full_reset_async(self):
+        dismiss_delay = None
+        try:
+            try:
+                ok, msg = await self.munchlax.reset_session_data()
+            except Exception as err:
+                logger.error(f"full_reset failed: {type(err)},{err}")
+                logger.error(traceback.format_exc())
+                self._set_status(f"Fehler: {err}")
+                return
+            self._set_status(msg)
+            if ok:
+                dismiss_delay = 2.0
         finally:
             self._schedule_finish(dismiss_delay)
 

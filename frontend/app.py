@@ -88,7 +88,7 @@ class Screens(ScreenManager):
                 self.current = "NuzlockeMenu"
             TotalWipeBanner(munchlax, configsave, bh=bh,
                               on_pick_other=_pick_other,
-                              bizhawk=bizhawk, rnd=rnd, pl=pl).open()
+                              bizhawk=bizhawk, rnd=rnd, pl=pl, rem=rem).open()
         munchlax.on_total_wipe_callback = lambda v: _open_wipe_banner(v)
 
         # Slot-Kollision: Server hat declared_player_ids abgelehnt weil ein anderer

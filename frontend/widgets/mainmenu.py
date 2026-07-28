@@ -18,6 +18,7 @@ from kivy.uix.togglebutton import ToggleButton
 from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 from frontend.widgets.trainerbox import TrainerBox
+from frontend.widgets.toast import show_toast
 from backend import pokedecoder
 from backend.classes.obs import OBS
 from backend.controller.connection_controller import ConnectionController
@@ -122,7 +123,9 @@ class CrashReportPopup(Popup):
 
     def _copy_path(self, path):
         from kivy.core.clipboard import Clipboard
-        Clipboard.copy(os.path.abspath(path))
+        abs_path = os.path.abspath(path)
+        Clipboard.copy(abs_path)
+        show_toast(f"Pfad kopiert: {abs_path}", level='success')
 
 
 class MainMenu(Screen):
@@ -589,13 +592,13 @@ class MainMenu(Screen):
         Nachricht mit dem Server-Cache eh keine Wirkung auf die anderen
         Clients."""
         if not self.rem.get("start_server"):
-            self._show_reset_popup(
-                "Nur der Host darf die Session zurücksetzen.\n"
-                "Bitte auf dem Host-Tracker klicken."
+            show_toast(
+                "Nur der Host darf die Session zurücksetzen. Bitte auf dem Host-Tracker klicken.",
+                level='warning', duration=4.0,
             )
             return
         if getattr(self, "munchlax", None) is None:
-            self._show_reset_popup("Kein Munchlax-Objekt vorhanden.")
+            show_toast("Kein Munchlax-Objekt vorhanden.", level='error', duration=3.0)
             return
 
         confirm = Popup(
@@ -624,7 +627,8 @@ class MainMenu(Screen):
             # Doppelklick einen zweiten reset_session_data-Aufruf parallel
             # (analog Sperr-Muster in wipe_banner.py._lock_actions).
             self.reset_session_button.disabled = True
-            task = asyncio.create_task(self._session_reset_async())
+            handle = show_pending_toast("Session wird zurückgesetzt", level='info')
+            task = asyncio.create_task(self._session_reset_async(handle))
             # Strong-Ref festhalten, damit GC den Task nicht abräumt bevor
             # er läuft (Kivy-Loop hält keine Referenz; Muster wie
             # self.connectors bei toggle_obs/toggle_overlay).
@@ -639,28 +643,23 @@ class MainMenu(Screen):
         confirm.content = box
         confirm.open()
 
-    async def _session_reset_async(self):
+    async def _session_reset_async(self, handle):
         try:
             try:
                 ok, msg = await self.munchlax.reset_session_data()
             except Exception as err:
                 logger.error(f"reset_session_data failed: {type(err)},{err}")
                 logger.error(traceback.format_exc())
-                self._show_reset_popup(f"Fehler: {err}")
+                handle.finish(f"Session-Reset fehlgeschlagen: {err}",
+                              level='error', duration=4.0)
                 return
-            self._show_reset_popup(("OK — " if ok else "Fehler — ") + msg)
+            handle.finish(
+                ("Session zurückgesetzt — " if ok else "Session-Reset fehlgeschlagen — ") + msg,
+                level='success' if ok else 'error',
+                duration=2.5 if ok else 4.0,
+            )
         finally:
             self.reset_session_button.disabled = False
-
-    def _show_reset_popup(self, text: str):
-        popup = Popup(title="Session-Reset", size_hint=(0.5, 0.3))
-        box = BoxLayout(orientation="vertical", padding="10dp", spacing="8dp")
-        box.add_widget(Label(text=text, font_size="14sp"))
-        ok = Button(text="OK", size_hint_y=None, height="40dp")
-        ok.bind(on_press=lambda *_: popup.dismiss())
-        box.add_widget(ok)
-        popup.content = box
-        popup.open()
 
     def change_session(self, instance):
         popup = BizhawkSavePopup(
@@ -758,16 +757,45 @@ class MainMenu(Screen):
 
     async def _run_randomization(self):
         try:
-            success, message = await self.randomizer.randomize()
+            success, message, slot_dirs = await self.randomizer.randomize()
             if success:
                 self._sync_rando_to_munchlax()
             title = "Randomisierung" if success else "Fehler"
 
-            box = BoxLayout(orientation='vertical')
-            box.add_widget(Label(text=message))
-            btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
+            from kivy.core.clipboard import Clipboard
+
+            box = BoxLayout(orientation='vertical', padding="10dp", spacing="8dp")
+            box.add_widget(Label(text=message, size_hint_y=None, height="120dp"))
+
+            if slot_dirs:
+                box.add_widget(Label(text="Ausgabe-Ordner:", size_hint_y=None,
+                                       height="20dp", bold=True))
+                for entry in slot_dirs:
+                    row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                                     height="30dp", spacing="6dp")
+                    slot_label = Label(text=f"Slot {entry['slot']}:", size_hint_x=None,
+                                         width="60dp")
+                    path_input = Label(text=entry["dir"], halign="left",
+                                         valign="middle", shorten=True,
+                                         text_size=(None, None))
+                    path_input.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+                    copy_btn = Button(text="Kopieren", size_hint_x=None, width="90dp")
+
+                    def _copy(_inst, p=entry["dir"]):
+                        Clipboard.copy(p)
+                        show_toast(f"Pfad kopiert: {p}", level='success')
+                    copy_btn.bind(on_release=_copy)
+                    row.add_widget(slot_label)
+                    row.add_widget(path_input)
+                    row.add_widget(copy_btn)
+                    box.add_widget(row)
+
+            btn = Button(text='OK', size_hint=(.5, None), height="40dp",
+                          pos_hint={'center_x': .5})
             box.add_widget(btn)
-            popup = Popup(title=title, content=box, size_hint=(None, None), size=(500, 300))
+            popup_height = 240 + max(0, len(slot_dirs)) * 38
+            popup = Popup(title=title, content=box, size_hint=(None, None),
+                           size=(600, popup_height))
             btn.bind(on_release=popup.dismiss)
             popup.open()
         except Exception as err:

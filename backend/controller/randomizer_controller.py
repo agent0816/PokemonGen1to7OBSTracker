@@ -178,19 +178,23 @@ class RandomizerController:
 
         return True, f"Slot {slot}: OK"
 
-    async def randomize(self) -> tuple[bool, str]:
+    async def randomize(self) -> tuple[bool, str, list[dict]]:
         """Erzeugt pro lokalem Spieler-Slot ein randomisiertes ROM im aktiven
         Run-Ordner. Läuft ein Run bereits, wird er als
         ``superseded_by_new_randomize`` finalisiert. Bei Fehler in einem Slot
-        wird der Run trotzdem angelegt, aber als Ergebnis False zurückgegeben."""
+        wird der Run trotzdem angelegt, aber als Ergebnis False zurückgegeben.
+
+        Rückgabe: (success, summary, slot_dirs) — slot_dirs enthält pro
+        erfolgreich randomisiertem Slot ``{"slot": int, "dir": str}`` (absoluter
+        Ordner-Pfad ohne Datei), damit die UI Copy-Buttons zeigen kann."""
         settings, input_rom, jar_dir, error = self._validate_paths()
         if error:
             self.logger.error(f"Validierungsfehler: {error}")
-            return False, error
+            return False, error, []
 
         rm = self._get_run_manager()
         if rm is None:
-            return False, "Session-Pfad nicht gesetzt — RunManager nicht verfügbar. Session initialisieren."
+            return False, "Session-Pfad nicht gesetzt — RunManager nicht verfügbar. Session initialisieren.", []
 
         # Alten aktiven Run finalizen (superseded)
         active = rm.get_active_run()
@@ -200,15 +204,18 @@ class RandomizerController:
         slots = self._local_player_slots()
         run = rm.create_run(input_rom, settings, player_slots=slots)
         if run is None:
-            return False, "Konnte neuen Run nicht anlegen — siehe run_manager.log."
+            return False, "Konnte neuen Run nicht anlegen — siehe run_manager.log.", []
 
         base_args, _, _ = self._java_base_args()
         results: list[str] = []
+        slot_dirs: list[dict] = []
         all_ok = True
         for target in run["rom_targets"]:
             slot = target["player_slot"]
-            rom_target = Path(target["rom_path"])
-            log_target = Path(target["log_path"])
+            # Absolute Pfade erzwingen — Randomizer läuft mit cwd=jar_dir und würde
+            # relative Ziele sonst unter jar_dir/... suchen ("path not writable").
+            rom_target = Path(target["rom_path"]).resolve()
+            log_target = Path(target["log_path"]).resolve()
             try:
                 ok, msg = await self._randomize_one(
                     base_args, jar_dir, input_rom, settings,
@@ -225,6 +232,8 @@ class RandomizerController:
                 self.logger.error(traceback.format_exc())
             if not ok:
                 all_ok = False
+            else:
+                slot_dirs.append({"slot": slot, "dir": str(rom_target.parent)})
             results.append(msg)
 
         run_id = run["run_id"]
@@ -233,7 +242,7 @@ class RandomizerController:
 
         # Log parsen — ersten erfolgreichen Slot nehmen
         for target in run["rom_targets"]:
-            log_path = Path(target["log_path"])
+            log_path = Path(target["log_path"]).resolve()
             if log_path.exists():
                 log_ok, log_msg = self.parse_log(str(log_path))
                 if log_ok:
@@ -244,4 +253,4 @@ class RandomizerController:
             self.logger.info(summary)
         else:
             self.logger.error(summary)
-        return all_ok, summary
+        return all_ok, summary, slot_dirs

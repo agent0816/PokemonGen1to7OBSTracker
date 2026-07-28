@@ -19,6 +19,7 @@ from kivy.uix.screenmanager import ScreenManager
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.togglebutton import ToggleButton
+from frontend.widgets.toast import show_toast, show_pending_toast
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
@@ -53,9 +54,11 @@ class DeleteSessionPopup(Popup):
         # UI-Update (Liste + Session-Box) erst NACH erfolgreichem Loeschen,
         # sonst verschwindet die Session bei Fehler stumm aus der UI.
         if path_to_delete.exists():
-            asyncio.create_task(self._rmtree_async(path_to_delete))
+            handle = show_pending_toast(f"Session '{self.session_name}' wird gelöscht", level='info')
+            asyncio.create_task(self._rmtree_async(path_to_delete, handle))
         else:
             self._finalize_removal_ui()
+            show_toast(f"Session '{self.session_name}' entfernt", level='success')
 
         self.dismiss()
 
@@ -66,38 +69,24 @@ class DeleteSessionPopup(Popup):
             pass
         self.session_menu.session_list_box.update_session_box()
 
-    async def _rmtree_async(self, path_to_delete: Path):
+    async def _rmtree_async(self, path_to_delete: Path, handle):
         try:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, shutil.rmtree, str(path_to_delete))
         except Exception as err:
             logger.error(f"Session-Ordner '{path_to_delete}' konnte nicht gelöscht werden: {err}")
             logger.error(traceback.format_exc())
-            self._show_delete_error_popup(path_to_delete, err)
+            # Ausführliche Fehlermeldung als Error-Toast — Pfad + Ursache sichtbar.
+            # Bleibt 6s stehen, damit User Antivirus/Prozess-Hinweis lesen kann.
+            handle.finish(
+                f"Löschen fehlgeschlagen: {self.session_name}\n"
+                f"{err}\n"
+                "Datei evtl. gesperrt (Antivirus, offene ROM/DB).",
+                level='error', duration=6.0,
+            )
             return
         self._finalize_removal_ui()
-
-    def _show_delete_error_popup(self, path: Path, err: Exception):
-        try:
-            layout = BoxLayout(orientation="vertical", padding="10dp", spacing="10dp")
-            layout.add_widget(Label(
-                text=(
-                    f"Session '{self.session_name}' konnte nicht geloescht werden.\n\n"
-                    f"Pfad: {path}\n"
-                    f"Fehler: {err}\n\n"
-                    "Session bleibt in der Liste — Datei evtl. gesperrt (Antivirus, "
-                    "offene ROM/DB). Bitte Prozesse schliessen und erneut versuchen."
-                ),
-            ))
-            btn = Button(text="OK", size_hint_y=None, height="40dp")
-            popup = Popup(title="Loeschen fehlgeschlagen", content=layout,
-                          size_hint=(0.7, 0.5))
-            btn.bind(on_press=popup.dismiss)
-            layout.add_widget(btn)
-            popup.open()
-        except Exception as popup_err:
-            logger.error(f"Fehler-Popup konnte nicht angezeigt werden: {popup_err}")
-            logger.error(traceback.format_exc())
+        handle.finish(f"Session '{self.session_name}' gelöscht", level='success')
 
 class CreateSessionPopup(Popup):
     def __init__(self, sessionmenu, **kwargs):

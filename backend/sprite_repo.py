@@ -1,10 +1,16 @@
 import os
 import traceback
 from pathlib import Path
+from typing import NamedTuple
 from git import Repo, GitCommandError
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, 'logs/sprite_repo.log')
+
+
+class PullResult(NamedTuple):
+    success: bool
+    updated: bool  # True nur wenn Pull neue Commits gebracht hat
 
 REPO_URL = "https://github.com/agent0816/sprites.git"
 
@@ -44,22 +50,28 @@ def clone_sprite_repo(target_path: str, url: str = REPO_URL) -> bool:
         return False
 
 
-def pull_sprite_repo(repo_path: str) -> bool:
+def pull_sprite_repo(repo_path: str) -> PullResult:
     try:
         repo = Repo(repo_path)
         origin = repo.remotes.origin
         logger.info(f"Pull Sprite-Repo in {repo_path}")
+        old_head = repo.head.commit.hexsha
         origin.pull()
-        logger.info("Sprite-Repo erfolgreich aktualisiert.")
-        return True
+        new_head = repo.head.commit.hexsha
+        updated = old_head != new_head
+        if updated:
+            logger.info(f"Sprite-Repo aktualisiert ({old_head[:7]} → {new_head[:7]}).")
+        else:
+            logger.info("Sprite-Repo bereits aktuell — kein Update.")
+        return PullResult(success=True, updated=updated)
     except GitCommandError as err:
         logger.error(f"Git-Fehler beim Pull: {err}")
         logger.error(traceback.format_exc())
-        return False
+        return PullResult(success=False, updated=False)
     except Exception as err:
         logger.error(f"Fehler beim Pull: {err}")
         logger.error(traceback.format_exc())
-        return False
+        return PullResult(success=False, updated=False)
 
 
 def is_sprite_repo(path: str) -> bool:

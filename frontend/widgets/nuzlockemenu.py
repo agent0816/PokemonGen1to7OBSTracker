@@ -23,6 +23,7 @@ from backend.snapshot_manager import SnapshotManager
 from backend.soullink_presets import load_presets, apply_preset, preset_choices
 from frontend.widgets.timer_widget import TimerWidget
 from frontend.widgets.mainmenu import BizhawkSavePopup
+from frontend.widgets.toast import show_toast, show_pending_toast
 
 logger = get_logger(__name__, './logs/nuzlockemenu.log')
 
@@ -850,6 +851,7 @@ class NuzlockeMenu(Screen):
         # gibt ihn im Finally-Zweig von _flush_and_create_snapshot_async frei.
 
     async def _flush_and_create_snapshot_async(self, label: str):
+        handle = show_pending_toast("SaveRAM wird geflusht", level='info')
         try:
             self._set_status("SaveRAM wird geflusht...")
             if self.bizhawk is not None:
@@ -867,13 +869,15 @@ class NuzlockeMenu(Screen):
                 except Exception as err:
                     logger.error(f"flush_all_saverams failed: {err}")
                     logger.error(traceback.format_exc())
-            await self._create_snapshot_async(label)
+            handle.update("Snapshot wird erstellt")
+            self._set_status("Snapshot wird erstellt...")
+            await self._create_snapshot_async(label, handle)
         finally:
             def _reenable(_dt):
                 self.snapshot_create_button.disabled = False
             Clock.schedule_once(_reenable, 0)
 
-    async def _create_snapshot_async(self, label: str):
+    async def _create_snapshot_async(self, label: str, handle=None):
         try:
             sm = self._snapshot_manager()
             loop = asyncio.get_event_loop()
@@ -882,12 +886,18 @@ class NuzlockeMenu(Screen):
             logger.error(f"snapshot create failed: {type(err)},{err}")
             logger.error(f"{traceback.format_exc()}")
             self._set_status(f"Snapshot-Fehler: {err}")
+            if handle is not None:
+                handle.finish(f"Snapshot-Fehler: {err}", level='error', duration=3.0)
             return
         if snap_id:
             self._set_status(f"Snapshot erstellt: {snap_id}")
+            if handle is not None:
+                handle.finish(f"Snapshot erstellt: {snap_id}", level='success')
             self._refresh_snapshot_list()
         else:
             self._set_status("Snapshot-Erstellung fehlgeschlagen")
+            if handle is not None:
+                handle.finish("Snapshot-Erstellung fehlgeschlagen", level='error', duration=3.0)
 
     def _refresh_snapshot_list(self):
         asyncio.create_task(self._refresh_snapshot_list_async())
@@ -926,9 +936,10 @@ class NuzlockeMenu(Screen):
 
     def _restore_snapshot(self, snap_id: str):
         self.status_label.text = f"Snapshot wird geladen: {snap_id}"
-        asyncio.create_task(self._restore_snapshot_async(snap_id))
+        handle = show_pending_toast(f"Snapshot {snap_id} wird geladen", level='info')
+        asyncio.create_task(self._restore_snapshot_async(snap_id, handle))
 
-    async def _restore_snapshot_async(self, snap_id: str):
+    async def _restore_snapshot_async(self, snap_id: str, handle):
         try:
             self.munchlax.close_pokedex_db()
             sm = self._snapshot_manager()
@@ -938,10 +949,14 @@ class NuzlockeMenu(Screen):
             logger.error(f"snapshot restore failed: {type(err)},{err}")
             logger.error(f"{traceback.format_exc()}")
             self._set_status(f"Restore-Fehler: {err}")
+            handle.finish(f"Restore-Fehler: {err}", level='error', duration=3.0)
             return
-        self._set_status(
-            f"Snapshot geladen: {snap_id}" if ok else f"Restore fehlgeschlagen: {snap_id}"
-        )
+        if ok:
+            self._set_status(f"Snapshot geladen: {snap_id}")
+            handle.finish(f"Snapshot {snap_id} geladen", level='success')
+        else:
+            self._set_status(f"Restore fehlgeschlagen: {snap_id}")
+            handle.finish(f"Restore fehlgeschlagen: {snap_id}", level='error', duration=3.0)
 
     def _delete_snapshot(self, snap_id: str):
         asyncio.create_task(self._delete_snapshot_async(snap_id))
@@ -954,9 +969,11 @@ class NuzlockeMenu(Screen):
         except Exception as err:
             logger.error(f"snapshot delete failed: {err}")
             self._set_status(f"Delete-Fehler: {err}")
+            show_toast(f"Delete-Fehler: {err}", level='error', duration=3.0)
             return
         self._refresh_snapshot_list()
         self._set_status(f"Snapshot gelöscht: {snap_id}")
+        show_toast(f"Snapshot {snap_id} gelöscht", level='success')
 
     def _apply_preset(self):
         if not self._is_host():

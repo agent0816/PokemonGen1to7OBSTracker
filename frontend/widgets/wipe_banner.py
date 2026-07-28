@@ -325,7 +325,7 @@ class TotalWipeBanner(Popup):
             return None
         self._set_status("Randomize laeuft...")
         try:
-            ok, msg = await rc.randomize()
+            ok, msg, _ = await rc.randomize()
         except Exception as err:
             logger.error(f"randomize failed: {err}")
             logger.error(traceback.format_exc())

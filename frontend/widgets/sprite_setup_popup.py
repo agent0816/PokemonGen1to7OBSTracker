@@ -8,6 +8,7 @@ from kivy.uix.popup import Popup
 from backend.sprite_repo import clone_sprite_repo, apply_sprite_paths
 from backend.logging_setup import get_logger
 from frontend.widgets.file_picker import pick_directory
+from frontend.widgets.toast import show_pending_toast
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
@@ -32,11 +33,13 @@ class SpriteSetupPopup(Popup):
             "Die Sprite-Dateien können automatisch von GitHub\n"
             "heruntergeladen werden. Wähle einen Ordner, in den\n"
             "das Sprite-Repository geklont werden soll.\n\n"
-            "Vorgeschlagener Pfad: sprites/ (neben der Anwendung)"
+            "Vorgeschlagener Pfad: sprites/ (neben der Anwendung)\n\n"
+            "Nach dem Ordner-Pick läuft der Download im Hintergrund —\n"
+            "Fortschritt siehst du unten als Toast."
         )
-        layout.add_widget(Label(text=info_text, size_hint_y=0.5))
+        layout.add_widget(Label(text=info_text, size_hint_y=0.6))
 
-        self.status_label = Label(text="", size_hint_y=0.2, color=(1, 1, 0, 1))
+        self.status_label = Label(text="", size_hint_y=0.15, color=(1, 1, 0, 1))
         layout.add_widget(self.status_label)
 
         btn_layout = BoxLayout(size_hint_y=None, height="40dp", spacing="10dp")
@@ -63,35 +66,33 @@ class SpriteSetupPopup(Popup):
 
         clone_target = os.path.join(target, "sprites")
         if os.path.exists(clone_target) and os.listdir(clone_target):
+            # Sofortiger, blockierender Fehler — Popup offen lassen, User
+            # muss anderen Ordner wählen.
             self.status_label.text = f"Ordner existiert bereits: {clone_target}"
             self.status_label.color = (1, 0, 0, 1)
             return
 
-        self.status_label.text = "Klone Repository... Bitte warten."
-        self.status_label.color = (1, 1, 0, 1)
-        instance.disabled = True
+        # Popup schließt sofort; Clone läuft im Executor, Fortschritt als Toast.
+        # sp/save_callback bleiben via Closure am Task, Popup-Referenz nicht nötig.
+        self.dismiss()
+        handle = show_pending_toast("Sprites werden geladen", level='info')
+        asyncio.create_task(_do_clone(clone_target, self.sp, self.save_callback, handle))
 
-        asyncio.create_task(self._do_clone(clone_target))
 
-    async def _do_clone(self, clone_target: str):
-        try:
-            loop = asyncio.get_event_loop()
-            success = await loop.run_in_executor(None, clone_sprite_repo, clone_target)
+async def _do_clone(clone_target: str, sp: dict, save_callback, handle):
+    try:
+        loop = asyncio.get_event_loop()
+        success = await loop.run_in_executor(None, clone_sprite_repo, clone_target)
 
-            if success:
-                apply_sprite_paths(self.sp, clone_target)
-                if self.save_callback:
-                    self.save_callback()
-                self.status_label.text = "Erfolgreich heruntergeladen!"
-                self.status_label.color = (0, 1, 0, 1)
-
-                await asyncio.sleep(1.5)
-                self.dismiss()
-            else:
-                self.status_label.text = "Fehler beim Klonen. Siehe Log."
-                self.status_label.color = (1, 0, 0, 1)
-        except Exception as err:
-            logger.error(f"Fehler im Clone-Task: {err}")
-            logger.error(traceback.format_exc())
-            self.status_label.text = "Unerwarteter Fehler. Siehe Log."
-            self.status_label.color = (1, 0, 0, 1)
+        if success:
+            apply_sprite_paths(sp, clone_target)
+            if save_callback:
+                save_callback()
+            handle.finish("Sprites erfolgreich geladen", level='success')
+        else:
+            handle.finish("Sprite-Download fehlgeschlagen. Siehe Log.", level='error', duration=3.0)
+    except Exception as err:
+        logger.error(f"Fehler im Clone-Task: {err}")
+        logger.error(traceback.format_exc())
+        handle.finish("Unerwarteter Fehler beim Sprite-Download. Siehe Log.",
+                      level='error', duration=3.0)

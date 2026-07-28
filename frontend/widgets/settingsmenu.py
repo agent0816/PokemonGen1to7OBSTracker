@@ -2,11 +2,8 @@ import asyncio
 import os
 import socket
 import weakref
-from kivy.animation import Animation
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
-from kivy.core.window import Window
-from kivy.graphics import Color, RoundedRectangle
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
@@ -26,51 +23,12 @@ from backend.team_id import slug_team_id
 from frontend.widgets.mainmenu import TrainerBox
 from frontend.widgets.sprite_setup_popup import SpriteSetupPopup
 from frontend.widgets.file_picker import pick_file, pick_directory
+from frontend.widgets.toast import show_toast, show_pending_toast
 import frontend.UIFactory as UI
 from backend.logging_setup import get_logger, set_console_level, get_console_level
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
-
-def _show_toast(text: str, duration: float = 1.5, fade: float = 0.4):
-    """Nicht-modaler Toast am unteren Fensterrand.
-
-    Statt Popup, das den User zum OK-Klick zwingt: Label mit dunklem Hintergrund
-    unten, faded nach ``duration`` Sekunden ueber ``fade`` weg und wird dann
-    aus dem Window entfernt. Reusable fuer weitere kurze Status-Meldungen.
-    """
-    try:
-        label = Label(
-            text=text,
-            size_hint=(None, None),
-            font_size='14sp',
-            color=(1, 1, 1, 1),
-            padding=("14dp", "8dp"),
-        )
-        # Groesse aus Textmass ableiten, mit Padding drum.
-        label.texture_update()
-        tw, th = label.texture_size
-        label.size = (tw + 28, th + 16)
-        label.pos = ((Window.width - label.width) / 2, 40)
-        # Abgerundetes Rechteck als Hintergrund via canvas.before. Material
-        # Green matched HP-Voll (trainerbox.py) — signalisiert Success.
-        with label.canvas.before:
-            Color(0.3, 0.69, 0.31, 0.92)
-            bg = RoundedRectangle(pos=label.pos, size=label.size, radius=[8])
-
-        def _sync_bg(_inst, _val):
-            bg.pos = label.pos
-            bg.size = label.size
-        label.bind(pos=_sync_bg, size=_sync_bg)
-        Window.add_widget(label)
-
-        def _fade_out(_dt):
-            anim = Animation(opacity=0, duration=fade)
-            anim.bind(on_complete=lambda *_: Window.remove_widget(label))
-            anim.start(label)
-        Clock.schedule_once(_fade_out, duration)
-    except Exception as err:
-        logger.warning(f"_show_toast fallback (kein Toast): {err}")
 
 class SettingsMenu(Screen):
     def __init__(self, arceus, bizhawk, munchlax, obs_websocket, overlay_server, externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, app_version, **kwargs):
@@ -485,9 +443,15 @@ class ScrollSettings(ScrollView):
             browse_function=self.browse, browse_modus='file')
 
         UI.create_text_and_browse_button(randomizer_box, self.ids,
-            box_id_name='output_path_box', label_text='Ausgabe-Ordner\n(leer = ROM-Ordner)',
+            box_id_name='output_path_box', label_text='Ausgabe-Ordner\n(derzeit ungenutzt)',
             text_id_name="output_path", text_validate_function=None,
+            browse_id_name="output_path_browse",
             browse_function=self.browse)
+        # Feld ist derzeit ohne Effekt — Randomize schreibt in <session>/runs/.
+        # Bis das Feld verdrahtet oder entfernt ist, disabled halten, damit User
+        # nicht denken, sie könnten damit das Ziel steuern.
+        self.ids["output_path"].disabled = True
+        self.ids["output_path_browse"].disabled = True
 
         # --- Run-Historie ---
         run_history_header = Label(text="Run-Historie", size_hint=(1, None),
@@ -807,13 +771,7 @@ class ScrollSettings(ScrollView):
         rc = RandomizerController(self.rnd, self.pl, configsave=self.configsave)
         success, error = rc.open_gui()
         if not success:
-            box = BoxLayout(orientation='vertical')
-            box.add_widget(Label(text=error))
-            btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
-            box.add_widget(btn)
-            popup = Popup(title='Fehler', content=box, size_hint=(None, None), size=(500, 200))
-            btn.bind(on_release=popup.dismiss)
-            popup.open()
+            show_toast(error, level='error', duration=3.5)
 
     def _get_run_manager(self):
         from backend.controller.run_manager import RunManager
@@ -910,30 +868,21 @@ class ScrollSettings(ScrollView):
 
     def _open_path(self, path: str):
         if not path or not os.path.exists(path):
-            self._info_popup("Fehler", f"Pfad nicht gefunden:\n{path}")
+            show_toast(f"Pfad nicht gefunden: {path}", level='error', duration=3.0)
             return
         try:
             os.startfile(path)  # type: ignore[attr-defined]
         except Exception as err:
             logger.error(f"os.startfile({path}) failed: {err}")
-            self._info_popup("Fehler", f"Konnte Pfad nicht öffnen:\n{err}")
+            show_toast(f"Konnte Pfad nicht öffnen: {err}", level='error', duration=3.0)
 
     def _copy_to_clipboard(self, text: str):
         Clipboard.copy(text or "")
-        self._info_popup("Kopiert", text or "(leer)")
-
-    def _info_popup(self, title: str, text: str):
-        box = BoxLayout(orientation='vertical')
-        box.add_widget(Label(text=text))
-        btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
-        box.add_widget(btn)
-        popup = Popup(title=title, content=box, size_hint=(None, None), size=(500, 200))
-        btn.bind(on_release=popup.dismiss)
-        popup.open()
+        show_toast(f"Kopiert: {text or '(leer)'}", level='success')
 
     def _end_run_manual(self):
         if self.munchlax is None:
-            self._info_popup("Fehler", "Munchlax nicht verfügbar.")
+            show_toast("Munchlax nicht verfügbar.", level='error', duration=3.0)
             return
 
         confirm_box = BoxLayout(orientation='vertical', spacing="10dp")
@@ -957,6 +906,7 @@ class ScrollSettings(ScrollView):
     async def _do_end_run_manual(self):
         # Blockierendes I/O (SQLite VACUUM INTO, shutil.copy2) im Executor —
         # analog zum bestehenden _do_update_sprites-Muster.
+        handle = show_pending_toast("Run wird beendet", level='info')
         loop = asyncio.get_event_loop()
         try:
             run_id = await loop.run_in_executor(
@@ -965,12 +915,12 @@ class ScrollSettings(ScrollView):
             logger.error(f"end_run_manual failed: {err}")
             import traceback
             logger.error(traceback.format_exc())
-            self._info_popup("Fehler", f"Run beenden fehlgeschlagen:\n{err}")
+            handle.finish(f"Run beenden fehlgeschlagen: {err}", level='error', duration=3.0)
             return
         if run_id:
-            self._info_popup("Run beendet", f"Run {run_id} als 'manual' abgeschlossen.")
+            handle.finish(f"Run {run_id} als 'manual' abgeschlossen.", level='success')
         else:
-            self._info_popup("Hinweis", "Kein aktiver Run vorhanden.")
+            handle.finish("Kein aktiver Run vorhanden.", level='info')
         self._refresh_run_history()
 
     def import_randomizer_log(self):
@@ -987,14 +937,8 @@ class ScrollSettings(ScrollView):
         success, msg = main_menu.randomizer.parse_log(log_path)
         if success:
             main_menu._sync_rando_to_munchlax()
-        box = BoxLayout(orientation='vertical')
-        box.add_widget(Label(text=msg))
-        btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
-        box.add_widget(btn)
-        title = 'Log importiert' if success else 'Fehler'
-        popup = Popup(title=title, content=box, size_hint=(None, None), size=(500, 200))
-        btn.bind(on_release=popup.dismiss)
-        popup.open()
+        show_toast(msg, level='success' if success else 'error',
+                    duration=2.5 if success else 3.5)
 
     def _make_masked_ip_widget(self, value: str, ref_id: str) -> BoxLayout:
         """Zeigt IP maskiert an; 'Anzeigen'-Button deckt auf. Verhindert Stream-Leaks."""
@@ -1023,15 +967,7 @@ class ScrollSettings(ScrollView):
     def clipboard(self, instance, *args):
         result = (instance.text).split(']')[1].split('[')[0]
         Clipboard.copy(result)
-        box = BoxLayout(orientation='vertical')
-        box.add_widget(Label(text=result))
-        btn = Button(text='OK',size_hint=(.5,.4),pos_hint={'center_x':.5})
-        box.add_widget(btn)
-
-        popup = Popup(title='Kopiervorgang erfolgreich', content=box, size_hint=(None, None), size=(400, 150))
-
-        btn.bind(on_press=popup.dismiss)
-        popup.open()
+        show_toast(f"Kopiert: {result}", level='success')
 
     def create_obs_helper_package(self):
         pick_directory(
@@ -1058,13 +994,8 @@ class ScrollSettings(ScrollView):
                 copied_files.append(os.path.basename(src))
 
         if not copied_files:
-            box = BoxLayout(orientation='vertical')
-            box.add_widget(Label(text="Helper-EXE nicht gefunden unter utils/.\nBitte zuerst kompilieren."))
-            btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
-            box.add_widget(btn)
-            popup = Popup(title='Fehler', content=box, size_hint=(None, None), size=(500, 200))
-            btn.bind(on_release=popup.dismiss)
-            popup.open()
+            show_toast("Helper-EXE nicht gefunden unter utils/. Bitte zuerst kompilieren.",
+                        level='error', duration=3.5)
             return
 
         helper_port = int(self.arceus.rem.get('helper_port', int(self.arceus.port) + 1))
@@ -1077,13 +1008,7 @@ class ScrollSettings(ScrollView):
         with open(config_path, 'w') as f:
             _yaml.dump(config, f)
 
-        box = BoxLayout(orientation='vertical')
-        box.add_widget(Label(text=f"Paket erstellt in:\n{helper_dir}\n\nDateien: {', '.join(copied_files)}, config.yml"))
-        btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
-        box.add_widget(btn)
-        popup = Popup(title='OBS-PC Paket erstellt', content=box, size_hint=(None, None), size=(500, 200))
-        btn.bind(on_release=popup.dismiss)
-        popup.open()
+        show_toast(f"OBS-PC Paket erstellt in {helper_dir}", level='success', duration=4.0)
 
     def download_sprites(self):
         popup = SpriteSetupPopup(
@@ -1106,32 +1031,21 @@ class ScrollSettings(ScrollView):
     def update_sprites(self):
         repo_root = get_repo_root_from_subpath(self.sp.get('common_path', ''))
         if not repo_root or not is_sprite_repo(repo_root):
-            box = BoxLayout(orientation='vertical')
-            box.add_widget(Label(text="Kein Sprite-Repository gefunden.\nBitte zuerst herunterladen."))
-            btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
-            box.add_widget(btn)
-            popup = Popup(title='Fehler', content=box, size_hint=(None, None), size=(500, 200))
-            btn.bind(on_release=popup.dismiss)
-            popup.open()
+            show_toast("Kein Sprite-Repository gefunden. Bitte zuerst herunterladen.",
+                        level='error', duration=3.0)
             return
-        asyncio.create_task(self._do_update_sprites(repo_root))
+        handle = show_pending_toast("Sprites werden aktualisiert", level='info')
+        asyncio.create_task(self._do_update_sprites(repo_root, handle))
 
-    async def _do_update_sprites(self, repo_root: str):
+    async def _do_update_sprites(self, repo_root: str, handle):
         loop = asyncio.get_event_loop()
-        success = await loop.run_in_executor(None, pull_sprite_repo, repo_root)
-        box = BoxLayout(orientation='vertical')
-        if success:
-            msg = "Sprites erfolgreich aktualisiert!"
-            title = "Aktualisierung erfolgreich"
+        result = await loop.run_in_executor(None, pull_sprite_repo, repo_root)
+        if result.success:
+            msg = "Sprites aktualisiert" if result.updated else "Sprites bereits aktuell"
+            handle.finish(msg, level='success')
         else:
-            msg = "Fehler beim Aktualisieren. Siehe Log."
-            title = "Fehler"
-        box.add_widget(Label(text=msg))
-        btn = Button(text='OK', size_hint=(.5, .4), pos_hint={'center_x': .5})
-        box.add_widget(btn)
-        popup = Popup(title=title, content=box, size_hint=(None, None), size=(500, 200))
-        btn.bind(on_release=popup.dismiss)
-        popup.open()
+            handle.finish("Fehler beim Aktualisieren. Siehe Log.",
+                          level='error', duration=3.0)
 
     def browse(self, widget, modus):
         def _apply(path: str):
@@ -1358,10 +1272,7 @@ class ScrollSettings(ScrollView):
 
     def _copy_overlay_url(self, url):
         Clipboard.copy(url)
-        # Auto-dismiss Toast unten am Fenster statt modales Popup — der User
-        # will nach dem Kopieren nicht noch OK klicken. Kivy hat keinen Toast,
-        # daher: Label mit Hintergrund via canvas.before, per Animation raus.
-        _show_toast(f"Link kopiert: {url}")
+        show_toast(f"Link kopiert: {url}", level='success')
 
     def _update_overlay_links(self):
         self._build_overlay_buttons()

@@ -290,8 +290,12 @@ class TrackerApp(App):
     async def _auto_pull_sprites(self, repo_root: str):
         try:
             from backend.sprite_repo import pull_sprite_repo
+            from frontend.widgets.toast import show_toast
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, pull_sprite_repo, repo_root)
+            result = await loop.run_in_executor(None, pull_sprite_repo, repo_root)
+            # Nur bei tatsächlichem Update Toast — kein Rauschen bei jedem Start.
+            if result.success and result.updated:
+                show_toast("Sprites aktualisiert", level='success')
         except Exception as err:
             logger.error(f"Auto-Pull der Sprites fehlgeschlagen: {err}")
 

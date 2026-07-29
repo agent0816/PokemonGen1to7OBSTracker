@@ -76,7 +76,7 @@ class Screens(ScreenManager):
         self.add_widget(bag_menu)
         encounter_menu = EncounterMenu(configsave, pl, APP_VERSION)
         self.add_widget(encounter_menu)
-        nuzlocke_menu = NuzlockeMenu(munchlax, configsave, nuz, rem=rem, bh=bh, bizhawk=bizhawk)
+        nuzlocke_menu = NuzlockeMenu(munchlax, configsave, nuz, rem=rem, bh=bh, bizhawk=bizhawk, rnd=rnd)
         self.add_widget(nuzlocke_menu)
         pokemon_detail = PokemonDetailScreen(obs_websocket)
         self.add_widget(pokemon_detail)

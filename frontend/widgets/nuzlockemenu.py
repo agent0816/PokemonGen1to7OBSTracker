@@ -112,7 +112,8 @@ class OwnerRow(BoxLayout):
 
 class NuzlockeMenu(Screen):
     def __init__(self, munchlax, configsave, nuz: dict, rem: dict | None = None,
-                 bh: dict | None = None, bizhawk=None, **kwargs):
+                 bh: dict | None = None, bizhawk=None,
+                 rnd: dict | None = None, **kwargs):
         super().__init__(**kwargs)
         self.name = "NuzlockeMenu"
         self.munchlax = munchlax
@@ -120,6 +121,7 @@ class NuzlockeMenu(Screen):
         self.nuz = nuz
         self.rem = rem or {}
         self.bh = bh or {}
+        self.rnd = rnd or {}
         self.bizhawk = bizhawk
         self._owner_rows: list[OwnerRow] = []
         self._presets = load_presets()
@@ -810,7 +812,8 @@ class NuzlockeMenu(Screen):
         session_path = str(self.configsave)
         session_name = Path(session_path).name or "default"
         return SnapshotManager(session_path, session_name,
-                                 bh_config=self.bh, munchlax=self.munchlax)
+                                 bh_config=self.bh, munchlax=self.munchlax,
+                                 rnd=self.rnd)
 
     def _set_status(self, text: str):
         def _apply(_dt):

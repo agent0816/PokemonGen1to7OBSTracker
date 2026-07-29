@@ -29,3 +29,4 @@ version.py
 release_to_github.ps1
 tools/
 tests/
+backup-saves/

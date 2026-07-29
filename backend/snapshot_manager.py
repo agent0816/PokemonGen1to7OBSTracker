@@ -43,10 +43,12 @@ _REMAP_GENERATIONS = {1, 2, 3, 4, 5}
 
 class SnapshotManager:
     def __init__(self, session_path: str | Path, session_name: str,
-                 bh_config: dict | None = None, munchlax=None):
+                 bh_config: dict | None = None, munchlax=None,
+                 rnd: dict | None = None):
         self.session_path = Path(session_path)
         self.session_name = session_name or self.session_path.name
         self.bh_config = bh_config or {}
+        self.rnd = rnd or {}
         self.munchlax = munchlax  # optional: für Citra/Azahar-Zugriff
         self.backup_root = self._resolve_backup_root()
 
@@ -267,33 +269,84 @@ class SnapshotManager:
             if p.exists():
                 return p
 
-        rom_path = self.bh_config.get("rom_path")
         save_dir = self.bh_config.get("save_dir")
         bh_dir = self._bizhawk_working_dir()
-        rom = Path(str(rom_path)) if rom_path else None
-        basename = rom.stem if rom else None
-        system = _system_from_rom(rom) if rom else None
 
-        # (2) BizHawk-Standard: <BH-Dir>/<System>/SaveRAM/<basename>.SaveRAM
-        if bh_dir and system and basename:
-            candidate = bh_dir / system / "SaveRAM" / f"{basename}.SaveRAM"
-            if candidate.exists():
-                return candidate
-        # (3) Save-Ordner explizit gesetzt
-        if save_dir and basename:
-            candidate = Path(str(save_dir)) / f"{basename}.SaveRAM"
-            if candidate.exists():
-                return candidate
-        # (4) Save neben der ROM
-        if rom:
+        # Kandidaten-ROMs in Prio-Order: aktive Run-ROM (User spielt gerade den
+        # Randomizer-Run), dann bh_config.rom_path (Legacy/manuelle Auswahl),
+        # dann rnd.rom_path (Original-Input-ROM). Fuer jede Kandidaten-ROM 4
+        # SaveRAM-Location-Fallbacks probieren.
+        for rom in self._candidate_roms():
+            basename = rom.stem
+            system = _system_from_rom(rom)
+            # (a) BizHawk-Standard: <BH-Dir>/<System>/SaveRAM/<basename>.SaveRAM
+            if bh_dir and system:
+                candidate = bh_dir / system / "SaveRAM" / f"{basename}.SaveRAM"
+                if candidate.exists():
+                    return candidate
+            # (b) Save-Ordner explizit gesetzt
+            if save_dir:
+                candidate = Path(str(save_dir)) / f"{basename}.SaveRAM"
+                if candidate.exists():
+                    return candidate
+            # (c) Save neben der ROM
             candidate = rom.with_suffix(".SaveRAM")
             if candidate.exists():
                 return candidate
-            # (5) Save-Ordner unterhalb des ROM-Verzeichnisses
-            candidate = rom.parent / "SaveRAM" / f"{rom.stem}.SaveRAM"
+            # (d) SaveRAM-Ordner unterhalb des ROM-Verzeichnisses
+            candidate = rom.parent / "SaveRAM" / f"{basename}.SaveRAM"
             if candidate.exists():
                 return candidate
         return None
+
+    def _candidate_roms(self) -> list[Path]:
+        """ROM-Kandidaten fuer die SaveRAM-Suche in Prio-Order.
+
+        1. Aktive Randomizer-Run-ROM aus RunManager (falls Slot bekannt) —
+           entspricht der tatsaechlich in BizHawk geladenen ROM waehrend
+           eines Randomizer-Runs.
+        2. ``bh_config['rom_path']`` — historischer Config-Key, Legacy.
+        3. ``rnd['rom_path']`` — Original-Input-ROM aus Randomizer-Config,
+           Fallback wenn kein aktiver Run und kein bh_config.rom_path.
+        """
+        candidates: list[Path] = []
+        active_rom = self._active_run_rom()
+        if active_rom is not None:
+            candidates.append(active_rom)
+        for src in (self.bh_config.get("rom_path"), self.rnd.get("rom_path")):
+            if not src:
+                continue
+            p = Path(str(src))
+            if p not in candidates:
+                candidates.append(p)
+        return candidates
+
+    def _active_run_rom(self) -> Path | None:
+        """ROM-Pfad des aktiven Runs fuer den lokalen Slot, oder None."""
+        slot, _gen = self._resolve_local_slot_and_gen()
+        if slot is None:
+            return None
+        try:
+            rm = RunManager(str(self.session_path))
+            active = rm.get_active_run()
+            if active is None:
+                return None
+            paths = rm.get_run_paths(active["run_id"])
+        except Exception as err:
+            logger.debug(f"active_run_rom lookup failed: {err}")
+            return None
+        entry = paths.get("roms", {}).get(int(slot))
+        if not entry:
+            return None
+        rom_str = entry.get("rom") or ""
+        if not rom_str:
+            return None
+        rom = Path(rom_str)
+        # ROM-Datei muss existieren — sonst spielt der User etwas Anderes
+        # und wir wuerden auf einen falschen SaveRAM-Basename mappen.
+        if not rom.exists():
+            return None
+        return rom
 
     def _bizhawk_working_dir(self) -> Path | None:
         """Working-Directory des BizHawk aus bh_config ableiten.

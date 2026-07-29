@@ -154,7 +154,8 @@ class TotalWipeBanner(Popup):
         session_path = str(self.configsave)
         session_name = Path(session_path).name or "default"
         return SnapshotManager(session_path, session_name,
-                                 bh_config=self.bh, munchlax=self.munchlax)
+                                 bh_config=self.bh, munchlax=self.munchlax,
+                                 rnd=self.rnd)
 
     def _set_status(self, text: str):
         def _apply(_dt):

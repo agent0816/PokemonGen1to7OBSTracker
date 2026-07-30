@@ -134,6 +134,9 @@ local function receive_pointer_config()
     curHPinBattlepointer = nil
     battleopponentpointer = nil
     battleopponentidpointer = nil
+    battlerscountpointer = nil
+    battleoutcomepointer = nil
+    battlemonspointer = nil
     local pointer_config = comm.socketServerResponse()
     logging.info("received pointer config: " .. tostring(pointer_config))
     if pointer_config and pointer_config:sub(1, 12) == "UNSUPPORTED:" then
@@ -209,8 +212,48 @@ local function check_battle(state)
             state.battle_msg = 'false'
         end
     elseif state.gameversion > 30 and state.gameversion < 40 then
-        -- Gen 3: gBattlersCount-basiert, kein Pointer-Swap
-        if battlerscountpointer then
+        -- Gen 3: gBattleOutcome-basierter Compound-Check.
+        --
+        -- gBattlersCount alleine reicht NICHT: die Zelle wird beim Kampfende
+        -- nicht auf 0 zurueckgesetzt, sie behaelt den letzten Wert. Ergebnis
+        -- war stuck in_battle=true nach dem ersten Kampf → keine weiteren
+        -- False->True-Edges → _read_encounter_data feuert nie wieder →
+        -- wilde Pokemon fallen durch als "Gift" ein.
+        --
+        -- Ironmon-Tracker (Battle.lua updateBattleStatus) nutzt stattdessen
+        -- die Kombination:
+        --   gBattleOutcome == 0        → Kampf aktiv
+        --   gBattleOutcome ~= 0        → Kampf beendet (1=won, 2=lost, 4=fled, 7=caught)
+        --   gBattlersCount in [1..4]   → Sanity fuer Battler-Anzahl
+        --   gBattleMons[0].species valid → Fake-Battle-Filter
+        if battlerscountpointer and battleoutcomepointer and battlemonspointer then
+            local cnt = memory.readbyte(battlerscountpointer, state.domain)
+            local outcome = memory.readbyte(battleoutcomepointer, state.domain)
+            local firstMonSpecies = memory.read_u16_le(battlemonspointer, state.domain)
+            -- Species-Grenze 1024: Vanilla Gen 3 hat 411 Species, aber
+            -- Randomizer koennen IDs bis 649 (Gen 2-5-Range, siehe
+            -- backend/data/species_personal_gen2to5.yml) injizieren. 1024
+            -- gibt Puffer fuer ROM-Hacks/Community-Randomizer, ohne den
+            -- Fake-Battle-Filter zu weit zu oeffnen (u16-Max ist 65535,
+            -- Garbage-Reads liegen meist deutlich darueber).
+            local isFakeBattle = (cnt == 0) or (cnt > 4)
+                or (firstMonSpecies == 0) or (firstMonSpecies > 1024)
+            if outcome == 0 and not isFakeBattle then
+                state.in_battle = true
+                state.battle_msg = 'true'
+            else
+                state.in_battle = false
+                state.battle_msg = 'false'
+            end
+        elseif battlerscountpointer then
+            -- Legacy-Fallback fuer den Fall, dass ein User das Tracker-Update
+            -- installiert hat, aber sein pointer_gen3.yml noch die alte
+            -- Version ohne battleoutcomepointer/battlemonspointer benutzt
+            -- (z.B. wenn er eigene Custom-Pointer-YAML gepatched hat und
+            -- die neuen Keys nicht mit-uebernahm). Behaelt das bekannte
+            -- stuck-Verhalten (Wilds fallen als Gift-Encounter durch), aber
+            -- die App stuerzt nicht ab. Kann entfernt werden sobald der
+            -- Repo-Zwangsupgrade sicher ist (alle Deploys > vX.Y.Z).
             local cnt = memory.readbyte(battlerscountpointer, state.domain)
             if cnt > 0 and cnt <= 4 then
                 state.in_battle = true

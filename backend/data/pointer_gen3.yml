@@ -44,6 +44,16 @@
   box_stride: 0x960
   mapheaderpointer: 0x0202E828
   battlerscountpointer: 0x02024A68
+  # gBattleOutcome (u8): 0 = Kampf aktiv, sonst ended (1=won, 2=lost, 4=fled, 7=caught).
+  # gBattlersCount alleine reicht NICHT — bleibt nach Kampfende non-zero und
+  # macht die Battle-Detection stuck-true (Bug: keine Encounter mehr erkannt).
+  # Adresse aus Ironmon-Tracker GameAddresses/Pokemon Ruby v1.0.json.
+  # TODO: vor Release mit tools/find_pointers.py auf DE-Rubin verifizieren
+  # (Session 2026-07-30, Ironmon-Cross-Check als Interim-Beleg).
+  battleoutcomepointer: 0x02024D26
+  # gBattleMons[0].species (u16): erste Species im Battle. In "no battle"
+  # meist 0/garbage → als Sanity-Check für Fake-Battle-Filter.
+  battlemonspointer: 0x02024A80
   battleopponentidpointer: 0x0202FF5E
   battleopponentpointer: 0x030045C0
   # gPlayerPartyCount (u8) — Outcome-Check nach Kampfende
@@ -66,6 +76,8 @@
   box_stride: 0x960
   mapheaderpointer: 0x0202E828
   battlerscountpointer: 0x02024A68
+  battleoutcomepointer: 0x02024D26
+  battlemonspointer: 0x02024A80
   battleopponentidpointer: 0x0202FF5E
   battleopponentpointer: 0x030045C0
   partycountpointer: 0x03004360
@@ -87,6 +99,11 @@
   box_stride: 0x960
   mapheaderpointer: 0x02037318
   battlerscountpointer: 0x0202406C
+  # Emerald: Adressen aus Ironmon-Tracker GameAddresses/Pokemon Emerald.json.
+  # TODO: vor Release mit tools/find_pointers.py auf DE-Smaragd verifizieren
+  # (Session 2026-07-30, Ironmon-Cross-Check als Interim-Beleg).
+  battleoutcomepointer: 0x0202433A
+  battlemonspointer: 0x02024084
   battleopponentidpointer: 0x02038BCA
   battleopponentpointer: 0x02024744
   # gPlayerPartyCount (u8) — statisch trotz Save-Block-Relocation
@@ -112,6 +129,15 @@
   box_stride: 0x960
   mapheaderpointer: 0x02036DFC
   battlerscountpointer: 0x02023BCC
+  # FRLG (Feuerrot/FireRed): Adressen aus Ironmon-Tracker
+  # GameAddresses/Pokemon FireRed v1.0.json und Pokemon Feuerrote.json.
+  # Beide Ironmon-JSONs listen dieselben Adressen; noch nicht gegenverifiziert
+  # via tools/find_pointers.py auf einer physischen deutschen ROM (Session-
+  # Ergebnis 2026-07-30 — die Adressen entstanden aus Ironmon-Cross-Check
+  # zum stuck-battle-Fix, nicht aus dem projektueblichen Pointer-Find-Verfahren).
+  # TODO: vor Release mit find_pointers.py auf DE-Feuerrot verifizieren.
+  battleoutcomepointer: 0x02023E8A
+  battlemonspointer: 0x02023BE4
   battleopponentidpointer: 0x020386AE
   battleopponentpointer: 0x0202402C
   partycountpointer: 0x02024029
@@ -136,6 +162,8 @@
   box_stride: 0x960
   mapheaderpointer: 0x02036DFC
   battlerscountpointer: 0x02023BCC
+  battleoutcomepointer: 0x02023E8A
+  battlemonspointer: 0x02023BE4
   battleopponentidpointer: 0x020386AE
   battleopponentpointer: 0x0202402C
   partycountpointer: 0x02024029

@@ -12,7 +12,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 
-from backend.classes.pokedex_db import PokedexDB
+from backend.classes.pokedex_db import PokedexDB, LEGACY_GIFT_ROUTE_MARKER
 from backend.logging_setup import get_logger
 
 
@@ -97,6 +97,10 @@ def _location_name(route_id: int, edition: int = 0) -> str:
     # ohne "Route "-Prefix, damit er im Encounter-Menue klar erkennbar ist.
     if route_id == -1:
         return "Starter"
+    # LEGACY_GIFT_ROUTE_MARKER: Migrations-Marker fuer alte
+    # Gift-Encounter aus Sessions vor der route=map_header_id-Umstellung.
+    if route_id == LEGACY_GIFT_ROUTE_MARKER:
+        return "Gift (Legacy)"
     gen = _edition_to_gen(edition)
     locs = _ENCOUNTER_LOCATIONS.get(gen, {})
     loc = locs.get(route_id)
@@ -325,7 +329,24 @@ class EncounterMenu(Screen):
                     filtered.append(row)
             rows = filtered
 
-        rows.sort(key=lambda r: (r["route"], 0 if not r["is_open"] else 1))
+        # Sort-Sondersteuerung: LEGACY_GIFT_ROUTE_MARKER (-999) und
+        # STARTER_ROUTE (-1) sollen NICHT als kleinste Zahlen ganz oben
+        # landen — Starter zuerst (Session-Anfang), Legacy-Gifts ans Ende
+        # (Migrations-Rest). Sort-Key mappt Sondermarker in einen anderen
+        # Bereich, "normale" Routen bleiben aufsteigend dazwischen.
+        # Robust gegen kuenftige negative Marker: alle nicht-Starter negativen
+        # Werte landen wie Legacy im Rest-Bucket, sodass sie nicht ungewollt
+        # vor die regulaeren Routen (>=0) rutschen.
+        def _sort_key(r):
+            route = r["route"]
+            if route == -1:
+                bucket = 0  # Starter oben
+            elif route >= 0:
+                bucket = 1  # regulaere Routen (MAPSEC/mapLayoutId) dazwischen
+            else:
+                bucket = 2  # LEGACY_GIFT_ROUTE_MARKER + kuenftige negative Marker
+            return (bucket, route, 0 if not r["is_open"] else 1)
+        rows.sort(key=_sort_key)
 
         enc_count = sum(1 for r in rows if not r["is_open"])
         open_count = sum(1 for r in rows if r["is_open"])

@@ -620,6 +620,21 @@ class SessionMenu(Screen):
         if nuzlocke_path.exists():
             with open(nuzlocke_path, 'r') as file:
                 new_nuz = yaml.safe_load(file)
+            # Stale-Key-Fix (auch bei leerer/korrupter YAML): rule_* und
+            # soullink_*-Keys aus der VORHERIGEN Session zuerst leeren, sonst
+            # leaken sie ueber den Wechsel hinweg. Beispiel-Symptom: Session A
+            # hat `rule_shiny_clause_always_catchable: true` gespeichert,
+            # Session B hat den Key nicht (weil aeltere Session ohne die
+            # Regel-Migration oder komplett leere YAML) → nach Wechsel steht
+            # in self.nuz weiter True, obwohl die Session B-Config keine
+            # Aussage dazu macht. Fehlende Keys in der neuen Session fallen
+            # dann sauber auf RULE_CHECKBOXES-Defaults zurueck (per .get in
+            # nuzlockemenu) bzw. bei App-Start via init_config_folder-
+            # Migration.
+            stale_keys = [k for k in list(self.nuz.keys())
+                           if k.startswith("rule_") or k.startswith("soullink_")]
+            for k in stale_keys:
+                del self.nuz[k]
             if new_nuz:
                 for key, value in new_nuz.items():
                     self.nuz[key] = value

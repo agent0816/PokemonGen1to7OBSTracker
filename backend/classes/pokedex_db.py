@@ -10,7 +10,13 @@ from backend.classes.Pokemon import Pokemon
 from backend.logging_setup import get_logger
 
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
+# Marker fuer Legacy-Gift/Fossil/Static/Egg/Token-Encounter aus Sessions vor
+# der Migration auf route=map_header_id. Diese Zeilen hatten alle route=0
+# und wuerden nach dem Fix sonst mit den frisch geloggten Wilds auf MAPSEC=0
+# kollidieren bzw. das has_encounter_with_method_at_route-Dedupe umgehen
+# (Doppel-Starter-Risiko). -999 signalisiert "Location unbekannt".
+LEGACY_GIFT_ROUTE_MARKER = -999
 
 
 def _serialized(func):
@@ -86,6 +92,8 @@ class PokedexDB:
             self._apply_v4(cursor)
         if current_version < 5:
             self._apply_v5(cursor)
+        if current_version < 6:
+            self._apply_v6(cursor)
 
         self.connection.commit()
 
@@ -234,6 +242,30 @@ class PokedexDB:
             (5, datetime.now(timezone.utc).isoformat()),
         )
         self.logger.info("PokedexDB Schema v5 angewendet (soullink_links + members)")
+
+    def _apply_v6(self, cursor):
+        # Migration: Legacy-Gift-Encounter (route=0, method != wild/starter) aus
+        # Sessions vor der route=map_header_id-Umstellung auf einen Marker-Wert
+        # umschreiben. Ohne diese Migration wuerde ein alter Starter mit
+        # route=0 den has_encounter_with_method_at_route-Check umgehen (der
+        # sucht jetzt nach route=<map_header_id>) UND gleichzeitig fuer
+        # potentielle Wild-Route=0-Encounter fake-belegen. -999 haelt die
+        # Historie erhalten, macht die Zeile aber fuer Dedupe unerreichbar
+        # (Location war zum Log-Zeitpunkt sowieso schon verloren).
+        cursor.execute(
+            "UPDATE encounters SET route = ? "
+            "WHERE route = 0 AND method NOT IN ('wild', 'starter')",
+            (LEGACY_GIFT_ROUTE_MARKER,),
+        )
+        migrated = cursor.rowcount
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (6, datetime.now(timezone.utc).isoformat()),
+        )
+        self.logger.info(
+            f"PokedexDB Schema v6 angewendet (legacy gift-route migration): "
+            f"{migrated} Zeilen auf route={LEGACY_GIFT_ROUTE_MARKER} umgeschrieben"
+        )
 
     @_serialized
     def reset_all_data(self) -> bool:
@@ -683,13 +715,52 @@ class PokedexDB:
             return False
 
     @_serialized
+    def has_encounter_with_method_at_route(self, owner: str, edition: int,
+                                             route: int, method: str) -> bool:
+        """True wenn (owner, edition, route, method) bereits einen Encounter hat.
+
+        Dedupe-Basis für non-repeatable Gift-/Static-/Fossil-Encounter: das
+        Gift-YAML sagt "einmal pro Spieler an dieser Map", das ausnutzen wir
+        über die Kombination (edition, route, method). route enthält für
+        Gift-Encounter jetzt die map_header_id (statt 0), damit
+        unterschiedliche Gift-Locations sich nicht gegenseitig blockieren.
+        Ohne diesen Check würde jeder neue PV am selben Ort erneut als
+        derselbe Gift eingebucht (Bug: Wild-Pokemon fielen durch, weil
+        _read_encounter_data nicht gefeuert hat).
+        """
+        if self.connection is None:
+            return False
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT 1 FROM encounters "
+                "WHERE owner = ? AND edition = ? AND route = ? AND method = ? "
+                "LIMIT 1",
+                (owner, int(edition), int(route), method),
+            )
+            return cursor.fetchone() is not None
+        except Exception as err:
+            self.logger.error(f"has_encounter_with_method_at_route failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    @_serialized
     def has_encounter_on_route(self, owner: str, edition: int,
                                route: int) -> bool:
-        """True wenn Route bereits einen First-Encounter hat (Nuzlocke-Zwecke).
+        """True wenn eine Wild-Route bereits einen First-Encounter hat.
 
-        Filtert `is_first = 1`: dupes-Skips und andere Retry-Zeilen
-        (is_first=0) zählen NICHT als Route-belegt — die Route bleibt für den
-        echten First-Encounter frei.
+        Filtert:
+          - `is_first = 1`: dupes-Skips und Retry-Zeilen (is_first=0) zaehlen
+            NICHT als Route-belegt, die Route bleibt fuer den echten
+            First-Encounter frei.
+          - `has_balls = 1`: nur Route-Belegungen nach Run-Start.
+          - `method = 'wild'`: Gift/Fossil/Static/Egg/Token belegen KEINE
+            Wild-Route. Dies ist notwendig, seit process_gift_encounter die
+            `map_header_id` in der `route`-Spalte speichert (statt 0) — der
+            Zahlenraum ueberlappt mit Gen-3-MAPSEC-IDs (z.B. mapLayoutId 58
+            = Prof.-Birch-Lab-Starter vs MAPSEC 58 = Safari-Zone). Ohne den
+            method-Filter wuerde ein Starter-Log den Wild-Route-Slot der
+            Safari-Zone belegen (oder umgekehrt).
         """
         if self.connection is None:
             return False
@@ -699,6 +770,7 @@ class PokedexDB:
                 "SELECT 1 FROM encounters "
                 "WHERE owner = ? AND edition = ? AND route = ? "
                 "  AND has_balls = 1 AND is_first = 1 "
+                "  AND method = 'wild' "
                 "LIMIT 1",
                 (owner, int(edition), int(route)),
             )

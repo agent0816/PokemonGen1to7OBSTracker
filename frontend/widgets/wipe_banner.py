@@ -38,6 +38,7 @@ class TotalWipeBanner(Popup):
                   on_pick_other=None, bizhawk=None,
                   rnd: dict | None = None, pl: dict | None = None,
                   rem: dict | None = None,
+                  violation: dict | None = None,
                   **kwargs):
         super().__init__(**kwargs)
         self.munchlax = munchlax
@@ -51,6 +52,10 @@ class TotalWipeBanner(Popup):
         # In-Place aktualisiert, wer sie braucht bekommt sie direkt).
         self.rem = rem
         self._on_pick_other = on_pick_other
+        # violation-Payload aus dem soullink_rule_violation-Broadcast, damit
+        # der Cancel-Button beim Dismiss den subject_pid an dismiss_wipe
+        # weiterreichen kann (Wipe-Marker-Clear + Team-Broadcast).
+        self._violation = violation or {}
 
         self.title = "TOTAL WIPE — Run-Ende erkannt"
         self.size_hint = (0.7, 0.6)
@@ -93,11 +98,14 @@ class TotalWipeBanner(Popup):
             on_press=lambda *_: self._confirm_full_reset(),
         )
         btn_row.add_widget(self.full_reset_button)
-        # Test-/Notausgang: schliesst Popup ohne Aktion. Wipe-State bleibt
-        # bestehen, Popup kann bei naechstem Wipe-Signal wieder aufpoppen.
+        # Cancel: Popup schliessen ohne Run-Ende-Aktion. Loest ausserdem
+        # dismiss_wipe im Munchlax aus — der clearet den Wipe-Debounce-Marker
+        # (damit der naechste echte Wipe sofort wieder ein Popup triggert)
+        # und sendet bei Team-Modi (coop/versus) einen wipe_dismissed-
+        # Broadcast, sodass Team-Mitglieder ihr Popup auch schliessen.
         self.cancel_button = Button(
-            text="Abbrechen (nur Test — Wipe-State bleibt)",
-            on_press=lambda *_: self.dismiss(),
+            text="Popup schließen (Run läuft weiter)",
+            on_press=lambda *_: self._cancel_wipe(),
         )
         btn_row.add_widget(self.cancel_button)
         content.add_widget(btn_row)
@@ -188,11 +196,37 @@ class TotalWipeBanner(Popup):
                 return
             if ok:
                 self._set_status(f"Geladen: {snap_id}")
+                # Fix Bug 4a: nach Restore Overlay explizit refreshen.
+                # Der Diff-Guard in alter_teams kann sonst den ersten
+                # notify_update verschlucken, wenn der neue Save identisch
+                # zum letzten sorted_teams-Snapshot wirkt.
+                try:
+                    await self.munchlax.force_overlay_broadcast(
+                        f"snapshot restore: {snap_id}"
+                    )
+                except Exception as err:
+                    logger.warning(f"force_overlay_broadcast nach restore failed: {err}")
                 dismiss_delay = 0
             else:
                 self._set_status("Restore fehlgeschlagen")
         finally:
             self._schedule_finish(dismiss_delay)
+
+    def _cancel_wipe(self):
+        """Cancel-Handler: dismiss_wipe (Marker-Clear + Team-Broadcast) +
+        Popup schliessen. subject_pid aus violation-Payload, fallback None.
+        """
+        subject_pid = None
+        try:
+            raw = self._violation.get("player_id")
+            if raw is None:
+                raw = self._violation.get("subject")
+            if raw is not None:
+                subject_pid = int(raw)
+        except Exception as err:
+            logger.debug(f"_cancel_wipe: subject_pid-Parse failed: {err}")
+        asyncio.create_task(self.munchlax.dismiss_wipe(subject_pid))
+        self.dismiss()
 
     def _pick_other(self):
         # Kein Lock nötig: _pick_other schliesst das Popup sofort synchron.
@@ -362,6 +396,15 @@ class TotalWipeBanner(Popup):
         if not restored:
             self._set_status("Restore fehlgeschlagen")
             return None
+        # Fix Bug 4a: Overlay-Broadcast forcen — Randomize+Restore hat
+        # potentiell neue Team-Zustaende, aber der Diff-Guard koennte den
+        # ersten notify_update verschlucken.
+        try:
+            await self.munchlax.force_overlay_broadcast(
+                f"randomize+restore: {snap_id}"
+            )
+        except Exception as err:
+            logger.warning(f"force_overlay_broadcast nach randomize+restore failed: {err}")
         # 3) User-Hinweis: der neue ROM-Pfad wird ermittelt (RunManager) und
         #    zusammen mit der BizHawk-Verbindungssituation ausgegeben. Der
         #    Emulator laedt die ROM nicht automatisch — der User muss sie in

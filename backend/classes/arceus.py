@@ -63,6 +63,12 @@ class Arceus:
         # Rule-Violation-Cache: (rule_type, subject) → violation_dict, wird bei
         # Reconnect neuer Clients gepusht. Beispiele: type='trade', type='first_type_clash'.
         self.soullink_rule_violations: dict[tuple[str, str], dict] = {}
+        # Broadcast-Dedupe-Timestamps: (rule_type, subject) → epoch. Verhindert
+        # dass die selbe Violation innerhalb von 5s mehrfach broadcastet wird
+        # (siehe broadcast_soullink_rule_violation). Init hier statt lazy in der
+        # Broadcast-Methode fuer Konsistenz mit den uebrigen State-Dicts der
+        # Klasse.
+        self._last_violation_broadcast_ts: dict[tuple, float] = {}
         # Token-State pro Owner: {owner: {earned: int, used: int, active_route: int|None,
         #                                 active_edition: int|None}}
         # `active_route` = Route für die als nächstes ein Extra-Encounter erlaubt ist.
@@ -270,6 +276,18 @@ class Arceus:
                     payload = data.get("violation") or {}
                     if payload:
                         asyncio.create_task(self.broadcast_soullink_rule_violation(payload))
+                elif isinstance(data, dict) and data.get("type") == "wipe_dismissed":
+                    # Ein Client hat sein TotalWipe-Popup per Cancel geschlossen.
+                    # Weitergeben an alle Clients — die Team-Mitgliedschaftspruefung
+                    # (coop = alle, versus = team_letter match) macht der Empfaenger.
+                    # Kein Server-seitiges Dedupe: bei zwei parallelen Dismiss-
+                    # Klicks von zwei Team-Membern soll jeder Broadcast durchlaufen.
+                    subj = data.get("subject_pid")
+                    if subj is not None:
+                        asyncio.create_task(self.broadcast_wipe_dismissed({
+                            "subject_pid": subj,
+                            "timestamp": data.get("timestamp"),
+                        }))
                 elif isinstance(data, dict) and data.get("type") == "soullink_token_earned":
                     owner = data.get("owner") or ""
                     if self._token_earn(owner):
@@ -678,6 +696,9 @@ class Arceus:
         self.soullink_versus_state = {}
         self.soullink_versus_battles = []
         self.soullink_rule_violations = {}
+        # Dedupe-Timestamps auch clearen: sonst wuerde eine echte neue Violation
+        # direkt nach dem Reset (innerhalb 5s) stumm gedropt werden.
+        self._last_violation_broadcast_ts = {}
         self.soullink_tokens = {}
         self._team_owner_cache = {}
         self.logger.info("Arceus _reset_session_state: alle Session-Caches geleert")
@@ -1523,6 +1544,20 @@ class Arceus:
 
     async def broadcast_soullink_rule_violation(self, violation: dict):
         key = (violation.get("type", "unknown"), str(violation.get("subject", "")))
+        # Kurzfenster-Dedupe: dieselbe (type, subject)-Violation innerhalb von
+        # 5s nur einmal broadcasten. Ohne diesen Guard würden Client-Echoes
+        # (n Munchlaxes bewerten dasselbe fremde Team) n Popups pro Maschine
+        # triggern. Fix in _persist_teams stoppt die Cascade an der Quelle,
+        # diese Server-seitige Dedupe ist Defense-in-Depth für Race- und
+        # Legacy-Client-Fälle.
+        now = time.time()
+        last_ts = self._last_violation_broadcast_ts.get(key, 0.0)
+        if now - last_ts < 5.0:
+            self.logger.info(
+                f"broadcast_soullink_rule_violation skip (dedupe <5s): key={key}"
+            )
+            return
+        self._last_violation_broadcast_ts[key] = now
         self.soullink_rule_violations[key] = violation
         message = {"type": "soullink_rule_violation", "violation": violation}
         for client_id in list(self.munchlaxes.keys()):
@@ -1530,6 +1565,22 @@ class Arceus:
                 await self.send_to_client(client_id, message)
             except Exception as exc:
                 self.logger.error(f"broadcast_soullink_rule_violation an {client_id} failed: {exc}")
+
+    async def broadcast_wipe_dismissed(self, payload: dict):
+        """Verteilt einen wipe_dismissed-Event an alle Clients.
+
+        Kein Server-seitiges Team-Filtering: der Empfaenger vergleicht selbst
+        die soullink_team_membership. Das haelt den Server generisch und
+        vermeidet Race-Conditions zwischen Config-Reload und Broadcast.
+        """
+        message = {"type": "wipe_dismissed",
+                    "subject_pid": payload.get("subject_pid"),
+                    "timestamp": payload.get("timestamp")}
+        for client_id in list(self.munchlaxes.keys()):
+            try:
+                await self.send_to_client(client_id, message)
+            except Exception as exc:
+                self.logger.error(f"broadcast_wipe_dismissed an {client_id} failed: {exc}")
 
     async def broadcast_soullink_death(self, death: dict):
         message = {"type": "soullink_death", "death": death}

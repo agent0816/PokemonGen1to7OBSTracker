@@ -89,6 +89,10 @@ class Munchlax:
         self._reported_deaths: set[tuple[int, str]] = set()
         self._pending_death_reports: list[dict] = []
         self.on_total_wipe_callback = None
+        # Wird von app.py gesetzt: Callback, wenn ein anderer Client sein
+        # Wipe-Popup per Cancel geschlossen hat und wir im selben Team sind.
+        # Empfaengt subject_pid (int).
+        self.on_wipe_dismissed_callback = None
         # HP-Consistency: pro (player_id, personality) → {last_max_hp, last_lvl, zero_reads}.
         # Filtert kurze RAM-Fluktuationen und Gen-6/7-Battle-RAM-Ausreißer, bevor ein
         # Pokemon als "tot" gilt.
@@ -230,6 +234,29 @@ class Munchlax:
                 await notifier()
         except Exception as err:
             self.logger.warning(f"overlay notify_config_change nach reset failed: {err}")
+
+    async def force_overlay_broadcast(self, reason: str = ""):
+        """Erzwingt einen kompletten Team- + Badge-Refresh an alle SSE-Clients.
+
+        Öffentlicher Wrapper um `_refresh_overlay_after_reset` für Aufrufer
+        außerhalb des Reset-Flows: Snapshot-Restore und Randomize+Restore
+        wechseln den DB-Inhalt (und damit oft indirekt die sorted_teams,
+        wenn der neue Save geladen wird), aber der reguläre Diff-Guard in
+        `alter_teams` (Zeile ~500) kann in Edge-Cases (identischer Content,
+        Objekt-Equality-Fallen) den notify_update-Trigger verschlucken.
+        Nach einem Restore explizit forcen — dann bekommt das Overlay
+        garantiert sofort den frischen Zustand statt bis zum nächsten
+        echten Team-Diff zu warten.
+        """
+        srv = self.overlay_server
+        if srv is None or not getattr(srv, "is_connected", False):
+            self.logger.debug(
+                f"force_overlay_broadcast skip ({reason}): overlay_server "
+                f"nicht verfügbar/verbunden"
+            )
+            return
+        self.logger.info(f"force_overlay_broadcast: {reason}")
+        await self._refresh_overlay_after_reset()
 
     def should_auto_refresh_boxes(self, player_id: int) -> bool:
         """True wenn die Throttle-Drosselung einen automatischen Refresh erlaubt."""
@@ -444,6 +471,13 @@ class Munchlax:
                                 self.on_total_wipe_callback(violation)
                             except Exception as err:
                                 self.logger.warning(f"on_total_wipe_callback: {err}")
+                    elif msg_type == "wipe_dismissed":
+                        subj = data.get("subject_pid")
+                        if subj is not None:
+                            try:
+                                self._handle_remote_wipe_dismissed(int(subj))
+                            except Exception as err:
+                                self.logger.warning(f"_handle_remote_wipe_dismissed: {err}")
                     elif msg_type == "soullink_tokens":
                         self.soullink_tokens = data.get("tokens", {}) or {}
                         self.logger.info(
@@ -808,6 +842,39 @@ class Munchlax:
         except Exception as err:
             self.logger.debug(f"notify_overlay_session {event_type} failed: {err}")
 
+    async def _run_active_for_local_player(self, player_id, edition) -> bool:
+        """True wenn der Nuzlocke-Run für diesen lokalen Player scharf ist.
+
+        Gate für Death-/Wipe-Detection: solange `rule_run_start_on_ball` an
+        ist und der Spieler noch nie einen Ball hatte, laufen Kämpfe (Rivalen-
+        Fight vor Route 1, HP=0 durch Kampf-Ende) ins Leere, ohne einen
+        `soullink_death` oder `total_wipe` zu triggern.
+
+        `has_catching_balls` ist monoton (bag_first_seen) — einmal True,
+        bleibt True. Rückgabe False nur wenn Regel aktiv UND noch nie Ball.
+
+        async: PokedexDB serialisiert ueber ein RLock (`access_lock`) das
+        auch von Executor-Threads gehalten wird (z.B. parallel laufende
+        upsert_team-Calls in _persist_teams). Direkter sync-Call wuerde den
+        Event-Loop-Thread blocken, wenn der Lock hoch steht — deshalb via
+        run_in_executor, konsistent mit den Nachbaraufrufen im Umfeld.
+        """
+        if not self.nuz.get("rule_run_start_on_ball", True):
+            return True
+        if self.pokedex_db is None or self.pokedex_db.connection is None:
+            return False
+        owner = PokedexDB.build_owner(self.pl.get('your_name', ''), str(player_id))
+        loop = asyncio.get_event_loop()
+        try:
+            return await loop.run_in_executor(
+                None, self.pokedex_db.has_catching_balls, owner, edition
+            )
+        except Exception as err:
+            self.logger.warning(
+                f"_run_active_for_local_player has_catching_balls failed: {err}"
+            )
+            return False
+
     def _evaluate_team_deaths(self, player_id, team) -> list[tuple]:
         """Ein `_is_pokemon_dead`-Pass über das Team. Gibt [(pv, dexnr, is_dead)] zurück.
 
@@ -914,6 +981,92 @@ class Munchlax:
             except Exception as err:
                 self.logger.warning(f"total_wipe send failed: {err}")
         return True
+
+    async def dismiss_wipe(self, subject_pid: int | None):
+        """User hat das TotalWipe-Popup per Cancel geschlossen.
+
+        1. Wipe-Marker `_wipe_signaled[subject_pid]` bleibt bewusst gesetzt.
+           Der natuerliche Debounce in `check_total_wipe` unterdrueckt weitere
+           Broadcasts, solange kein Team-Slot wieder lebt — genau das Verhalten,
+           das der User beim "Popup schliessen" erwartet: Ruhe. Ein frueherer
+           Fix-Ansatz (Marker poppen) hat bei stuck-Wipe (echtem Team=0/0)
+           dazu gefuehrt, dass das Popup nach dem Server-Dedupe-Fenster (5s)
+           wieder aufpoppte, weil check_total_wipe erneut den Marker frisch
+           setzte und broadcastete.
+        2. Bei Team-Modi (coop, versus) einen `wipe_dismissed`-Broadcast an
+           den Server senden, der ihn an alle Clients weiterleitet. Team-
+           Mitglieder des subject_pid schliessen dann automatisch ihr Popup.
+           Bei nuzlocke/disabled/versus_ffa jeder Client selbst entscheidet
+           → kein Broadcast, weil kein sinnvolles Shared-Team-Konzept.
+        """
+        # Marker BEHALTEN — nicht poppen, siehe Docstring Punkt 1.
+
+        mode = str(self.nuz.get("soullink_mode", "")).strip().lower()
+        if mode not in ("coop", "versus"):
+            self.logger.debug(
+                f"dismiss_wipe: kein Broadcast (mode={mode!r}, nur coop/versus)"
+            )
+            return
+        if not self.is_connected or subject_pid is None:
+            return
+        try:
+            async with self.writer_lock:
+                await self.send_message({
+                    "type": "wipe_dismissed",
+                    "subject_pid": int(subject_pid),
+                    "timestamp": time.time(),
+                })
+            self.logger.info(
+                f"wipe_dismissed gesendet: subject_pid={subject_pid} mode={mode}"
+            )
+        except Exception as err:
+            self.logger.warning(f"wipe_dismissed send failed: {err}")
+
+    def _handle_remote_wipe_dismissed(self, subject_pid: int):
+        """Anderer Client hat Wipe-Popup gecancelled.
+
+        Wenn wir im selben Team wie subject_pid sind, unser Popup ebenfalls
+        schliessen und lokalen Wipe-Marker fuer alle unsere Player clearen.
+
+        Team-Check:
+          - coop:   alle im selben Team, immer dismissen
+          - versus: soullink_team_membership map "owner_name" -> team_letter
+                    subject und mind. einer unserer lokalen Player muessen
+                    im gleichen team_letter sein
+          - andere: ignoriert (sollte nicht broadcastet worden sein)
+        """
+        mode = str(self.nuz.get("soullink_mode", "")).strip().lower()
+        share_team = False
+        if mode == "coop":
+            share_team = True
+        elif mode == "versus":
+            team_map = self.nuz.get("soullink_team_membership") or {}
+            subject_owner = self.player_names.get(int(subject_pid), "")
+            subject_team = team_map.get(subject_owner)
+            if subject_team:
+                my_owners = [self.player_names.get(pid, "")
+                              for pid in list(self.bizhawk_teams.keys())]
+                my_teams = {team_map.get(o) for o in my_owners if o}
+                share_team = subject_team in my_teams
+        if not share_team:
+            self.logger.debug(
+                f"wipe_dismissed empfangen: subject_pid={subject_pid} "
+                f"mode={mode} — kein Share-Team, ignoriere"
+            )
+            return
+        self.logger.info(
+            f"wipe_dismissed empfangen (Team-Match): subject_pid={subject_pid} "
+            f"mode={mode} — Popup schliessen (Marker bleibt fuer Debounce)"
+        )
+        # Marker BEHALTEN, analog dismiss_wipe: sonst wuerde bei stuck-Wipe
+        # der naechste _persist_teams-Tick check_total_wipe erneut triggern
+        # und die Popups poppen 5s spaeter (nach Server-Dedupe) alle wieder auf.
+        cb = getattr(self, "on_wipe_dismissed_callback", None)
+        if callable(cb):
+            try:
+                cb(int(subject_pid))
+            except Exception as err:
+                self.logger.warning(f"on_wipe_dismissed_callback failed: {err}")
 
     def get_run_manager(self) -> RunManager | None:
         """Baut den RunManager pro Aufruf frisch gegen den aktuellen
@@ -1310,6 +1463,18 @@ class Munchlax:
                             f"(remote, lokale Slots: {list(self.bizhawk_teams.keys())})"
                         )
                 if self._nuzlocke_rules_active():
+                    # Wipe/Death nur für lokal betreute Player evaluieren
+                    # (analog Encounter-Filter oben). Ohne diesen Guard würde
+                    # jeder Client alle remote-Teams bewerten → n-fache
+                    # soullink_rule_violation-Cascade an den Server.
+                    if player not in self.bizhawk_teams:
+                        continue
+                    # Ball-Gate: rule_run_start_on_ball verhindert, dass ein
+                    # HP=0 vor Ballerhalt (z.B. Starter-K.O. im Rival-Kampf)
+                    # als Death oder Total-Wipe zählt. Async wegen DB-Call
+                    # via run_in_executor (siehe Docstring).
+                    if not await self._run_active_for_local_player(player, edition):
+                        continue
                     # Ein _is_pokemon_dead-Pass pro Tick — Ergebnis geht an
                     # Wipe-Check UND Death-Report (Zähler darf nur 1x hochzählen).
                     dead_infos = self._evaluate_team_deaths(player, pokemons)

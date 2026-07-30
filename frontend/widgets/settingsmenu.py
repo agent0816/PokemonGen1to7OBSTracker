@@ -25,7 +25,11 @@ from frontend.widgets.sprite_setup_popup import SpriteSetupPopup
 from frontend.widgets.file_picker import pick_file, pick_directory
 from frontend.widgets.toast import show_toast, show_pending_toast
 import frontend.UIFactory as UI
-from backend.logging_setup import get_logger, set_console_level, get_console_level
+from backend.logging_setup import (
+    get_logger, set_console_level, get_console_level,
+    list_known_modules, get_module_level, set_module_level,
+)
+from backend.dev_mode import is_developer
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
@@ -504,6 +508,40 @@ class ScrollSettings(ScrollView):
         log_level_box.add_widget(Label(size_hint_x=.6))
         logging_box.add_widget(log_level_box)
 
+        # Dev-only: per-Modul File-Log-Level. Nur sichtbar wenn Source-Run
+        # oder TRACKER_DEV=1 gesetzt — in der Release-Binary versteckt, damit
+        # User nicht versehentlich die Diagnose-Log-Datei fluten oder
+        # ausduennen. Refresh-Button erlaubt Rescan nach Modul-Neubau
+        # (Logger werden lazy per get_logger registriert).
+        if is_developer():
+            dev_header = Label(
+                text="Dev: Per-Modul File-Log-Level",
+                size_hint=(1, None), size=(0, "20dp"),
+                font_size="16sp",
+            )
+            logging_box.add_widget(dev_header)
+            dev_hint = Label(
+                text=("Aendert nur die logs/<modul>.log-Detailtiefe live. "
+                       "Console-Level oben bleibt getrennt. Persistiert in "
+                       "backend/config/log_settings.yml."),
+                size_hint=(1, None), size=(0, "40dp"),
+                font_size="11sp",
+            )
+            logging_box.add_widget(dev_hint)
+            dev_module_box = BoxLayout(orientation='vertical',
+                                         size_hint_y=None, spacing="4dp")
+            dev_module_box.bind(minimum_height=dev_module_box.setter('height'))  # type: ignore
+            self.ids["dev_module_log_box"] = weakref.proxy(dev_module_box)
+            logging_box.add_widget(dev_module_box)
+            refresh_row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                                      size=(0, "30dp"), padding=("5dp", 0))
+            refresh_btn = Button(text="Modul-Liste neu einlesen",
+                                   size_hint=(1, 1),
+                                   on_press=lambda inst: self._refresh_dev_module_log_levels())
+            refresh_row.add_widget(refresh_btn)
+            logging_box.add_widget(refresh_row)
+            self._refresh_dev_module_log_levels()
+
         box.add_widget(logging_box)
 
         self.add_widget(box)
@@ -511,7 +549,43 @@ class ScrollSettings(ScrollView):
         self.obs_2_pcs_setup(obs_sprites_checkbox, initializing=True)
 
         self.load_config()
-    
+
+    def _refresh_dev_module_log_levels(self):
+        """Baut die per-Modul Log-Level-Zeilen unter der Dev-Sektion neu.
+
+        Wird beim Screen-Init und beim Refresh-Button-Klick aufgerufen.
+        list_known_modules liefert nur Module deren Logger bereits per
+        get_logger initialisiert wurde — deshalb der Refresh-Button, falls
+        neue Module erst spaeter (nach Verbindungsaufbau etc.) auftauchen.
+        """
+        box = self.ids.get("dev_module_log_box")
+        if box is None:
+            return
+        box.clear_widgets()
+        modules = list_known_modules()
+        if not modules:
+            box.add_widget(Label(
+                text="(noch keine Modul-Logger registriert)",
+                size_hint_y=None, height="24dp", font_size="11sp",
+            ))
+            return
+        for module_key in modules:
+            row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                              size=(0, "26dp"), padding=("5dp", 0), spacing="5dp")
+            row.add_widget(Label(text=module_key, size_hint=(.5, 1),
+                                    font_size="11sp"))
+            spinner = Spinner(
+                text=get_module_level(module_key),
+                values=('DEBUG', 'INFO', 'WARNING', 'ERROR'),
+                size_hint=(.3, 1),
+            )
+            # module_key im Lambda binden (Kivy-Default-Arg-Trick), sonst wuerde
+            # der letzte Loop-Wert fuer alle Spinner geteilt werden.
+            spinner.bind(text=lambda _inst, val, mk=module_key: set_module_level(mk, val))
+            row.add_widget(spinner)
+            row.add_widget(Label(size_hint_x=.2))
+            box.add_widget(row)
+
     def set_game_sprites(self, sprite_box):
         game_sprites_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing="20dp")
         game_sprites_box.bind(minimum_height=game_sprites_box.setter('height')) # type: ignore

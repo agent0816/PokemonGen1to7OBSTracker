@@ -83,13 +83,48 @@ class Screens(ScreenManager):
 
         # Total-Wipe-Banner-Callback registrieren (Task #17)
         from frontend.widgets.wipe_banner import TotalWipeBanner
-        def _open_wipe_banner(_violation):
+        self._active_wipe_banner = None
+        def _open_wipe_banner(violation):
+            # Reentrancy-Guard: solange ein Banner offen ist, keine weiteren
+            # öffnen (mehrfache Broadcasts derselben Wipe-Session sonst → n
+            # gestapelte Popups). Wenn User dismissed, wird die Referenz
+            # freigegeben und ein neuer Wipe kann wieder ein Banner öffnen.
+            existing = self._active_wipe_banner
+            if existing is not None and getattr(existing, "_is_open", False):
+                # Log so dass Multi-Team-Wipes im Versus-Modus nachvollziehbar
+                # sind: eine zweite Violation (z.B. anderes Team) wird stumm
+                # verworfen, weil das erste Banner noch offen ist. User muss
+                # das erste Popup dismissen, um das zweite zu sehen.
+                logger.info(
+                    f"_open_wipe_banner skip (Banner bereits offen): "
+                    f"neue violation type={violation.get('type')} "
+                    f"subject={violation.get('subject')}"
+                )
+                return
             def _pick_other():
                 self.current = "NuzlockeMenu"
-            TotalWipeBanner(munchlax, configsave, bh=bh,
+            banner = TotalWipeBanner(munchlax, configsave, bh=bh,
                               on_pick_other=_pick_other,
-                              bizhawk=bizhawk, rnd=rnd, pl=pl, rem=rem).open()
+                              bizhawk=bizhawk, rnd=rnd, pl=pl, rem=rem,
+                              violation=violation)
+            banner._is_open = True
+            def _on_dismiss(*_):
+                banner._is_open = False
+                if self._active_wipe_banner is banner:
+                    self._active_wipe_banner = None
+            banner.bind(on_dismiss=_on_dismiss)
+            self._active_wipe_banner = banner
+            banner.open()
         munchlax.on_total_wipe_callback = lambda v: _open_wipe_banner(v)
+
+        # Wipe-Dismissed-Callback: anderer Team-Mitglied hat sein Wipe-Popup
+        # per Cancel geschlossen (nur coop/versus). Wenn unser Popup noch
+        # offen ist, ebenfalls schliessen — konsistente Team-UI.
+        def _dismiss_wipe_banner(_subject_pid):
+            banner = self._active_wipe_banner
+            if banner is not None and getattr(banner, "_is_open", False):
+                banner.dismiss()
+        munchlax.on_wipe_dismissed_callback = lambda pid: _dismiss_wipe_banner(pid)
 
         # Slot-Kollision: Server hat declared_player_ids abgelehnt weil ein anderer
         # Client denselben Netz-Slot belegt. Popup zeigt betroffene Slots + Konkurrenz.

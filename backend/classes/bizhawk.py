@@ -55,6 +55,13 @@ class Bizhawk:
         self._encounter_inflight: dict[str, bool] = {}
         self._last_battle_pv: dict[str, int | None] = {}
         self._last_map_header: dict[str, int] = {}
+        # Diagnose-Counter (Fix E): zaehlt wie oft process_wild_encounter
+        # erfolgreich fuer diesen Client aufgerufen wurde. Bleibt 0, wenn
+        # in_battle-Detection kaputt ist (Lua liest gBattlersCount falsch)
+        # oder opp_id/opp-Bytes ausschliesslich Garbage liefern. Wird von
+        # _handle_new_pokemon geprueft: neue PVs ohne je einen erkannten
+        # Wild-Kampf sind ein starker Hinweis auf broken Battle-Detection.
+        self._wild_encounters_processed: dict[str, int] = {}
         # Vor Kampfstart gecachte Party-Groesse; nach Kampfende gegen den
         # aktuellen Wert diffed (Fix 2: Party-Count-Diff → deckt Fang mit
         # freiem Party-Slot auch dann ab, wenn PID-in-Team-Check aus Race-
@@ -253,7 +260,15 @@ class Bizhawk:
                             asyncio.create_task(
                                 self._check_encounter_outcome(client_id, player, edition)
                             )
-                    elif counter % 60 == 4 and not in_battle:
+                    elif counter % 60 == 4:
+                        # map_header auch im Kampf refreshen: wenn in_battle
+                        # aufgrund von Pointer-/ROM-Problemen dauerhaft True
+                        # ist (bekannter Bug bei manchen DE-/Randomizer-ROMs),
+                        # bleibt _last_map_header sonst auf dem allerletzten
+                        # bekannten Wert eingefroren und Gift-Location-Matches
+                        # kollabieren auf die Startmap. gMapHeader wird auch
+                        # während Wild-Kämpfen von der Field-Position gehalten,
+                        # das Lesen ist also safe.
                         asyncio.create_task(
                             self._refresh_map_header(client_id, edition)
                         )
@@ -876,6 +891,10 @@ class Bizhawk:
             opp_id_ptr = pointers.get("battleopponentidpointer", 0)
             opp_ptr = pointers.get("battleopponentpointer", 0)
             if not opp_id_ptr or not opp_ptr:
+                self.logger.warning(
+                    f"_read_encounter_data: pointer fehlt fuer edition={edition} "
+                    f"language={language} — opp_id_ptr={opp_id_ptr:#x} opp_ptr={opp_ptr:#x}"
+                )
                 return
 
             queue = self.box_request_queues.get(client_id)
@@ -974,6 +993,10 @@ class Bizhawk:
                 None, self.encounter_tracker.process_wild_encounter,
                 owner, edition, opp, route
             )
+            # Fix E: Counter fuer Diagnose-Warning in _handle_new_pokemon.
+            self._wild_encounters_processed[client_id] = (
+                self._wild_encounters_processed.get(client_id, 0) + 1
+            )
             if result.already_logged:
                 self.logger.debug(
                     f"Encounter bereits geloggt (PV={opp['personality']:#x})"
@@ -1044,6 +1067,25 @@ class Bizhawk:
         non_battle_pvs = [pv for pv in new_pvs if pv != battle_pv]
         if not non_battle_pvs:
             return
+
+        # Diagnose-Signal (Fix E): wenn neue PVs auftauchen ohne dass jemals
+        # ein Wild-Kampf via process_wild_encounter für diesen Client erfolgreich
+        # verbucht wurde, ist entweder die in_battle-Detection kaputt (Lua
+        # liest gBattlersCount falsch), oder die Pointer-YAML weist auf falsche
+        # Adressen (Randomizer/ROM-Rev), oder der Pokemon wurde per Trade/Event
+        # außerhalb eines Kampfs empfangen. Log macht das Problem in der
+        # nächsten Session sofort sichtbar — vorher wurden Wilds still als
+        # Gifts an der aktuell gecachten map_header eingebucht.
+        if (battle_pv is None
+                and self._wild_encounters_processed.get(client_id, 0) == 0):
+            self.logger.warning(
+                f"_handle_new_pokemon: neue PVs ohne bisher erkannten Wild-Kampf. "
+                f"client={client_id} edition={edition} new_pvs={new_pvs} "
+                f"map_header={self._last_map_header.get(client_id, 0)} — "
+                f"Hinweis: broken in_battle-Detection (gBattlersCount-Pointer prüfen) "
+                f"oder erste Session-Aktion war Starter/Trade/Event. "
+                f"Nicht-passende PVs werden als Gift-Encounter behandelt oder verworfen."
+            )
 
         # EncounterTracker lazy initialisieren — bisher nur in _read_encounter_data,
         # das aber nur bei Wild-Kaempfen laeuft. Ohne vorherigen Wild-Kampf war
@@ -1471,6 +1513,22 @@ class Bizhawk:
         self.language_per_client.pop(client_id, None)
         self._team_updated_events.pop(client_id, None)
         self._last_party_count.pop(client_id, None)
+        # Diagnose-Counter (Fix E) auch clearen, sonst feuert die
+        # "keine Wild-Encounter erkannt"-Warnung nach einem Reconnect mit
+        # neuer/kaputter ROM nicht neu, obwohl das Symptom fuer die frische
+        # Session neu relevant waere.
+        self._wild_encounters_processed.pop(client_id, None)
+        self._encounter_inflight.pop(client_id, None)
+        self._last_battle_pv.pop(client_id, None)
+        self._last_map_header.pop(client_id, None)
+        # Konsistenz-Cleanup: die per-Client-Inflight-/Flush-Flags werden bei
+        # sauberem Coroutine-Ende jeweils selbst zurueckgesetzt (finally-
+        # Bloecke in flush_saveram und _auto_refresh_bag), aber bei einem
+        # harten Disconnect ohne graceful shutdown koennten Stale-Flags
+        # ueberleben. Cheap zu clearen, schaedigungsfrei.
+        self._flush_requested.pop(client_id, None)
+        self._flush_done.pop(client_id, None)
+        self._bag_refresh_inflight.pop(client_id, None)
 
         if client_id in self.bizhawks:
             self.bizhawks[client_id] = None

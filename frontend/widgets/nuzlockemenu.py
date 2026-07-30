@@ -134,6 +134,12 @@ class NuzlockeMenu(Screen):
         # setzen wir CheckBox.active programmatisch und wollen nicht in den
         # Custom-Mode kippen. Wird via _suspend_rule_change() gesetzt.
         self._suspend_rule_change_events = False
+        # Guard fuer _on_mode_changed / _on_player_count_changed — waehrend
+        # _load_from_nuz die Spinner programmatisch setzt (nach Session-Wechsel,
+        # Preset-Apply oder Discard-Button) sollen die Handler nicht persistieren
+        # + pushen. Ohne den Guard triggert jeder Load zwei zusaetzliche
+        # _persist_structural_change-Zyklen (Disk-Write + Netz).
+        self._suspend_spinner_change_events = False
         # Wird in _build_rule_checkboxes gefuellt: rule_key -> CheckBox-Widget.
         self._rule_checkboxes: dict[str, CheckBox] = {}
 
@@ -283,10 +289,20 @@ class NuzlockeMenu(Screen):
         self.fill_from_clients_button = Button(text="Aus Clients übernehmen",
                                     on_press=lambda *_: self._fill_owners_from_clients(overwrite=True))
         actions.add_widget(self.fill_from_clients_button)
-        self.load_from_nuz_button = Button(text="Aus Session laden",
+        # Reload-Button: schreibt aktuellen self.nuz-Stand zurueck in die UI.
+        # Nutzt Session-Wechsel (Auto-Trigger von sessionsmenu) UND als
+        # manueller Discard von noch nicht gespeicherten Owner-Text- oder
+        # Team-Letter-Aenderungen (structural changes wie Mode/Count/Rule/
+        # Preset persistieren jetzt automatisch — Button nur noch fuer die
+        # Freitext-/Spinner-Auswahl-Faelle relevant).
+        self.load_from_nuz_button = Button(text="Owner-Änderungen verwerfen",
                                     on_press=lambda *_: self._load_from_nuz())
         actions.add_widget(self.load_from_nuz_button)
-        actions.add_widget(Button(text="In Session speichern",
+        # Save-Button: nur noch fuer Owner-Namen (TextInput) + Team-Letter
+        # (Spinner) noetig. Strukturelle Aenderungen (mode/count/rule/preset)
+        # werden bereits direkt per _persist_structural_change persistiert
+        # und gepusht.
+        actions.add_widget(Button(text="Owner + Teams speichern",
                                     on_press=lambda *_: self._save_to_nuz()))
         root.add_widget(actions)
 
@@ -431,7 +447,7 @@ class NuzlockeMenu(Screen):
             self.preset_spinner.text = CUSTOM_PRESET_LABEL
         self.nuz["soullink_preset_id"] = CUSTOM_PRESET_ID
         self.status_label.text = f"Regel geaendert: {rule_key}={bool(active)} (Custom-Preset)"
-        self._auto_push_config()
+        self._persist_structural_change(f"rule:{rule_key}")
 
     def _is_host(self) -> bool:
         """True wenn User Server-Host ist (start_server=True in rem)."""
@@ -687,17 +703,60 @@ class NuzlockeMenu(Screen):
             self._auto_push_config()
 
     def _on_mode_changed(self, spinner, value):
-        show_team = (MODE_LABEL_TO_VALUE.get(value, value) == "versus")
+        mode_value = MODE_LABEL_TO_VALUE.get(value, value)
+        show_team = (mode_value == "versus")
         for row in self._owner_rows:
             row.set_team_visible(show_team)
-        self._auto_push_config()
+        # Suspend-Guard: _load_from_nuz setzt den Spinner programmatisch,
+        # wir wollen dann keinen zweiten Persist+Push-Zyklus triggern.
+        if self._suspend_spinner_change_events:
+            return
+        # Host-Guard: _sync_from_server_state setzt mode_spinner.text bei
+        # Non-Host-Clients per Poll programmatisch. Kivy blockt bei
+        # disabled=True nur User-Klicks, nicht Property-Dispatch — der
+        # Handler feuert also trotzdem. Ohne Guard wuerde ein Non-Host
+        # bei jedem Server-Sync seine eigene nuzlocke.yml ueberschreiben
+        # (Regression gegen alten reinen _auto_push_config-Pfad).
+        if not self._is_host():
+            return
+        # Change-Detection: initialer Clock.schedule_once(_on_mode_changed)
+        # beim Menu-Init feuert mit dem Wert der schon in self.nuz steht.
+        # Ohne dieses Guard-Check wuerde jedes Screen-Oeffnen eine
+        # unnoetige synchrone Disk-Write + Server-Push ausloesen.
+        if self.nuz.get("soullink_mode") == mode_value:
+            return
+        self.nuz["soullink_mode"] = mode_value
+        self._persist_structural_change("mode")
 
     def _mode_value(self) -> str:
         return MODE_LABEL_TO_VALUE.get(self.mode_spinner.text, "nuzlocke")
 
     def _on_player_count_changed(self, spinner, value):
+        # Suspend-Guard: _load_from_nuz ruft _rebuild_owner_rows separat
+        # nach dem Spinner-Set, hier deshalb komplett aussetzen.
+        if self._suspend_spinner_change_events:
+            return
+        # UI-Rebuild VOR dem Host-Guard: _sync_from_server_state (bei Non-Host)
+        # setzt player_count_spinner.text programmatisch, wenn der Host den
+        # Count aendert. Ohne diesen Rebuild vor dem Guard sieht der Non-Host-
+        # Client die neue Row-Anzahl nie — der Sync-Pfad schreibt nur Text in
+        # bestehende Rows, legt keine neuen an. Analog zum show_team-Loop in
+        # _on_mode_changed (Zeile 707), der bewusst vor allen Guards steht.
         self._rebuild_owner_rows()
-        self._auto_push_config()
+        # Host-Guard identisch zu _on_mode_changed — Server-Sync-Poll setzt
+        # den Spinner-Text bei Non-Host-Clients, wuerde sonst deren Disk-
+        # Config ueberschreiben.
+        if not self._is_host():
+            return
+        try:
+            count_int = int(value)
+        except (TypeError, ValueError):
+            count_int = self.nuz.get("soullink_player_count", 2) or 2
+        # Change-Detection analog _on_mode_changed.
+        if self.nuz.get("soullink_player_count") == int(count_int):
+            return
+        self.nuz["soullink_player_count"] = int(count_int)
+        self._persist_structural_change("player_count")
 
     def _collect_config(self) -> dict:
         owners = [r.owner for r in self._owner_rows if r.owner]
@@ -734,6 +793,24 @@ class NuzlockeMenu(Screen):
             logger.error(f"{traceback.format_exc()}")
             self.status_label.text = f"Fehler: {err}"
 
+    def _persist_structural_change(self, reason: str = ""):
+        """Nach struktureller Aenderung (mode/count/preset/rule): self.nuz
+        in nuzlocke.yml persistieren + Auto-Push an Server.
+
+        Structural != Freitext: Owner-Namen aendern via TextInput speichert
+        NICHT auto (pro Tastendruck = pro Zeichen zu viel), dafuer bleibt
+        der "Speichern"-Button. Alles andere (Mode-Spinner, PlayerCount-
+        Spinner, Regel-Checkboxen, Preset-Anwenden) landet sofort auf Disk
+        und beim Server, damit die Config nach App-Crash oder Restart
+        nicht verloren geht und alle verbundenen Clients synchron sind.
+        """
+        try:
+            app = App.get_running_app()
+            app.save_config(f"{self.configsave}nuzlocke.yml", self.nuz)
+        except Exception as err:
+            logger.warning(f"nuzlocke.yml persist ({reason}) failed: {err}")
+        self._auto_push_config()
+
     def _auto_push_config(self):
         """Auto-Push nach struktureller Aenderung (Preset/Mode/Count/Save).
         Silent-No-Op wenn Munchlax nicht connected — send_soullink_config
@@ -754,19 +831,26 @@ class NuzlockeMenu(Screen):
             logger.warning(f"auto-push config failed: {err}")
 
     def _load_from_nuz(self):
-        mode_value = normalize_mode(self.nuz.get("soullink_mode"))
-        self.mode_spinner.text = MODE_LABELS[mode_value]
-        self.player_count_spinner.text = str(self.nuz.get("soullink_player_count", 2) or 2)
-        # Preset-Spinner auf zuletzt gespeicherte ID setzen (rein visuell,
-        # kein Auto-Apply). Bei unbekannter/leerer ID nichts aendern.
-        preset_id = str(self.nuz.get("soullink_preset_id", "") or "")
-        if preset_id:
-            for pid, label in self._preset_choices:
-                if pid == preset_id:
-                    self.preset_spinner.text = label
-                    break
-        self._refresh_rule_checkboxes()
-        self._rebuild_owner_rows()
+        # Spinner-Handler waehrend programmatischem Setzen aussetzen — sonst
+        # feuert jeder Spinner-Text-Write _on_mode_changed / _on_player_count_changed
+        # und triggert einen unnoetigen _persist_structural_change (Disk + Netz).
+        self._suspend_spinner_change_events = True
+        try:
+            mode_value = normalize_mode(self.nuz.get("soullink_mode"))
+            self.mode_spinner.text = MODE_LABELS[mode_value]
+            self.player_count_spinner.text = str(self.nuz.get("soullink_player_count", 2) or 2)
+            # Preset-Spinner auf zuletzt gespeicherte ID setzen (rein visuell,
+            # kein Auto-Apply). Bei unbekannter/leerer ID nichts aendern.
+            preset_id = str(self.nuz.get("soullink_preset_id", "") or "")
+            if preset_id:
+                for pid, label in self._preset_choices:
+                    if pid == preset_id:
+                        self.preset_spinner.text = label
+                        break
+            self._refresh_rule_checkboxes()
+            self._rebuild_owner_rows()
+        finally:
+            self._suspend_spinner_change_events = False
         self.status_label.text = "Aus Session geladen"
 
     def _send_token_redeem(self):
@@ -957,6 +1041,14 @@ class NuzlockeMenu(Screen):
         if ok:
             self._set_status(f"Snapshot geladen: {snap_id}")
             handle.finish(f"Snapshot {snap_id} geladen", level='success')
+            # Fix Bug 4a: nach Restore Overlay explizit refreshen (Diff-Guard
+            # in alter_teams kann sonst den ersten notify_update verschlucken).
+            try:
+                await self.munchlax.force_overlay_broadcast(
+                    f"snapshot restore (nuzlockemenu): {snap_id}"
+                )
+            except Exception as err:
+                logger.warning(f"force_overlay_broadcast nach restore failed: {err}")
         else:
             self._set_status(f"Restore fehlgeschlagen: {snap_id}")
             handle.finish(f"Restore fehlgeschlagen: {snap_id}", level='error', duration=3.0)
@@ -992,15 +1084,23 @@ class NuzlockeMenu(Screen):
         preset = self._presets[pid]
         apply_preset(self.nuz, preset)
         # Preset-ID merken, damit der Spinner nach App-Neustart / Session-Wechsel
-        # wieder auf diese Auswahl steht. Persistiert wird erst durch
-        # _save_to_nuz — hier nur in-memory, konsistent mit apply_preset.
+        # wieder auf diese Auswahl steht.
         self.nuz["soullink_preset_id"] = pid
         self._load_from_nuz()
-        self.status_label.text = f"Preset '{preset.get('label', pid)}' angewendet (noch nicht gespeichert)"
-        self._auto_push_config()
+        self.status_label.text = f"Preset '{preset.get('label', pid)}' angewendet"
+        self._persist_structural_change(f"preset:{pid}")
 
     def _save_to_nuz(self):
+        """Owner-Freitext + Team-Letter aus den UI-Rows in self.nuz spiegeln
+        und persistieren. Strukturelle Aenderungen (mode/count/rule/preset)
+        laufen bereits auto per _persist_structural_change — dieser Button
+        deckt nur noch die beiden UI-Elemente ab die nicht auto pushen:
+        Owner-TextInput und Team-Letter-Spinner.
+        """
         cfg = self._collect_config()
+        # Alle Felder mitschreiben (auch die bereits auto-persistierten):
+        # falls User Rows manuell veraendert hat, sind self.nuz und Cfg
+        # sowieso identisch. Kostenlose Sicherheitsschleife.
         self.nuz["soullink_mode"] = cfg["mode"]
         self.nuz["soullink_player_count"] = cfg["player_count"]
         self.nuz["soullink_link_strategy"] = cfg["link_strategy"]
@@ -1009,7 +1109,7 @@ class NuzlockeMenu(Screen):
         try:
             app = App.get_running_app()
             app.save_config(f"{self.configsave}nuzlocke.yml", self.nuz)
-            self.status_label.text = "In Session gespeichert"
+            self.status_label.text = "Owner + Teams gespeichert und verteilt"
         except Exception as err:
             logger.error(f"nuzlocke.yml speichern failed: {type(err)},{err}")
             self.status_label.text = f"Speichern-Fehler: {err}"

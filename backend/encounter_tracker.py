@@ -349,6 +349,38 @@ class EncounterTracker:
             return None
 
         method = matched_gift.get("type", "gift")
+        # effective_route: für Gift-Encounter die map_header_id als route
+        # persistieren, sonst kollidieren alle Gifts unter route=0 und die
+        # (owner, edition, route, method)-Dedupe kann nicht trennen zwischen
+        # z.B. Lab-Starter (map 5) und Karate-Dojo-Hitmon (map 228). Der
+        # bisherige route=0-Fallback aus _handle_new_pokemon hat genau das
+        # ermöglicht: neue Wild-PVs, die durch broken in_battle-Detection in
+        # den Gift-Pfad gefallen sind, wurden bei map_header=5 als weiterer
+        # "Starter" eingebucht.
+        effective_route = int(map_header_id) if route in (0, None) else int(route)
+
+        # Non-repeatable Gift-Dedupe: pro (owner, edition, map, method) nur
+        # EIN Encounter. Verhindert, dass durchfallende Wild-PVs an derselben
+        # Location als weitere "Starter"/"Lapras"/etc. eingebucht werden.
+        if not matched_gift.get("repeatable", False):
+            try:
+                already_exists = self.pokedex_db.has_encounter_with_method_at_route(
+                    owner, int(edition), effective_route, method
+                )
+            except Exception as err:
+                self.logger.warning(
+                    f"Gift-Dedupe-Check fehlgeschlagen: {type(err).__name__},{err}"
+                )
+                already_exists = False
+            if already_exists:
+                self.logger.warning(
+                    f"Gift-Encounter abgelehnt (non-repeatable, bereits geloggt): "
+                    f"owner={owner} edition={edition} map={map_header_id} "
+                    f"method={method} gift='{matched_gift.get('name', '?')}' "
+                    f"dropped_pv={personality} dex={dexnr}"
+                )
+                return None
+
         outcome = "obtained"
         already_logged = False
         is_first = True
@@ -363,14 +395,14 @@ class EncounterTracker:
             with self.pokedex_db.access_lock:
                 has_balls, is_first, is_shiny_override, is_dupes_skip = \
                     self._check_nuzlocke_flags(
-                        owner, edition, route, dexnr, shiny, method
+                        owner, edition, effective_route, dexnr, shiny, method
                     )
 
                 inserted = self.pokedex_db.insert_encounter(
                     personality=personality,
                     owner=owner,
                     edition=edition,
-                    route=route,
+                    route=effective_route,
                     dexnr=dexnr,
                     lvl=lvl,
                     shiny=shiny,
@@ -390,7 +422,7 @@ class EncounterTracker:
         token_earned = False
         if not already_logged:
             self.logger.info(
-                f"Gift-Encounter: map_header={map_header_id} "
+                f"Gift-Encounter: map_header={map_header_id} route={effective_route} "
                 f"gift='{matched_gift.get('name', '?')}' method={method} "
                 f"dex={dexnr} lv={lvl}"
             )
@@ -403,7 +435,7 @@ class EncounterTracker:
                 token_earned = True
 
         return EncounterResult(
-            dexnr=dexnr, lvl=lvl, shiny=shiny, route=route,
+            dexnr=dexnr, lvl=lvl, shiny=shiny, route=effective_route,
             method=method, outcome=outcome,
             is_first=is_first,
             is_shiny_override=is_shiny_override,

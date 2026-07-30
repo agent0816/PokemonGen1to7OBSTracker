@@ -34,7 +34,12 @@ def init_config_folder():
         config.mkdir(parents=True, exist_ok=True)
     log_settings = Path('backend/config/log_settings.yml')
     if not log_settings.exists():
-        save_config(log_settings, {'console_level': 'INFO'})
+        # module_levels: per-Modul File-Log-Level Override (leer = alle DEBUG).
+        # Wird von der Dev-Section unter Settings > Logging live editiert.
+        save_config(log_settings, {
+            'console_level': 'INFO',
+            'module_levels': {},
+        })
     files = []
     sessions = []
     default_session = Path('backend/config/default')

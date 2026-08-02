@@ -120,6 +120,30 @@
     count: 1
     edition: [34, 35]
 
+# Route 4 Pokemon Center 1F — Karpador-Verkaeufer (500 Pokedollar)
+# WICHTIG: mapLayoutId 8 = LAYOUT_POKEMON_CENTER_1F, geteilt von ALLEN
+# Pokemon Center 1F-Maps (Ironmon RouteData.lua Zeile 428: "Most Pokemon
+# Centers"). Der Karpador-Salesman steht nur in Route 4 Pokemon Center,
+# aber wir koennen ihn nicht per mapLayoutId von anderen Pokemon Centern
+# unterscheiden — mapLayoutId wird an gMapHeader+0x12 gelesen, das ist
+# der Layout-Index, nicht die MAP-ID.
+#
+# Auswirkung: Wenn der Spieler in einem BELIEBIGEN Pokemon Center 1F
+# ein neues Pokemon ins Team bekommt (Trade, Ei geschluepft, etc.), wird
+# es als "Karpador-Kauf" getaggt. Die non-repeatable-Dedupe in
+# encounter_tracker.process_gift_encounter (has_encounter_with_method_at_route)
+# verhindert Doppel-Log, aber die erste Fehlzuordnung bleibt moeglich.
+#
+# Praxis: Karpador-Kauf ist ein typischer Early-Game-Meilenstein direkt
+# nach Marmoria (Route 3/4), Trades/Ei-Schluepfen kommen meistens spaeter.
+# False-Positive-Risiko niedrig, User kann DB-Eintrag manuell korrigieren.
+8:
+  - type: gift
+    name: Karpador (Route 4 Pokemon Center)
+    count: 1
+    edition: [34, 35]
+    repeatable: false
+
 # Karate-Dojo Saffronia — Hitmonlee/Hitmonchan
 228:
   - type: gift

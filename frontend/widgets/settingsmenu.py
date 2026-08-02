@@ -2,6 +2,7 @@ import asyncio
 import os
 import socket
 import weakref
+from pathlib import Path
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 from kivy.uix.boxlayout import BoxLayout
@@ -918,7 +919,6 @@ class ScrollSettings(ScrollView):
             subdir_name = rom_entry.get("subdir") or f"p{slot}"
             run_path = entry.get("_path") or ""
             slot_dir = os.path.join(run_path, subdir_name)
-            rom_path = os.path.join(slot_dir, rom_entry.get("rom_file") or "")
             log_path = os.path.join(slot_dir, rom_entry.get("log_file") or "randomizer.log")
 
             slot_row = BoxLayout(orientation='horizontal', size_hint_y=None,
@@ -929,8 +929,11 @@ class ScrollSettings(ScrollView):
                 on_press=lambda inst, p=log_path: self._open_path(p),
             ))
             slot_row.add_widget(Button(
-                text="ROM-Pfad kopieren", size_hint_x=.3,
-                on_press=lambda inst, p=rom_path: self._copy_to_clipboard(p),
+                # Konsistent mit dem Randomize-Erfolg-Popup (mainmenu.py):
+                # kopiert den Slot-Ordner, nicht die ROM-Datei. Der User
+                # kann dann den Pfad direkt im Randomizer/Explorer nutzen.
+                text="Ordner-Pfad kopieren", size_hint_x=.3,
+                on_press=lambda inst, p=slot_dir: self._copy_to_clipboard(p),
             ))
             slot_row.add_widget(Button(
                 text="Ordner öffnen", size_hint_x=.3,
@@ -951,8 +954,20 @@ class ScrollSettings(ScrollView):
             show_toast(f"Konnte Pfad nicht öffnen: {err}", level='error', duration=3.0)
 
     def _copy_to_clipboard(self, text: str):
-        Clipboard.copy(text or "")
-        show_toast(f"Kopiert: {text or '(leer)'}", level='success')
+        # RunManager arbeitet mit relativen Pfaden (session_path via
+        # MutableString "backend/config/default/"), fuer's Clipboard soll
+        # aber ein absoluter Pfad landen — sonst kann der User ihn nicht
+        # in andere Tools (Randomizer, Explorer, etc.) einfuegen.
+        # resolve() ohne strict=True: existiert der Pfad nicht, bekommt
+        # der User trotzdem einen absoluten String (kein FileNotFoundError).
+        value = text or ""
+        if value:
+            try:
+                value = str(Path(value).resolve())
+            except Exception as err:
+                logger.warning(f"_copy_to_clipboard resolve fehlgeschlagen: {err}")
+        Clipboard.copy(value)
+        show_toast(f"Kopiert: {value or '(leer)'}", level='success')
 
     def _end_run_manual(self):
         if self.munchlax is None:

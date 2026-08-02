@@ -54,6 +54,10 @@
   # gBattleMons[0].species (u16): erste Species im Battle. In "no battle"
   # meist 0/garbage → als Sanity-Check für Fake-Battle-Filter.
   battlemonspointer: 0x02024A80
+  # gBattleTypeFlags (u32): Bit 3 = BATTLE_TYPE_TRAINER. Verifiziert
+  # 2026-08-02 auf DE-Rubin per verify_battletypeflags.lua (identisch zu
+  # Ironmon-EN v1.0/1.1/1.2). Adresse ueberdeckt EN- und DE-ROMs.
+  battletypeflagspointer: 0x020239F8
   battleopponentidpointer: 0x0202FF5E
   battleopponentpointer: 0x030045C0
   # gPlayerPartyCount (u8) — Outcome-Check nach Kampfende
@@ -78,6 +82,8 @@
   battlerscountpointer: 0x02024A68
   battleoutcomepointer: 0x02024D26
   battlemonspointer: 0x02024A80
+  # Siehe Edition 31 — Rubin/Saphir teilen EWRAM-Layout.
+  battletypeflagspointer: 0x020239F8
   battleopponentidpointer: 0x0202FF5E
   battleopponentpointer: 0x030045C0
   partycountpointer: 0x03004360
@@ -104,6 +110,10 @@
   # (Session 2026-07-30, Ironmon-Cross-Check als Interim-Beleg).
   battleoutcomepointer: 0x0202433A
   battlemonspointer: 0x02024084
+  # gBattleTypeFlags (u32): Bit 3 = BATTLE_TYPE_TRAINER. Verifiziert
+  # 2026-08-02 auf DE-Smaragd per verify_battletypeflags.lua (identisch
+  # zu Ironmon-EN Emerald).
+  battletypeflagspointer: 0x02022FEC
   battleopponentidpointer: 0x02038BCA
   battleopponentpointer: 0x02024744
   # gPlayerPartyCount (u8) — statisch trotz Save-Block-Relocation
@@ -138,6 +148,11 @@
   # TODO: vor Release mit find_pointers.py auf DE-Feuerrot verifizieren.
   battleoutcomepointer: 0x02023E8A
   battlemonspointer: 0x02023BE4
+  # gBattleTypeFlags (u32): Bit 3 (0x08) = BATTLE_TYPE_TRAINER. Adresse aus
+  # Ironmon-JSONs (Pokemon Feuerrote/FireRed v1.0/v1.1 identisch).
+  # Wild vs. Trainer NUR ueber dieses Feld — gTrainerBattleOpponent_A wird
+  # beim Battle-Ende NICHT genullt, deshalb kein zuverlaessiger Indikator.
+  battletypeflagspointer: 0x02022B4C
   battleopponentidpointer: 0x020386AE
   battleopponentpointer: 0x0202402C
   partycountpointer: 0x02024029
@@ -164,6 +179,8 @@
   battlerscountpointer: 0x02023BCC
   battleoutcomepointer: 0x02023E8A
   battlemonspointer: 0x02023BE4
+  # Siehe Kommentar bei Edition 34; Ironmon LeafGreen v1.0/v1.1 identisch.
+  battletypeflagspointer: 0x02022B4C
   battleopponentidpointer: 0x020386AE
   battleopponentpointer: 0x0202402C
   partycountpointer: 0x02024029

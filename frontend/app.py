@@ -1,5 +1,6 @@
 import asyncio
 import os
+import traceback
 from dataclasses import dataclass
 import subprocess
 import yaml
@@ -89,6 +90,11 @@ class Screens(ScreenManager):
             # öffnen (mehrfache Broadcasts derselben Wipe-Session sonst → n
             # gestapelte Popups). Wenn User dismissed, wird die Referenz
             # freigegeben und ein neuer Wipe kann wieder ein Banner öffnen.
+            logger.info(
+                f"_open_wipe_banner ausgeloest: type={violation.get('type')} "
+                f"subject={violation.get('subject')} "
+                f"active={self._active_wipe_banner is not None}"
+            )
             existing = self._active_wipe_banner
             if existing is not None and getattr(existing, "_is_open", False):
                 # Log so dass Multi-Team-Wipes im Versus-Modus nachvollziehbar
@@ -103,18 +109,29 @@ class Screens(ScreenManager):
                 return
             def _pick_other():
                 self.current = "NuzlockeMenu"
-            banner = TotalWipeBanner(munchlax, configsave, bh=bh,
-                              on_pick_other=_pick_other,
-                              bizhawk=bizhawk, rnd=rnd, pl=pl, rem=rem,
-                              violation=violation)
+            try:
+                banner = TotalWipeBanner(munchlax, configsave, bh=bh,
+                                  on_pick_other=_pick_other,
+                                  bizhawk=bizhawk, rnd=rnd, pl=pl, rem=rem,
+                                  violation=violation)
+            except Exception as err:
+                logger.error(f"_open_wipe_banner: Banner-Konstruktor fehlgeschlagen: {err}")
+                logger.error(traceback.format_exc())
+                return
             banner._is_open = True
             def _on_dismiss(*_):
                 banner._is_open = False
                 if self._active_wipe_banner is banner:
                     self._active_wipe_banner = None
+                logger.info("_open_wipe_banner: Banner dismissed")
             banner.bind(on_dismiss=_on_dismiss)
             self._active_wipe_banner = banner
-            banner.open()
+            try:
+                banner.open()
+                logger.info("_open_wipe_banner: banner.open() erfolgreich aufgerufen")
+            except Exception as err:
+                logger.error(f"_open_wipe_banner: banner.open() failed: {err}")
+                logger.error(traceback.format_exc())
         munchlax.on_total_wipe_callback = lambda v: _open_wipe_banner(v)
 
         # Wipe-Dismissed-Callback: anderer Team-Mitglied hat sein Wipe-Popup

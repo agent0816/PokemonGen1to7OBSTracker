@@ -70,6 +70,30 @@ class EncounterTracker:
         Legacy-Wert 'off' und fehlender Key bedeuten 'nuzlocke' (Regeln aktiv)."""
         return (self.nuz.get("soullink_mode") or "nuzlocke") != "disabled"
 
+    def _run_started_for_owner(self, owner: str, edition: int) -> bool:
+        """True wenn Nuzlocke-Run fuer diesen (owner, edition) bereits aktiv ist.
+
+        Semantik:
+        - Modus 'disabled': True (kein Run-Konzept, immer loggen fuer Statistik)
+        - rule_run_start_on_ball aus: True (User hat den Automatismus abgeschaltet)
+        - Modus aktiv + Regel aktiv: True erst wenn mindestens ein Ball da ist
+          (has_catching_balls). Sonst Encounter komplett verwerfen — Starter
+          und Gift-Encounter, die per definitionem den Run starten koennen,
+          bekommen im Caller einen expliziten Bypass.
+        """
+        if not self._nuzlocke_rules_active():
+            return True
+        if not self.nuz.get("rule_run_start_on_ball", True):
+            return True
+        try:
+            return self.pokedex_db.has_catching_balls(owner, edition)
+        except Exception as err:
+            self.logger.warning(
+                f"_run_started_for_owner has_catching_balls failed: "
+                f"{type(err).__name__},{err} — fallback True (nicht blockieren)"
+            )
+            return True
+
     def _has_active_token_credit(self, owner: str, edition, route) -> bool:
         if not self.nuz.get("rule_token_rule", False):
             return False
@@ -268,7 +292,7 @@ class EncounterTracker:
         return False
 
     def process_wild_encounter(self, owner: str, edition: int,
-                                opponent: dict, route: int) -> EncounterResult:
+                                opponent: dict, route: int) -> EncounterResult | None:
         """Prüft Nuzlocke-Regeln und persistiert Wild-Encounter.
 
         Läuft komplett unter ``pokedex_db.access_lock`` (RLock), damit
@@ -277,7 +301,56 @@ class EncounterTracker:
         Nebenläufigkeit anderer Executor-Tasks atomar bleiben. Sonst könnten
         z.B. zwei nahezu zeitgleiche Wild-Encounters beide den
         Species-Dupes-Check bestehen, bevor einer committet.
+
+        Gibt None zurueck wenn der Nuzlocke-Run noch nicht gestartet ist
+        (Regel rule_run_start_on_ball aktiv + keine Baelle) — Wild-Encounter
+        vor dem ersten Ball werden nicht persistiert.
         """
+        if not self._run_started_for_owner(owner, edition):
+            self.logger.info(
+                f"Wild-Encounter uebersprungen (Run nicht gestartet): "
+                f"owner={owner} edition={edition} dex={opponent.get('dexnr')} "
+                f"route={route}"
+            )
+            return None
+
+        # Route-First-Only: Nuzlocke-Semantik "eine Chance pro Route" bedeutet
+        # dass nach der ersten Begegnung auf einer Route alle weiteren wilden
+        # Encounter derselben Route irrelevant sind (User hat entweder gefangen
+        # oder verpasst, egal was danach spawnt). Gift/Fossil/Static-Encounter
+        # laufen ueber process_gift_encounter und haben eigene per-Location-
+        # Dedupe (has_encounter_with_method_at_route), sind hier nicht betroffen.
+        # Bei aktivem Nuzlocke-Modus vor der DB-Insertion pruefen. Im disabled-
+        # Modus (reine Statistik-Sammlung) alle Encounter loggen.
+        #
+        # Shiny-Clause-Ausnahme: wenn rule_shiny_clause_always_catchable aktiv
+        # ist und das Opponent shiny ist, darf der Encounter durch — der
+        # nachfolgende _check_nuzlocke_flags markiert es als is_shiny_override.
+        # Sonst wuerden shiny-Encounter auf belegten Routen verloren gehen,
+        # obwohl der User sie explizit erlaubt haben will.
+        if self._nuzlocke_rules_active():
+            shiny_exception = bool(opponent.get("shiny")) and self.nuz.get(
+                "rule_shiny_clause_always_catchable",
+                self.nuz.get("shiny_clause", True),
+            )
+            try:
+                route_belegt = self.pokedex_db.has_encounter_on_route(
+                    owner, edition, route
+                )
+            except Exception as err:
+                self.logger.warning(
+                    f"has_encounter_on_route-Check fehlgeschlagen: "
+                    f"{type(err).__name__},{err} — fahre mit Insert fort"
+                )
+                route_belegt = False
+            if route_belegt and not shiny_exception:
+                self.logger.info(
+                    f"Wild-Encounter uebersprungen (Route bereits belegt): "
+                    f"owner={owner} edition={edition} dex={opponent.get('dexnr')} "
+                    f"route={route}"
+                )
+                return None
+
         dexnr = opponent["dexnr"]
         lvl = opponent["lvl"]
         shiny = opponent["shiny"]
@@ -349,6 +422,17 @@ class EncounterTracker:
             return None
 
         method = matched_gift.get("type", "gift")
+        # Run-Gate: Gift-Encounter vor dem ersten Ball verwerfen, ausser
+        # es ist ein Starter (der DEN Run startet und deshalb nie geblockt
+        # werden darf). Starter kommen normalerweise via process_starter,
+        # aber der Sanity-Check hier schadet nicht.
+        if method != "starter" and not self._run_started_for_owner(owner, edition):
+            self.logger.info(
+                f"Gift-Encounter uebersprungen (Run nicht gestartet): "
+                f"owner={owner} edition={edition} method={method} "
+                f"gift='{matched_gift.get('name', '?')}' map={map_header_id}"
+            )
+            return None
         # effective_route: für Gift-Encounter die map_header_id als route
         # persistieren, sonst kollidieren alle Gifts unter route=0 und die
         # (owner, edition, route, method)-Dedupe kann nicht trennen zwischen

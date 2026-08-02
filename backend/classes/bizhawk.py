@@ -890,6 +890,7 @@ class Bizhawk:
             pointers = bh_pointers.get_pointers(edition, language)
             opp_id_ptr = pointers.get("battleopponentidpointer", 0)
             opp_ptr = pointers.get("battleopponentpointer", 0)
+            flags_ptr = pointers.get("battletypeflagspointer", 0)
             if not opp_id_ptr or not opp_ptr:
                 self.logger.warning(
                     f"_read_encounter_data: pointer fehlt fuer edition={edition} "
@@ -902,14 +903,39 @@ class Bizhawk:
                 return
             loop = asyncio.get_event_loop()
 
-            oid_fut = loop.create_future()
-            queue.append(("boxw", opp_id_ptr, 2, oid_fut, ""))
-            oid_bytes = await oid_fut
-            opponent_id = int.from_bytes(oid_bytes, "little")
-
-            if opponent_id != 0:
-                self.logger.debug(f"Trainer-Kampf erkannt (opponent_id=0x{opponent_id:04X}), kein Encounter")
-                return
+            # Wild/Trainer-Unterscheidung: bevorzugt via gBattleTypeFlags
+            # (Bit 3 = BATTLE_TYPE_TRAINER). gTrainerBattleOpponent_A wird
+            # beim Battle-Ende NICHT genullt und behaelt die letzte Trainer-ID
+            # ueber Battle-Grenzen hinweg — Folge-Wild-Encounter wurden dadurch
+            # faelschlich als Trainer-Kampf verworfen (Session 2026-08-02).
+            # Fallback auf opp_id fuer alte pointer_gen3.yml-Sets ohne den
+            # neuen battletypeflagspointer bleibt vorhanden, gibt aber Warning
+            # damit User erkennt dass die Detection unzuverlaessig ist.
+            if flags_ptr:
+                flags_fut = loop.create_future()
+                queue.append(("boxw", flags_ptr, 4, flags_fut, ""))
+                flags_bytes = await flags_fut
+                battle_flags = int.from_bytes(flags_bytes, "little")
+                if battle_flags & 0x08:
+                    self.logger.debug(
+                        f"Trainer-Kampf erkannt (flags=0x{battle_flags:08X}), kein Encounter"
+                    )
+                    return
+            else:
+                oid_fut = loop.create_future()
+                queue.append(("boxw", opp_id_ptr, 2, oid_fut, ""))
+                oid_bytes = await oid_fut
+                opponent_id = int.from_bytes(oid_bytes, "little")
+                self.logger.warning(
+                    f"battletypeflagspointer fehlt fuer edition={edition} — "
+                    f"Fallback auf gTrainerBattleOpponent_A (bekannt unzuverlaessig, "
+                    f"kann Wild-Encounter als Trainer klassifizieren)."
+                )
+                if opponent_id != 0:
+                    self.logger.debug(
+                        f"Trainer-Kampf erkannt (opponent_id=0x{opponent_id:04X}), kein Encounter"
+                    )
+                    return
 
             if edition < 40:
                 slot_size = 100
@@ -994,9 +1020,17 @@ class Bizhawk:
                 owner, edition, opp, route
             )
             # Fix E: Counter fuer Diagnose-Warning in _handle_new_pokemon.
+            # Auch bei uebersprungenen Encountern hochzaehlen — der
+            # Battle-Kanten-Trigger ist gefeuert, das ist die relevante
+            # Info fuer die Diagnose "kein Wild-Kampf erkannt".
             self._wild_encounters_processed[client_id] = (
                 self._wild_encounters_processed.get(client_id, 0) + 1
             )
+            if result is None:
+                # process_wild_encounter hat den Encounter verworfen
+                # (z.B. Run noch nicht gestartet — kein Ball). Reason
+                # ist bereits im encounter_tracker.log geloggt.
+                return
             if result.already_logged:
                 self.logger.debug(
                     f"Encounter bereits geloggt (PV={opp['personality']:#x})"

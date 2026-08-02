@@ -18,7 +18,7 @@ from kivy.uix.togglebutton import ToggleButton
 from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 from frontend.widgets.trainerbox import TrainerBox
-from frontend.widgets.toast import show_toast
+from frontend.widgets.toast import show_toast, show_pending_toast
 from backend import pokedecoder
 from backend.classes.obs import OBS
 from backend.controller.connection_controller import ConnectionController

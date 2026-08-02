@@ -106,10 +106,12 @@ def _location_name(route_id: int, edition: int = 0) -> str:
     loc = locs.get(route_id)
     if loc and isinstance(loc, dict):
         return loc.get("name", f"Route {route_id}")
-    for g in _ENCOUNTER_LOCATIONS.values():
-        loc = g.get(route_id)
-        if loc and isinstance(loc, dict):
-            return loc.get("name", f"Route {route_id}")
+    # KEIN Cross-Gen-Fallback: MAPSEC-IDs kollidieren zwischen Generationen
+    # (z.B. FRLG MAPSEC 101 = Route 1, aber Gen 5 mapId 101 = Route 14).
+    # Frueher hat die Loop hier alle Gens durchsucht und den ersten Treffer
+    # zurueckgegeben — Folge: FRLG-Encounter auf Route 1 wurden als "Route 14"
+    # gelabelt (Session 2026-08-02). Bei unbekannten Route-IDs lieber
+    # generisches "Route {id}" zurueckgeben als eine falsche Cross-Gen-Zuordnung.
     return f"Route {route_id}"
 
 

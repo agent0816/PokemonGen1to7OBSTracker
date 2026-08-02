@@ -687,6 +687,10 @@ class CitraHandler:
                 owner, self.edition, opp, route
             )
 
+            if result is None:
+                # Encounter verworfen (z.B. Run noch nicht gestartet — kein
+                # Ball). Reason ist im encounter_tracker.log geloggt.
+                return
             if result.already_logged:
                 self.logger.debug(f"Encounter bereits geloggt (PV={opp['personality']:#x})")
             else:

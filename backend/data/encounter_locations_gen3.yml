@@ -261,205 +261,265 @@
   games: [33]
 
 # ============================================================
+# Kanto — Städte (FRLG)
+# Real MAPSEC-Werte aus pret/pokefirered/include/constants/region_map_sections.h
+# Verifiziert 2026-08-02 gegen User-Log (met_location=101 = Route 1, 122 = Route 22)
+# ============================================================
+88:
+  name: Alabastia
+  games: [34, 35]
+89:
+  name: Vertania City
+  games: [34, 35]
+90:
+  name: Marmoria City
+  games: [34, 35]
+91:
+  name: Azuria City
+  games: [34, 35]
+92:
+  name: Lavandia
+  games: [34, 35]
+93:
+  name: Orania City
+  games: [34, 35]
+94:
+  name: Prismania City
+  games: [34, 35]
+95:
+  name: Fuchsania City
+  games: [34, 35]
+96:
+  name: Zinnoberinsel
+  games: [34, 35]
+97:
+  name: Indigo Plateau
+  games: [34, 35]
+98:
+  name: Saffronia City
+  games: [34, 35]
+99:
+  name: Route 4 (Mondberg-Ausgang)
+  games: [34, 35]
+100:
+  name: Route 10 (Felstunnel-Ausgang)
+  games: [34, 35]
+
+# ============================================================
 # Kanto — Routen (FRLG)
 # ============================================================
-102:
+101:
   name: Route 1
   games: [34, 35]
-103:
+102:
   name: Route 2
   games: [34, 35]
-104:
+103:
   name: Route 3
   games: [34, 35]
-105:
+104:
   name: Route 4
   games: [34, 35]
-106:
+105:
   name: Route 5
   games: [34, 35]
-107:
+106:
   name: Route 6
   games: [34, 35]
-108:
+107:
   name: Route 7
   games: [34, 35]
-109:
+108:
   name: Route 8
   games: [34, 35]
-110:
+109:
   name: Route 9
   games: [34, 35]
-111:
+110:
   name: Route 10
   games: [34, 35]
-112:
+111:
   name: Route 11
   games: [34, 35]
-113:
+112:
   name: Route 12
   games: [34, 35]
-114:
+113:
   name: Route 13
   games: [34, 35]
-115:
+114:
   name: Route 14
   games: [34, 35]
-116:
+115:
   name: Route 15
   games: [34, 35]
-117:
+116:
   name: Route 16
   games: [34, 35]
-118:
+117:
   name: Route 17
   games: [34, 35]
-119:
+118:
   name: Route 18
   games: [34, 35]
-120:
+119:
   name: Route 19
   games: [34, 35]
-121:
+120:
   name: Route 20
   games: [34, 35]
-122:
+121:
   name: Route 21
   games: [34, 35]
-123:
+122:
   name: Route 22
   games: [34, 35]
-124:
+123:
   name: Route 23
   games: [34, 35]
-125:
+124:
   name: Route 24
   games: [34, 35]
-126:
+125:
   name: Route 25
   games: [34, 35]
 
 # ============================================================
 # Kanto — Dungeons (FRLG)
 # ============================================================
-127:
+126:
   name: Vertania-Wald
   games: [34, 35]
-128:
+127:
   name: Mondberg
   games: [34, 35]
-130:
+128:
+  name: S.S. Anne
+  games: [34, 35]
+129:
   name: Tunnelpfad (Routes 5-6)
   games: [34, 35]
-131:
+130:
   name: Tunnelpfad (Routes 7-8)
   games: [34, 35]
-132:
+131:
   name: Digdas Höhle
   games: [34, 35]
-133:
+132:
   name: Siegesstraße
   games: [34, 35]
-137:
+133:
+  name: Rocket-Versteck
+  games: [34, 35]
+134:
+  name: Silph Co.
+  games: [34, 35]
+135:
+  name: Pokemon-Villa
+  games: [34, 35]
+136:
   name: Safari-Zone
   games: [34, 35]
-139:
+137:
+  name: Pokemon-Liga
+  games: [34, 35]
+138:
   name: Felstunnel
   games: [34, 35]
-140:
+139:
   name: Seeschauminseln
   games: [34, 35]
-141:
+140:
   name: Pokémon Turm
   games: [34, 35]
-142:
+141:
   name: Azuria-Höhle
   games: [34, 35]
-143:
+142:
   name: Kraftwerk
   games: [34, 35]
 
 # ============================================================
 # Sevii Islands (FRLG)
 # ============================================================
-151:
+150:
   name: Glühweg
   games: [34, 35]
-152:
+151:
   name: Schatzgestade
   games: [34, 35]
-153:
+152:
   name: Kap Kante
   games: [34, 35]
-154:
+153:
   name: Bundbrücke
   games: [34, 35]
-160:
+159:
   name: Ferienparadies
   games: [34, 35]
-161:
+160:
   name: Wasserirrgarten
   games: [34, 35]
-162:
+161:
   name: Eiland 5-Weide
   games: [34, 35]
-164:
+163:
   name: Fern-Eiland
   games: [34, 35]
-165:
+164:
   name: Grüner Pfad
   games: [34, 35]
-166:
+165:
   name: Wasserweg
   games: [34, 35]
-167:
+166:
   name: Ruinental
   games: [34, 35]
-169:
+168:
   name: Schluchteingang
   games: [34, 35]
-170:
+169:
   name: 7-Schatzschlucht
   games: [34, 35]
-171:
+170:
   name: Tanibo-Ruinen
   games: [34, 35]
-175:
+174:
   name: Nabelfels
   games: [34, 35]
-176:
+175:
   name: Glutberg
   games: [34, 35]
-177:
+176:
   name: Beerenforst
   games: [34, 35]
-178:
+177:
   name: Eiskaskadenhöhle
   games: [34, 35]
-180:
+179:
   name: Trainerturm
   games: [34, 35]
-181:
+180:
   name: Punktloch
   games: [34, 35]
-182:
+181:
   name: Verlorene Höhle
   games: [34, 35]
-183:
+182:
   name: Musterbuschwald
   games: [34, 35]
-184:
+183:
   name: Wandelhöhle
   games: [34, 35]
-185:
+184:
   name: Tanibo-Kammer
   games: [34, 35]
-186:
+185:
   name: Tri-Eiland-Pfad
   games: [34, 35]
-188:
+187:
   name: Entstehungsinsel
   games: [34, 35]
-196:
+195:
   name: Gluttherme
   games: [34, 35]

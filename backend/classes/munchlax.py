@@ -16,10 +16,20 @@ from backend.logging_setup import get_logger
 # Verhindert Box-Read-Stürme z.B. bei Team-Reorder-Spam oder Evolutionen.
 BOX_REFRESH_THROTTLE_SECONDS = 5.0
 
-# Wipe-Detection HP-Consistency: erst nach N consecutive Zero-Reads pro Pokemon
-# gilt es als tot. Gefährdungen: RAM-Fluktuationen, Battle-RAM-Ausreißer in
-# Gen 6/7 wo Kampfstatistiken temporär an anderer Adresse liegen können.
-WIPE_ZERO_READ_THRESHOLD = 5
+# Wipe-Detection HP-Consistency: erst nach N Zero-Reads pro Pokemon gilt
+# es als tot.
+#
+# Threshold=1 (2026-08-02): Frueher =5, das kollidiert mit dem Team-Diff-
+# Guard in bizhawk.py:update_teams (`if teams[player] == team: return`).
+# Bei einem Gen-3-Blackout bleibt die Party ~10-12s auf hp=0 stehen, bevor
+# das Spiel automatisch ins Pokemon-Center teleportiert und revived. Der
+# Diff-Guard verwirft alle identischen Folge-Reads, so dass nur der einmalige
+# Uebergang hp>0 -> hp=0 als Tick durchkommt. Bei Threshold=5 wurde die
+# Zero-Read-Zaehler-Schwelle nie erreicht und Death/Wipe blieben stumm.
+# Zwei-Schicht-Schutz ist weiter aktiv:
+#   1. max_hp-Plausibilitaets-Filter (Battle-RAM-Ausreisser Gen 6/7)
+#   2. Initial-Read-Guard (state is None -> False beim allerersten Read)
+WIPE_ZERO_READ_THRESHOLD = 1
 
 class Munchlax:
     def __init__(self, host, port, rem, sp, pl, configsave=None, nuz=None):
@@ -466,11 +476,22 @@ class Munchlax:
                         )
                         await self._notify_overlay_session("soullink_rule_violation", violation)
                         # Frontend-Trigger für total_wipe
-                        if violation.get("type") == "total_wipe" and callable(getattr(self, "on_total_wipe_callback", None)):
-                            try:
-                                self.on_total_wipe_callback(violation)
-                            except Exception as err:
-                                self.logger.warning(f"on_total_wipe_callback: {err}")
+                        if violation.get("type") == "total_wipe":
+                            cb = getattr(self, "on_total_wipe_callback", None)
+                            if callable(cb):
+                                self.logger.info(
+                                    f"on_total_wipe_callback wird ausgeloest: "
+                                    f"subject={violation.get('subject')}"
+                                )
+                                try:
+                                    cb(violation)
+                                except Exception as err:
+                                    self.logger.warning(f"on_total_wipe_callback: {err}")
+                            else:
+                                self.logger.warning(
+                                    "on_total_wipe_callback nicht registriert — "
+                                    "TotalWipe-Popup wird NICHT geoeffnet."
+                                )
                     elif msg_type == "wipe_dismissed":
                         subj = data.get("subject_pid")
                         if subj is not None:
@@ -618,12 +639,20 @@ class Munchlax:
         Anders als _persist_teams wird hier nicht aus self.unsorted_teams gelesen,
         sondern direkt vom Bizhawk-Reader uebergeben — der Bag laeuft auf einem
         eigenen Polling-Intervall und ist von der Team-Tick-Logik entkoppelt.
+
+        owner-Format: build_owner(your_name, str(player)) — konsistent zu
+        encounter_tracker und _run_active_for_local_player. Frueher wurde nur
+        str(player) verwendet, das kollidierte mit has_catching_balls (das
+        immer im build_owner-Format sucht) — Folge: Nuzlocke-Run galt trotz
+        erhaltener Baelle als "nicht gestartet".
         """
         try:
             self._ensure_pokedex_db()
             if self.pokedex_db is None or self.pokedex_db.connection is None:
                 return
-            owner = str(player)
+            owner = PokedexDB.build_owner(
+                self.pl.get('your_name', ''), str(player)
+            )
             loop = asyncio.get_event_loop()
             for pocket_key, items in pockets.items():
                 await loop.run_in_executor(

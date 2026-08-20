@@ -1,10 +1,20 @@
 import asyncio
 import simpleobsws
 import traceback
+from types import SimpleNamespace
 from websockets.exceptions import WebSocketException
 
+from backend.party_rules import first_type_dupe_slots
 from backend.tm_type_resolver import resolve_tm_hm_sprite
 from backend.logging_setup import get_logger
+
+# Empty-Stub fuer geblockte Slots (Regel rule_single_type_per_team). Wird an
+# get_sprite uebergeben, um denselben 0.png-Pfad wie bei echten Leer-Slots zu
+# erzeugen, ohne das originale Pokemon-Objekt zu mutieren.
+_EMPTY_POKEMON_STUB = SimpleNamespace(
+    dexnr=0, shiny=False, female=False, form=0, item=0,
+    nickname="", lvl=0, max_hp=0, cur_hp=0, status={},
+)
 
 HP_COLOR_GREEN = 0xFF00AF4C
 HP_COLOR_YELLOW = 0xFF0098FF
@@ -370,11 +380,12 @@ class OBS():
         return HP_COLOR_RED
 
     def _build_hp_bar_updates(self, player: int, slots, team) -> list:
+        blocked = first_type_dupe_slots(team, self.munchlax.nuz)
         batch = []
         for slot in slots:
             pokemon = team[slot]
             hp_name = self._hp_bar_name(player, slot)
-            if pokemon.dexnr == 0 or pokemon.dexnr == 'egg':
+            if slot in blocked or pokemon.dexnr == 0 or pokemon.dexnr == 'egg':
                 batch.append(simpleobsws.Request(
                     "SetInputSettings",
                     {"inputName": hp_name, "inputSettings": {"color": 0x00000000, "width": 0}}
@@ -555,9 +566,11 @@ class OBS():
         return sequence
 
     def _build_slot_content_batch(self, player: int, slots, team, edition) -> list:
+        blocked = first_type_dupe_slots(team, self.munchlax.nuz)
         batch = []
         for slot in slots:
-            sprite = self.get_sprite(team[slot], self.conf['animated'], edition, two_pc=self.conf['obs_2_pc'])
+            src = _EMPTY_POKEMON_STUB if slot in blocked else team[slot]
+            sprite = self.get_sprite(src, self.conf['animated'], edition, two_pc=self.conf['obs_2_pc'])
             batch.append(simpleobsws.Request(
                 "SetInputSettings",
                 {
@@ -567,17 +580,18 @@ class OBS():
             ))
         if self.conf['show_nicknames']:
             for slot in slots:
+                nickname = "" if slot in blocked else team[slot].nickname
                 batch.append(simpleobsws.Request(
                     "SetInputSettings",
                     {
                         "inputName": f"name{slot + 6 * (player - 1) + 1}",
-                        "inputSettings": {"text": team[slot].nickname},
+                        "inputSettings": {"text": nickname},
                     },
                 ))
         if self.conf['show_items'] and edition > 20:
             items_path = self.conf['items_path'] if not self.conf['obs_2_pc'] else self.conf['items_obs_path']
             for slot in slots:
-                item_slug = str(team[slot].item)
+                item_slug = "0" if slot in blocked else str(team[slot].item)
                 item_slug = resolve_tm_hm_sprite(
                     edition, item_slug,
                     self.munchlax.rando_tm_moves,
@@ -1085,19 +1099,24 @@ class OBS():
         return None
 
     def _build_filter_updates(self, player: int, slots, team) -> list:
+        blocked = first_type_dupe_slots(team, self.munchlax.nuz)
         batch = []
         for slot in slots:
             pokemon = team[slot]
             source = self._slot_name(player, slot)
 
-            fainted = pokemon.cur_hp == 0 and pokemon.dexnr not in (0, 'egg')
+            fainted = (
+                slot not in blocked
+                and pokemon.cur_hp == 0
+                and pokemon.dexnr not in (0, 'egg')
+            )
             batch.append(simpleobsws.Request(
                 "SetSourceFilterEnabled",
                 {"sourceName": source, "filterName": "besiegt", "filterEnabled": fainted}
             ))
 
             if self._glow_available:
-                status = getattr(pokemon, 'status', {})
+                status = {} if slot in blocked else getattr(pokemon, 'status', {})
                 glow_color = self._status_glow_color(status)
                 if glow_color is not None:
                     batch.append(simpleobsws.Request(

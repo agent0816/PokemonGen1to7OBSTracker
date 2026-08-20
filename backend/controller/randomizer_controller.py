@@ -199,7 +199,15 @@ class RandomizerController:
         # Alten aktiven Run finalizen (superseded)
         active = rm.get_active_run()
         if active is not None:
-            rm.finalize_active_run(reason="superseded_by_new_randomize")
+            old_run_id = active.get("run_id") if isinstance(active, dict) else active
+            self.logger.info(
+                f"randomize: alten Run wird superseded finalisiert old_run_id={old_run_id}"
+            )
+            finalized_id = rm.finalize_active_run(reason="superseded_by_new_randomize")
+            self.logger.info(
+                f"randomize: finalize_active_run zurueck old_run_id={old_run_id} "
+                f"finalized_id={finalized_id}"
+            )
 
         slots = self._local_player_slots()
         run = rm.create_run(input_rom, settings, player_slots=slots)

@@ -9,6 +9,7 @@ from kivy.uix.label import Label
 from kivy.uix.progressbar import ProgressBar
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
+from backend.party_rules import first_type_dupe_slots
 
 STATUS_LABELS = {
     'freeze': ('[color=3068B0]FRZ[/color]', (0.19, 0.41, 0.69, 1)),
@@ -221,6 +222,26 @@ class TrainerBox(BoxLayout):
         return badge_box
 
 
+    def _render_blocked_slot(self, slot_box):
+        """Setzt Slot-Anzeige auf 'gesperrt'-State (Regel-Sperre)."""
+        slot_box.ids["Level"].text = "-"
+        slot_box.ids["Nickname"].text = "— gesperrt —"
+        sprite_widget = slot_box.ids["Sprite"]
+        empty_sprite = (
+            f"{self.obs_websocket.conf['common_path']}/"
+            f"{self.obs_websocket.conf['red']}/0.png"
+        )
+        if sprite_widget.source != empty_sprite:
+            sprite_widget.source = empty_sprite
+        sprite_widget.color = (1, 1, 1, 1)
+        slot_box.ids["Item_Name"].text = "-"
+        slot_box.ids["Item_Image"].source = f"{self.obs_websocket.conf['items_path']}/0.png"
+        slot_box.ids["hp_bar"].max = 1
+        slot_box.ids["hp_bar"].value = 0
+        slot_box.ids["hp_text"].text = "0/0"
+        slot_box.ids["Status"].text = ""
+        slot_box.ids["hp_bar"].canvas.after.clear()
+
     def team_aktualisieren(self, instance):
         display_name = self.munchlax.player_names.get(self.player_id, f"Spieler {self.player_id}")
         if self.name_label.text != display_name:
@@ -232,9 +253,14 @@ class TrainerBox(BoxLayout):
             self.old_team = self.munchlax.sorted_teams[self.player_id]
 
         new_team = self.munchlax.sorted_teams[self.player_id]
+        blocked_slots = first_type_dupe_slots(new_team, self.munchlax.nuz)
 
         for slot, pokemon in enumerate(new_team):
             slot_box = self.pokemon_boxes[f"slot{slot}"]
+
+            if slot in blocked_slots:
+                self._render_blocked_slot(slot_box)
+                continue
 
             slot_box.ids["Level"].text = f"lvl {pokemon.lvl}"
             slot_box.ids["Nickname"].text = pokemon.nickname

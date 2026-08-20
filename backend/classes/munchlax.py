@@ -1185,6 +1185,10 @@ class Munchlax:
         if active is None:
             self.logger.info("_finalize_run: kein aktiver Run vorhanden")
             return None
+        self.logger.info(
+            f"_finalize_run enter: reason={reason} wipe_player_id={wipe_player_id} "
+            f"active_run={active.get('run_id') if isinstance(active, dict) else active}"
+        )
 
         self._ensure_pokedex_db()
         db_path = None
@@ -1208,6 +1212,7 @@ class Munchlax:
         # Ok für Event-Loop-Kontention, weil alle DB-Caller (alter_teams,
         # _handle_remote_*, _handle_new_pokemon) über run_in_executor laufen.
         run_id = None
+        deleted_rows: int | str = "n/a"
         if self.pokedex_db is not None:
             with self.pokedex_db.access_lock:
                 run_id = rm.finalize_active_run(reason=reason,
@@ -1217,7 +1222,8 @@ class Munchlax:
                 try:
                     if (run_id is not None
                             and self.pokedex_db.connection is not None):
-                        self.pokedex_db.connection.execute("DELETE FROM encounters")
+                        cur = self.pokedex_db.connection.execute("DELETE FROM encounters")
+                        deleted_rows = cur.rowcount if cur.rowcount is not None else "?"
                         self.pokedex_db.connection.commit()
                 except Exception as err:
                     self.logger.warning(
@@ -1235,7 +1241,10 @@ class Munchlax:
         if getattr(self, "_wipe_signaled", None) is not None:
             self._wipe_signaled.clear()
         self._last_wipe_player_id = None
-        self.logger.info(f"Run abgeschlossen: {run_id} reason={reason}")
+        self.logger.info(
+            f"_finalize_run exit: run_id={run_id} reason={reason} "
+            f"deleted_encounter_rows={deleted_rows}"
+        )
         return run_id
 
     def _is_pokemon_dead(self, player_id, slot) -> bool:

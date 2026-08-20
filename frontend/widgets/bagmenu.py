@@ -528,6 +528,24 @@ class BagMenu(Screen):
         ))
         return cell
 
+    @staticmethod
+    def _owner_slot(owner: str) -> int | None:
+        """Extrahiert Player-Slot aus build_owner-Format 'name_<slot>'.
+
+        bag_inventory.owner wird von Munchlax.update_bag als
+        f'{your_name}_{player}' geschrieben. Der komplette Owner-String laesst
+        sich also nicht direkt in int() casten; wir isolieren den Slot-Suffix.
+        Legacy-Rows ohne Suffix (rein-numerischer Owner) werden auch
+        unterstuetzt.
+        """
+        if not owner:
+            return None
+        idx = owner.rfind("_")
+        candidate = owner[idx + 1:] if idx >= 0 else owner
+        if not candidate.isdigit():
+            return None
+        return int(candidate)
+
     def _can_write_for_owner(self, owner: str, edition: str) -> bool:
         """True, wenn dieser Spieler einen Sonderbonbon-Knopf bekommt.
 
@@ -536,12 +554,14 @@ class BagMenu(Screen):
           - Passende Backend-Instanz ist initialisiert: BizHawk fuer Edition
             < 60 (Gen 1-5), Citra fuer Edition >= 60 (Gen 6/7).
         """
+        slot = self._owner_slot(owner)
+        if slot is None:
+            return False
         try:
-            owner_int = int(owner)
             edition_int = int(edition)
         except (TypeError, ValueError):
             return False
-        if self.pl.get(f"remote_{owner_int}", False):
+        if self.pl.get(f"remote_{slot}", False):
             return False
         if edition_int < 60:
             return self.bizhawk is not None
@@ -583,15 +603,19 @@ class BagMenu(Screen):
         if count <= 0:
             self.count_label.text = "Anzahl muss > 0 sein."
             return
+        slot = self._owner_slot(owner)
+        if slot is None:
+            self.count_label.text = "Owner-Slot nicht ermittelbar."
+            return
         if self._is_citra_edition(edition):
             # Citra hat genau einen lokalen Spieler (player_number); pruefen,
             # ob dieser Section-Owner damit uebereinstimmt.
-            if self.citra is None or self.citra.player_number != int(owner):
+            if self.citra is None or self.citra.player_number != slot:
                 self.count_label.text = "Citra-Spieler nicht aktiv."
                 return
             asyncio.create_task(self._do_add_rare_candies_citra(count))
         else:
-            client_id = f"player{int(owner):03d}"
+            client_id = f"player{slot:03d}"
             asyncio.create_task(self._do_add_rare_candies_bizhawk(client_id, count))
 
     async def _do_add_rare_candies_bizhawk(self, client_id: str, count: int):

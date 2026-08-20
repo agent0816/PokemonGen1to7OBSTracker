@@ -8,6 +8,7 @@ from aiohttp import web
 
 from backend.classes.pokedex_db import PokedexDB
 from backend.logging_setup import get_logger
+from backend.party_rules import first_type_dupe_slots
 from backend.team_id import slug_team_id
 from backend.tm_type_resolver import resolve_tm_hm_sprite
 
@@ -227,11 +228,21 @@ class OverlayServer:
         owner = self._owner_root_for_player(player_id)
         hide_incomplete = self._soullink_filter_active()
         link_id_by_pv = self._link_id_by_personality(owner)
+        blocked_slots = first_type_dupe_slots(team[:6], self.munchlax.nuz)
 
         team_data = []
         for slot, pkmn in enumerate(team[:6]):
             if pkmn.dexnr == 0:
                 team_data.append({"slot": slot, "dexnr": 0, "identity_key": f"empty_{slot}"})
+                continue
+            if slot in blocked_slots:
+                team_data.append({
+                    "slot": slot,
+                    "dexnr": 0,
+                    "identity_key": f"empty_{slot}",
+                    "type_dupe_hidden": True,
+                    "personality": getattr(pkmn, "personality", None),
+                })
                 continue
             pv = getattr(pkmn, "personality", None)
             link_state = self._pokemon_link_state(pkmn, owner)

@@ -61,7 +61,7 @@ RULE_CHECKBOXES: list[tuple[str, str, bool]] = [
     ("rule_restart_on_total_wipe",            "Neustart bei Total-Wipe",         False),
     ("rule_first_type_clause_linked",         "Ersttyp-Clause (verlinkt)",       False),
     ("rule_first_type_clause_static_exception", "Ersttyp: Static-Ausnahme",      False),
-    ("rule_single_type_per_team",             "Ein Typ pro Team (Mono-Type)",    False),
+    ("rule_single_type_per_team",             "Ersttyp-Dupes im Party-Team ausblenden", False),
 ]
 
 CUSTOM_PRESET_LABEL = "(Custom)"

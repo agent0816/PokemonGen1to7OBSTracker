@@ -210,6 +210,11 @@ class Arceus:
                     link = self._update_link_member_outcome(pv, owner, outcome)
                     asyncio.create_task(self.broadcast_encounter_outcome(client_id, pv, owner, outcome))
                     if link is not None:
+                        if link.get("state") == "complete":
+                            self.logger.info(
+                                f"encounter_outcome fuellt link={link.get('link_id')} "
+                                f"auf state=complete (outcome={outcome} owner={owner} pv={pv})"
+                            )
                         asyncio.create_task(self.broadcast_soullink_link_state(link))
                 elif isinstance(data, dict) and data.get("type") == "soullink_config":
                     cfg = data.get("config", {})
@@ -1360,9 +1365,19 @@ class Arceus:
         - Kollision: mindestens 2 Members mit gleichem Typ1
         - Guard: link["compensation_paid"] verhindert doppelte Token-Gutschrift
         """
+        link_id = link.get("link_id")
         if not self._rule("rule_first_type_clause_linked", False):
+            self.logger.info(f"first_type_clash skip: rule inaktiv link={link_id}")
             return None
         if link.get("state") != "complete":
+            members_dbg = {
+                o: {"dexnr": m.get("dexnr"), "outcome": m.get("outcome")}
+                for o, m in link.get("members", {}).items()
+            }
+            self.logger.info(
+                f"first_type_clash skip: link={link_id} state={link.get('state')} "
+                f"members={members_dbg}"
+            )
             return None
         static_exempt = self._rule("rule_first_type_clause_static_exception", True)
         exempt_methods = {"static", "gift", "fossil", "egg"} if static_exempt else set()
@@ -1372,6 +1387,10 @@ class Arceus:
         for owner, member in link.get("members", {}).items():
             t = first_type(member.get("dexnr"))
             if t is None:
+                self.logger.info(
+                    f"first_type_clash skip: kein type fuer {owner} "
+                    f"dex={member.get('dexnr')} link={link_id}"
+                )
                 continue
             member_types[owner] = (t, member.get("method", "wild"))
 
@@ -1381,6 +1400,10 @@ class Arceus:
             buckets.setdefault(t, []).append(owner)
         colliding_buckets = {t: owners for t, owners in buckets.items() if len(owners) >= 2}
         if not colliding_buckets:
+            buckets_map = {type_name(t): owners for t, owners in buckets.items()}
+            self.logger.info(
+                f"first_type_clash ok: link={link_id} buckets={buckets_map}"
+            )
             return None
 
         # Token-Kompensation: Für jeden Owner in einer Kollision, dessen method
@@ -1410,6 +1433,13 @@ class Arceus:
             if len(non_exempt) >= 2:
                 clashing_non_exempt[t] = non_exempt
         if not clashing_non_exempt:
+            colliding_owners = {
+                type_name(t): owners for t, owners in colliding_buckets.items()
+            }
+            self.logger.info(
+                f"first_type_clash silent: link={link_id} kollision aber alle exempt "
+                f"owners={colliding_owners}"
+            )
             return None
 
         parts = [
@@ -1560,6 +1590,10 @@ class Arceus:
         self._last_violation_broadcast_ts[key] = now
         self.soullink_rule_violations[key] = violation
         message = {"type": "soullink_rule_violation", "violation": violation}
+        self.logger.info(
+            f"rule_violation broadcast type={violation.get('type')} "
+            f"subject={violation.get('subject')} clients={len(self.munchlaxes)}"
+        )
         for client_id in list(self.munchlaxes.keys()):
             try:
                 await self.send_to_client(client_id, message)

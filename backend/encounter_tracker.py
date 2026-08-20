@@ -249,12 +249,18 @@ class EncounterTracker:
 
     def _has_type_clash_with_linked(self, owner: str, dexnr, method: str) -> bool:
         """Prüft ob ein verlinkter Partner bereits einen Pokemon mit gleichem
-        Ersttyp gefangen hat. Wenn ja → Encounter darf zurückgewiesen werden
+        Ersttyp angetroffen hat. Wenn ja → Encounter darf zurückgewiesen werden
         (Retry-Regel), ohne die Route zu verbrauchen.
 
         - rule_first_type_clause_linked muss aktiv sein
         - method ∈ {gift, fossil, static, egg} zählt als exempt (bekommt Token
           statt Retry — der Spieler konnte den Typ nicht wählen)
+        - Es reicht der reine Encounter beim Partner (kein caught/obtained
+          erforderlich). Grund: bei zeitgleichen oder verzögerten Fang-Outcomes
+          wurde der zweite Encounter sonst als 'missed' verbucht (Bug 2026-08-19
+          Habitak+Wiesor), obwohl der Type-Clash bereits erkennbar war. Route
+          bleibt bei Retry frei — verliert der Partner seinen Encounter später,
+          kann der eigene Slot beim nächsten Spawn regulär gefüllt werden.
         """
         if not self.nuz.get("rule_first_type_clause_linked", False):
             return False
@@ -276,7 +282,6 @@ class EncounterTracker:
         # übergibt owner im build_owner-Format. Vor dem Vergleich normalisieren.
         from backend.classes.pokedex_db import PokedexDB
         owner_key = PokedexDB.owner_root(owner)
-        caught_like = {"caught", "obtained"}
         for link in links.values():
             expected = link.get("expected_owners", []) or []
             if owner_key not in expected:
@@ -284,10 +289,14 @@ class EncounterTracker:
             for other_owner, member in (link.get("members") or {}).items():
                 if other_owner == owner_key:
                     continue
-                if member.get("outcome") not in caught_like:
-                    continue
                 other_type = first_type(member.get("dexnr"))
                 if other_type == my_type:
+                    self.logger.info(
+                        f"type_clash retry: owner={owner_key} dex={dexnr} "
+                        f"type={my_type} partner={other_owner} "
+                        f"partner_dex={member.get('dexnr')} "
+                        f"partner_outcome={member.get('outcome')}"
+                    )
                     return True
         return False
 

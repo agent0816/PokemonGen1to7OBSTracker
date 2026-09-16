@@ -31,7 +31,9 @@ def _read_channel(app_install_dir):
     if not channel_file.exists():
         return DEFAULT_CHANNEL
     try:
-        value = channel_file.read_text(encoding="utf-8").strip().lower()
+        # utf-8-sig verwirft ein evtl. vorhandenes BOM, das PowerShell-Skripte
+        # gern unbemerkt einfügen. .strip() würde ﻿ sonst stehen lassen.
+        value = channel_file.read_text(encoding="utf-8-sig").strip().lower()
     except Exception as err:
         logger.warning(f"channel.txt konnte nicht gelesen werden: {err}")
         return DEFAULT_CHANNEL

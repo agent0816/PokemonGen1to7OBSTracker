@@ -15,6 +15,7 @@ client_config.py
 .pyupdater/
 keypack.pyu
 compile.ps1
+compile_alpha.ps1
 *.exe
 *.txt
 .venv/
@@ -25,8 +26,10 @@ CLAUDE.md
 nuitka-out/
 nuitka_build.ps1
 tufup_publish.ps1
+tufup_publish_alpha.ps1
 version.py
 release_to_github.ps1
+release_alpha_to_github.ps1
 tools/
 tests/
 backup-saves/

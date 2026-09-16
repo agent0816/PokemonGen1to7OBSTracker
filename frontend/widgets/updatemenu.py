@@ -17,17 +17,28 @@ from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
-# Variante A: alle tufup-Assets (Metadata + Targets) liegen flach im
-# GitHub-Release "latest". GitHub flacht Pfade ab, daher ist die Base-URL
-# für Metadata und Targets identisch.
-TUFUP_METADATA_URL = os.environ.get(
-    "TUFUP_METADATA_URL",
-    "https://github.com/agent0816/PokemonGen1to7OBSTracker/releases/download/latest/",
-)
-TUFUP_TARGETS_URL = os.environ.get(
-    "TUFUP_TARGETS_URL",
-    "https://github.com/agent0816/PokemonGen1to7OBSTracker/releases/download/latest/",
-)
+# Update-Channel wird zur Build-Zeit in channel.txt neben die EXE gelegt.
+# Fehlt die Datei, gilt "stable". Env-Vars überschreiben immer.
+DEFAULT_CHANNEL = "stable"
+CHANNEL_URLS = {
+    "stable": "https://github.com/agent0816/PokemonGen1to7OBSTracker/releases/download/latest/",
+    "alpha":  "https://github.com/agent0816/PokemonGen1to7OBSTracker/releases/download/alpha-latest/",
+}
+
+
+def _read_channel(app_install_dir):
+    channel_file = app_install_dir / "channel.txt"
+    if not channel_file.exists():
+        return DEFAULT_CHANNEL
+    try:
+        value = channel_file.read_text(encoding="utf-8").strip().lower()
+    except Exception as err:
+        logger.warning(f"channel.txt konnte nicht gelesen werden: {err}")
+        return DEFAULT_CHANNEL
+    if value not in CHANNEL_URLS:
+        logger.warning(f"Unbekannter Channel '{value}' in channel.txt — falle auf {DEFAULT_CHANNEL} zurück.")
+        return DEFAULT_CHANNEL
+    return value
 
 
 class Update(Screen):
@@ -44,6 +55,12 @@ class Update(Screen):
         self.app_install_dir = Path(os.getcwd()).resolve()
         self.metadata_dir = self.app_install_dir / "update_cache" / "metadata"
         self.target_dir = self.app_install_dir / "update_cache" / "targets"
+
+        self.channel = _read_channel(self.app_install_dir)
+        channel_base = CHANNEL_URLS[self.channel]
+        self.metadata_url = os.environ.get("TUFUP_METADATA_URL", channel_base)
+        self.targets_url = os.environ.get("TUFUP_TARGETS_URL", channel_base)
+        logger.info(f"Update-Channel: {self.channel} (metadata={self.metadata_url})")
 
     def _bootstrap_trust_anchor(self):
         """Kopiert root.json beim ersten Start aus dem Bundle ins metadata_dir."""
@@ -67,9 +84,9 @@ class Update(Screen):
                 app_install_dir=self.app_install_dir,
                 current_version=self.app_version,
                 metadata_dir=self.metadata_dir,
-                metadata_base_url=TUFUP_METADATA_URL,
+                metadata_base_url=self.metadata_url,
                 target_dir=self.target_dir,
-                target_base_url=TUFUP_TARGETS_URL,
+                target_base_url=self.targets_url,
                 refresh_required=False,
             )
             new_archive = self.client.check_for_updates()

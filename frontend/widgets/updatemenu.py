@@ -13,6 +13,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.progressbar import ProgressBar
 from kivy.uix.screenmanager import Screen
 from tufup.client import Client
+from tuf.api.exceptions import ExpiredMetadataError
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, 'logs/frontend.log')
@@ -24,6 +25,10 @@ CHANNEL_URLS = {
     "stable": "https://github.com/agent0816/PokemonGen1to7OBSTracker/releases/download/latest/",
     "alpha":  "https://github.com/agent0816/PokemonGen1to7OBSTracker/releases/download/alpha-latest/",
 }
+# Marker im metadata_dir hält den Kanal fest, mit dem der Trust-Anchor bootstrappt wurde.
+# Bei Kanalwechsel (Stable -> Alpha und umgekehrt) muss root.json aus dem neuen Bundle
+# ersetzt werden, sonst mismatched die Trust-Chain zum tufup-Repo.
+CHANNEL_MARKER_FILENAME = ".channel"
 
 
 def _read_channel(app_install_dir):
@@ -65,33 +70,99 @@ class Update(Screen):
         logger.info(f"Update-Channel: {self.channel} (metadata={self.metadata_url})")
 
     def _bootstrap_trust_anchor(self):
-        """Kopiert root.json beim ersten Start aus dem Bundle ins metadata_dir."""
+        """Kopiert root.json aus dem Bundle ins metadata_dir. Bei Kanalwechsel wird der
+        Cache vorher geleert, damit alte Trust-Chain (z.B. Stable) nicht die neue (Alpha)
+        blockiert.
+        """
         target = self.metadata_dir / "root.json"
-        if target.exists():
+        marker = self.metadata_dir / CHANNEL_MARKER_FILENAME
+        cached_channel = None
+        if marker.exists():
+            try:
+                cached_channel = marker.read_text(encoding="utf-8").strip().lower()
+            except Exception as err:
+                logger.warning(f"Channel-Marker konnte nicht gelesen werden: {err}")
+        # Existiert root.json ohne Marker, stammt der Cache aus einer Version vor Kanal-Support.
+        # Wir wissen dann nicht, zu welchem Repo die Chain gehört, und behandeln das wie einen
+        # Kanalwechsel, damit der Trust-Anchor sicher aus dem aktuellen Bundle kommt.
+        legacy_cache_without_marker = target.exists() and cached_channel is None
+        channel_changed = (
+            (cached_channel is not None and cached_channel != self.channel)
+            or legacy_cache_without_marker
+        )
+        if target.exists() and not channel_changed:
             return
         bundled = self.app_install_dir / "tufup_metadata" / "root.json"
         if not bundled.exists():
             logger.error(f"Trust-Anchor nicht gefunden: {bundled}")
             return
+        if channel_changed:
+            if legacy_cache_without_marker:
+                logger.info(
+                    f"Metadata-Cache ohne Kanal-Marker gefunden (Kanal={self.channel}); "
+                    f"Cache wird geleert und Trust-Anchor neu bootstrapt."
+                )
+            else:
+                logger.info(
+                    f"Kanalwechsel erkannt ({cached_channel} -> {self.channel}); "
+                    f"Metadata-Cache wird geleert."
+                )
+            self._reset_metadata_cache()
         self.metadata_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(bundled, target)
-        logger.info(f"Trust-Anchor initialisiert: {target}")
+        try:
+            marker.write_text(self.channel, encoding="utf-8")
+        except Exception as err:
+            logger.warning(f"Channel-Marker konnte nicht geschrieben werden: {err}")
+        logger.info(f"Trust-Anchor initialisiert: {target} (Kanal={self.channel})")
+
+    def _reset_metadata_cache(self):
+        """Entfernt alle Dateien unter metadata_dir. Wird bei Kanalwechsel oder
+        abgelaufenem Cache gerufen, danach bootstrapt _bootstrap_trust_anchor neu.
+        """
+        if not self.metadata_dir.exists():
+            return
+        for entry in self.metadata_dir.iterdir():
+            try:
+                if entry.is_file() or entry.is_symlink():
+                    entry.unlink()
+                else:
+                    shutil.rmtree(entry)
+            except Exception as err:
+                logger.warning(f"Konnte {entry} nicht loeschen: {err}")
+
+    def _run_update_check(self):
+        self.client = Client(
+            app_name=self.app_name,
+            app_install_dir=self.app_install_dir,
+            current_version=self.app_version,
+            metadata_dir=self.metadata_dir,
+            metadata_base_url=self.metadata_url,
+            target_dir=self.target_dir,
+            target_base_url=self.targets_url,
+            refresh_required=False,
+        )
+        return self.client.check_for_updates()
 
     def check_for_update(self):
         try:
             self._bootstrap_trust_anchor()
             self.target_dir.mkdir(parents=True, exist_ok=True)
-            self.client = Client(
-                app_name=self.app_name,
-                app_install_dir=self.app_install_dir,
-                current_version=self.app_version,
-                metadata_dir=self.metadata_dir,
-                metadata_base_url=self.metadata_url,
-                target_dir=self.target_dir,
-                target_base_url=self.targets_url,
-                refresh_required=False,
+            new_archive = self._run_update_check()
+        except ExpiredMetadataError as err:
+            logger.warning(
+                f"Metadata abgelaufen ({err}); Cache wird geleert und Update-Check erneut versucht."
             )
-            new_archive = self.client.check_for_updates()
+            try:
+                self._reset_metadata_cache()
+                self._bootstrap_trust_anchor()
+                new_archive = self._run_update_check()
+            except Exception as retry_err:
+                logger.error(
+                    f"Update-Check nach Cache-Reset weiterhin fehlgeschlagen: {retry_err}\n{traceback.format_exc()}"
+                )
+                self.parent.current = "SessionMenu"
+                return
         except Exception as err:
             logger.error(f"Update-Check fehlgeschlagen: {err}\n{traceback.format_exc()}")
             self.parent.current = "SessionMenu"

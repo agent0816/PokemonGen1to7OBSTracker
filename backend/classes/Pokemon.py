@@ -11,6 +11,12 @@ class Pokemon:
         self.lvl = kwargs.get('lvl')
         self.shiny: bool = shiny
         self.female = female
+        # form-Normalisierung: get_form() (pokedecoder.py:249) liefert bereits
+        # str, aber alte Pickles/DB-Rows koennen int enthalten. Konkatenation
+        # `str + int` in Sprite-Pfad-Builds (obs.get_sprite, overlay_server
+        # _sprite_path) wirft sonst TypeError und killt silent den Redraw-Task.
+        if isinstance(form, int):
+            form = ""
         self.form = form
         if 'route' not in kwargs:
             self.route = 0

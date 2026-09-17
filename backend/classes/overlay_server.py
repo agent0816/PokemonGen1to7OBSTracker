@@ -668,7 +668,11 @@ class OverlayServer:
         else:
             sub = "" if common_path.endswith("/") else "/"
         path = common_path + sub + animated + shiny + female
-        filename = str(pokemon.dexnr) + pokemon.form + filetype
+        # str(pokemon.form) — analog obs.py:1527: form ist per Default '' (Pokemon.py:8),
+        # aber bestimmte Decoder-Pfade / alte DB-Eintraege / Cross-Version-Pickles
+        # koennen sie als int liefern. Ohne Cast wirft `str + int` einen TypeError,
+        # der silent den Browser-Overlay-Render killt.
+        filename = str(pokemon.dexnr) + str(pokemon.form) + filetype
         return path + filename
 
     # --- HTTP-Handler ---

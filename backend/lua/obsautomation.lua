@@ -269,6 +269,13 @@ local function check_battle(state)
 end
 
 local function read_team_bytes(state)
+    if not pointer or not state.length or state.length == 0 or not state.domain or state.domain == '' then
+        logging.error(string.format(
+            "[player%03d] read_team_bytes abgebrochen: pointer=%s length=%s domain=%s gameversion=%s",
+            PLAYER, tostring(pointer), tostring(state.length), tostring(state.domain), tostring(state.gameversion)
+        ))
+        return
+    end
     if state.gameversion == 23 then
         if state.cur_team_player > 0 and state.cur_team_player <= 7 then
             state.team = memory.read_bytes_as_array(pointer, state.length, state.domain)
@@ -517,9 +524,34 @@ end
 
 function main()
     local gameversion, language, length, domain = detect_game()
+    logging.info(string.format(
+        "[player%03d] detect_game: gameversion=%s language=%s length=%s domain=%s system=%s rom=%s",
+        PLAYER, tostring(gameversion), tostring(language), tostring(length), tostring(domain),
+        tostring(emu.getsystemid()), tostring(gameinfo.getromname())
+    ))
+    -- send_game_info + send_bh_version MUESSEN vor dem Halt laufen: sonst
+    -- steht Python bei receive_messages(edition/language/bh_version) und
+    -- muesste erst in den _HANDSHAKE_TIMEOUT laufen. Beim ROM-Erkennungs-
+    -- Fehler halten wir *vor* receive_pointer_config, weil Python ohne
+    -- gueltige Edition/Language ohnehin keinen sinnvollen Pointer-Satz
+    -- liefern kann. Python's _HANDSHAKE_TIMEOUT auf dem "Aufgabe"-Read
+    -- (siehe bizhawk.py) faengt den nicht mehr antwortenden Client dann
+    -- sauber ab.
     send_game_info(gameversion, language)
     send_bh_version()
+    if length == 0 or domain == '' then
+        halt_with_message(string.format(
+            "[player%03d] detect_game konnte ROM nicht identifizieren (gameversion=%s language=%s) — Edition unterstuetzt?",
+            PLAYER, tostring(gameversion), tostring(language)
+        ))
+    end
     receive_pointer_config()
+    if not pointer then
+        halt_with_message(string.format(
+            "[player%03d] pointer nil nach receive_pointer_config — Server erreichbar? Edition/Language in pointer_*.yml gepflegt?",
+            PLAYER
+        ))
+    end
     local state = init_state(gameversion, length, domain)
 
     while true do

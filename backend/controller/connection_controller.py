@@ -72,10 +72,12 @@ class ConnectionController:
             if not self.bizhawk.server:
                 asyncio.create_task(self.bizhawk.start(self.munchlax))
 
+            log_dir = os.path.abspath("./logs")
             for i in range(self.pl["player_count"]):
                 if not self.pl[f"remote_{i+1}"]:
                     env = os.environ.copy()
                     env["TRACKER_PLAYER"] = str(i + 1)
+                    env["TRACKER_LOG_DIR"] = log_dir
                     process = subprocess.Popen([
                         self.bh["path"],
                         f'--lua={os.path.abspath("./backend/lua/tracker.lua")}',

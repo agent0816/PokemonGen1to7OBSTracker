@@ -32,6 +32,10 @@ class Bizhawk:
         self.bizhawks_status = {}
         self.server = None
         self.is_connected = False
+        # Aktuell ungenutzt: disconnect() koordiniert Reconnect-Races ueber
+        # Writer-Identitaets-Guards (siehe dortige Kommentare), nicht ueber
+        # diesen Lock. In arceus/munchlax wird der gleichnamige Lock aktiv
+        # verwendet — der Name bleibt hier fuer API-Konsistenz erhalten.
         self.disconnect_lock = asyncio.Lock()
         self.bh = bh
         self.about_to_exit = False
@@ -84,11 +88,22 @@ class Bizhawk:
 
         self.logger = get_logger(__name__, './logs/bizhawk.log')
     
+    # Timeout fuer die Handshake-Reads NACH client_id: verhindert Zombie-Tasks,
+    # wenn Lua sich nach halt_with_message nicht mehr meldet oder BizHawk beim
+    # Start abraucht, bevor der Handshake durch ist.
+    _HANDSHAKE_TIMEOUT = 10.0
+    # Der allererste Read (client_id) darf laenger dauern: BizHawk baut die
+    # TCP-Verbindung schon beim Prozessstart auf, Lua sendet aber erst NACH
+    # dem ROM-Load. Der User braucht ggf. mehrere Sekunden bis Minuten fuer
+    # den ROM-Dialog. Ohne diesen groesseren Timeout wuerde eine technisch
+    # gesunde Verbindung nach 10s spontan abbrechen.
+    _CLIENT_ID_TIMEOUT = 300.0
+
     async def handle_bizhawk(self, reader, writer):
         client_id = None
         try:
             # id_length = int((await reader.read(2)).decode())
-            client_id = (await self.receive_messages(reader)).decode()
+            client_id = (await self.receive_messages(reader, timeout=self._CLIENT_ID_TIMEOUT)).decode()
             self.bizhawks[client_id] = writer
             self.bizhawks_status[client_id] = 'connected'
             self.logger.info(f"Emulator {client_id} connected.")
@@ -160,9 +175,9 @@ class Bizhawk:
                 self.munchlax.unsorted_teams[player] = team
 
             # edition_length = int((await reader.read(2)).decode())
-            edition = int((await self.receive_messages(reader)).decode())
-            language = int((await self.receive_messages(reader)).decode())
-            bh_version_raw = (await self.receive_messages(reader)).decode()
+            edition = int((await self.receive_messages(reader, timeout=self._HANDSHAKE_TIMEOUT)).decode())
+            language = int((await self.receive_messages(reader, timeout=self._HANDSHAKE_TIMEOUT)).decode())
+            bh_version_raw = (await self.receive_messages(reader, timeout=self._HANDSHAKE_TIMEOUT)).decode()
             player = int(client_id[7:])
             self.logger.debug(f"Handshake: client={client_id}, edition={edition}, language={language}, bh_version={bh_version_raw}, player={player}")
 
@@ -198,9 +213,14 @@ class Bizhawk:
             # Pointer-Satz aus YAML bestimmen und an Lua zurückschicken (Phase 3)
             pointers = bh_pointers.get_pointers(edition, language if language else None)
             if not pointers:
+                # Ohne Pointer kann Lua kein Memory lesen — sie haltet sich selbst per
+                # halt_with_message an, sendet also nie das erwartete "Aufgabe" zurueck.
+                # Wir trennen hier sofort, statt in receive_messages ewig zu warten.
                 self.logger.error(
-                    f"Keine Pointer für edition={edition}, language={language} in YAML — Lua erhält leere Konfig"
+                    f"Keine Pointer für edition={edition}, language={language} in YAML — trenne {client_id}"
                 )
+                await self.send_messages(writer, "")
+                raise Exception(f"Keine Pointer für edition={edition}, language={language}")
             # Nur skalare Int-Pointer an Lua senden; box_sram_layout & Co. sind Listen
             # und bleiben Python-seitig, weil Lua die Box-Offsets nicht selbst braucht.
             pointer_str = ";".join(
@@ -209,13 +229,13 @@ class Bizhawk:
             await self.send_messages(writer, pointer_str)
             self.logger.info(f"Pointer-Satz an {client_id} (edition={edition}, language={language}): {pointer_str}")
 
-            msg = (await self.receive_messages(reader)).decode()
+            msg = (await self.receive_messages(reader, timeout=self._HANDSHAKE_TIMEOUT)).decode()
             if msg != "Aufgabe":
                 raise Exception("Irgendwas stimmt mit der Initialisierung nicht")
             else:
                 await self.send_messages(writer, "team")
             length = get_length()
-            msg = await reader.read(length)
+            msg = await reader.readexactly(length)
             update_teams(msg)
             counter = 2
             in_battle = False
@@ -238,7 +258,7 @@ class Bizhawk:
                                 event.set()
                     elif counter % 60 == 0:
                         await self.send_messages(writer, "team")
-                        msg = await reader.read(length)
+                        msg = await reader.readexactly(length)
                         update_teams(msg)
                     elif counter % 60 == 2:
                         # Immer pollen (auch waehrend in_battle=True), sonst
@@ -318,14 +338,14 @@ class Bizhawk:
 
                     counter += 1
                 except Exception as err:
-                    self.logger.error(f"handle_bizhawk abgebrochen: {type(err)},{err}")
+                    self.logger.error(f"handle_bizhawk abgebrochen (client={client_id}): {type(err).__name__}: {err}")
                     self.logger.error(f"{traceback.format_exc()}")
                     break
         except Exception as err:
-            self.logger.error(f"handle_bizhawk abgebrochen: {type(err)},{err}")
+            self.logger.error(f"handle_bizhawk abgebrochen (client={client_id}): {type(err).__name__}: {err}")
             self.logger.error(f"{traceback.format_exc()}")
 
-        await self.disconnect(client_id)
+        await self.disconnect(client_id, writer)
 
     async def flush_saveram(self, client_id: str, timeout: float = 3.0) -> bool:
         """Erzwingt SaveRAM-Flush im BizHawk-Client und wartet auf Bestaetigung.
@@ -1535,7 +1555,48 @@ class Bizhawk:
             self.logger.error(f"Outcome-Check fehlgeschlagen: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
 
-    async def disconnect(self, client_id):
+    async def disconnect(self, client_id: str | None, writer: asyncio.StreamWriter):
+        """Cleanup fuer einen abgehenden BizHawk-Client.
+
+        Der aufrufende ``handle_bizhawk``-Task MUSS seinen eigenen
+        ``StreamWriter`` mitgeben, damit der Identitaets-Guard funktioniert.
+        Ohne ``writer`` wuerde ein hangender alter Task bei einem Reconnect
+        mit gleicher ``client_id`` blind den frischen Writer des Reconnects
+        schliessen und dessen Status auf disconnected setzen — genau das
+        Symptom, das dieser Guard verhindern soll. Deshalb Pflichtparameter.
+
+        Hinweis: Python erzwingt keine Non-None-Pruefung auf ``writer``.
+        Wer ihn explizit als ``None`` uebergibt, umgeht den Entry-Guard und
+        landet direkt im vollen Cleanup-Pfad: ``writer_to_close`` faellt auf
+        den aktuell im Dict stehenden ``current_writer`` zurueck (der zu einem
+        anderen Task gehoeren kann) und wird geschlossen — der Tail-Guard
+        greift danach zwar noch fuer einen *zusaetzlichen* Reconnect, der
+        waehrend ``wait_closed`` einlaeuft, repariert aber nicht das bereits
+        erfolgte Schliessen eines fremden Writers. Neue Aufrufer immer mit
+        echtem StreamWriter aufrufen.
+        """
+        # Identitaets-Guard (Eintritt): bei einem Reconnect mit gleicher client_id
+        # kann ein hangender alter handle_bizhawk-Task (totes TCP, kein RST) erst
+        # spaeter in seinen except-Block fallen. Wenn wir dann blind aus
+        # self.bizhawks[client_id] cleanen wuerden, koennten wir den frischen
+        # Writer des Reconnects schliessen. Deshalb: cleanen nur, wenn der
+        # aktuelle Writer im Dict noch DIESER Task gehoert.
+        current_writer = self.bizhawks.get(client_id) if client_id else None
+        if writer is not None and current_writer is not None and current_writer is not writer:
+            self.logger.info(
+                f"disconnect({client_id}): stale Task, aktueller Writer gehoert bereits neuem Reconnect — kein Cleanup."
+            )
+            # Trotzdem den eigenen Writer schliessen, damit sein Socket nicht
+            # OS-seitig offen bleibt.
+            try:
+                writer.close()
+                await asyncio.wait_for(writer.wait_closed(), timeout=3.0)
+            except Exception as err:
+                self.logger.debug(
+                    f"disconnect({client_id}): stale writer close ignoriert — {type(err).__name__}: {err}"
+                )
+            return
+
         # Noch offene Box-Futures mit Fehler beenden, damit read_all_boxes()
         # nicht ewig hängt, wenn der Emulator während der Abfrage wegbricht.
         queue = self.box_request_queues.pop(client_id, None)
@@ -1564,9 +1625,47 @@ class Bizhawk:
         self._flush_done.pop(client_id, None)
         self._bag_refresh_inflight.pop(client_id, None)
 
+        # Writer explizit schliessen, sonst bleibt der TCP-Socket OS-seitig
+        # offen, obwohl der Python-Task endet — BizHawk/Lua sieht kein FIN und
+        # blockiert beim naechsten comm.socketServerSend/Response ohne Fehler.
+        # Symptom: hangendes BizHawk-Fenster, das nur per Emulator-Neustart
+        # geloest werden kann. Fehler beim close() werden geloggt aber
+        # geschluckt (Transport evtl. schon halb tot). wait_closed mit Timeout,
+        # sonst kann ein halb-offener Socket unter Windows das OS-TCP-Timeout
+        # (mehrere zehn Sekunden bis Minuten) durchlaufen und Reconnect-Logik
+        # blockieren.
+        writer_to_close = writer if writer is not None else current_writer
+        if writer_to_close is not None:
+            try:
+                writer_to_close.close()
+                await asyncio.wait_for(writer_to_close.wait_closed(), timeout=3.0)
+            except asyncio.TimeoutError:
+                self.logger.warning(
+                    f"disconnect({client_id}): wait_closed Timeout nach 3s — Socket halb-offen, wird OS-seitig aufgeraeumt."
+                )
+            except Exception as err:
+                self.logger.debug(
+                    f"disconnect({client_id}): writer close ignoriert — {type(err).__name__}: {err}"
+                )
+
+        # Identitaets-Guard (Tail): nach dem wait_closed-Await (bis zu 3s)
+        # kann ein Reconnect mit gleicher client_id bereits einen neuen
+        # Writer in self.bizhawks[client_id] geschrieben haben (handle_bizhawk
+        # setzt das direkt nach dem client_id-Read). Ohne diesen Re-Check
+        # wuerden wir den Status des frisch verbundenen Clients auf
+        # disconnected setzen — spontaner Status-Flip trotz laufender
+        # Verbindung. Nur cleanen, wenn der aktuelle Writer immer noch UNSERER
+        # ist (oder das dict-Feld auf None steht — dann hat eh niemand
+        # uebernommen).
         if client_id in self.bizhawks:
-            self.bizhawks[client_id] = None
-            self.bizhawks_status[client_id] = False
+            current_writer = self.bizhawks.get(client_id)
+            if current_writer is None or current_writer is writer_to_close:
+                self.bizhawks[client_id] = None
+                self.bizhawks_status[client_id] = False
+            else:
+                self.logger.info(
+                    f"disconnect({client_id}): Reconnect waehrend Cleanup — Status wird nicht ueberschrieben."
+                )
     
     async def start(self, munchlax):
         # Port/Host frisch aus bh-Dict ziehen. Ohne Sync: nach Session-Wechsel
@@ -1598,22 +1697,25 @@ class Bizhawk:
             self.port = self.bh['port']
             self.logger.info("Bizhawk has been stopped.")
 
-    async def receive_messages(self, reader):
-        length = b''
-        flag = True
-        while flag:
-            data = await reader.read(1)
-            if not data:
-                return None
-            if data.decode() != " ":
+    async def receive_messages(self, reader, timeout=None):
+        # readexactly statt read: TCP-Segmente koennen fragmentieren, ein
+        # blosses read(n) liefert dann weniger Bytes zurueck und verschiebt
+        # die Framing-Grenze fuer den naechsten Read. Bei EOF wirft
+        # readexactly IncompleteReadError, das der aeussere try/except in
+        # handle_bizhawk sauber als Disconnect behandelt.
+        async def _read():
+            length = b''
+            while True:
+                data = await reader.readexactly(1)
+                if data == b' ':
+                    break
                 length += data
-            else:
-                flag = False
-        length = int(length.decode())
+            length_int = int(length.decode())
+            return await reader.readexactly(length_int)
 
-        result = await reader.read(length)
-
-        return result
+        if timeout is not None:
+            return await asyncio.wait_for(_read(), timeout=timeout)
+        return await _read()
 
     async def send_messages(self, writer, message_to_biz):
         message = f"{len(message_to_biz)} {message_to_biz}"

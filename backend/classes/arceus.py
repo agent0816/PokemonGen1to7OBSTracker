@@ -11,6 +11,20 @@ from backend.type_lookup import first_type, type_name
 # Alles andere ("off" legacy, "nuzlocke", "disabled", "versus_ffa") bedeutet:
 # keine Cross-Owner-Checks auf dem Server.
 SOULLINK_MODES = ("coop", "versus")
+
+# Heartbeat-Watchdog-Tuning. Client sendet alle 5 s einen Heartbeat.
+# HEARTBEAT_STALE_SECONDS: ab wann ein einzelner ausbleibender Heartbeat
+# als "verpasst" zaehlt (mehr als ein Send-Intervall Toleranz, damit
+# WiFi-Jitter und kurze Executor-Blocks keine false-positives triggern).
+# HEARTBEAT_MISS_LIMIT: wie viele solcher verpassten Ticks in Folge, bevor
+# der Client tatsaechlich als tot gilt (Disconnect bei count > LIMIT).
+# Effektive Disconnect-Latenz: STALE + (MISS_LIMIT + 1) * 5 s Tick,
+# abhaengig von der Phasenlage zwischen Send- und Check-Loop. Aktuell
+# also ca. 30-35 s. Verdoppelt gegenueber der urspruenglichen
+# ~20-25 s (log-detektiv 2026-09-16: instabile Client-Netze wurden zu
+# schnell rausgeworfen).
+HEARTBEAT_STALE_SECONDS = 15.0
+HEARTBEAT_MISS_LIMIT = 3
 # Modi mit Versus-Scoreboard (badges/alive/deaths). "versus" aggregiert pro Team,
 # "versus_ffa" (jeder gegen jeden) pro Spieler — ohne Soullink-Links.
 VERSUS_MODES = ("versus", "versus_ffa")
@@ -136,6 +150,14 @@ class Arceus:
         self.munchlax_names[client_id] = client_name
         self.munchlax_status[client_id] = 'connected'
         self.heartbeat_counts[client_id] = 0
+        # Heartbeat-Timestamp bereits bei Registrierung setzen, sonst wirft
+        # ein Frueh-Disconnect (z.B. Slot-Collision-Reject vor dem ersten
+        # 'heartbeat'-Send) in disconnect_client KeyError beim del —
+        # State-Cleanup und broadcast_*-Follow-Ups laufen dann nie durch.
+        # Praktischer Effekt zusaetzlich: der neue Client ist ab jetzt
+        # regulaer im check_heartbeats-Watchdog, falls er nie einen
+        # Heartbeat sendet (sync-reviewer R5).
+        self.munchlax_heartbeats[client_id] = time.time()
         self.client_player_ids[client_id] = set()
         self.writer_locks[client_id] = asyncio.Lock()
         self.logger.info(f"Client {client_id} connected and registered.")
@@ -381,7 +403,11 @@ class Arceus:
                 self.logger.error(f"{traceback.format_exc()}")
                 break
         
-        await self.disconnect_client(client_id)
+        # writer explizit mitgeben — disconnect_client soll pruefen ob der
+        # registrierte Writer noch derselbe ist, sonst kann ein Reconnect
+        # der zwischen Loop-Ausstieg und Entry stattfindet fälschlich den
+        # frischen Socket schliessen. Details in disconnect_client-Docstring.
+        await self.disconnect_client(client_id, writer=writer)
 
     async def update_all_clients(self, client_id):
         old_teams = self.teams.copy()
@@ -1638,20 +1664,102 @@ class Arceus:
                 self.logger.error(f"broadcast_bag_sync an {client_id} failed: {type(exc)},{exc}")
                 self.logger.error(f"{traceback.format_exc()}")
 
-    async def disconnect_client(self, client_id):
+    async def disconnect_client(self, client_id,
+                                 writer: asyncio.StreamWriter | None = None):
+        """Trennt den Client mit der angegebenen client_id.
+
+        ``writer``: Der Writer der terminierenden Verbindung. Wird von
+        ``handle_munchlax`` mitgegeben, damit der Entry-Identity-Guard
+        einen Reconnect-Race erkennt (Reviewer Runde 2 KRITISCH):
+        zwischen Loop-Break und Entry hier kann ein Reconnect mit
+        derselben client_id ``self.munchlaxes[client_id]`` bereits durch
+        den neuen Writer ersetzt haben (der Handshake in
+        ``handle_munchlax`` lauft ohne ``disconnect_lock``). Wird
+        ``writer`` uebergeben und stimmt nicht mit dem aktuell
+        registrierten ueberein, brechen wir sofort ab — die
+        Reconnect-Verbindung bleibt bestehen.
+
+        ``check_heartbeats`` uebergibt seit Runde 3 ebenfalls einen
+        Snapshot-Writer (``self.munchlaxes.get(client_id)`` zum
+        Auswertungs-Zeitpunkt), damit der Entry-Guard auch dort einen
+        Reconnect zwischen Snapshot und Cleanup erkennt und den frischen
+        Socket nicht faelschlich kappt. Ist der Snapshot ``None`` (Client
+        schon verschwunden), degradiert der Guard graceful: ``current``
+        ist dann ebenfalls None und die Funktion returned frueh.
+        """
         async with self.disconnect_lock:
-            if client_id in self.munchlaxes:
-                writer = self.munchlaxes[client_id]
+            current = self.munchlaxes.get(client_id)
+            if current is None:
+                return
+            if writer is not None and current is not writer:
+                self.logger.info(
+                    f"disconnect_client({client_id}): aufrufende Verbindung "
+                    f"wurde bereits durch Reconnect ersetzt — State-Cleanup "
+                    f"uebersprungen"
+                )
+                # Stale Writer trotzdem schliessen — GC/__del__-Finalizer sind
+                # keine verlaesslichen Cleanup-Kanaele fuer offene Sockets.
+                # Wir tun das NUR fuer den mitgegebenen (alten) Writer, nicht
+                # fuer current (= die neue Reconnect-Verbindung).
+                try:
+                    writer.close()
+                except Exception as exc:
+                    self.logger.warning(
+                        f"stale writer.close() für {client_id} failed: "
+                        f"{type(exc).__name__},{exc}"
+                    )
+                return
+            # Ab hier ist der zu schliessende Writer bekannt und
+            # identisch zum aktuell registrierten (oder writer=None:
+            # Aufrufer will explizit die aktuell registrierte
+            # Verbindung terminieren, z.B. Heartbeat-Timeout).
+            writer = current
+            try:
                 writer.close()
-                await writer.wait_closed()
+            except Exception as exc:
+                self.logger.warning(
+                    f"writer.close() für {client_id} failed: {type(exc).__name__},{exc}"
+                )
+            # wait_closed haengt unter Windows bei Netzwerkabbruch
+            # (WinError 121 "Semaphore-Timeout") minutenlang und blockiert
+            # den disconnect_lock — Folge: Cascade-Disconnects stauen
+            # sich, neue Verbindungen werden nicht angenommen. 2 s
+            # Timeout ist mehr als genug fuer sauberes FIN-Handshake.
+            try:
+                await asyncio.wait_for(writer.wait_closed(), timeout=2.0)
+            except asyncio.TimeoutError:
+                self.logger.warning(
+                    f"wait_closed timeout für {client_id} — Socket wird "
+                    f"aufgegeben, State wird trotzdem entfernt"
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    f"wait_closed für {client_id} failed: {type(exc).__name__},{exc}"
+                )
+            # Tail-Guard: waehrend des 2s-Fensters von wait_closed kann
+            # ein Reconnect passiert sein (Handshake laeuft ohne
+            # disconnect_lock). Nur cleanup wenn writer noch identisch —
+            # andernfalls wuerde dieser del-Block den State der frischen
+            # Reconnect-Verbindung wegloeschen.
+            if self.munchlaxes.get(client_id) is writer:
                 self.logger.info(f"Client {client_id} disconnected.")
-                del self.munchlaxes[client_id]
-                del self.munchlax_names[client_id]
-                del self.munchlax_status[client_id]
-                del self.munchlax_heartbeats[client_id]
-                del self.heartbeat_counts[client_id]
+                # Defensiv .pop(..., None): schon einmal (Slot-Collision
+                # + Frueh-Disconnect) hat ein fehlender Heartbeat-Key hier
+                # KeyError geworfen und den gesamten Cleanup + Broadcasts
+                # verschluckt. Alle State-Dicts konsistent robust halten.
+                self.munchlaxes.pop(client_id, None)
+                self.munchlax_names.pop(client_id, None)
+                self.munchlax_status.pop(client_id, None)
+                self.munchlax_heartbeats.pop(client_id, None)
+                self.heartbeat_counts.pop(client_id, None)
                 self.writer_locks.pop(client_id, None)
                 self.client_player_ids.pop(client_id, None)
+            else:
+                self.logger.info(
+                    f"Client {client_id} disconnect: Writer wurde waehrend "
+                    f"wait_closed durch Reconnect ersetzt — State-Cleanup "
+                    f"uebersprungen"
+                )
         asyncio.create_task(self.broadcast_connection_status())
         asyncio.create_task(self.broadcast_player_names())
         if self._recompute_team_state():
@@ -1752,20 +1860,39 @@ class Arceus:
             # (sonst laufen tote Clients ewig weiter, siehe Sync-Review Runde 6).
             try:
                 now = time.time()
-                to_disconnect = []
+                # (client_id, writer) im Snapshot mitfangen: zwischen Snapshot
+                # und disconnect_client-Aufruf kann der Client bereits neu
+                # reconnected haben. Ohne Writer-Snapshot wuerde der
+                # Entry-Guard in disconnect_client leer laufen ("aktuell
+                # registriert = neuer Writer") und den frisch verbundenen
+                # Socket killen (sync-reviewer R3).
+                to_disconnect: list[tuple[str, "asyncio.StreamWriter | None"]] = []
                 for client_id, last_heartbeat in list(self.munchlax_heartbeats.items()):
-                    if now - last_heartbeat > 5.1:
-                        self.logger.warning(f"Client {client_id} hat seit {now - last_heartbeat} Sekunden keinen Heartbeat gesendet!")
+                    if now - last_heartbeat > HEARTBEAT_STALE_SECONDS:
+                        # Aktueller Miss-Zaehler NACH dem Inkrement unten.
+                        # Disconnect erfolgt sobald counts > MISS_LIMIT,
+                        # also ab Miss MISS_LIMIT+1. Log gibt beides an,
+                        # damit "Miss 4/4 → Disconnect" nicht verwirrend
+                        # als "4 von 3" auftaucht (sync-reviewer R7).
+                        next_miss = self.heartbeat_counts[client_id] + 1
+                        self.logger.warning(
+                            f"Client {client_id} hat seit "
+                            f"{now - last_heartbeat:.1f}s keinen Heartbeat "
+                            f"gesendet (Miss {next_miss}, "
+                            f"Disconnect ab {HEARTBEAT_MISS_LIMIT + 1})"
+                        )
                         self.heartbeat_counts[client_id] += 1
-                        if self.heartbeat_counts[client_id] > 3:
-                            to_disconnect.append(client_id)
+                        if self.heartbeat_counts[client_id] > HEARTBEAT_MISS_LIMIT:
+                            to_disconnect.append(
+                                (client_id, self.munchlaxes.get(client_id))
+                            )
                         else:
                             self.munchlax_status[client_id] = "warning"
                     else:
                         self.heartbeat_counts[client_id] = 0
                         self.munchlax_status[client_id] = "connected"
-                for client_id in to_disconnect:
-                    await self.disconnect_client(client_id)
+                for client_id, snap_writer in to_disconnect:
+                    await self.disconnect_client(client_id, writer=snap_writer)
                 await self.broadcast_connection_status()
             except Exception as exc:
                 self.logger.error(f"check_heartbeats Iteration abgebrochen: {type(exc)},{exc}")

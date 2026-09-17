@@ -1695,11 +1695,39 @@ class Munchlax:
                 self.heartbeat_task.cancel()
                 self.send_teams_task.cancel()
 
+                # Writer lokal binden — connect() erwirbt disconnect_lock
+                # NICHT und ueberschreibt self.writer beim naechsten
+                # await asyncio.open_connection(). Wuerden wir self.writer
+                # unten benutzen, koennte ein paralleler Reconnect (kein
+                # is_connected-Guard: wir haben's oben gerade False gesetzt)
+                # zwischen close() und wait_closed() das Attribut umbiegen
+                # und wir wuerden den falschen (frischen) Socket abwarten
+                # statt den alten (sync-reviewer R4).
+                old_writer = self.writer
                 try:
-                    self.writer.close()
-                    await self.writer.wait_closed()
-                except Exception:
-                    pass
+                    old_writer.close()
+                except Exception as err:
+                    self.logger.warning(
+                        f"writer.close() für {self.client_id} failed: "
+                        f"{type(err).__name__},{err}"
+                    )
+                # Beidseitigkeits-Fix zum arceus.disconnect_client-Timeout:
+                # wait_closed haengt unter Windows bei Netzwerkabbruch (WinError
+                # 121) minutenlang, blockiert den disconnect_lock und
+                # verzoegert damit _auto_reconnect. 2 s Timeout genuegt fuer
+                # sauberes FIN-Handshake.
+                try:
+                    await asyncio.wait_for(old_writer.wait_closed(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    self.logger.warning(
+                        f"wait_closed Timeout für {self.client_id} — "
+                        f"Socket wird aufgegeben, Reconnect faehrt trotzdem an"
+                    )
+                except Exception as err:
+                    self.logger.warning(
+                        f"wait_closed für {self.client_id} failed: "
+                        f"{type(err).__name__},{err}"
+                    )
                 self.logger.info(f"Client {self.client_id} hat sich disconnectet.")
 
                 self.close_pokedex_db()

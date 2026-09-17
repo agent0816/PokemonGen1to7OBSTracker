@@ -10,7 +10,7 @@ from backend.classes.Pokemon import Pokemon
 from backend.logging_setup import get_logger
 
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 # Marker fuer Legacy-Gift/Fossil/Static/Egg/Token-Encounter aus Sessions vor
 # der Migration auf route=map_header_id. Diese Zeilen hatten alle route=0
 # und wuerden nach dem Fix sonst mit den frisch geloggten Wilds auf MAPSEC=0
@@ -94,6 +94,8 @@ class PokedexDB:
             self._apply_v5(cursor)
         if current_version < 6:
             self._apply_v6(cursor)
+        if current_version < 7:
+            self._apply_v7(cursor)
 
         self.connection.commit()
 
@@ -265,6 +267,37 @@ class PokedexDB:
         self.logger.info(
             f"PokedexDB Schema v6 angewendet (legacy gift-route migration): "
             f"{migrated} Zeilen auf route={LEGACY_GIFT_ROUTE_MARKER} umgeschrieben"
+        )
+
+    def _apply_v7(self, cursor):
+        # Legacy-Bag-Rows aus Sessions vor der build_owner-Umstellung nuken.
+        # Frueher schrieb update_bag den owner als plain str(player_id)
+        # ('1', '2', ...); seit dem Nuzlocke-Ball-Fix ist der Owner
+        # build_owner-Format 'your_name_slot' ('Bothhaft_1'). Rohe Nummern
+        # bleiben aber in der DB und erzeugen im BagMenu Doppel-Sections
+        # (Screenshot Bothhaft-Session 2026-09-16). Rein-numerische Owner
+        # koennen nur legacy sein — build_owner haengt IMMER '_slot' an,
+        # selbst bei leerem your_name (dann '_1').
+        # Strikt rein-numerisch: owner beginnt mit Ziffer UND enthaelt
+        # keinen Nicht-Ziffer-Character. Fangt "1", "42", ignoriert
+        # "Bothhaft_1" (Underscore) und "1abc" (Buchstaben).
+        cursor.execute(
+            "DELETE FROM bag_inventory "
+            "WHERE owner GLOB '[0-9]*' AND owner NOT GLOB '*[^0-9]*'"
+        )
+        inv_deleted = cursor.rowcount
+        cursor.execute(
+            "DELETE FROM bag_first_seen "
+            "WHERE owner GLOB '[0-9]*' AND owner NOT GLOB '*[^0-9]*'"
+        )
+        fs_deleted = cursor.rowcount
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (7, datetime.now(timezone.utc).isoformat()),
+        )
+        self.logger.info(
+            f"PokedexDB Schema v7 angewendet (legacy plain-numeric bag-owner cleanup): "
+            f"bag_inventory={inv_deleted}, bag_first_seen={fs_deleted}"
         )
 
     @_serialized

@@ -12,6 +12,7 @@ from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
+from kivy.metrics import dp
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
@@ -302,12 +303,41 @@ class NuzlockeMenu(Screen):
         # (Spinner) noetig. Strukturelle Aenderungen (mode/count/rule/preset)
         # werden bereits direkt per _persist_structural_change persistiert
         # und gepusht.
-        actions.add_widget(Button(text="Owner + Teams speichern",
-                                    on_press=lambda *_: self._save_to_nuz()))
+        self.save_button = Button(text="Owner + Teams speichern",
+                                    on_press=lambda *_: self._save_to_nuz())
+        actions.add_widget(self.save_button)
         root.add_widget(actions)
 
         self.status_label = Label(text="", size_hint_y=None, height="30dp")
         root.add_widget(self.status_label)
+
+        # Client-Abgleich: expected_owners aus nuz.yml vs tatsaechlich
+        # verbundene Clients. Bug-Trigger: Bothhaft-Session 2026-09-16 —
+        # Clients disconnecten/reconnecten, expected_owners bleibt aber
+        # aus einem alten UI-State stehen. Ohne diese Anzeige merkt der
+        # Host erst spaet dass die Config nicht mehr zu den echten
+        # Verbindungen passt. Auto-Fix bewusst NICHT — legitime kurze
+        # Disconnects wuerden sonst die Konfig ueberschreiben.
+        verify_header = BoxLayout(orientation="horizontal", size_hint_y=None,
+                                    height="30dp", spacing="6dp")
+        verify_header.add_widget(Label(text="[b]Client-Abgleich[/b]",
+                                          markup=True, halign="left",
+                                          size_hint_x=0.7))
+        verify_header.add_widget(Button(text="Aktualisieren", size_hint_x=0.3,
+                                          on_press=lambda *_: self._refresh_client_verify()))
+        root.add_widget(verify_header)
+        # height=0 initial gesetzt: minimum_height-Bind feuert nur bei kuenftigen
+        # Aenderungen, nicht auf den Ist-Zustand bei bind() — sonst Kivy-
+        # Default-Widget-Hoehe (100 px) zwischen __init__ und erstem Refresh.
+        # Gleiches Muster wie rules_container weiter oben.
+        self.verify_container = BoxLayout(orientation="vertical", size_hint_y=None,
+                                            height=0, spacing="2dp")
+        self.verify_container.bind(minimum_height=self.verify_container.setter("height"))
+        root.add_widget(self.verify_container)
+        # Regelmaessig auffrischen — player_names kommen asynchron via
+        # broadcast_player_names an, kein direktes Event, deswegen Poll.
+        Clock.schedule_interval(lambda _dt: self._safe_refresh_client_verify(), 3.0)
+        Clock.schedule_once(lambda _dt: self._safe_refresh_client_verify(), 0.5)
 
         # Token-Regel Panel
         token_row = BoxLayout(orientation="horizontal", size_hint_y=None,
@@ -495,6 +525,8 @@ class NuzlockeMenu(Screen):
             self.fill_from_clients_button.disabled = not host
         if hasattr(self, "load_from_nuz_button"):
             self.load_from_nuz_button.disabled = not host
+        if hasattr(self, "save_button"):
+            self.save_button.disabled = not host
         # Info-Hinweis
         if hasattr(self, "host_hint_label"):
             if host:
@@ -590,14 +622,41 @@ class NuzlockeMenu(Screen):
         existing_owners = [r.owner for r in self._owner_rows]
         existing_teams = [r.team for r in self._owner_rows]
         team_map = self.nuz.get("soullink_team_membership", {}) or {}
-        expected = self.nuz.get("soullink_expected_owners", []) or []
+        # Expected auf Dedup bringen: Session-Bug (log-detektiv 2026-09-16)
+        # verewigt Duplikate wie ['Bothhaft','Webz0r','Stephan','Stephan']
+        # in nuz.yml. Dedup hier stoppt die Kette: sobald User speichert,
+        # ist nuz.yml wieder eindeutig.
+        raw_expected = self.nuz.get("soullink_expected_owners", []) or []
+        expected = list(dict.fromkeys(str(o) for o in raw_expected if str(o).strip()))
         self.owner_area.clear_widgets()
         self._owner_rows = []
         show_team = (self._mode_value() == "versus")
+        # Merge-Strategie:
+        # - i < len(existing): bestehenden Row-Wert behalten (auch wenn leer —
+        #   User koennte bewusst geloescht haben, darf nicht rehydrieren, siehe
+        #   gui-reviewer Runde 1).
+        # - i >= len(existing): aus dedup'd expected auffuellen, sonst leer.
+        merged: list[str] = []
         for i in range(count):
-            owner = existing_owners[i] if i < len(existing_owners) else (
-                expected[i] if i < len(expected) else ""
-            )
+            if i < len(existing_owners):
+                merged.append(existing_owners[i])
+            elif i < len(expected):
+                merged.append(expected[i])
+            else:
+                merged.append("")
+        # Post-hoc Dedup: taucht ein Owner-Name mehrfach auf, den spaeteren
+        # leeren. Faengt Kollisionen zwischen existing (User-Edit) und
+        # expected-Auffuellung ab.
+        seen: set[str] = set()
+        for i, name in enumerate(merged):
+            if not name:
+                continue
+            if name in seen:
+                merged[i] = ""
+            else:
+                seen.add(name)
+        for i in range(count):
+            owner = merged[i]
             team_letter = existing_teams[i] if i < len(existing_teams) else (
                 team_map.get(owner, TEAM_LETTERS[i % 2])
             )
@@ -667,6 +726,142 @@ class NuzlockeMenu(Screen):
         except Exception:
             pass
         return ordered
+
+    def _safe_refresh_client_verify(self):
+        """Wrapper analog _safe_sync_from_server_state — Clock-Poll darf
+        nicht silent sterben. Fehler in _refresh_client_verify (z.B.
+        self.munchlax kurz None waehrend Reconnect) landen im Log statt
+        den Poll zu killen (feedback_async_loop_body_try_except)."""
+        try:
+            self._refresh_client_verify()
+        except Exception as err:
+            logger.warning(f"_refresh_client_verify (interval) failed: {err}")
+            logger.warning(traceback.format_exc())
+
+    def _refresh_client_verify(self):
+        """Zeigt Diff zwischen expected_owners (aus UI-Rows) und tatsaechlich
+        verbundenen Clients (munchlax.player_names / client_names). Rendert:
+          - Grüne Zeile pro expected+connected (Match, kein Button)
+          - Rote Zeile pro expected-aber-nicht-connected (Ersetzen-Buttons
+            fuer jeden extra-connected Kandidaten)
+          - Gelbe Zeile pro connected-aber-nicht-expected (Zuweisen-Buttons
+            fuer jeden fehlenden Slot)
+
+        Auto-Fix bewusst NICHT: legitime kurzzeitige Disconnects (z.B.
+        BizHawk-Reload eines Spielers) wuerden sonst die Config
+        ueberschreiben und den zurueckkehrenden Client aussperren.
+        """
+        container = getattr(self, "verify_container", None)
+        if container is None:
+            return
+        container.clear_widgets()
+        # Owner + Original-Row-Index aus den UI-Rows lesen. Original-Index ist
+        # kritisch: _replace_owner_in_row indiziert direkt in self._owner_rows,
+        # eine gefilterte Liste (nur non-empty) wuerde bei bewusst geleerten
+        # Rows davor die Zuordnung verschieben (gui-reviewer Runde 2 KRITISCH).
+        expected_pairs = [(i, r.owner) for i, r in enumerate(self._owner_rows) if r.owner]
+        expected = [name for _idx, name in expected_pairs]
+        connected = self._connected_owner_names()
+        expected_set = set(expected)
+        connected_set = set(connected)
+        missing_pairs = [(idx, name) for idx, name in expected_pairs if name not in connected_set]
+        matched = [name for _idx, name in expected_pairs if name in connected_set]
+        extra = [c for c in connected if c not in expected_set]
+
+        host = self._is_host()
+
+        if not expected and not connected:
+            container.add_widget(Label(
+                text="(keine expected_owners konfiguriert, keine Clients verbunden)",
+                size_hint_y=None, height="24dp", color=(0.7, 0.7, 0.7, 1),
+            ))
+            container.height = dp(24)
+            return
+
+        for name in matched:
+            row = BoxLayout(orientation="horizontal", size_hint_y=None,
+                              height="26dp", spacing="6dp")
+            row.add_widget(Label(text=f"[color=44dd44]✓[/color] {name}", markup=True,
+                                    halign="left", size_hint_x=0.5))
+            row.add_widget(Label(text="verbunden", size_hint_x=0.5,
+                                    color=(0.6, 0.9, 0.6, 1)))
+            container.add_widget(row)
+
+        for slot_index, slot_owner in missing_pairs:
+            row = BoxLayout(orientation="horizontal", size_hint_y=None,
+                              height="30dp", spacing="6dp")
+            row.add_widget(Label(text=f"[color=ff5555]✗[/color] {slot_owner}", markup=True,
+                                    halign="left", size_hint_x=0.35))
+            row.add_widget(Label(text=f"nicht verbunden (Slot {slot_index+1})",
+                                    size_hint_x=0.25, color=(1.0, 0.5, 0.5, 1)))
+            # Ein Button pro unerwartetem Client — direkt ersetzen.
+            btn_area = BoxLayout(orientation="horizontal", size_hint_x=0.40, spacing="4dp")
+            if extra and host:
+                for candidate in extra:
+                    btn = Button(text=f"→ {candidate}")
+                    btn.bind(on_press=lambda _b, si=slot_index, cand=candidate:
+                                self._replace_owner_in_row(si, cand))
+                    btn_area.add_widget(btn)
+            elif not host:
+                btn_area.add_widget(Label(text="(nur Host darf ersetzen)",
+                                              color=(0.7, 0.7, 0.7, 1)))
+            row.add_widget(btn_area)
+            container.add_widget(row)
+
+        for candidate in extra:
+            row = BoxLayout(orientation="horizontal", size_hint_y=None,
+                              height="30dp", spacing="6dp")
+            row.add_widget(Label(text=f"[color=ffbb33]⚠[/color] {candidate}", markup=True,
+                                    halign="left", size_hint_x=0.35))
+            row.add_widget(Label(text="verbunden, nicht in Config",
+                                    color=(1.0, 0.75, 0.2, 1), size_hint_x=0.25))
+            btn_area = BoxLayout(orientation="horizontal", size_hint_x=0.40, spacing="4dp")
+            if host:
+                # Nur leere Rows als "belegen"-Ziele anbieten. Buttons fuer
+                # bereits gematchte Slots waeren ein silent-Overwrite-Risiko
+                # (gui-reviewer Runde 1) — der Host wuerde einen korrekt
+                # zugeordneten Owner mit einem Klick verlieren, ohne Rueckfrage.
+                empty_slots = [i for i, r in enumerate(self._owner_rows) if not r.owner]
+                if empty_slots:
+                    for i in empty_slots:
+                        btn = Button(text=f"Slot {i+1} belegen")
+                        btn.bind(on_press=lambda _b, si=i, cand=candidate:
+                                    self._replace_owner_in_row(si, cand))
+                        btn_area.add_widget(btn)
+                else:
+                    btn_area.add_widget(Label(
+                        text="(alle Slots belegt — Row manuell leeren zum Ersetzen)",
+                        color=(0.7, 0.7, 0.7, 1),
+                    ))
+            else:
+                btn_area.add_widget(Label(text="(nur Host)",
+                                              color=(0.7, 0.7, 0.7, 1)))
+            row.add_widget(btn_area)
+            container.add_widget(row)
+
+    def _replace_owner_in_row(self, slot_index: int, new_owner: str):
+        """Schreibt new_owner in Row slot_index, persistiert nuz.yml und
+        pusht Config an Server. Wird von _refresh_client_verify-Buttons
+        aufgerufen."""
+        # Defense-in-Depth: sonst wuerden alle State-mutierenden Handler
+        # (_send_config, _fill_owners_from_clients, _on_rule_checkbox_change)
+        # den Host-Guard selbst haben, nur diese Methode nicht. Wenn sich
+        # der Host-Status zwischen Render und Klick aendert, muss die
+        # eigentliche State-Mutation immer noch dicht sein.
+        if not self._is_host():
+            logger.info("_replace_owner_in_row: skipped — kein Host")
+            return
+        if slot_index < 0 or slot_index >= len(self._owner_rows):
+            logger.warning(f"_replace_owner_in_row: Slot {slot_index} out of range")
+            return
+        row = self._owner_rows[slot_index]
+        old = row.owner
+        row.owner_input.text = new_owner
+        logger.info(f"NuzlockeMenu: Owner Slot {slot_index+1} ersetzt: '{old}' -> '{new_owner}'")
+        # Sofort persistieren + pushen — Ersetzen ist eine bewusste
+        # User-Aktion, kein Freitext-Typing.
+        self._save_to_nuz()
+        self._refresh_client_verify()
 
     def _fill_owners_from_clients(self, overwrite: bool = False):
         """Befüllt Owner-Text-Felder aus verbundenen Clients.
@@ -759,12 +954,16 @@ class NuzlockeMenu(Screen):
         self._persist_structural_change("player_count")
 
     def _collect_config(self) -> dict:
-        owners = [r.owner for r in self._owner_rows if r.owner]
+        # dict.fromkeys erhaelt Reihenfolge und dedupliziert — verhindert
+        # dass Nutzer versehentlich zwei Rows auf denselben Owner setzen
+        # (Bug-Quelle Stephan-logs 2026-09-16: expected_owners hatte
+        # ['Stephan','Stephan'] und ist so in die Config gewandert).
+        owners = list(dict.fromkeys(r.owner for r in self._owner_rows if r.owner))
         team_map = {}
         mode_value = self._mode_value()
         if mode_value == "versus":
             for r in self._owner_rows:
-                if r.owner:
+                if r.owner and r.owner not in team_map:
                     team_map[r.owner] = r.team
         # Alle rule_* Keys aus nuz mitschicken, damit Server sie für
         # Enforcement (Ersttyp-Clash etc.) auslesen kann.
@@ -851,6 +1050,11 @@ class NuzlockeMenu(Screen):
             self._rebuild_owner_rows()
         finally:
             self._suspend_spinner_change_events = False
+        # Client-Abgleich sofort neu befuellen — Poll laeuft nur alle 3 s,
+        # sonst wuerde ein Klick binnen dieser Grace-Periode auf einen
+        # stale-Button (Slot/Kandidat aus voriger Session) den falschen
+        # Owner in die frisch geladene Session schreiben (gui-reviewer R4).
+        self._safe_refresh_client_verify()
         self.status_label.text = "Aus Session geladen"
 
     def _send_token_redeem(self):
@@ -1097,6 +1301,15 @@ class NuzlockeMenu(Screen):
         deckt nur noch die beiden UI-Elemente ab die nicht auto pushen:
         Owner-TextInput und Team-Letter-Spinner.
         """
+        # Defense-in-Depth: der Save-Button wird via _apply_edit_lock fuer
+        # Non-Host disabled, aber _save_to_nuz kann auch programmatisch
+        # ueber _replace_owner_in_row ausgeloest werden — Host-Guard hier
+        # sichert, dass Non-Host-Clients nie ihre eigene nuzlocke.yml
+        # aus einer UI-Aktion heraus umschreiben.
+        if not self._is_host():
+            logger.info("_save_to_nuz: skipped — kein Host")
+            self.status_label.text = "Nur Host darf Config speichern"
+            return
         cfg = self._collect_config()
         # Alle Felder mitschreiben (auch die bereits auto-persistierten):
         # falls User Rows manuell veraendert hat, sind self.nuz und Cfg

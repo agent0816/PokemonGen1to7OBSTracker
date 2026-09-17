@@ -1520,7 +1520,11 @@ class OBS():
             + shiny
             + female
         )
-        file = str(pokemon.dexnr) + pokemon.form + filetype
+        # str(pokemon.form) — form ist per Default '' (Pokemon.py:8), aber
+        # bestimmte Decoder-Pfade setzen sie als int (Alolan/Galarian/Mega-Marker).
+        # Ohne Cast wirft `str + int` einen TypeError, der silent den Sprite-
+        # Redraw-Task killt (log-detektiv Session 2026-09-16).
+        file = str(pokemon.dexnr) + str(pokemon.form) + filetype
         full_path = path + file
         self.logger.debug(f"Sprite: dex={pokemon.dexnr}, shiny={pokemon.shiny}, path={full_path}")
         return full_path

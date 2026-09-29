@@ -142,7 +142,10 @@ class Update(Screen):
             target_base_url=self.targets_url,
             refresh_required=False,
         )
-        return self.client.check_for_updates()
+        # tufup filtert PEP440-Pre-Releases per Default aus (pre=None -> prereleases='').
+        # Auf dem Alpha-Kanal muessen wir 'a' erlauben, sonst wird kein alpha-Archiv gefunden.
+        pre_level = "a" if self.channel == "alpha" else None
+        return self.client.check_for_updates(pre=pre_level)
 
     def check_for_update(self):
         try:

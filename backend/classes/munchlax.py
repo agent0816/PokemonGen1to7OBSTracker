@@ -2,7 +2,10 @@ import asyncio
 import hashlib
 import os
 import pickle
+import random
 import time
+import uuid
+from collections import deque
 from pathlib import Path
 from pickle import UnpicklingError
 import traceback
@@ -15,6 +18,59 @@ from backend.logging_setup import get_logger
 # Mindestabstand zwischen automatischen Box-Refreshs pro Spieler.
 # Verhindert Box-Read-Stürme z.B. bei Team-Reorder-Spam oder Evolutionen.
 BOX_REFRESH_THROTTLE_SECONDS = 5.0
+
+# Netzwerk-Exceptions, bei denen weitere Reads/Writes keinen Sinn mehr
+# ergeben (Socket ist tot). Werden explizit gefangen, damit der Loop
+# break'd statt in Dauerschleife denselben Error zu loggen — klassischer
+# Satougame-Fall vom 2026-09-30: IncompleteReadError erbt von EOFError,
+# EOFError wurde nur geloggt ohne break → ~1000 Fehler/sec bis OOM/Rotation.
+TRANSIENT_NET_EXCEPTIONS = (
+    asyncio.IncompleteReadError,
+    ConnectionResetError,
+    ConnectionAbortedError,
+    BrokenPipeError,
+    EOFError,
+    OSError,
+)
+
+# Reconnect-Backoff: exponentiell mit Cap. Jitter 0-2 s gegen Thundering-Herd
+# wenn mehrere Clients gleichzeitig vom gleichen Netz-Event erwischt werden.
+# Infinite retries — User kann Session jederzeit beenden, aber ein kurzer
+# Netz-Dropout darf nicht nach 3 Versuchen den ganzen Run killen.
+RECONNECT_DELAYS = [2, 5, 10, 20, 30, 60]
+RECONNECT_MAX_DELAY = 60
+RECONNECT_JITTER_MAX = 2.0
+
+# Rate-limited Logging: innerhalb dieses Fensters wird jeder Error-Typ
+# nur einmal mit vollem Traceback geloggt. Alle weiteren Occurrences
+# werden gezählt und beim nächsten erfolgreichen Reconnect (oder nach
+# Fenster-Ende) als Zusammenfassung ausgegeben.
+LOG_DEDUP_WINDOW_SECONDS = 10.0
+
+# Replay-Buffer-Groesse (Client->Server). Haelt die letzten N Payloads mit
+# monoton steigender sequence_id. Nach Reconnect sendet Server die hoechste
+# seq, die er gesehen hat; Client resendet alle Buffer-Items mit groesserer
+# seq. Dimensionierung: 1 Encounter + 1 Encounter-Outcome + 1 Soullink-
+# Config pro ~10 s Spielzeit, 300 Items ~ 50 Minuten Puffer bei typischer
+# Rate — deutlich mehr als jeder realistische Disconnect-Zeitraum.
+OUTBOUND_BUFFER_MAXLEN = 300
+
+# Message-Typen (Dict-type) + String-Prefixe, die NICHT gebuffert und NICHT
+# sequence-nummeriert werden. Heartbeat ist zustandsfrei; declared_player_ids
+# wird bei jedem Connect frisch gesendet; resume_query ist Teil des Resume-
+# Handshakes selbst und wuerde sich endlos re-queuen; Handshake- und
+# disconnect-Strings sind rein verbindungsbezogen; boxes_update ist der
+# groesste Payload (~50-150 KB fuer Gen3-PC-Tree) und ist nicht idempotent-
+# interessant — nach Reconnect pusht der BizHawk-Tick ohnehin frische Boxen,
+# Replay eines alten Snapshots waere veraltet. Rausnehmen spart ~90% des
+# Buffer-RAM-Verbrauchs und streckt die 300-Item-Kapazitaet von ~25 min
+# (hochaktive Session mit Dauer-Boxes-Spam) auf mehrere Stunden.
+UNBUFFERED_DICT_TYPES = frozenset({
+    "heartbeat",
+    "declared_player_ids",
+    "resume_query",
+    "boxes_update",
+})
 
 # Wipe-Detection HP-Consistency: erst nach N Zero-Reads pro Pokemon gilt
 # es als tot.
@@ -118,6 +174,77 @@ class Munchlax:
         self.countdown_last_tick: dict | None = None
         self.countdown_finished_callback = None
 
+        # Diagnose-State fuer Reconnect/Log-Analyse (Phase B).
+        # session_id: UUID pro erfolgreicher connect() — taucht in jedem
+        #   Reconnect-Zyklus im Log auf, erlaubt saubere Trennung alter/
+        #   neuer Verbindung in nachtraeglichen Log-Reviews.
+        # _reconnect_log: Ringpuffer der letzten 20 Disconnect/Reconnect-
+        #   Events (ts, reason, session_id, attempt). Wird beim naechsten
+        #   erfolgreichen Connect ausgedumpt — zeigt die Flap-Historie.
+        # _last_recv_at / _last_recv_type: fuer "letzte Message vor
+        #   Disconnect"-Diagnose.
+        # _msg_counters: recv/sent pro Session, bei Disconnect geloggt.
+        # _err_counts: Rate-Limit-Zaehler pro (err_type_name) im
+        #   LOG_DEDUP_WINDOW_SECONDS-Fenster.
+        # _last_disconnect_reason: wird vom alter_teams/heartbeat/send_teams-
+        #   Loop vor dem break gesetzt und von _auto_reconnect geloggt.
+        self._session_id: str | None = None
+        self._reconnect_log: deque = deque(maxlen=20)
+        self._last_recv_at: float = 0.0
+        self._last_recv_type: str = ""
+        self._msg_counters: dict[str, int] = {"recv": 0, "sent": 0}
+        self._err_counts: dict[str, dict] = {}
+        self._last_disconnect_reason: str = "unknown"
+        self._session_started_at: float = 0.0
+
+        # Phase C — Replay-Buffer. Haelt (seq, payload)-Tupel. Monoton
+        # steigender _next_seq ueberlebt Reconnects (sonst wuerde Server
+        # Replays nicht dedupen koennen). _resume_pending = True solange
+        # Server-resume_ack ausstaendig ist — bufferable Payloads werden in
+        # dieser Phase nur in den Buffer gelegt und NICHT direkt gewired.
+        # Reihenfolge-Garantie: Replay (inkl. der neuen seqs waehrend des
+        # Pending-Fensters) geht als erstes raus, erst dann Live-Traffic.
+        # Erster Connect: _next_seq=1, Buffer leer → resume_ack mit
+        # last_seen_seq=0 → nichts zu replayen, _resume_pending kippt auf
+        # False, Live-Send laeuft an.
+        self._outbound_buffer: deque = deque(maxlen=OUTBOUND_BUFFER_MAXLEN)
+        self._next_seq: int = 1
+        self._resume_pending: bool = False
+        # Boot-Epoch: eindeutig pro Prozess-Lebenszeit. Wird im Handshake an
+        # Arceus geschickt, damit der Server bei einem Client-App-Neustart
+        # (gleiche client_id, aber _next_seq startet wieder bei 1) seinen
+        # last_seen_seq-Counter resetten kann. Ohne diesen Guard wuerde der
+        # Server stillschweigend alle neuen Nachrichten als "Replay" dedupen
+        # bis seq > alter_last_seen — Datenverlust ohne Warn-Log.
+        self._boot_epoch: int = time.time_ns()
+        # Capability-Flag: True sobald mind. ein resume_ack vom Server kam —
+        # dann weiss der Client, dass der Server Phase-C-Protokoll spricht
+        # und wrappen+buffern Sinn macht. None waehrend des ersten Resume-
+        # Fensters, False nach Watchdog-Timeout (alter Server). Bei False
+        # faellt send_message auf unwrapped-Modus zurueck und der Buffer
+        # wird geleert.
+        self._server_supports_resume: bool | None = None
+        # Strong-Ref auf den _auto_reconnect-Task. GC-Risiko siehe memory
+        # feedback-async-task-strong-ref — und wird in disconnect(
+        # intentional=True) gecancelt, damit ein User-Disconnect waehrend
+        # des Backoff-Sleep nicht ignoriert wird (vorher: Loop verbindet
+        # trotz User-Cancel wieder).
+        self._reconnect_task: asyncio.Task | None = None
+        # Resend-Running-Flag: _resend_buffered darf von Cancel nicht mitten
+        # im Frame unterbrochen werden (Writer-Stream wuerde desynchroni-
+        # sieren). Watchdog + resume_ack-Handler konsultieren das Flag;
+        # Dedupe bei doppeltem Trigger (Watchdog resendete bereits, dann
+        # kommt resume_ack verzoegert nach).
+        self._resend_running: bool = False
+        # Timeout-Fallback: wenn Server kein resume_ack schickt (alter Server
+        # ohne Phase-C-Code, oder Netz hat Push gefressen), kippt dieses
+        # Timeout-Task das Pending-Flag selbst, damit bufferable Payloads
+        # irgendwann rausgehen. Server ohne Phase C ignoriert den __seq__-
+        # Wrapper nicht automatisch — Kompat erfordert, dass der Server
+        # beide Formate kennt. Als Rueckfall-Strategie koennten wir dann
+        # ohne Wrapper senden; aktuell ist nur der Phase-C-Server supported.
+        self._resume_timeout_task: asyncio.Task | None = None
+
         self.logger = get_logger(__name__, './logs/munchlax.log')
 
     def clear_everything(self):
@@ -177,6 +304,13 @@ class Munchlax:
         self._pokemon_hp_state = {}
         self._last_bag_hash = {}
         self.last_box_refresh_at = {}
+        # Replay-Buffer leeren — Payloads referenzieren den alten Session-State
+        # (Encounter-Reports, Soullink-Deaths etc.), die auf dem Server durch
+        # den Session-Reset bereits weg sind. Re-Senden wuerde Zombie-Daten
+        # produzieren. seq-Counter weiter laufen lassen; der naechste
+        # resume_ack vom Server traegt last_seen_seq=0 fuer diesen Client
+        # (wird in Arceus beim Session-Reset ebenfalls geloescht).
+        self._outbound_buffer.clear()
 
     async def reset_session_data(self) -> tuple[bool, str]:
         """Host-Trigger: löscht pokemon.db-Inhalte + In-Memory-Session-State,
@@ -338,16 +472,152 @@ class Munchlax:
             self.logger.warning(f"Box-Level-Enrichment failed: {type(err)},{err}")
             self.logger.warning(f"{traceback.format_exc()}")
 
+    def _log_dedup(self, err_type: str, msg: str, *, exc: BaseException | None = None,
+                   level: str = "warning") -> None:
+        """Rate-limited Logging: innerhalb LOG_DEDUP_WINDOW_SECONDS wird pro
+        err_type nur die erste Occurrence mit Traceback geloggt, Folge-
+        Occurrences nur gezaehlt. _flush_dedup() dumpt die Summary.
+
+        Verhindert, dass ein toter Socket mit 1000+ IncompleteReadError/sec
+        das Logfile zerreisst (Satougame-Pattern 2026-09-30).
+        """
+        now = time.time()
+        slot = self._err_counts.get(err_type)
+        if slot is None or (now - slot["first_ts"]) > LOG_DEDUP_WINDOW_SECONDS:
+            # Window-Rollover: ggf. alten Slot als Summary ausgeben
+            if slot is not None and slot["count"] > 1:
+                self.logger.warning(
+                    f"[{err_type}] {slot['count']-1}x weitere Occurrences "
+                    f"im Fenster {slot['first_ts']:.0f}-{now:.0f} unterdrueckt"
+                )
+            self._err_counts[err_type] = {"first_ts": now, "count": 1}
+            emit = getattr(self.logger, level, self.logger.warning)
+            emit(f"[session={self._session_id}] {msg}")
+            if exc is not None:
+                self.logger.warning(f"{traceback.format_exc()}")
+        else:
+            slot["count"] += 1
+
+    def _flush_dedup(self) -> None:
+        """Beim Reconnect-Erfolg: alle offenen Dedup-Fenster als Summary
+        ausgeben und Zaehler zuruecksetzen."""
+        now = time.time()
+        for err_type, slot in list(self._err_counts.items()):
+            if slot["count"] > 1:
+                self.logger.info(
+                    f"[{err_type}] waehrend Disconnect {slot['count']}x "
+                    f"geloggt (Fenster {slot['first_ts']:.0f}-{now:.0f})"
+                )
+        self._err_counts.clear()
+
+    def _record_disconnect(self, reason: str) -> None:
+        """Loop-Hooks setzen den Grund bevor sie disconnect(intentional=False)
+        aufrufen. Wird im Reconnect-Log festgehalten + im naechsten connect
+        geloggt."""
+        self._last_disconnect_reason = reason
+        self._reconnect_log.append({
+            "ts": time.time(),
+            "event": "disconnect",
+            "reason": reason,
+            "session_id": self._session_id,
+            "msg_recv": self._msg_counters.get("recv", 0),
+            "msg_sent": self._msg_counters.get("sent", 0),
+            "session_duration_s": time.time() - self._session_started_at
+                                   if self._session_started_at else 0,
+        })
+
     async def alter_teams(self):
         while True:
             try:
                 data = await self.receive_message()
+                self._msg_counters["recv"] += 1
+                self._last_recv_at = time.time()
+                self._last_recv_type = (
+                    data.get("type", "teams") if isinstance(data, dict)
+                    else type(data).__name__
+                )
                 # Getypte Server-Push-Nachrichten: separater Pfad, damit die
                 # Teams-Logik darunter nicht versehentlich ein {"type": ...}-
                 # Dict als Player-Map behandelt.
                 if isinstance(data, dict) and "type" in data:
                     msg_type = data.get("type")
-                    if msg_type == "boxes_update":
+                    if msg_type == "resume_ack":
+                        # Phase C: Server teilt mit, welche sequence_id er
+                        # zuletzt gesehen hat. Alles mit groesserer seq im
+                        # lokalen Buffer re-senden. Watchdog canceln,
+                        # Capability bestaetigen, dann Resend.
+                        #
+                        # WICHTIG (sync-reviewer R2 Runde 2+3):
+                        # _resume_pending wird NICHT hier gekippt — sondern
+                        # erst unter writer_lock in _resend_buffered. Grund:
+                        # Race zwischen Flag-Flip und Shield-Task-Start,
+                        # Live-send mit hoeherer seq koennte sonst vor dem
+                        # Replay auf die Leitung gehen, Server dedupt die
+                        # alten Payloads weg.
+                        #
+                        # Dedup gegen Watchdog (sync-reviewer R3 W1+W2):
+                        # Wenn der Watchdog bereits im Resend ist (Lock-Wait
+                        # oder mid-frame), DARF der Handler weder cancel()
+                        # auf ihn werfen (bricht Frame ab, desync Stream),
+                        # noch _server_supports_resume=True setzen (der
+                        # Watchdog sendet gerade unwrapped — mittendrin das
+                        # Flag umzudrehen wuerde Reihenfolge invertieren).
+                        # Watchdog laeuft dann einfach durch.
+                        last_seen = int(data.get("last_seen_seq", 0))
+                        buffered_count = len(self._outbound_buffer)
+                        self.logger.info(
+                            f"resume_ack empfangen: last_seen_seq={last_seen}, "
+                            f"local_next_seq={self._next_seq}, "
+                            f"buffer_size={buffered_count}"
+                        )
+                        if self._resend_running:
+                            self.logger.info(
+                                "resume_ack: Watchdog-Resend bereits aktiv — "
+                                "ueberspringe Cancel + Flag + Resend, "
+                                "Watchdog uebernimmt"
+                            )
+                        else:
+                            if self._resume_timeout_task is not None and not self._resume_timeout_task.done():
+                                self._resume_timeout_task.cancel()
+                            self._server_supports_resume = True
+                            # asyncio.shield verhindert Cancel von aussen:
+                            # Resend darf nie mitten im Frame unterbrochen
+                            # werden, sonst Writer-Stream permanent desync.
+                            # Done-Callback loggt Exceptions, die sonst nur
+                            # als "Task exception never retrieved" im stderr
+                            # auftauchen (reviewer R3 H6).
+                            inner = asyncio.ensure_future(
+                                self._resend_buffered(last_seen)
+                            )
+                            inner.add_done_callback(
+                                self._on_resend_done
+                            )
+                            try:
+                                resent = await asyncio.shield(inner)
+                                if resent > 0:
+                                    self.logger.info(
+                                        f"Resume: {resent} Items erneut gesendet"
+                                    )
+                                else:
+                                    self.logger.info(
+                                        "Resume: kein Resend noetig (Buffer "
+                                        "bereits beim Server oder leer)"
+                                    )
+                            except asyncio.CancelledError:
+                                # Outer wurde gecancelt. inner laeuft via
+                                # Shield weiter und loggt sein Ergebnis
+                                # ueber _on_resend_done. Nicht blockieren.
+                                self.logger.info(
+                                    "Resume-Resend outer cancelled — inner "
+                                    "Task laeuft via shield weiter"
+                                )
+                                raise
+                            except Exception as err:
+                                self.logger.error(
+                                    f"Resume-Resend failed: {type(err).__name__}: {err}"
+                                )
+                                self.logger.error(f"{traceback.format_exc()}")
+                    elif msg_type == "boxes_update":
                         player_id = data.get("player_id")
                         boxes = data.get("boxes")
                         if player_id is not None and boxes is not None:
@@ -388,7 +658,9 @@ class Munchlax:
                                 cb(requested, conflicts)
                             except Exception as err:
                                 self.logger.warning(f"on_slot_collision_callback: {err}")
-                        asyncio.create_task(self.disconnect(intentional=True))
+                        asyncio.create_task(
+                            self.disconnect(intentional=True, reason="slot_collision")
+                        )
                     elif msg_type == "session_reset":
                         await self._handle_remote_session_reset()
                     elif msg_type == "encounter_sync":
@@ -582,11 +854,29 @@ class Munchlax:
             except (UnpicklingError, AttributeError) as err:
                 self.logger.warning(f"Pickle Data error:{type(err)},{err}")
                 self.logger.warning(f"{traceback.format_exc()}")
-            except EOFError as err:
-                self.logger.warning(f"{traceback.format_exc()}")
+            except TRANSIENT_NET_EXCEPTIONS as err:
+                # Reader ist tot — weitere receive_message-Aufrufe wuerden nur
+                # denselben Fehler in Busy-Loop werfen (vor-2026-10-01-Bug:
+                # EOFError-Zweig loggte nur, kein break → 1000+ Fehler/sec).
+                # Rate-Limited Log + Diagnose-Kontext + break fuer Reconnect-Pfad.
+                last_msg_age = (
+                    time.time() - self._last_recv_at if self._last_recv_at else -1.0
+                )
+                self._log_dedup(
+                    type(err).__name__,
+                    f"alter_teams Netz-Fehler: {type(err).__name__}: {err} "
+                    f"(letzte_msg_type={self._last_recv_type!r}, "
+                    f"letzte_msg_vor={last_msg_age:.1f}s, "
+                    f"recv_total={self._msg_counters['recv']})",
+                    exc=err,
+                    level="warning",
+                )
+                self._record_disconnect(f"recv_{type(err).__name__}")
+                break
             except Exception as err:
                 self.logger.error(f"alter_teams abgebrochen: {type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")
+                self._record_disconnect(f"recv_unexpected_{type(err).__name__}")
                 break
 
         await self.disconnect(intentional=False)
@@ -1597,9 +1887,18 @@ class Munchlax:
                 async with self.writer_lock:
                     await self.send_message('heartbeat')
                 await asyncio.sleep(5)
+            except TRANSIENT_NET_EXCEPTIONS as err:
+                self._log_dedup(
+                    f"heartbeat_{type(err).__name__}",
+                    f"send_heartbeat Netz-Fehler: {type(err).__name__}: {err}",
+                    exc=err,
+                )
+                self._record_disconnect(f"heartbeat_{type(err).__name__}")
+                break
             except Exception as err:
                 self.logger.warning(f"Heartbeat failed: {type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")
+                self._record_disconnect(f"heartbeat_unexpected_{type(err).__name__}")
                 break
 
         await self.disconnect(intentional=False)
@@ -1613,9 +1912,18 @@ class Munchlax:
                 try:
                     async with self.writer_lock:
                         await self.send_message(self.bizhawk_teams)
+                except TRANSIENT_NET_EXCEPTIONS as err:
+                    self._log_dedup(
+                        f"send_teams_{type(err).__name__}",
+                        f"send_teams Netz-Fehler: {type(err).__name__}: {err}",
+                        exc=err,
+                    )
+                    self._record_disconnect(f"send_teams_{type(err).__name__}")
+                    break
                 except Exception as err:
                     self.logger.warning(f"Teams senden failed: {type(err)},{err}")
                     self.logger.error(f"{traceback.format_exc()}")
+                    self._record_disconnect(f"send_teams_unexpected_{type(err).__name__}")
                     break
             await asyncio.sleep(1)
 
@@ -1632,23 +1940,80 @@ class Munchlax:
         else:
             self.host = self.rem.get('server_ip_adresse', self.host)
             self.port = self.rem.get('server_port', self.port)
-        self.logger.info(f"Verbinde Munchlax zu ({self.host}, {self.port})")
+        # Neue Session-ID — alle Logs ab hier taggen diesen Verbindungszyklus.
+        self._session_id = uuid.uuid4().hex[:8]
+        self._session_started_at = time.time()
+        self._msg_counters = {"recv": 0, "sent": 0}
+        self._last_recv_at = 0.0
+        self._last_recv_type = ""
+        self.logger.info(
+            f"Verbinde Munchlax zu ({self.host}, {self.port}) "
+            f"session={self._session_id} "
+            f"vorheriger_disconnect_grund={self._last_disconnect_reason!r}"
+        )
         self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
-        self.logger.info(f"Munchlax {self.client_id} bei Arceus({self.host},{self.port}) registriert")
+        self.logger.info(
+            f"Munchlax {self.client_id} bei Arceus({self.host},{self.port}) "
+            f"registriert (session={self._session_id})"
+        )
         self.logger.debug(f"Client-ID: {self.client_id}, Start-Server: {self.rem.get('start_server')}")
-        
-        name = self.pl.get('your_name', '')
+        # Dedup-Fenster schliessen (Summary der Disconnect-Fehler) + Reconnect-
+        # Event im Ringpuffer vermerken.
+        self._flush_dedup()
+        self._reconnect_log.append({
+            "ts": time.time(),
+            "event": "connect",
+            "session_id": self._session_id,
+        })
 
-        async with self.writer_lock:
-            await self.send_message(f"{name}_{self.client_id}")
-            # Netz-Slots aus pl deklarieren — funktioniert ohne BizHawk/Citra/Azahar.
-            # Server nutzt sie fuer client_player_ids/player_names und damit
-            # fuer die Sortierung im NuzlockeMenu ("Aus Clients uebernehmen").
-            # Bei Kollision antwortet der Server mit "slot_collision" (siehe
-            # alter_teams-Handler), was zu einem Popup + Disconnect fuehrt.
-            owned = self._owned_player_ids()
-            await self.send_message({"type": "declared_player_ids", "player_ids": owned})
-            self.logger.info(f"declared_player_ids gesendet: {owned}")
+        # Phase C: Handshake-Phase. Capability-Flag + Resume-Pending werden
+        # ERST nach erfolgreichem Handshake gesetzt — wirft der Handshake,
+        # muessen wir den Socket schliessen und nicht in der Resume-Phase
+        # haengen bleiben (sync-reviewer R2 WARNUNG: Socket-Leak).
+        #
+        # try/finally mit Success-Flag faengt auch CancelledError (BaseException)
+        # ab, damit ein Cancel mitten im Handshake den Writer sauber schliesst.
+        # Nur Exception zu fangen wuerde den Writer bei User-Disconnect leaken.
+        name = self.pl.get('your_name', '')
+        handshake_ok = False
+        try:
+            async with self.writer_lock:
+                # Format name_cid_bootepoch. Alte Clients ohne Phase C
+                # senden nur name_cid, Server fallt per rsplit-count darauf
+                # zurueck (kein Resume dann). Boot-Epoch erlaubt dem Server,
+                # bei Client-App-Neustart (gleiche client_id, _next_seq=1)
+                # den last_seen_seq zu resetten.
+                await self.send_message(f"{name}_{self.client_id}_{self._boot_epoch}")
+                # Netz-Slots aus pl deklarieren — funktioniert ohne BizHawk/
+                # Citra/Azahar. Server nutzt sie fuer client_player_ids/
+                # player_names und damit fuer die Sortierung im NuzlockeMenu.
+                # Bei Kollision antwortet der Server mit "slot_collision"
+                # (alter_teams-Handler), was zu einem Popup + Disconnect fuehrt.
+                owned = self._owned_player_ids()
+                await self.send_message({"type": "declared_player_ids", "player_ids": owned})
+                self.logger.info(f"declared_player_ids gesendet: {owned}")
+            handshake_ok = True
+        finally:
+            if not handshake_ok:
+                self.logger.warning(
+                    f"Handshake abgebrochen oder fehlgeschlagen — "
+                    f"schliesse Socket"
+                )
+                try:
+                    self.writer.close()
+                except Exception:
+                    pass
+
+        # Handshake durch — Resume-Phase ab jetzt. Capability-Flag auf None
+        # (unknown), wird durch resume_ack auf True oder durch Watchdog-Timeout
+        # auf False gesetzt.
+        self._server_supports_resume = None
+        self._resume_pending = True
+        self._resend_running = False
+        if self._resume_timeout_task is not None and not self._resume_timeout_task.done():
+            self._resume_timeout_task.cancel()
+        self._resume_timeout_task = asyncio.create_task(self._resume_timeout_watchdog())
+
         self.is_connected = 'connected'
 
         self.heartbeat_task = asyncio.create_task(self.send_heartbeat())
@@ -1673,9 +2038,29 @@ class Munchlax:
             slots.append(slot)
         return slots
 
-    async def disconnect(self, intentional=True):
+    async def disconnect(self, intentional=True, reason: str | None = None):
         self.initialized = False
         should_reconnect = False
+        # Reason-Parameter ueberschreibt den vom Loop-Caller via
+        # _record_disconnect gesetzten Wert. Default: Bei intentional=True
+        # setzen wir "intentional", bei intentional=False bleibt der vom
+        # Loop-Caller gesetzte (recv_IncompleteReadError o.ae.) stehen.
+        if reason is not None:
+            self._last_disconnect_reason = reason
+        elif intentional:
+            self._last_disconnect_reason = "intentional"
+        # Fix sync-reviewer R2 Runde 2 WARNUNG: Reconnect-Cancel MUSS ausserhalb
+        # des `if self.is_connected`-Blocks laufen. Waehrend `_auto_reconnect`
+        # Backoff-Sleept, ist is_connected=False — ein User-Disconnect in
+        # dieser Phase wuerde den Cancel sonst ueberspringen und der Reconnect-
+        # Loop verbindet nach dem Sleep trotzdem wieder. Jetzt vor dem Lock,
+        # damit auch ein zweiter paralleler disconnect den Reconnect kappt.
+        if intentional and self._reconnect_task is not None and not self._reconnect_task.done():
+            self.logger.info(
+                "disconnect(intentional=True) canceled laufenden "
+                "_auto_reconnect"
+            )
+            self._reconnect_task.cancel()
         async with self.disconnect_lock:
             if self.is_connected:
                 if intentional:
@@ -1691,9 +2076,19 @@ class Munchlax:
                 self.remote_connection_status.clear()
                 self.remote_connection_names.clear()
 
-                self.alter_teams_task.cancel()
-                self.heartbeat_task.cancel()
-                self.send_teams_task.cancel()
+                # Fix sync-reviewer-Hinweis: Self-Cancel darf nicht den
+                # aufrufenden Task selbst canceln, sonst wird der Rest
+                # dieses disconnect-Blocks (Writer-Close, Reconnect-Trigger)
+                # per CancelledError uebersprungen.
+                current = asyncio.current_task()
+                for t in (self.alter_teams_task, self.heartbeat_task, self.send_teams_task):
+                    if t is not None and t is not current and not t.done():
+                        t.cancel()
+                # Phase C: Resume-Watchdog ebenfalls canceln. _resume_pending
+                # bleibt sinnvollerweise aktuell wie es ist — wird im naechsten
+                # connect() auf True gesetzt.
+                if self._resume_timeout_task is not None and not self._resume_timeout_task.done():
+                    self._resume_timeout_task.cancel()
 
                 # Writer lokal binden — connect() erwirbt disconnect_lock
                 # NICHT und ueberschreibt self.writer beim naechsten
@@ -1728,7 +2123,24 @@ class Munchlax:
                         f"wait_closed für {self.client_id} failed: "
                         f"{type(err).__name__},{err}"
                     )
-                self.logger.info(f"Client {self.client_id} hat sich disconnectet.")
+                now = time.time()
+                dur = now - self._session_started_at if self._session_started_at else 0.0
+                if self._last_recv_at:
+                    last_msg_info = (
+                        f"letzte_msg={self._last_recv_type!r} "
+                        f"vor_{now - self._last_recv_at:.1f}s"
+                    )
+                else:
+                    last_msg_info = "keine_msg_empfangen"
+                self.logger.info(
+                    f"Client {self.client_id} hat sich disconnectet "
+                    f"(session={self._session_id}, "
+                    f"grund={self._last_disconnect_reason!r}, "
+                    f"intentional={intentional}, dauer={dur:.1f}s, "
+                    f"recv={self._msg_counters.get('recv',0)}, "
+                    f"sent={self._msg_counters.get('sent',0)}, "
+                    f"{last_msg_info})"
+                )
 
                 self.close_pokedex_db()
 
@@ -1736,33 +2148,144 @@ class Munchlax:
                 self.port = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
 
         if should_reconnect:
-            asyncio.create_task(self._auto_reconnect())
+            # Strong-Ref gegen GC — siehe memory feedback-async-task-strong-ref.
+            # Auto-Cleanup-Callback nullt die Ref — mit Identity-Check, damit
+            # bei schnellem Folge-Trigger (ein zweiter _auto_reconnect-Task,
+            # der durch Dedup frueh zurueckkehrt) nicht die frische Ref auf
+            # None zurueckgesetzt wird.
+            new_task = asyncio.create_task(self._auto_reconnect())
+            self._reconnect_task = new_task
+            new_task.add_done_callback(
+                lambda t: setattr(self, "_reconnect_task", None)
+                if self._reconnect_task is t else None
+            )
 
     async def _auto_reconnect(self):
-        delays = [5, 10, 20]
+        # Dedup gegen parallelen Reconnect: wenn disconnect(intentional=False)
+        # mehrfach triggert (z.B. alter_teams + heartbeat + send_teams brechen
+        # fast gleichzeitig weg), wuerden sonst mehrere Reconnect-Tasks laufen
+        # und sich beim connect() den Writer unter den Fuessen wegziehen.
+        if self.reconnecting:
+            self.logger.debug(
+                "_auto_reconnect: schon aktiv — zweiter Trigger ignoriert "
+                f"(letzter_grund={self._last_disconnect_reason!r})"
+            )
+            return
         self.reconnecting = True
+        last_reasons = [
+            e for e in list(self._reconnect_log)[-5:]
+            if e.get("event") == "disconnect"
+        ]
+        self.logger.info(
+            f"Auto-Reconnect gestartet (letzter_grund="
+            f"{self._last_disconnect_reason!r}, "
+            f"letzte_5_disconnects={[r.get('reason') for r in last_reasons]})"
+        )
+        attempt = 0
         try:
-            for attempt, delay in enumerate(delays, 1):
-                self.logger.info(f"Auto-Reconnect Versuch {attempt}/{len(delays)} in {delay}s...")
+            while True:
+                attempt += 1
+                # Exponential-Table bis Index-Cap, dann konstant RECONNECT_MAX_DELAY.
+                if attempt - 1 < len(RECONNECT_DELAYS):
+                    base = RECONNECT_DELAYS[attempt - 1]
+                else:
+                    base = RECONNECT_MAX_DELAY
+                delay = base + random.uniform(0, RECONNECT_JITTER_MAX)
+                self.logger.info(
+                    f"Auto-Reconnect Versuch {attempt} in {delay:.1f}s..."
+                )
+                # Hinweis-Log bei langen Hangs — hilft dem User zu erkennen,
+                # dass der Server dauerhaft weg ist.
+                if attempt == 10:
+                    self.logger.warning(
+                        "Auto-Reconnect: Server seit 10 Versuchen nicht "
+                        "erreichbar — pruefe Verbindung/Konfiguration."
+                    )
                 await asyncio.sleep(delay)
                 if self.is_connected:
+                    self.logger.info(
+                        f"Auto-Reconnect Versuch {attempt} abgebrochen — "
+                        f"schon verbunden (Fremd-Reconnect?)"
+                    )
                     return
                 try:
                     await self.connect()
-                    self.logger.info(f"Auto-Reconnect erfolgreich nach Versuch {attempt}.")
+                    self.logger.info(
+                        f"Auto-Reconnect erfolgreich nach Versuch {attempt} "
+                        f"(session={self._session_id})"
+                    )
                     return
+                except asyncio.CancelledError:
+                    # Explizit propagieren — darf nicht als "normaler" Fehler
+                    # geloggt werden. User-Disconnect oder Shutdown.
+                    raise
                 except Exception as err:
-                    self.logger.warning(f"Auto-Reconnect Versuch {attempt} fehlgeschlagen: {err}")
-            self.logger.error("Auto-Reconnect aufgegeben nach 3 Versuchen.")
+                    self.logger.warning(
+                        f"Auto-Reconnect Versuch {attempt} fehlgeschlagen: "
+                        f"{type(err).__name__}: {err}"
+                    )
+        except asyncio.CancelledError:
+            self.logger.info(
+                f"Auto-Reconnect abgebrochen nach {attempt} Versuchen "
+                f"(User-Disconnect oder Shutdown)"
+            )
+            raise
         finally:
             self.reconnecting = False
 
+    def _is_bufferable(self, message) -> bool:
+        """Entscheidet, ob eine Message in den Replay-Buffer gehoert.
+
+        Nur Dict-Messages mit "type" sind kandidaten. Alles was verbindungs-
+        oder zustandsfrei ist (Heartbeat, Handshake-Strings, Resume-Query)
+        wird nicht gebuffert — Resend macht da keinen Sinn.
+        """
+        if not isinstance(message, dict):
+            return False
+        msg_type = message.get("type")
+        if not msg_type:
+            # Dicts ohne "type" sind die Legacy-Teams-Dicts (player_id -> list).
+            # Die werden ohnehin jede Sekunde neu gesendet (send_teams-Loop)
+            # und ihre Payloads sind fluechtig — Replay bringt nichts, der
+            # naechste Tick ueberschreibt sowieso.
+            return False
+        return msg_type not in UNBUFFERED_DICT_TYPES
+
     async def send_message(self, message):
-        serialized_message = pickle.dumps(message)
+        # Phase C: ggf. mit seq wrappen und in Buffer legen. seq steigt
+        # monoton ueber Reconnect-Grenzen hinweg, damit der Server beim
+        # Resume die Luecke dedupen kann.
+        #
+        # Capability-Fallback: wenn _server_supports_resume=False (Watchdog
+        # hat alte-Server-Diagnose gestellt), senden wir unwrapped und
+        # umgehen die Buffer-Logik. Buffer wurde beim Watchdog bereits
+        # geleert — kein weiteres Buffering bringt noch Nutzen.
+        if self._is_bufferable(message) and self._server_supports_resume is not False:
+            seq = self._next_seq
+            self._next_seq += 1
+            self._outbound_buffer.append((seq, message))
+            # Resume-Pending: Payload nur buffern, Wire-Send schluckt
+            # _resend_buffered beim resume_ack-Empfang. Verhindert Race-Bug
+            # "Live-send mit seq=N+1 vor Replay mit seq=X — Server dedupt X".
+            if self._resume_pending:
+                self.logger.debug(
+                    f"send_message gebuffert (resume_pending): "
+                    f"seq={seq}, type={message.get('type', '')}"
+                )
+                return
+            wrapped = {"__seq__": seq, "__payload__": message}
+            serialized_message = pickle.dumps(wrapped)
+            msg_type_log = message.get("type", "")
+            msg_type_wire = f"seq={seq},type={msg_type_log}"
+        else:
+            serialized_message = pickle.dumps(message)
+            msg_type_wire = (
+                message.get("type", "teams") if isinstance(message, dict)
+                else (message if isinstance(message, str) else type(message).__name__)
+            )
         CHUNK_SIZE = 500  # Die Größe jedes Chunks in Bytes
 
-        msg_type = message.get("type", "teams") if isinstance(message, dict) else (message if isinstance(message, str) else type(message).__name__)
-        self.logger.debug(f"Sende: type={msg_type}, {len(serialized_message)} Bytes")
+        self.logger.debug(f"Sende: type={msg_type_wire}, {len(serialized_message)} Bytes")
 
         # Gesamtlänge der Nachricht senden
         length = len(serialized_message).to_bytes(4, 'big')
@@ -1779,6 +2302,214 @@ class Munchlax:
             # Chunk senden
             self.writer.write(chunk)
             await self.writer.drain()
+        self._msg_counters["sent"] = self._msg_counters.get("sent", 0) + 1
+
+    def _on_resend_done(self, task: asyncio.Task) -> None:
+        """Done-Callback fuer Shield-wrapped _resend_buffered-Tasks. Wird
+        der Outer-Caller gecancelt, laeuft der Inner-Task weiter — wirft
+        er, taucht das sonst nur als "Task exception was never retrieved"
+        in stderr auf, ohne unser Logger-Format und ohne Session-Kontext
+        (reviewer R3 H6). Hier abfangen und sauber loggen."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            self.logger.error(
+                f"Shield-Resend-Task kippte: {type(exc).__name__}: {exc}"
+            )
+
+    async def _resume_timeout_watchdog(self):
+        """Fallback fuer den Fall, dass Server-resume_ack niemals ankommt
+        (alter Server ohne Phase C, oder Server-Push verloren).
+
+        Buffer wird NICHT verworfen (sync-reviewer Runde 2 W4): das waere
+        stiller Datenverlust von bis zu 5 s Encounter-/Death-/Config-
+        Payloads bei jedem Reconnect gegen einen alten Server. Stattdessen
+        alle gepufferten Items unwrapped senden — kompatibel mit beiden
+        Server-Varianten, Phase-C-Server erkennt sie als regulaere
+        Nachrichten ohne seq-Semantik.
+
+        Flag-Flip + Snapshot + Buffer-Clear laufen alle UNTER writer_lock
+        (sync-reviewer Runde 3 W2 + H4): kein Fenster zwischen
+        Capability-False und Live-Send auf Resend-Reihenfolge. Buffer wird
+        erst NACH erfolgreichem Send geleert, damit ein Resend-Fehler nicht
+        die Items verliert.
+        """
+        try:
+            await asyncio.sleep(5.0)
+        except asyncio.CancelledError:
+            return
+        if not self._resume_pending:
+            return
+        self._resend_running = True
+        writer = self.writer
+        try:
+            async with self.writer_lock:
+                # Atomar unter Lock: Flag-Flip, Snapshot und Clear-Marker.
+                # Wird _resend_running vorher gesetzt, kann der resume_ack-
+                # Handler nicht dazwischenrutschen und Capability wieder
+                # auf True kippen.
+                buffer_snapshot = list(self._outbound_buffer)
+                self._server_supports_resume = False
+                self._resume_pending = False
+                self.logger.warning(
+                    f"resume_ack-Timeout (5s) — Server antwortet nicht, "
+                    f"nehme an Phase C wird nicht unterstuetzt. Sende "
+                    f"{len(buffer_snapshot)} gepufferte Items unwrapped. "
+                    f"Weitere Payloads werden ebenfalls unwrapped gesendet."
+                )
+                if not buffer_snapshot:
+                    return
+                CHUNK_SIZE = 500
+                sent = 0
+                try:
+                    for seq, payload in buffer_snapshot:
+                        if self.writer is not writer:
+                            self.logger.warning(
+                                f"Watchdog-Resend: writer identity changed bei "
+                                f"{sent}/{len(buffer_snapshot)} — Abbruch"
+                            )
+                            break
+                        serialized = pickle.dumps(payload)
+                        length = len(serialized).to_bytes(4, 'big')
+                        writer.write(length)
+                        await writer.drain()
+                        for i in range(0, len(serialized), CHUNK_SIZE):
+                            chunk = serialized[i:i+CHUNK_SIZE]
+                            chunk_length = len(chunk).to_bytes(4, 'big')
+                            writer.write(chunk_length)
+                            await writer.drain()
+                            writer.write(chunk)
+                            await writer.drain()
+                        self._msg_counters["sent"] = self._msg_counters.get("sent", 0) + 1
+                        sent += 1
+                    self.logger.info(
+                        f"Watchdog-Resend: {sent}/{len(buffer_snapshot)} Items "
+                        f"unwrapped gesendet"
+                    )
+                finally:
+                    # Partial-Clear fuer tatsaechlich gesendete Items — auch
+                    # bei Abort oder Exception mitten im Send. Verhindert
+                    # Duplikate beim naechsten Reconnect gegen einen alten
+                    # Server (reviewer R4 H1). Phase-C-Server dedupt via
+                    # seq ohnehin. Rest-Items bleiben im Buffer, naechster
+                    # resume_ack/Watchdog nimmt sie wieder auf.
+                    if sent > 0:
+                        sent_seqs = {s for s, _ in buffer_snapshot[:sent]}
+                        self._outbound_buffer = deque(
+                            ((s, p) for s, p in self._outbound_buffer
+                             if s not in sent_seqs),
+                            maxlen=OUTBOUND_BUFFER_MAXLEN,
+                        )
+        except Exception as err:
+            self.logger.error(
+                f"Watchdog-Resend failed: {type(err).__name__}: {err}"
+            )
+            self.logger.error(f"{traceback.format_exc()}")
+        finally:
+            # Writer-Identity-Guard analog zu _resend_buffered (reviewer R4
+            # H2): verzoegertes finally eines alten Watchdog-Tasks darf
+            # _resume_pending/_server_supports_resume der neuen Verbindung
+            # nicht ueberschreiben. _resend_running kann unbedingt False,
+            # weil es generell nur fuer die aktuell laufende Verbindung
+            # gilt und ein alter Task sowieso tot ist.
+            if self.writer is writer:
+                self._resume_pending = False
+            self._resend_running = False
+
+    async def _resend_buffered(self, last_seen_seq: int) -> int:
+        """Nach Resume-Ack: alle Buffer-Items mit seq > last_seen_seq erneut
+        senden. Gleicher seq, damit Server dedupen kann. Returnt Anzahl der
+        erneut gesendeten Items.
+
+        KRITISCH: writer_lock wird einmal am Anfang geholt und ueber den
+        gesamten Resend gehalten. Grund: wuerde er pro Item neu geholt,
+        koennte ein paralleler send_teams/send_heartbeat/Encounter-send mit
+        hoeherer seq dazwischenrutschen (z.B. Wire-Order 10, 20, 11, 12).
+        Der Server dedupt dann 11+12 als "<= last_seen=20" und verwirft sie
+        — Datenverlust trotz Replay. Lock-Dauer: Resend von 300 Items ~3s,
+        waehrend derer heartbeat/send_teams blockieren, aber nicht ausreichen
+        fuer Heartbeat-Timeout (HEARTBEAT_STALE_SECONDS=15s).
+
+        Writer-Identity-Guard (sync-reviewer WARNUNG): writer lokal binden
+        und vor jedem Item pruefen, dass er noch mit self.writer identisch
+        ist. Ein Reconnect mitten im Resend wuerde sonst halbe Frames auf
+        die neue Verbindung schreiben.
+
+        Darf NICHT aus einem bereits locked Context aufgerufen werden —
+        wird vom alter_teams-Handler gerufen, der keinen writer_lock haelt.
+        Caller (resume_ack-Handler, Watchdog) sollten mit asyncio.shield
+        wrappen damit mid-frame Cancel ausgeschlossen ist.
+        """
+        self._resend_running = True
+        sent_count = 0
+        try:
+            # Writer lokal binden fuer Identity-Guard. Wenn ein Reconnect
+            # self.writer umbiegt, brechen wir ab statt auf den neuen Writer
+            # halbe Frames zu schreiben.
+            writer = self.writer
+            async with self.writer_lock:
+                # UNTER LOCK Snapshot und _resume_pending kippen (sync-reviewer
+                # Runde 2 WARNUNG W3): Flag + Snapshot atomar mit dem Lock-
+                # Besitz. Zwischen Flag=False und erstem Resend-Frame kann so
+                # kein paralleler send_message dazwischenrutschen. Ohne das:
+                # Live-send mit seq=12 vor Resend-seq=10,11 → Server dedupt
+                # 10,11 als "<= 12" und verwirft sie, stiller Datenverlust.
+                to_resend = [(s, p) for s, p in self._outbound_buffer if s > last_seen_seq]
+                self._resume_pending = False
+                if not to_resend:
+                    return 0
+                # Eviction-Warn: ist first_seq > last_seen+1, haben wir Items
+                # verloren (Buffer voll). Server dedupt den Rest, aber die
+                # Luecke ist stiller Datenverlust ohne diesen Log.
+                first_seq = to_resend[0][0]
+                if first_seq > last_seen_seq + 1:
+                    missing = first_seq - (last_seen_seq + 1)
+                    self.logger.warning(
+                        f"Resume: {missing} Items verloren (Buffer voll — seq "
+                        f"{last_seen_seq + 1}..{first_seq - 1} aus deque evicted)"
+                    )
+                self.logger.info(
+                    f"Resume: resende {len(to_resend)} Items "
+                    f"(seq {first_seq}..{to_resend[-1][0]}, "
+                    f"last_seen={last_seen_seq})"
+                )
+                CHUNK_SIZE = 500
+                for seq, payload in to_resend:
+                    if self.writer is not writer:
+                        self.logger.warning(
+                            f"Resume: writer identity changed waehrend Resend "
+                            f"(seq={seq}) — Abbruch bei {sent_count}/"
+                            f"{len(to_resend)} Items, Reconnect sendet den "
+                            f"Rest nach dem naechsten resume_ack erneut"
+                        )
+                        break
+                    wrapped = {"__seq__": seq, "__payload__": payload}
+                    serialized = pickle.dumps(wrapped)
+                    length = len(serialized).to_bytes(4, 'big')
+                    writer.write(length)
+                    await writer.drain()
+                    for i in range(0, len(serialized), CHUNK_SIZE):
+                        chunk = serialized[i:i+CHUNK_SIZE]
+                        chunk_length = len(chunk).to_bytes(4, 'big')
+                        writer.write(chunk_length)
+                        await writer.drain()
+                        writer.write(chunk)
+                        await writer.drain()
+                    self._msg_counters["sent"] = self._msg_counters.get("sent", 0) + 1
+                    sent_count += 1
+            return sent_count
+        finally:
+            # Safety-net: falls Exception vor dem Lock oder beim Snapshot
+            # kippt, muss _resume_pending trotzdem auf False — sonst blockiert
+            # jede weitere send_message endlos. Setzen hier ist idempotent.
+            # Writer-Identity-Guard (reviewer R4 H2): wenn self.writer schon
+            # auf eine NEUE Verbindung zeigt, hat ein spaetes finally eines
+            # alten Zombie-Tasks hier nichts zu suchen — der neue connect()
+            # hat _resume_pending=True gesetzt, wir wuerden ihn stoeren.
+            if self.writer is writer:
+                self._resume_pending = False
+            self._resend_running = False
 
     async def receive_message(self):
         reader = self.reader

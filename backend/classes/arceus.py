@@ -7,6 +7,35 @@ from backend.logging_setup import get_logger
 from backend.team_id import slug_team_id
 from backend.type_lookup import first_type, type_name
 
+# Netzwerk-Exceptions, bei denen weitere Reads/Writes keinen Sinn mehr
+# ergeben (Socket ist tot). Pendant zu munchlax.TRANSIENT_NET_EXCEPTIONS.
+# Server-Seite hatte vorher nur ConnectionResetError explizit, alles andere
+# fiel in generische Exception → voller Traceback bei jedem Client-Dropout.
+TRANSIENT_NET_EXCEPTIONS = (
+    asyncio.IncompleteReadError,
+    ConnectionResetError,
+    ConnectionAbortedError,
+    BrokenPipeError,
+    EOFError,
+    OSError,
+)
+
+# Rate-limited Logging-Fenster — identisch zu munchlax, damit sich Logs
+# zwischen Client und Server bei nachtraeglicher Analyse parallel lesen lassen.
+LOG_DEDUP_WINDOW_SECONDS = 10.0
+
+# Phase C: hoechste gesehene sequence_id pro Client ueberlebt disconnect_client.
+# Wird NUR durch session_reset (oder Server-Neustart) geleert. Beim Reconnect
+# haengt der Server diesen Wert an einen "resume_ack"-Push an, damit der Client
+# nur die wirklich fehlenden Payloads re-sendet.
+# Container: dict[client_id, int], Default 0.
+
+# Periodischer Status-Dump der verbundenen Clients. Jede CONNECTED_OVERVIEW_
+# SECONDS gibt der Server einen INFO-Log mit allen aktiven Clients +
+# Session-Statistiken aus — macht nachtraegliche Log-Reviews deutlich schneller
+# ("war Client X zu Zeitpunkt Y aktiv?").
+CONNECTED_OVERVIEW_SECONDS = 300.0
+
 # Modi mit aktiver Soullink-Logik (Links, Ersttyp-Clause, Trade-Detection).
 # Alles andere ("off" legacy, "nuzlocke", "disabled", "versus_ffa") bedeutet:
 # keine Cross-Owner-Checks auf dem Server.
@@ -140,16 +169,107 @@ class Arceus:
         self.disconnect_lock = asyncio.Lock()
         self.rem = rem
 
+        # Diagnose-State pro Client (Phase B). session_started_at, recv/sent-
+        # Counter, letzter Message-Typ und Timestamp — alles pro client_id.
+        # Wird in handle_munchlax beim Connect angelegt und von disconnect_client
+        # beim Trennen als Statistik-Zeile ausgegeben.
+        # _client_sessions: {client_id: {started_at, recv, sent, last_recv_at,
+        #                                last_recv_type}}
+        # _err_counts: Rate-Limit-State fuer _log_dedup, analog Munchlax.
+        self._client_sessions: dict[str, dict] = {}
+        self._err_counts: dict[str, dict] = {}
+        # Periodische Overview geloggt in check_heartbeats-Loop (eigener Trigger
+        # waere Overkill), hier nur der letzte Ausgabe-Zeitpunkt.
+        self._last_overview_at: float = 0.0
+        # Phase C: Replay-State. Hoechste gesehene sequence_id pro Client,
+        # ueberlebt Disconnect — nur session_reset leert's. Wird in
+        # handle_munchlax nach Namens-Parse an den Client gepusht (resume_ack).
+        self._last_seen_seq_by_client: dict[str, int] = {}
+        # Phase C — Boot-Epoch pro Client. Wird aus dem Handshake-String
+        # extrahiert (name_cid_bootepoch). Bei Mismatch mit gespeichertem
+        # Wert gilt Client als neu gestartet — last_seen_seq resetten,
+        # sonst wuerden alle Payloads mit frisch beginnender seq=1 als
+        # Replay verworfen. Alter Client ohne Boot-Epoch im Handshake
+        # bekommt stattdessen last_seen=0 (= volles Resend / kein Dedup).
+        self._boot_epoch_by_client: dict[str, int] = {}
+        # Phase C — Poison-Counter pro (client_id, seq). Muss Disconnects
+        # ueberdauern, sonst wuerde der Zaehler bei jedem Reconnect wieder
+        # bei 0 anfangen und der Loop (Fehler → disconnect → Reconnect →
+        # Replay → Fehler) nie durchbrochen. Session-Reset leert mit.
+        self._poison_counts_by_client: dict[str, dict[int, int]] = {}
+
         self.logger = get_logger(__name__, './logs/arceus.log')
     
+    def _log_dedup(self, err_type: str, msg: str, *, exc: BaseException | None = None,
+                   level: str = "warning") -> None:
+        """Rate-limited Logging — Pendant zu Munchlax._log_dedup. Verhindert,
+        dass ein toter Client-Socket den Server-Log mit identischen Tracebacks
+        flutet, bevor der naechste check_heartbeats-Tick den Client sauber
+        rauswirft.
+        """
+        now = time.time()
+        slot = self._err_counts.get(err_type)
+        if slot is None or (now - slot["first_ts"]) > LOG_DEDUP_WINDOW_SECONDS:
+            if slot is not None and slot["count"] > 1:
+                self.logger.warning(
+                    f"[{err_type}] {slot['count']-1}x weitere Occurrences "
+                    f"im Fenster {slot['first_ts']:.0f}-{now:.0f} unterdrueckt"
+                )
+            self._err_counts[err_type] = {"first_ts": now, "count": 1}
+            emit = getattr(self.logger, level, self.logger.warning)
+            emit(msg)
+            if exc is not None:
+                self.logger.warning(f"{traceback.format_exc()}")
+        else:
+            slot["count"] += 1
+
+    def _flush_dedup_stale(self) -> None:
+        """Entleert abgelaufene Dedup-Fenster — gibt die aufgelaufenen
+        Summaries aus, auch wenn kein neues Event vom gleichen Typ kommt.
+        Wird im check_heartbeats-Loop regelmaessig aufgerufen, damit lange
+        stille Perioden nicht die Dedup-Zahlen verschlucken.
+        """
+        now = time.time()
+        for err_type in list(self._err_counts.keys()):
+            slot = self._err_counts[err_type]
+            if (now - slot["first_ts"]) > LOG_DEDUP_WINDOW_SECONDS:
+                if slot["count"] > 1:
+                    self.logger.info(
+                        f"[{err_type}] {slot['count']-1}x weitere Occurrences "
+                        f"im Fenster {slot['first_ts']:.0f}-{now:.0f} unterdrueckt"
+                    )
+                del self._err_counts[err_type]
+
     async def handle_munchlax(self, reader, writer):
 
         raw = await self.receive_message(reader)
-        client_name, client_id = raw.rsplit("_", 1)
+        # Phase C: Handshake-Format name_cid_bootepoch. Alte Clients senden
+        # name_cid (nur 1 Underscore als Trenner). rsplit mit 2 → 3 Teile fuer
+        # neues Format, 2 fuer altes. Namen koennen eigene Underscores
+        # enthalten, deswegen rsplit (von rechts).
+        parts = raw.rsplit("_", 2)
+        boot_epoch: int | None = None
+        if len(parts) == 3:
+            try:
+                client_name, client_id, boot_epoch_str = parts
+                boot_epoch = int(boot_epoch_str)
+            except ValueError:
+                # 3. Teil war keine Zahl — kein boot_epoch → Legacy-Format,
+                # das letzte "_X" gehoerte zum Namen. Als name_cid parsen.
+                client_name, client_id = raw.rsplit("_", 1)
+        else:
+            client_name, client_id = parts
         self.munchlaxes[client_id] = writer
         self.munchlax_names[client_id] = client_name
         self.munchlax_status[client_id] = 'connected'
         self.heartbeat_counts[client_id] = 0
+        self._client_sessions[client_id] = {
+            "started_at": time.time(),
+            "recv": 1,  # Handshake-Nachricht zaehlt mit
+            "sent": 0,
+            "last_recv_at": time.time(),
+            "last_recv_type": "handshake",
+        }
         # Heartbeat-Timestamp bereits bei Registrierung setzen, sonst wirft
         # ein Frueh-Disconnect (z.B. Slot-Collision-Reject vor dem ersten
         # 'heartbeat'-Send) in disconnect_client KeyError beim del —
@@ -162,16 +282,102 @@ class Arceus:
         self.writer_locks[client_id] = asyncio.Lock()
         self.logger.info(f"Client {client_id} connected and registered.")
 
+        # Phase C: Resume-Ack an Client. Enthaelt die hoechste sequence_id,
+        # die der Server fuer DIESE client_id je gesehen hat. Erster Connect
+        # oder Session-Reset: 0 — Client resendet dann nichts, falls Buffer
+        # ohnehin leer. Reconnect mit bekannter client_id + gleicher Boot-
+        # Epoch: letzte gesehene seq, Client resendet nur die Luecke.
+        #
+        # Boot-Epoch-Mismatch: Client hat die App neu gestartet (gleiche
+        # client_id persistiert, aber _next_seq lief auf 1 zurueck). Ohne
+        # Reset wuerde Server alle neuen Payloads als Replay dedupen —
+        # stiller Datenverlust. Also: last_seen auf 0 zuruecksetzen und
+        # neue Epoche speichern.
+        stored_epoch = self._boot_epoch_by_client.get(client_id)
+        if boot_epoch is not None and stored_epoch is not None and stored_epoch != boot_epoch:
+            self.logger.info(
+                f"Boot-Epoch-Mismatch fuer {client_id} ({client_name}): "
+                f"gespeichert={stored_epoch}, neu={boot_epoch} — "
+                f"last_seen_seq reset auf 0"
+            )
+            self._last_seen_seq_by_client[client_id] = 0
+        if boot_epoch is not None:
+            self._boot_epoch_by_client[client_id] = boot_epoch
+
+        last_seen_seq = self._last_seen_seq_by_client.get(client_id, 0)
+        # SYNCHRON vor update_all_clients/broadcast_*-Tasks senden, damit der
+        # Client Chance hat, seinen Replay auszugeben BEVOR der Server ihn
+        # mit Live-Traffic ueberschuettet. send_to_client holt writer_lock,
+        # also laufen nachfolgende send_to_client-Aufrufe hinter resume_ack
+        # her — Reihenfolge-Garantie Server→Client auf einem Writer.
+        # Alte Clients ohne boot_epoch: kein resume_ack senden — die haben
+        # keine Phase-C-Code-Pfade die drauf warten.
+        if boot_epoch is not None:
+            try:
+                await self.send_to_client(client_id, {
+                    "type": "resume_ack",
+                    "last_seen_seq": last_seen_seq,
+                })
+                self.logger.info(
+                    f"resume_ack an {client_id} gesendet: last_seen_seq={last_seen_seq}"
+                )
+            except TRANSIENT_NET_EXCEPTIONS as exc:
+                # Writer tot → kein weiterer Handler-Loop nötig, direkt
+                # Cleanup via disconnect_client.
+                self.logger.warning(
+                    f"resume_ack an {client_id} failed (Netz): "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                await self.disconnect_client(
+                    client_id, writer=writer, reason=f"resume_ack_{type(exc).__name__}"
+                )
+                return
+            except Exception as exc:
+                self.logger.warning(
+                    f"resume_ack an {client_id} failed: {type(exc).__name__}: {exc}"
+                )
+
         asyncio.create_task(self.update_all_clients(client_id))
         asyncio.create_task(self.broadcast_connection_status())
         asyncio.create_task(self.broadcast_player_names())
 
+        disconnect_reason = "unknown"
         while True:
             try:
                 data = await self.receive_message(reader)
+                # Phase C: Replay-Wrapper abstreifen. Alte Clients (ohne
+                # Phase-C-Code) senden Payloads unverpackt — gleiches Verhalten
+                # wie bisher. Phase-C-Clients wrappen bufferable Messages in
+                # {"__seq__": N, "__payload__": orig}. Dedupe:
+                #   - seq <= last_seen_seq → Replay einer bereits verarbeiteten
+                #     Nachricht, verwerfen und mit naechstem recv weitermachen.
+                #   - seq > last_seen_seq → verarbeiten + last_seen_seq ERST
+                #     NACH erfolgreicher Verarbeitung updaten (at-least-once:
+                #     wenn Verarbeitung mit Exception kippt, soll Client das
+                #     Item beim naechsten Resume erneut senden).
+                current_seq: int | None = None
+                if isinstance(data, dict) and "__seq__" in data and "__payload__" in data:
+                    seq = int(data["__seq__"])
+                    payload = data["__payload__"]
+                    last_seen = self._last_seen_seq_by_client.get(client_id, 0)
+                    if seq <= last_seen:
+                        self.logger.debug(
+                            f"Replay von {client_id} verworfen: seq={seq} "
+                            f"<= last_seen={last_seen}, "
+                            f"payload_type={payload.get('type') if isinstance(payload, dict) else type(payload).__name__}"
+                        )
+                        continue
+                    current_seq = seq
+                    data = payload
                 msg_desc = data.get("type") if isinstance(data, dict) else (data if isinstance(data, str) else f"{len(data)} Spieler")
                 self.logger.debug(f"Empfangen von {client_id}: {msg_desc}")
+                sess = self._client_sessions.get(client_id)
+                if sess is not None:
+                    sess["recv"] += 1
+                    sess["last_recv_at"] = time.time()
+                    sess["last_recv_type"] = str(msg_desc)
                 if type(data) == str and data.startswith("disconnect"): # or not data:
+                    disconnect_reason = "explicit_disconnect"
                     break
                 if data == 'heartbeat':
                     self.munchlax_heartbeats[client_id] = time.time()
@@ -366,6 +572,7 @@ class Arceus:
                             self.logger.warning(f"slot_collision-Antwort an {client_id} failed: {exc}")
                         # Handler-Loop verlassen — anschliessender disconnect_client
                         # entfernt den Client vollstaendig (Namen, Locks, State).
+                        disconnect_reason = "slot_collision"
                         break
                     if declared != self.client_player_ids.get(client_id, set()):
                         self.client_player_ids[client_id] = declared
@@ -390,24 +597,75 @@ class Arceus:
                         for split in auto_splits:
                             self.logger.info(f"Auto-Split (Badge): {split['label']}")
                         asyncio.create_task(self.broadcast_timer_state())
-            except ConnectionResetError:
+                # Phase C: seq ERST NACH erfolgreicher Verarbeitung committen.
+                # Wenn der obige if/elif-Baum eine Exception geworfen haette,
+                # waere das Item noch nicht als "gesehen" markiert und der
+                # Client wuerde beim naechsten Resume erneut senden (at-
+                # least-once). broadcast_*-Tasks sind create_task'd und zaehlen
+                # fuer die Commit-Entscheidung nicht — die laufen eh async.
+                if current_seq is not None:
+                    self._last_seen_seq_by_client[client_id] = current_seq
+                    # Erfolgreicher Retry nach vorherigem Fehler → Poison-
+                    # Counter fuer diese seq aufraeumen, sonst leakt der
+                    # Dict-Eintrag unbegrenzt (reviewer R3 H5).
+                    poison = self._poison_counts_by_client.get(client_id)
+                    if poison is not None and current_seq in poison:
+                        poison.pop(current_seq, None)
+                        if not poison:
+                            self._poison_counts_by_client.pop(client_id, None)
+            except TRANSIENT_NET_EXCEPTIONS as exc:
                 # Reader ist tot, weitere receive_message-Aufrufe wuerden nur
                 # noch denselben Fehler in Busy-Loop werfen. Schleife verlassen,
-                # damit der regulaere disconnect_client-Pfad greift.
+                # damit der regulaere disconnect_client-Pfad greift. Rate-
+                # Limited Log — pre-fix wurden hier bei 1000+ Dropouts in Folge
+                # 1000+ volle Tracebacks ins arceus.log gekippt.
+                sess = self._client_sessions.get(client_id, {})
+                last_at = sess.get("last_recv_at", 0)
+                last_age = time.time() - last_at if last_at else -1.0
+                self._log_dedup(
+                    f"handle_munchlax_{type(exc).__name__}",
+                    f"handle_munchlax Netz-Fehler fuer {client_id} "
+                    f"({self.munchlax_names.get(client_id, '')}): "
+                    f"{type(exc).__name__}: {exc} "
+                    f"(letzte_msg={sess.get('last_recv_type', '')!r}, "
+                    f"vor_{last_age:.1f}s, recv={sess.get('recv', 0)})",
+                    exc=exc,
+                )
+                disconnect_reason = f"recv_{type(exc).__name__}"
                 break
             except pickle.UnpicklingError as exc:
                 self.logger.error(f"Fehler beim Entpacken der Daten: {type(exc)},{exc}")
                 self.logger.error(f"{traceback.format_exc()}")
             except Exception as exc:
+                # Poison-Message-Schutz (sync-reviewer Runde 2 WARNUNG W5):
+                # bei determinstischem Fehler in der Verarbeitung wuerde
+                # Client das Item nach Reconnect endlos erneut senden (seq
+                # wurde nicht committet) — Server trennt erneut, Loop.
+                # Nach 3 Wiederholungen committen wir die seq trotzdem,
+                # loggen die Poison-Message als WARN und brechen die
+                # Verbindung ab. Nachlauf: User muss den Mitspieler neu
+                # verbinden lassen; Payload ist verloren, aber kein Loop.
+                if current_seq is not None:
+                    poison = self._poison_counts_by_client.setdefault(client_id, {})
+                    poison[current_seq] = poison.get(current_seq, 0) + 1
+                    if poison[current_seq] >= 3:
+                        self.logger.warning(
+                            f"Poison-Message bei {client_id} seq={current_seq} "
+                            f"nach 3 Fehlversuchen committed und verworfen: "
+                            f"{type(exc).__name__}: {exc}"
+                        )
+                        self._last_seen_seq_by_client[client_id] = current_seq
+                        poison.pop(current_seq, None)
                 self.logger.error(f"handle_munchlax abgebrochen:{type(exc)},{exc}")
                 self.logger.error(f"{traceback.format_exc()}")
+                disconnect_reason = f"recv_unexpected_{type(exc).__name__}"
                 break
-        
+
         # writer explizit mitgeben — disconnect_client soll pruefen ob der
         # registrierte Writer noch derselbe ist, sonst kann ein Reconnect
         # der zwischen Loop-Ausstieg und Entry stattfindet fälschlich den
         # frischen Socket schliessen. Details in disconnect_client-Docstring.
-        await self.disconnect_client(client_id, writer=writer)
+        await self.disconnect_client(client_id, writer=writer, reason=disconnect_reason)
 
     async def update_all_clients(self, client_id):
         old_teams = self.teams.copy()
@@ -521,6 +779,9 @@ class Arceus:
             return
         async with lock:
             await self.send_message(writer, message)
+        sess = self._client_sessions.get(client_id)
+        if sess is not None:
+            sess["sent"] = sess.get("sent", 0) + 1
 
     async def broadcast_boxes_update(self, sender_id, player_id, boxes):
         """Verteilt einen Box-Update an alle Clients außer dem Absender."""
@@ -732,6 +993,13 @@ class Arceus:
         self._last_violation_broadcast_ts = {}
         self.soullink_tokens = {}
         self._team_owner_cache = {}
+        # Phase C: Replay-State muss ebenfalls weg, sonst wuerde ein Client,
+        # der kurz nach Session-Reset reconnected, seq-Werte senden, die
+        # kleiner sind als sein alter last_seen_seq und als Duplikat verworfen.
+        # Boot-Epochs + Poison-Counter ebenfalls.
+        self._last_seen_seq_by_client.clear()
+        self._boot_epoch_by_client.clear()
+        self._poison_counts_by_client.clear()
         self.logger.info("Arceus _reset_session_state: alle Session-Caches geleert")
 
     async def broadcast_session_reset(self, sender_id: str | None = None):
@@ -1665,7 +1933,8 @@ class Arceus:
                 self.logger.error(f"{traceback.format_exc()}")
 
     async def disconnect_client(self, client_id,
-                                 writer: asyncio.StreamWriter | None = None):
+                                 writer: asyncio.StreamWriter | None = None,
+                                 reason: str = "unknown"):
         """Trennt den Client mit der angegebenen client_id.
 
         ``writer``: Der Writer der terminierenden Verbindung. Wird von
@@ -1686,6 +1955,13 @@ class Arceus:
         Socket nicht faelschlich kappt. Ist der Snapshot ``None`` (Client
         schon verschwunden), degradiert der Guard graceful: ``current``
         ist dann ebenfalls None und die Funktion returned frueh.
+
+        ``reason``: Diagnose-Enum fuer Post-Mortem-Logs. Werte:
+        ``explicit_disconnect`` (Client hat 'disconnect' geschickt),
+        ``heartbeat_timeout`` (check_heartbeats hat Miss-Limit ueberschritten),
+        ``slot_collision``, ``recv_<ExcType>`` (Socket-Fehler im Handler-
+        Loop), ``recv_unexpected_<ExcType>`` (unerwartete Exception),
+        ``unknown`` (Fallback).
         """
         async with self.disconnect_lock:
             current = self.munchlaxes.get(client_id)
@@ -1693,9 +1969,9 @@ class Arceus:
                 return
             if writer is not None and current is not writer:
                 self.logger.info(
-                    f"disconnect_client({client_id}): aufrufende Verbindung "
-                    f"wurde bereits durch Reconnect ersetzt — State-Cleanup "
-                    f"uebersprungen"
+                    f"disconnect_client({client_id}, reason={reason!r}): "
+                    f"aufrufende Verbindung wurde bereits durch Reconnect "
+                    f"ersetzt — State-Cleanup uebersprungen"
                 )
                 # Stale Writer trotzdem schliessen — GC/__del__-Finalizer sind
                 # keine verlaesslichen Cleanup-Kanaele fuer offene Sockets.
@@ -1742,7 +2018,21 @@ class Arceus:
             # andernfalls wuerde dieser del-Block den State der frischen
             # Reconnect-Verbindung wegloeschen.
             if self.munchlaxes.get(client_id) is writer:
-                self.logger.info(f"Client {client_id} disconnected.")
+                # Diagnose-Dump bevor State weg ist. Hilft bei nachtraeglicher
+                # Session-Rekonstruktion (Satougame-Pattern vom 2026-09-30:
+                # vorher gab's nur "disconnected." ohne Grund und ohne Dauer).
+                sess = self._client_sessions.get(client_id, {})
+                started = sess.get("started_at", 0)
+                dur = time.time() - started if started else 0.0
+                last_at = sess.get("last_recv_at", 0)
+                last_age = time.time() - last_at if last_at else -1.0
+                self.logger.info(
+                    f"Client {client_id} ({self.munchlax_names.get(client_id, '')}) "
+                    f"disconnected (grund={reason!r}, dauer={dur:.1f}s, "
+                    f"recv={sess.get('recv', 0)}, sent={sess.get('sent', 0)}, "
+                    f"letzte_msg={sess.get('last_recv_type', '')!r} "
+                    f"vor_{last_age:.1f}s)"
+                )
                 # Defensiv .pop(..., None): schon einmal (Slot-Collision
                 # + Frueh-Disconnect) hat ein fehlender Heartbeat-Key hier
                 # KeyError geworfen und den gesamten Cleanup + Broadcasts
@@ -1754,9 +2044,11 @@ class Arceus:
                 self.heartbeat_counts.pop(client_id, None)
                 self.writer_locks.pop(client_id, None)
                 self.client_player_ids.pop(client_id, None)
+                self._client_sessions.pop(client_id, None)
             else:
                 self.logger.info(
-                    f"Client {client_id} disconnect: Writer wurde waehrend "
+                    f"Client {client_id} disconnect (reason={reason!r}): "
+                    f"Writer wurde waehrend "
                     f"wait_closed durch Reconnect ersetzt — State-Cleanup "
                     f"uebersprungen"
                 )
@@ -1875,11 +2167,17 @@ class Arceus:
                         # damit "Miss 4/4 → Disconnect" nicht verwirrend
                         # als "4 von 3" auftaucht (sync-reviewer R7).
                         next_miss = self.heartbeat_counts[client_id] + 1
+                        sess = self._client_sessions.get(client_id, {})
+                        last_type = sess.get("last_recv_type", "")
+                        last_at = sess.get("last_recv_at", 0)
+                        last_age = now - last_at if last_at else -1.0
                         self.logger.warning(
-                            f"Client {client_id} hat seit "
+                            f"Client {client_id} "
+                            f"({self.munchlax_names.get(client_id, '')}) hat seit "
                             f"{now - last_heartbeat:.1f}s keinen Heartbeat "
                             f"gesendet (Miss {next_miss}, "
-                            f"Disconnect ab {HEARTBEAT_MISS_LIMIT + 1})"
+                            f"Disconnect ab {HEARTBEAT_MISS_LIMIT + 1}, "
+                            f"letzte_msg={last_type!r} vor_{last_age:.1f}s)"
                         )
                         self.heartbeat_counts[client_id] += 1
                         if self.heartbeat_counts[client_id] > HEARTBEAT_MISS_LIMIT:
@@ -1892,8 +2190,41 @@ class Arceus:
                         self.heartbeat_counts[client_id] = 0
                         self.munchlax_status[client_id] = "connected"
                 for client_id, snap_writer in to_disconnect:
-                    await self.disconnect_client(client_id, writer=snap_writer)
+                    await self.disconnect_client(
+                        client_id, writer=snap_writer, reason="heartbeat_timeout"
+                    )
                 await self.broadcast_connection_status()
+                # Periodische Verbindungs-Uebersicht (log-friendly fuer
+                # nachtraegliche Session-Rekonstruktion). Zeigt wer wann wie
+                # lange verbunden war und welche Message-Rate pro Client lief,
+                # plus Replay-Diagnose (last_seen_seq, letzte_msg_vor).
+                if now - self._last_overview_at >= CONNECTED_OVERVIEW_SECONDS:
+                    self._last_overview_at = now
+                    if self.munchlaxes:
+                        lines = []
+                        for cid in list(self.munchlaxes.keys()):
+                            s = self._client_sessions.get(cid, {})
+                            dur = now - s.get("started_at", now)
+                            last_at = s.get("last_recv_at", 0)
+                            last_age = now - last_at if last_at else -1.0
+                            lines.append(
+                                f"{self.munchlax_names.get(cid, '')}({cid[:8]}): "
+                                f"up={dur:.0f}s "
+                                f"recv={s.get('recv', 0)} sent={s.get('sent', 0)} "
+                                f"last_seq={self._last_seen_seq_by_client.get(cid, 0)} "
+                                f"last_msg={s.get('last_recv_type', '')!r} "
+                                f"vor_{last_age:.0f}s "
+                                f"status={self.munchlax_status.get(cid, '?')}"
+                            )
+                        self.logger.info(
+                            f"Verbindungs-Uebersicht "
+                            f"({len(self.munchlaxes)} Clients): " + " | ".join(lines)
+                        )
+                    else:
+                        self.logger.info("Verbindungs-Uebersicht: keine Clients verbunden")
+                # Dedup-Fenster entleeren damit Summaries nicht in stillen
+                # Perioden verschluckt werden.
+                self._flush_dedup_stale()
             except Exception as exc:
                 self.logger.error(f"check_heartbeats Iteration abgebrochen: {type(exc)},{exc}")
                 self.logger.error(f"{traceback.format_exc()}")

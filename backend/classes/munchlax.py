@@ -671,9 +671,61 @@ class Munchlax:
                         await self._handle_remote_bag(data)
                     elif msg_type == "soullink_config":
                         self.soullink_config = data.get("config", {}) or {}
+                        # Rules + Mode in local nuz-Dict spiegeln. Konsumenten wie
+                        # first_type_dupe_slots (trainerbox/overlay_server/obs) lesen
+                        # ausschliesslich aus self.nuz — ohne Spiegel bleibt auf
+                        # non-host-Clients z.B. rule_single_type_per_team=True
+                        # haengen, obwohl der Host die Regel bereits deaktiviert
+                        # oder den Modus auf versus_ffa gewechselt hat. Resultat
+                        # waere ein permanent "— gesperrt —"-Slot. Nur In-Memory,
+                        # nuz.yml bleibt unangetastet (Host-authoritativ auf Disk).
+                        #
+                        # Host-Guard: der eigene Broadcast kommt per
+                        # arceus.broadcast_soullink_config auch beim Host-Munchlax
+                        # an. Dessen nuz ist aber bereits authoritativ via
+                        # nuzlockemenu._on_rule_checkbox_change gesetzt — ein
+                        # weiterer Mirror hier wuerde bei schnellen Toggles den
+                        # stale Echo-State ueber den aktuellen User-Stand schreiben.
+                        is_host = False
+                        try:
+                            is_host = bool(self.rem.get("start_server", False))
+                        except AttributeError:
+                            is_host = False
+                        mirrored_count = 0
+                        if not is_host and isinstance(self.nuz, dict):
+                            # Nur spiegeln wenn Host das rules-Feld explizit gesetzt
+                            # hat. Fehlender Key (alter Server ohne rules-Field)
+                            # darf NICHT alle lokalen rule_*-Keys loeschen —
+                            # Clear-All ist nur bei explizit leerem {} korrekt.
+                            raw_rules = self.soullink_config.get("rules")
+                            if isinstance(raw_rules, dict):
+                                # Alte rule_*-Keys, die der Host nicht mehr sendet
+                                # (Preset-Wechsel mit kleinerem Rule-Set), explizit
+                                # entfernen — sonst behaelt der Client seinen
+                                # Pre-Broadcast-Default und first_type_dupe_slots
+                                # blockt obwohl Host die Regel entfernt hat.
+                                for key in [
+                                    k for k in list(self.nuz.keys())
+                                    if isinstance(k, str) and k.startswith("rule_")
+                                ]:
+                                    if key not in raw_rules:
+                                        self.nuz.pop(key, None)
+                                for rule_key, val in raw_rules.items():
+                                    if isinstance(rule_key, str) and rule_key.startswith("rule_"):
+                                        self.nuz[rule_key] = val
+                                        mirrored_count += 1
+                            mode_val = self.soullink_config.get("mode")
+                            if isinstance(mode_val, str) and mode_val:
+                                self.nuz["soullink_mode"] = mode_val
+                        log_raw = self.soullink_config.get('rules')
+                        log_rules = (
+                            list(log_raw.keys()) if isinstance(log_raw, dict) else "absent"
+                        )
                         self.logger.info(
                             f"soullink_config empfangen: mode={self.soullink_config.get('mode')}, "
-                            f"players={self.soullink_config.get('expected_owners')}"
+                            f"players={self.soullink_config.get('expected_owners')}, "
+                            f"rules={log_rules}, "
+                            f"host={is_host}, nuz_mirrored={mirrored_count}"
                         )
                         await self._notify_overlay_session("soullink_config", self.soullink_config)
                     elif msg_type == "soullink_link_state":

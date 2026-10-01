@@ -1,3 +1,4 @@
+import traceback
 import weakref
 from kivy.clock import Clock
 from kivy.graphics import Color
@@ -9,7 +10,10 @@ from kivy.uix.label import Label
 from kivy.uix.progressbar import ProgressBar
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
+from backend.logging_setup import get_logger
 from backend.party_rules import first_type_dupe_slots
+
+logger = get_logger(__name__, 'logs/frontend.log')
 
 STATUS_LABELS = {
     'freeze': ('[color=3068B0]FRZ[/color]', (0.19, 0.41, 0.69, 1)),
@@ -222,24 +226,55 @@ class TrainerBox(BoxLayout):
         return badge_box
 
 
-    def _render_blocked_slot(self, slot_box):
-        """Setzt Slot-Anzeige auf 'gesperrt'-State (Regel-Sperre)."""
-        slot_box.ids["Level"].text = "-"
-        slot_box.ids["Nickname"].text = "— gesperrt —"
-        sprite_widget = slot_box.ids["Sprite"]
+    def _render_blocked_slot(self, slot_box, pokemon=None):
+        """Setzt Slot-Anzeige auf 'gesperrt'-State (Regel-Sperre).
+
+        Zeigt Pokemon-Identitaet (Nickname + ausgegrautes Sprite + Level) damit
+        der User im Tracker erkennt WELCHES Pokemon aktuell geblockt ist.
+        Ohne diese Info sieht man nur "— gesperrt —" und muss raten warum —
+        Diagnose bei Regel-Konflikten (z.B. rule_single_type_per_team) ist dann
+        unmoeglich. Overlay/OBS bleiben versteckt (Stream-Privacy).
+
+        Das "GESPERRT"-Label wird im Status-Feld platziert (markup, orange)
+        statt an den Nickname gehaengt — sonst waechst der Nickname-String
+        um ~10 Zeichen und laeuft bei langen Namen aus dem Label-Widget raus
+        (das Label hat kein shorten/text_size).
+        """
         empty_sprite = (
             f"{self.obs_websocket.conf['common_path']}/"
             f"{self.obs_websocket.conf['red']}/0.png"
         )
-        if sprite_widget.source != empty_sprite:
-            sprite_widget.source = empty_sprite
-        sprite_widget.color = (1, 1, 1, 1)
+        sprite_widget = slot_box.ids["Sprite"]
+        if pokemon is not None and pokemon.dexnr not in (0, 'egg'):
+            slot_box.ids["Level"].text = f"lvl {pokemon.lvl}"
+            slot_box.ids["Nickname"].text = pokemon.nickname
+            try:
+                sprite_path = self.obs_websocket.get_sprite(
+                    pokemon, False,
+                    self.munchlax.editions[self.player_id],
+                    two_pc=False,
+                )
+            except Exception:
+                logger.warning(
+                    f"_render_blocked_slot get_sprite failed: {traceback.format_exc()}"
+                )
+                sprite_path = empty_sprite
+            if sprite_widget.source != sprite_path:
+                sprite_widget.source = sprite_path
+            sprite_widget.color = (0.4, 0.4, 0.4, 1)
+            slot_box.ids["Status"].text = "[color=FFAA00]GESPERRT[/color]"
+        else:
+            slot_box.ids["Level"].text = "-"
+            slot_box.ids["Nickname"].text = "— gesperrt —"
+            if sprite_widget.source != empty_sprite:
+                sprite_widget.source = empty_sprite
+            sprite_widget.color = (1, 1, 1, 1)
+            slot_box.ids["Status"].text = ""
         slot_box.ids["Item_Name"].text = "-"
         slot_box.ids["Item_Image"].source = f"{self.obs_websocket.conf['items_path']}/0.png"
         slot_box.ids["hp_bar"].max = 1
         slot_box.ids["hp_bar"].value = 0
         slot_box.ids["hp_text"].text = "0/0"
-        slot_box.ids["Status"].text = ""
         slot_box.ids["hp_bar"].canvas.after.clear()
 
     def team_aktualisieren(self, instance):
@@ -259,7 +294,7 @@ class TrainerBox(BoxLayout):
             slot_box = self.pokemon_boxes[f"slot{slot}"]
 
             if slot in blocked_slots:
-                self._render_blocked_slot(slot_box)
+                self._render_blocked_slot(slot_box, pokemon)
                 continue
 
             slot_box.ids["Level"].text = f"lvl {pokemon.lvl}"

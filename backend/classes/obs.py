@@ -590,12 +590,16 @@ class OBS():
                 ))
         if self.conf['show_items'] and edition > 20:
             items_path = self.conf['items_path'] if not self.conf['obs_2_pc'] else self.conf['items_obs_path']
+            # Per-Player-Lookup (siehe overlay_server._handle_item): jedes
+            # randomisierte ROM hat eigene TM-Zuordnung. Host-OBS zeigt
+            # Teams aller Spieler → ohne Per-Player-Dict wuerde die
+            # eigene Mapping fuer alle gelten (Phänomen 3 2026-09-30).
+            tm_moves = self.munchlax.rando_tm_moves.get(player) or None
+            hm_moves = self.munchlax.rando_hm_moves.get(player) or None
             for slot in slots:
                 item_slug = "0" if slot in blocked else str(team[slot].item)
                 item_slug = resolve_tm_hm_sprite(
-                    edition, item_slug,
-                    self.munchlax.rando_tm_moves,
-                    self.munchlax.rando_hm_moves,
+                    edition, item_slug, tm_moves, hm_moves,
                 )
                 batch.append(simpleobsws.Request(
                     "SetInputSettings",

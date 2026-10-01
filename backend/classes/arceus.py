@@ -41,6 +41,16 @@ CONNECTED_OVERVIEW_SECONDS = 300.0
 # keine Cross-Owner-Checks auf dem Server.
 SOULLINK_MODES = ("coop", "versus")
 
+# Replay-TTL fuer transient (ereignishafte) soullink_rule_violations beim
+# Client-Reconnect. 5 min decken Soft-Reconnects ab (Heartbeat-Latenz ~35s
+# + Reconnect-Backoff + Buffer). Nur Typen in TRANSIENT_VIOLATION_TYPES
+# unterliegen dem TTL — alle anderen Violations (z.B. "trade") gelten als
+# persistent und werden beim Reconnect immer replay'ed, weil sie den
+# aktuellen Regel-Verstoss-Zustand repraesentieren.
+# Transient = Snapshot-Event (total_wipe), nach Run-Ende obsolet.
+VIOLATION_REPLAY_TTL_S = 300.0
+TRANSIENT_VIOLATION_TYPES = frozenset({"total_wipe"})
+
 # Heartbeat-Watchdog-Tuning. Client sendet alle 5 s einen Heartbeat.
 # HEARTBEAT_STALE_SECONDS: ab wann ein einzelner ausbleibender Heartbeat
 # als "verpasst" zaehlt (mehr als ein Send-Intervall Toleranz, damit
@@ -76,6 +86,14 @@ class Arceus:
         self.munchlax_heartbeats = {}
         self.heartbeat_counts = {}
         self.client_player_ids: dict[str, set[int]] = {}
+        # Vom Client via `declared_player_ids` deklarierter Slot-Besitz
+        # (nicht gleich `client_player_ids`, das von Team-Nachrichten mit
+        # kleineren Teilmengen ueberschrieben wird, sobald nur ein
+        # Emulator laeuft). Ownership-Check fuer rando_moves_sync nutzt
+        # die Vereinigung beider Mengen, damit ein Push fuer einen
+        # deklarierten, aber noch nicht gestarteten Slot nicht verworfen
+        # wird (R2 KRITISCH sync 2026-10-01).
+        self.declared_player_ids_by_client: dict[str, set[int]] = {}
         self.teams = {}
         # Box-Cache analog zu self.teams: dict[player_id, list[list[Pokemon|None]]].
         # Wird vom besitzenden Munchlax per "boxes_update" gefüllt und bei
@@ -87,6 +105,14 @@ class Arceus:
         self.encounters: dict[tuple[int, str], dict] = {}
         # Bag-Cache: (owner, edition) → pockets_dict.
         self.bags: dict[tuple[str, str], dict] = {}
+        # Rando-TM/HM-Zuordnungen pro player_id.
+        # {pid: {"tm_moves": {num: name}, "hm_moves": {num: name}}}.
+        # Vom Client via rando_moves_sync nach jedem Randomize gefuellt;
+        # beim Connect eines neuen Clients komplett ausgeliefert, damit
+        # overlay_server/obs auf jedem Host die randomisierten Zuordnungen
+        # ALLER Spieler kennen (sonst zeigt Browser-Source Vanilla-TM-Icons
+        # fuer Remote-Spieler).
+        self.rando_moves: dict[int, dict] = {}
         # Soullink-State (rein server-authoritativ, keine DB-Persistenz auf Server-Seite).
         # Config wird vom Host-Client per "soullink_config" gesetzt und beim Connect
         # neuer Clients einmalig ausgeliefert.
@@ -279,6 +305,7 @@ class Arceus:
         # Heartbeat sendet (sync-reviewer R5).
         self.munchlax_heartbeats[client_id] = time.time()
         self.client_player_ids[client_id] = set()
+        self.declared_player_ids_by_client[client_id] = set()
         self.writer_locks[client_id] = asyncio.Lock()
         self.logger.info(f"Client {client_id} connected and registered.")
 
@@ -536,6 +563,48 @@ class Arceus:
                     bag_edition = data.get("edition", "")
                     self.bags[(bag_owner, bag_edition)] = data.get("pockets", {})
                     asyncio.create_task(self.broadcast_bag_sync(client_id, data))
+                elif isinstance(data, dict) and data.get("type") == "rando_moves_sync":
+                    pid = data.get("player_id")
+                    if isinstance(pid, int):
+                        # Ownership-Check: nur der Client, der diesen player_id
+                        # per declared_player_ids beansprucht hat, darf das
+                        # Mapping fuer ihn pushen. Verhindert Last-Writer-Wins-
+                        # Race, wenn ein Fremd-Client (Fehlkonfiguration, Bug)
+                        # einen fremden Slot ueberschreibt.
+                        # Vereinigung aus declared (statische Deklaration)
+                        # und client_player_ids (dynamische Teams) — ein
+                        # Slot ohne laufenden Emulator soll trotzdem
+                        # Rando-Push erlauben (R2 KRITISCH sync).
+                        owned_ids = (
+                            self.declared_player_ids_by_client.get(client_id, set())
+                            | self.client_player_ids.get(client_id, set())
+                        )
+                        if pid not in owned_ids:
+                            self.logger.warning(
+                                f"rando_moves_sync verworfen: client={client_id} "
+                                f"nicht owner von pid={pid} (owned={sorted(owned_ids)})"
+                            )
+                        else:
+                            tm_moves = data.get("tm_moves") or {}
+                            hm_moves = data.get("hm_moves") or {}
+                            self.rando_moves[pid] = {
+                                "tm_moves": {int(k): v for k, v in (tm_moves or {}).items()}
+                                            if isinstance(tm_moves, dict) else {},
+                                "hm_moves": {int(k): v for k, v in (hm_moves or {}).items()}
+                                            if isinstance(hm_moves, dict) else {},
+                            }
+                            self.logger.info(
+                                f"rando_moves_sync empfangen: client={client_id}, "
+                                f"player_id={pid}, "
+                                f"tms={len(tm_moves) if isinstance(tm_moves, dict) else 0}, "
+                                f"hms={len(hm_moves) if isinstance(hm_moves, dict) else 0}"
+                            )
+                            asyncio.create_task(self.broadcast_rando_moves_sync(client_id, pid))
+                    else:
+                        self.logger.warning(
+                            f"rando_moves_sync ohne gueltige player_id: {pid!r} "
+                            f"(client={client_id})"
+                        )
                 elif isinstance(data, dict) and data.get("type") == "declared_player_ids":
                     # Client meldet welche Netz-Slots (player_ids) er belegt,
                     # abgeleitet aus seiner player.yml (nicht via BizHawk-Handshake).
@@ -574,6 +643,11 @@ class Arceus:
                         # entfernt den Client vollstaendig (Namen, Locks, State).
                         disconnect_reason = "slot_collision"
                         break
+                    # declared_player_ids_by_client: authoritative Ownership-
+                    # Quelle fuer rando_moves_sync. client_player_ids wird
+                    # weiterhin fuer Namen/Sortierung/Live-Slots verwendet und
+                    # kann durch Team-Nachrichten verkleinert werden.
+                    self.declared_player_ids_by_client[client_id] = set(declared)
                     if declared != self.client_player_ids.get(client_id, set()):
                         self.client_player_ids[client_id] = declared
                         self.logger.info(
@@ -708,7 +782,45 @@ class Arceus:
                     "type": "soullink_death",
                     "death": death,
                 })
-            for violation in list(self.soullink_rule_violations.values()):
+            # TTL-Filter nur fuer transiente Violation-Typen (total_wipe):
+            # ohne Filter wuerde eine total_wipe-Violation aus einem vor
+            # Stunden finalisierten Run bei jedem Reconnect erneut ein
+            # Wipe-Popup auf allen Clients oeffnen (bothhaft 2026-09-30
+            # 21:50:05: Reconnect replay'ed den 20:03:30-Wipe trotz
+            # lebendigem Team). Persistente Typen (z.B. trade) bleiben
+            # unberuehrt — sie beschreiben einen weiter geltenden Zustand
+            # und muessen jedem spaeten Joiner zugestellt werden.
+            # TTL misst gegen `_server_ts` (gesetzt beim Cache-Insert),
+            # nicht gegen Client-timestamp — sonst wuerde Clock-Skew
+            # eines Clients den Filter umgehen oder faelschlich greifen
+            # lassen. Stale Entries werden ATOMAR vor dem continue
+            # gepoppt — kein await dazwischen, kein Race mit einem
+            # parallelen `broadcast_soullink_rule_violation`, der sonst
+            # den Eintrag frisch ersetzen und direkt danach vom pop
+            # geloescht werden koennte.
+            now_replay = time.time()
+            for key, violation in list(self.soullink_rule_violations.items()):
+                vtype = violation.get("type")
+                if vtype in TRANSIENT_VIOLATION_TYPES:
+                    try:
+                        ts = float(violation.get("_server_ts") or 0)
+                    except (TypeError, ValueError):
+                        ts = 0.0
+                    age = now_replay - ts
+                    if age > VIOLATION_REPLAY_TTL_S:
+                        self.logger.info(
+                            f"replay skip stale rule_violation (age={age:.0f}s): "
+                            f"client={client_id} type={vtype} "
+                            f"subject={violation.get('subject')}"
+                        )
+                        # Pop ist safe: wir halten die Original-Referenz
+                        # ``violation`` und loeschen den Eintrag nur, wenn
+                        # das Dict noch dasselbe Objekt enthaelt (Guard
+                        # gegen Replace zwischen Snapshot-Erstellung und
+                        # dieser Iteration).
+                        if self.soullink_rule_violations.get(key) is violation:
+                            self.soullink_rule_violations.pop(key, None)
+                        continue
                 await self.send_to_client(client_id, {
                     "type": "soullink_rule_violation",
                     "violation": violation,
@@ -754,6 +866,17 @@ class Arceus:
                     "owner": bag_owner,
                     "edition": bag_edition,
                     "pockets": pockets,
+                })
+
+            # Rando-Moves aller Spieler nachliefern — ohne diese Replay-Zeile
+            # haben spaete Joiner keine TM/HM-Mappings fuer die anderen Spieler
+            # und zeigen Vanilla-Icons im Overlay.
+            for pid, moves in list(self.rando_moves.items()):
+                await self.send_to_client(client_id, {
+                    "type": "rando_moves_sync",
+                    "player_id": int(pid),
+                    "tm_moves": moves.get("tm_moves", {}),
+                    "hm_moves": moves.get("hm_moves", {}),
                 })
         except Exception as exc:
             self.logger.error(f"update_all_clients Onboarding an {client_id} abgebrochen: {type(exc)},{exc}")
@@ -982,6 +1105,10 @@ class Arceus:
         self.boxes = {}
         self.encounters = {}
         self.bags = {}
+        # rando_moves bewusst NICHT clearen: die ROMs der Clients sind nach
+        # Session-Reset immer noch randomisiert, aber die Clients pushen
+        # das Mapping nicht erneut — Overlays wuerden sonst bis zum
+        # naechsten Randomize auf Vanilla fallen (R1 WARNUNG sync).
         self.soullink_links = {}
         self.soullink_next_id = 1
         self.soullink_deaths = {}
@@ -1844,13 +1971,15 @@ class Arceus:
             if existing_pv != pv or existing_owner == new_owner:
                 continue
             # gleicher PID unter anderem Owner
+            now_trade = time.time()
             violation = {
                 "type": "trade",
                 "subject": f"{pv}",
                 "old_owner": existing_owner,
                 "new_owner": new_owner,
                 "dexnr": enc.get("dexnr"),
-                "timestamp": time.time(),
+                "timestamp": now_trade,
+                "_server_ts": now_trade,
                 "message": (
                     f"PID {pv} taucht bei {new_owner} auf, war zuvor bei {existing_owner}. "
                     f"Trades bei aktiver Soullink-Session sind verboten."
@@ -1882,6 +2011,12 @@ class Arceus:
             )
             return
         self._last_violation_broadcast_ts[key] = now
+        # Server-Timestamp zusaetzlich zum Client-timestamp: der Replay-TTL-Filter
+        # misst gegen _server_ts, nicht gegen den Client-Wert — sonst wuerde ein
+        # Client mit Clock-Skew (>5min) entweder echte frische Violations
+        # verlieren oder alte als frisch durchlassen. _server_ts bleibt im
+        # ausgehenden message-Dict mitgeschickt, Clients ignorieren das Feld.
+        violation["_server_ts"] = now
         self.soullink_rule_violations[key] = violation
         message = {"type": "soullink_rule_violation", "violation": violation}
         self.logger.info(
@@ -1931,6 +2066,29 @@ class Arceus:
             except Exception as exc:
                 self.logger.error(f"broadcast_bag_sync an {client_id} failed: {type(exc)},{exc}")
                 self.logger.error(f"{traceback.format_exc()}")
+
+    async def broadcast_rando_moves_sync(self, sender_id, player_id: int):
+        """Verteilt die randomisierten TM/HM-Zuordnungen eines Spielers an alle
+        anderen Clients. Der Sender hat die Daten bereits lokal, deshalb skip.
+        """
+        moves = self.rando_moves.get(player_id)
+        if not moves:
+            return
+        message = {
+            "type": "rando_moves_sync",
+            "player_id": int(player_id),
+            "tm_moves": moves.get("tm_moves", {}),
+            "hm_moves": moves.get("hm_moves", {}),
+        }
+        for client_id in list(self.munchlaxes.keys()):
+            if client_id == sender_id:
+                continue
+            try:
+                await self.send_to_client(client_id, message)
+            except Exception as exc:
+                self.logger.error(
+                    f"broadcast_rando_moves_sync an {client_id} failed: {type(exc)},{exc}"
+                )
 
     async def disconnect_client(self, client_id,
                                  writer: asyncio.StreamWriter | None = None,
@@ -2044,6 +2202,7 @@ class Arceus:
                 self.heartbeat_counts.pop(client_id, None)
                 self.writer_locks.pop(client_id, None)
                 self.client_player_ids.pop(client_id, None)
+                self.declared_player_ids_by_client.pop(client_id, None)
                 self._client_sessions.pop(client_id, None)
             else:
                 self.logger.info(

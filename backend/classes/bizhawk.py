@@ -1,5 +1,6 @@
 import asyncio
 import re
+import time
 import traceback
 from backend.classes.munchlax import Munchlax
 from backend.classes.Pokemon import Pokemon
@@ -11,6 +12,17 @@ from backend.logging_setup import get_logger
 
 # Mindest-BizHawk-Version für die genutzten Lua-APIs (KeraLua-Baseline ab 2.9).
 MIN_BH_VERSION: tuple[int, int] = (2, 9)
+
+# Slow-Tick-Detektor: wenn ein Tick-Durchlauf laenger als dieser Threshold
+# dauert, WARN mit Branch-Label. 50ms = 3 BizHawk-Frames @ 60fps; alles was
+# darueber liegt verursacht sichtbaren Emulator-Lag, weil Lua blockierend auf
+# comm.socketServerResponse() wartet. Je nach GUI-Click oder Rotation springen
+# einzelne Ticks auf 200ms+.
+SLOW_TICK_THRESHOLD_S = 0.05
+# Zusammenfassung der Tick-Phasen alle N Sekunden INFO-loggen (max/avg pro
+# Branch). Hilft, chronische Last-Treiber zu identifizieren ohne pro Tick zu
+# spammen.
+TICK_SUMMARY_INTERVAL_S = 60.0
 
 
 def _parse_bh_version(raw: str) -> tuple[int, int] | None:
@@ -239,13 +251,37 @@ class Bizhawk:
             update_teams(msg)
             counter = 2
             in_battle = False
+            # Phase-Timing-Akkumulator pro Branch:
+            # {phase_name: {count, sum_proc_s, max_proc_s, sum_recv_s, max_recv_s}}
+            # proc_s = reine Python-Verarbeitung pro Tick (nach Receive).
+            # recv_s = Wartezeit auf Lua-"Aufgabe" (enthaelt Frame-Dauer).
+            # Getrennt, damit Emulator-Pause nicht faelschlich als Python-Lag
+            # erscheint (R1 WARNUNG sync).
+            phase_stats: dict[str, dict] = {}
+            next_summary_at = time.perf_counter() + TICK_SUMMARY_INTERVAL_S
+            last_slow_warn_at = 0.0
             while True:
                 counter = counter % (60 * 10)
+                tick_phase = "idle"
                 try:
+                    recv_t0 = time.perf_counter()
                     data = (await self.receive_messages(reader)).decode()
-                    self.logger.debug(f"Tick {counter}: client={client_id}, in_battle={in_battle}, queue_len={len(self.box_request_queues.get(client_id, []))}")
+                    proc_t0 = time.perf_counter()
+                    recv_dt = proc_t0 - recv_t0
+                    tick_counter_snapshot = counter
+                    # Reduzierter Tick-Log: nur 1x pro Sekunde statt 60x. Pro-Frame-
+                    # Debug fuellte bizhawk.log mit >23k Zeilen pro 2MB-File und
+                    # erzwang eine File-Rotation alle paar Minuten — Disk-I/O-Spike
+                    # genau waehrend der Lua auf Response wartet.
+                    if counter % 60 == 0:
+                        self.logger.debug(
+                            f"Tick {counter}: client={client_id}, "
+                            f"in_battle={in_battle}, "
+                            f"queue_len={len(self.box_request_queues.get(client_id, []))}"
+                        )
                     flush_on_request = self._flush_requested.get(client_id, False)
                     if (counter == 1 and self.bh["save_automatically"]) or self.about_to_exit or flush_on_request:
+                        tick_phase = "save_ram"
                         if self.about_to_exit:
                             self.about_to_exit = False
                         await self.send_messages(writer, "saveRAM")
@@ -257,6 +293,7 @@ class Bizhawk:
                             if event is not None:
                                 event.set()
                     elif counter % 60 == 0:
+                        tick_phase = "team"
                         await self.send_messages(writer, "team")
                         msg = await reader.readexactly(length)
                         update_teams(msg)
@@ -265,6 +302,7 @@ class Bizhawk:
                         # bleibt Gen <=4 nach erstem True fuer immer stuck —
                         # kein weiterer Poll, kein Outcome-Check, kein neuer
                         # Encounter-Trigger. Kanten-Detection ueber prev/new.
+                        tick_phase = "in_battle"
                         prev_in_battle = in_battle
                         await self.send_messages(writer, "in_battle")
                         data = (await self.receive_messages(reader)).decode()
@@ -289,6 +327,7 @@ class Bizhawk:
                         # kollabieren auf die Startmap. gMapHeader wird auch
                         # während Wild-Kämpfen von der Field-Position gehalten,
                         # das Lesen ist also safe.
+                        tick_phase = "map_header"
                         asyncio.create_task(
                             self._refresh_map_header(client_id, edition)
                         )
@@ -296,6 +335,7 @@ class Bizhawk:
                         # ohne Response kein frameadvance und BizHawk friert ein.
                         await self.send_messages(writer, data)
                     elif counter % 60 == 3 and in_battle and edition > 50:
+                        tick_phase = "stat_aktualisieren"
                         await self.send_messages(writer, "stat_aktualisieren")
                         data = (await self.receive_messages(reader)).decode()
                         # in_battle NICHT resetten: der %60==2-Poll ist jetzt
@@ -308,11 +348,13 @@ class Bizhawk:
                         # die der Main-Loop in Folge-Frames abarbeitet — daher
                         # blockiert nichts. _bag_refresh_inflight verhindert
                         # Ueberlappung, falls die Reads laenger als 5 s brauchen.
+                        tick_phase = "bag_refresh"
                         asyncio.create_task(self._auto_refresh_bag(client_id, player))
                         await self.send_messages(writer, data)
                     else:
                         queue = self.box_request_queues.get(client_id)
                         if queue:
+                            tick_phase = "box_queue"
                             cmd, offset, size, fut, payload_hex = queue.pop(0)
                             try:
                                 if cmd == "bagw":
@@ -334,9 +376,75 @@ class Bizhawk:
                                     fut.set_exception(err)
                                 raise
                         else:
+                            tick_phase = "idle"
                             await self.send_messages(writer, data)
 
                     counter += 1
+                    # Slow-Tick-Detektor: proc_dt = Zeit zwischen Receive der
+                    # Lua-"Aufgabe" und Ende der Branch-Verarbeitung. recv_dt
+                    # = Wait auf Lua (enthaelt Frame-Dauer, bei Emulator-Pause/
+                    # Menu beliebig lang, NICHT fuer Slow-Warn benutzen).
+                    #
+                    # ACHTUNG Interpretation: proc_dt ist "rein Python" nur
+                    # fuer phase=idle. In Branches team/in_battle/map_header/
+                    # stat_aktualisieren/save_ram/box_queue laufen zusaetzliche
+                    # Lua-Roundtrips (await send_messages + await
+                    # receive_messages/readexactly), die ebenfalls auf
+                    # BizHawk-Frames warten — proc_dt enthaelt deren I/O.
+                    # Fuer die Diagnose "Kivy blockiert Event-Loop" ist daher
+                    # vor allem phase=idle interessant; alles andere ist
+                    # kombiniertes Python+I/O.
+                    proc_dt = time.perf_counter() - proc_t0
+                    bucket = phase_stats.setdefault(tick_phase, {
+                        "count": 0, "proc_sum": 0.0, "proc_max": 0.0,
+                        "recv_sum": 0.0, "recv_max": 0.0,
+                    })
+                    bucket["count"] += 1
+                    bucket["proc_sum"] += proc_dt
+                    bucket["recv_sum"] += recv_dt
+                    if proc_dt > bucket["proc_max"]:
+                        bucket["proc_max"] = proc_dt
+                    if recv_dt > bucket["recv_max"]:
+                        bucket["recv_max"] = recv_dt
+                    # Rate-Limit auf 1 WARN/sek: bei dauerhaftem Lag wuerden
+                    # sonst 60 Zeilen/s die Log-Rotation triggern und das
+                    # Instrument selbst zum Lag-Treiber werden. Rest bleibt
+                    # in phase_stats sichtbar.
+                    now = time.perf_counter()
+                    if proc_dt > SLOW_TICK_THRESHOLD_S and (now - last_slow_warn_at) >= 1.0:
+                        last_slow_warn_at = now
+                        self.logger.warning(
+                            f"SLOW TICK client={client_id} "
+                            f"counter={tick_counter_snapshot} "
+                            f"phase={tick_phase} "
+                            f"proc={proc_dt*1000:.1f}ms recv={recv_dt*1000:.1f}ms "
+                            f"in_battle={in_battle} "
+                            f"queue_len={len(self.box_request_queues.get(client_id, []))}"
+                        )
+                    if now >= next_summary_at:
+                        if phase_stats:
+                            parts = []
+                            for phase_name in sorted(phase_stats.keys()):
+                                b = phase_stats[phase_name]
+                                if b["count"] == 0:
+                                    continue
+                                parts.append(
+                                    f"{phase_name}={b['count']}× "
+                                    f"proc avg {b['proc_sum']/b['count']*1000:.1f}ms "
+                                    f"max {b['proc_max']*1000:.1f}ms "
+                                    f"recv avg {b['recv_sum']/b['count']*1000:.1f}ms "
+                                    f"max {b['recv_max']*1000:.1f}ms"
+                                )
+                            self.logger.info(
+                                f"Tick-Summary client={client_id}: " + " | ".join(parts)
+                            )
+                            phase_stats.clear()
+                        # Timer-Reset immer, sonst wuerde ein kurzer stummer
+                        # Zeitraum (keine Ticks) den naechsten Summary-Dump
+                        # verzoegern und ab dann in zu grossen Intervallen
+                        # (now - alt > 60s) wieder regelmaessig loggen
+                        # (R2 cavecrew-risk).
+                        next_summary_at = now + TICK_SUMMARY_INTERVAL_S
                 except Exception as err:
                     self.logger.error(f"handle_bizhawk abgebrochen (client={client_id}): {type(err).__name__}: {err}")
                     self.logger.error(f"{traceback.format_exc()}")

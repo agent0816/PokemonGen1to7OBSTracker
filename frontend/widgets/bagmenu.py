@@ -498,6 +498,45 @@ class BagMenu(Screen):
         section.add_widget(grid)
         return section
 
+    def _rando_moves_for_owner(self, owner: str) -> tuple[dict | None, dict | None]:
+        """Loest den Owner-String auf den player_id des jeweiligen Spielers
+        auf und liefert dessen rando_tm_moves + rando_hm_moves aus Munchlax.
+
+        Fallback-Kaskade:
+        1. Munchlax.rando_tm_moves[pid]: Server-authoritativer Stand aus
+           rando_moves_sync-Broadcast (deckt Remote-Spieler ab).
+        2. Lokaler Parser-State ``self._rando_tm_moves``: **nur** wenn der
+           Owner-Slot einem lokalen Spieler entspricht (``pid in local_slots``).
+           Fuer Remote-Spieler ohne gesynctes Mapping darf NICHT auf den
+           lokalen Parser zurueckgefallen werden — das ist der Rando-Stand
+           dieses Hosts und waere falsch (R1 WARNUNG 2026-10-01).
+        3. ``None`` → ``resolve_tm_hm_sprite`` faellt auf Vanilla-LUT.
+
+        Normalisiert leeres ``{}`` zu ``None``, damit die Fallback-Kaskade
+        auch bei leeren Broadcasts (z.B. Reset) sauber weiterprueft.
+        """
+        pid = PokedexDB.owner_slot(owner)
+        munchlax = None
+        local_slots: set[int] = set()
+        try:
+            main_menu = self.manager.get_screen("MainMenu")
+            munchlax = getattr(main_menu, "munchlax", None)
+            slot_getter = getattr(main_menu, "_local_player_slots", None)
+            if callable(slot_getter):
+                local_slots = set(slot_getter())
+        except Exception:
+            munchlax = None
+
+        tm = hm = None
+        if munchlax is not None and pid is not None:
+            tm = (munchlax.rando_tm_moves or {}).get(pid) or None
+            hm = (munchlax.rando_hm_moves or {}).get(pid) or None
+        if tm is None and (pid is None or pid in local_slots):
+            tm = self._rando_tm_moves or None
+        if hm is None and (pid is None or pid in local_slots):
+            hm = self._rando_hm_moves or None
+        return tm, hm
+
     def _make_item_cell(self, edition: str, row: dict) -> BoxLayout:
         cell = BoxLayout(orientation="horizontal", size_hint_y=None,
                          height=_ITEM_ROW_H, spacing="4dp")
@@ -509,9 +548,18 @@ class BagMenu(Screen):
         # items*.yml. Wenn kein Slug auffindbar ist (unbekannte ID) -> kein Icon.
         slug = item_slug(edition, item_id) if items_path else None
         if slug:
+            # Per-Player-Rando-Lookup: der row-owner (build_owner-Format
+            # "name_<slot>") liefert die player_id, mit der wir die vom
+            # Server broadcasteten rando_tm_moves des JEWEILIGEN Spielers
+            # abrufen. Fallback auf lokalen Parser-State fuer den eigenen
+            # Spieler, falls Server-Daten noch nicht da sind (Reconnect-
+            # Grace-Window) oder im Standalone-Modus ohne Munchlax.
+            rando_tm, rando_hm = self._rando_moves_for_owner(
+                str(row.get("owner") or "")
+            )
             slug = resolve_tm_hm_sprite(
                 _safe_int(edition), slug,
-                self._rando_tm_moves, self._rando_hm_moves,
+                rando_tm, rando_hm,
             )
             cell.add_widget(Image(
                 source=f"{items_path}/{slug}.png",

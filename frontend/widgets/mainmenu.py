@@ -806,15 +806,67 @@ class MainMenu(Screen):
             self.randomize_button.text = "Randomisieren"
 
     def _sync_rando_to_munchlax(self):
+        """Nach erfolgreicher Randomisierung die TM/HM-Zuordnung in Munchlax
+        schreiben und an den Server pushen. Jedes lokale Player-Slot bekommt
+        denselben rando_data-Snapshot (gleiche Settings → gleiche Seeds →
+        selbe TM-Zuordnung pro ROM). Phänomen 3 (Logs 2026-09-30): ohne
+        diesen Push wusste das Overlay anderer Hosts die TM-Mappings dieses
+        Clients nicht und zeigte Vanilla-Icons.
+
+        Kein is_connected-Guard — send_rando_moves_sync queued den Payload
+        intern in _pending_rando_moves wenn offline und flusht beim nächsten
+        Connect. Guard würde den Offline-Puffer umgehen (R1 KRITISCH sync).
+        """
         rando_data = self.randomizer.get_log_data()
+        local_slots = self._local_player_slots()
         if rando_data:
-            self.munchlax.rando_tm_moves = rando_data.tm_moves or None
-            self.munchlax.rando_hm_moves = rando_data.hm_moves or None
+            tm_moves = rando_data.tm_moves or {}
+            hm_moves = rando_data.hm_moves or {}
+            for slot in local_slots:
+                self.munchlax.rando_tm_moves[slot] = dict(tm_moves)
+                self.munchlax.rando_hm_moves[slot] = dict(hm_moves)
+                self._schedule_rando_sync(slot, tm_moves, hm_moves)
             self._sync_rando_abilities(rando_data)
+            logger.info(
+                f"_sync_rando_to_munchlax: slots={local_slots}, "
+                f"tms={len(tm_moves)}, hms={len(hm_moves)}, "
+                f"connected={self.munchlax.is_connected}"
+            )
         else:
-            self.munchlax.rando_tm_moves = None
-            self.munchlax.rando_hm_moves = None
+            for slot in local_slots:
+                self.munchlax.rando_tm_moves.pop(slot, None)
+                self.munchlax.rando_hm_moves.pop(slot, None)
+                self._schedule_rando_sync(slot, {}, {})
             pokedecoder.set_gen3_abilities(None)
+            logger.info(
+                f"_sync_rando_to_munchlax: keine rando_data, slots geleert={local_slots}"
+            )
+
+    def _schedule_rando_sync(self, slot: int,
+                              tm_moves: dict, hm_moves: dict) -> None:
+        """asyncio.create_task mit Strong-Ref in self.connectors — ohne das
+        wuerde der Task GC-raus laufen bevor send_rando_moves_sync
+        ausgefuehrt ist (siehe feedback_async_task_strong_ref).
+        """
+        task = asyncio.create_task(
+            self.munchlax.send_rando_moves_sync(slot, tm_moves, hm_moves)
+        )
+        self.connectors.add(task)
+        task.add_done_callback(self.connectors.discard)
+
+    def _local_player_slots(self) -> list[int]:
+        """Spiegelt randomizer_controller._local_player_slots — lokale
+        Player-Slot-Indizes (1..player_count exkl. remote_i=True)."""
+        try:
+            count = int(self.pl.get('player_count', 1) or 1)
+        except (TypeError, ValueError):
+            count = 1
+        slots: list[int] = []
+        for slot in range(1, count + 1):
+            if self.pl.get(f'remote_{slot}', False):
+                continue
+            slots.append(slot)
+        return slots or [1]
 
     def _sync_rando_abilities(self, rando_data):
         lut: dict[int, list[int]] = {}

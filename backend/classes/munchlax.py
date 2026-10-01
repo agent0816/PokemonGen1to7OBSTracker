@@ -70,6 +70,12 @@ UNBUFFERED_DICT_TYPES = frozenset({
     "declared_player_ids",
     "resume_query",
     "boxes_update",
+    # rando_moves_sync hat eine eigene Pending-Queue (_pending_rando_moves)
+    # mit Flush beim Reconnect. Zusaetzliches Replay via Outbound-Buffer
+    # fuehrt zu Doppel-Send (buffer replay + queue flush) und bei spaetem
+    # Resume-Replay zu einem alten Payload nach dem frischen Direkt-Send
+    # (R2 WARNUNG sync).
+    "rando_moves_sync",
 })
 
 # Wipe-Detection HP-Consistency: erst nach N Zero-Reads pro Pokemon gilt
@@ -128,8 +134,25 @@ class Munchlax:
         self.reconnecting = False  # True während _auto_reconnect läuft (UI-Grace)
         self.obs: OBS | None = None
         self.overlay_server = None
-        self.rando_tm_moves: dict[int, str] | None = None
-        self.rando_hm_moves: dict[int, str] | None = None
+        # Rando-TM/HM-Zuordnungen pro player_id. Multi-Player-Setup:
+        # jeder Client randomized seine eigene ROM mit eigenem Seed →
+        # jeder Spieler-Slot hat eine andere TM→Move-Zuordnung. Flat-Dict
+        # (vorher) brach den Overlay-Resolver fuer Remote-Spieler, weil
+        # der Host nur seine EIGENE Zuordnung hatte und die auf alle
+        # Teams anwendete.
+        # Struktur: {player_id: {tm_num: move_name}}. Werte werden fuer
+        # lokale Slots durch _sync_rando_to_munchlax gesetzt und ueber
+        # rando_moves_sync an alle anderen Clients verteilt.
+        self.rando_tm_moves: dict[int, dict[int, str]] = {}
+        self.rando_hm_moves: dict[int, dict[int, str]] = {}
+        # Pending-queue fuer rando_moves_sync: wenn beim Randomize keine
+        # Verbindung besteht (Standalone, Reconnect-Phase), landet der
+        # Payload hier und wird beim naechsten erfolgreichen Connect
+        # geflusht. Ohne diese Queue bliebe der Server fuer den
+        # betroffenen Slot ohne TM-Mapping (silent-dropout).
+        # Key: player_id. Value: {"tm_moves": {...}, "hm_moves": {...}}.
+        self._pending_rando_moves: dict[int, dict] = {}
+        self._rando_flush_task: asyncio.Task | None = None
         self.rando_abilities_gen3: dict[int, list[int]] | None = None
         self.writer_lock = asyncio.Lock()
         self.disconnect_lock = asyncio.Lock()
@@ -273,6 +296,10 @@ class Munchlax:
         self.timer_last_tick = None
         self.countdown_state = {}
         self.countdown_last_tick = None
+        # rando_tm_moves/rando_hm_moves bewusst NICHT clearen: die ROMs der
+        # Clients bleiben randomisiert, bis zum naechsten Randomize kommt
+        # kein Sync-Push mehr. Clearen wuerde Overlays bis zum naechsten
+        # Randomize auf Vanilla fallen lassen (R1 WARNUNG sync).
 
     def _clear_session_runtime_state(self):
         """Setzt In-Memory-Session-Caches zurück, OHNE ``soullink_config`` zu
@@ -304,6 +331,8 @@ class Munchlax:
         self._pokemon_hp_state = {}
         self._last_bag_hash = {}
         self.last_box_refresh_at = {}
+        # rando_tm_moves/rando_hm_moves bewusst NICHT clearen — siehe
+        # Begruendung in clear_everything.
         # Replay-Buffer leeren — Payloads referenzieren den alten Session-State
         # (Encounter-Reports, Soullink-Deaths etc.), die auf dem Server durch
         # den Session-Reset bereits weg sind. Re-Senden wuerde Zombie-Daten
@@ -617,6 +646,20 @@ class Munchlax:
                                     f"Resume-Resend failed: {type(err).__name__}: {err}"
                                 )
                                 self.logger.error(f"{traceback.format_exc()}")
+                        # Server-Capability jetzt bestaetigt (True) — gepufferte
+                        # rando_moves_sync-Payloads jetzt sicher flushen. Vor
+                        # resume_ack war die Capability None und ein Legacy-
+                        # Server haette die Nachricht als Teams-Dict fehlgedeutet.
+                        # Laufenden Flush NICHT cancelen (koennte Stream mitten
+                        # im Frame zerreissen); er iteriert ohnehin per Snapshot
+                        # und Identity-Check, Zusatz-Flush ist dann No-op.
+                        if self._pending_rando_moves and (
+                            self._rando_flush_task is None
+                            or self._rando_flush_task.done()
+                        ):
+                            self._rando_flush_task = asyncio.create_task(
+                                self._flush_pending_rando_moves()
+                            )
                     elif msg_type == "boxes_update":
                         player_id = data.get("player_id")
                         boxes = data.get("boxes")
@@ -669,6 +712,39 @@ class Munchlax:
                         await self._handle_remote_outcome(data)
                     elif msg_type == "bag_sync":
                         await self._handle_remote_bag(data)
+                    elif msg_type == "rando_moves_sync":
+                        pid = data.get("player_id")
+                        if isinstance(pid, int):
+                            # Owned-Slot-Guard: fuer eigene lokale Slots ist
+                            # dieser Client authoritativ — der Server-Replay
+                            # koennte sonst ein frisch randomisiertes
+                            # Mapping mit dem alten Server-Cache ueberschreiben
+                            # (R1 KRITISCH sync 2026-09-30).
+                            owned = set(self._owned_player_ids())
+                            if pid in owned:
+                                self.logger.info(
+                                    f"rando_moves_sync ignoriert fuer eigenen "
+                                    f"Slot pid={pid} (owned={sorted(owned)})"
+                                )
+                            else:
+                                tm_moves = data.get("tm_moves") or {}
+                                hm_moves = data.get("hm_moves") or {}
+                                if isinstance(tm_moves, dict):
+                                    self.rando_tm_moves[pid] = {
+                                        int(k): v for k, v in tm_moves.items()
+                                    }
+                                if isinstance(hm_moves, dict):
+                                    self.rando_hm_moves[pid] = {
+                                        int(k): v for k, v in hm_moves.items()
+                                    }
+                                self.logger.info(
+                                    f"rando_moves_sync empfangen: player_id={pid}, "
+                                    f"tms={len(tm_moves)}, hms={len(hm_moves)}"
+                                )
+                        else:
+                            self.logger.warning(
+                                f"rando_moves_sync ohne gueltige player_id: {pid!r}"
+                            )
                     elif msg_type == "soullink_config":
                         self.soullink_config = data.get("config", {}) or {}
                         # Rules + Mode in local nuz-Dict spiegeln. Konsumenten wie
@@ -1747,6 +1823,133 @@ class Munchlax:
         except Exception as err:
             self.logger.warning(f"send_bag_sync failed: {err}")
 
+    async def send_rando_moves_sync(self, player_id: int,
+                                     tm_moves: dict[int, str] | None,
+                                     hm_moves: dict[int, str] | None):
+        """Verteilt die randomisierten TM/HM→Move-Zuordnungen an alle Clients.
+
+        Jeder Client randomized seine eigene ROM mit eigenem Seed, deshalb braucht
+        das Overlay/OBS auf jedem Host die Zuordnung des **jeweiligen** Spielers,
+        nicht nur der lokalen. Ohne diese Message faellt der tm_type_resolver auf
+        den Vanilla-LUT zurueck und Browser-Source zeigt generische TM-Icons
+        statt der randomisierten Typ-Icons.
+
+        Zuverlaessigkeit (R3 KRITISCH/WARNUNG sync):
+
+        - Payload wird IMMER zuerst in ``_pending_rando_moves[pid]`` abgelegt
+          (identity-aktueller Snapshot).
+        - Der eigentliche Send delegiert an ``_try_send_pending_payload``,
+          das Identity-Check beim Pop macht: nur wenn der aktuell gequeuete
+          Payload identisch zum gesendeten ist, wird gepopt — sonst hat
+          parallel ein frischerer Direct-Send einen neuen Payload gestellt,
+          und der alte darf nicht gewinnen.
+        - ``CancelledError`` wird NICHT in Exception geschluckt; der Payload
+          bleibt dann unangetastet in der Queue und wird beim naechsten
+          Flush retried.
+        - Legacy-Server (``_server_supports_resume is False``) kennt den
+          Message-Typ nicht. Senden wuerde dort als Teams-Dict interpretiert
+          werden — ueberspringen und nur queuen.
+        """
+        pid = int(player_id)
+        payload = {
+            "tm_moves": dict(tm_moves or {}),
+            "hm_moves": dict(hm_moves or {}),
+        }
+        self._pending_rando_moves[pid] = payload
+        if not self.is_connected:
+            self.logger.info(
+                f"send_rando_moves_sync: not connected — queued player_id={pid}, "
+                f"tms={len(payload['tm_moves'])}, hms={len(payload['hm_moves'])}"
+            )
+            return
+        # Capability-Guard: nur bei bestaetigtem resume (True) senden.
+        # None = unbekannt (vor resume_ack), False = Legacy-Server.
+        # Beide Faelle: queuen, resume_ack-Flush oder naechster Reconnect
+        # retried spaeter. Vorher ging None-Pfad durch, dort wuerde ein
+        # Legacy-Server die Nachricht als Teams-Dict fehlinterpretieren
+        # (R4 WARNUNG sync).
+        if self._server_supports_resume is not True:
+            self.logger.info(
+                f"send_rando_moves_sync: resume capability unbestaetigt "
+                f"({self._server_supports_resume!r}) — queued player_id={pid}"
+            )
+            return
+        await self._try_send_pending_payload(pid, payload)
+
+    async def _try_send_pending_payload(self, pid: int, payload: dict):
+        """Sendet einen Rando-Moves-Payload und poppt ihn aus der Queue nur,
+        wenn er beim Pop-Zeitpunkt noch der aktuelle Eintrag ist.
+        """
+        try:
+            async with self.writer_lock:
+                await self.send_message({
+                    "type": "rando_moves_sync",
+                    "player_id": pid,
+                    "tm_moves": payload["tm_moves"],
+                    "hm_moves": payload["hm_moves"],
+                })
+            # Identity-Pop: ein paralleler Direct-Send koennte zwischen
+            # send-Beginn und hier einen frischen Payload gestellt haben.
+            # Nur poppen, wenn unsere Referenz noch die aktuelle ist, sonst
+            # bleibt der frische Payload fuer den naechsten Flush.
+            if self._pending_rando_moves.get(pid) is payload:
+                del self._pending_rando_moves[pid]
+            self.logger.info(
+                f"send_rando_moves_sync: player_id={pid}, "
+                f"tms={len(payload['tm_moves'])}, hms={len(payload['hm_moves'])}"
+            )
+        except asyncio.CancelledError:
+            # Cancel (Disconnect) — Payload bleibt in Queue, Flush beim
+            # naechsten Connect retried. Nicht in Exception schlucken.
+            raise
+        except Exception as err:
+            self.logger.warning(
+                f"send_rando_moves_sync failed: {err} — bleibt gequeued"
+            )
+
+    async def _flush_pending_rando_moves(self):
+        """Nach erfolgreichem Connect alle gequeuten rando_moves-Payloads an
+        den Server pushen.
+
+        Identity-geschuetztes Snapshot-Iterate: Flush liest payload-Referenz
+        aus Queue. Falls zwischenzeitlich ein Direct-Send einen frischen
+        Payload fuer denselben pid gestellt hat, zeigt die Queue nicht mehr
+        auf unseren Snapshot und wir skippen — der frische Payload wird
+        durch Direct-Send oder eine spaetere Flush-Runde verschickt.
+        """
+        try:
+            if not self._pending_rando_moves:
+                return
+            # Symmetrisch zum Direct-Send-Guard: nur bei bestaetigtem True
+            # flushen. None (vor resume_ack) oder False (Legacy) → skip.
+            # Verhindert, dass ein Refactoring, das den Flush frueher aufruft,
+            # versehentlich an einen Legacy-Server pusht (R6 cavecrew).
+            if self._server_supports_resume is not True:
+                self.logger.info(
+                    f"_flush_pending_rando_moves: resume capability "
+                    f"{self._server_supports_resume!r} — Flush uebersprungen"
+                )
+                return
+            items = list(self._pending_rando_moves.items())
+            self.logger.info(
+                f"_flush_pending_rando_moves: {len(items)} queued payload(s)"
+            )
+            for pid, payload in items:
+                if self._pending_rando_moves.get(pid) is not payload:
+                    self.logger.info(
+                        f"_flush_pending_rando_moves: pid={pid} von Direct-Send "
+                        f"ueberholt, skip"
+                    )
+                    continue
+                await self._try_send_pending_payload(pid, payload)
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            self.logger.warning(
+                f"_flush_pending_rando_moves failed: {err}"
+            )
+            self.logger.warning(traceback.format_exc())
+
     async def _handle_remote_encounters(self, encounters: list[dict]):
         # DB-Calls über run_in_executor, weil sync_encounter unter dem
         # PokedexDB.access_lock läuft und der Event-Loop-Thread sonst bei
@@ -2071,6 +2274,12 @@ class Munchlax:
         self.heartbeat_task = asyncio.create_task(self.send_heartbeat())
         self.send_teams_task = asyncio.create_task(self.send_teams())
         self.alter_teams_task = asyncio.create_task(self.alter_teams())
+        # Rando-Moves-Flush: wird NICHT hier getriggert, sondern erst nach
+        # resume_ack (siehe _server_supports_resume=True branch). Grund:
+        # waehrend _server_supports_resume=None ist, kennen wir die
+        # Capability des Servers noch nicht; ein voreiliges Senden an
+        # einen Legacy-Server wuerde dort als Teams-Dict fehlinterpretiert
+        # (R3 WARNUNG sync).
 
     def _owned_player_ids(self) -> list[int]:
         """Lokale Netz-Slots dieses Clients aus pl: 1..player_count, exkl. remote_i=True.
@@ -2133,7 +2342,12 @@ class Munchlax:
                 # dieses disconnect-Blocks (Writer-Close, Reconnect-Trigger)
                 # per CancelledError uebersprungen.
                 current = asyncio.current_task()
-                for t in (self.alter_teams_task, self.heartbeat_task, self.send_teams_task):
+                for t in (
+                    self.alter_teams_task,
+                    self.heartbeat_task,
+                    self.send_teams_task,
+                    self._rando_flush_task,
+                ):
                     if t is not None and t is not current and not t.done():
                         t.cancel()
                 # Phase C: Resume-Watchdog ebenfalls canceln. _resume_pending

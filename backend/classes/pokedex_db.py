@@ -366,6 +366,29 @@ class PokedexDB:
             return owner
         return owner[:idx]
 
+    @staticmethod
+    def owner_slot(owner: str) -> int | None:
+        """Komplement zu ``owner_root``: liefert den Slot-Int aus
+        ``name_<player_slot>``, None wenn kein numerischer Suffix.
+
+        Nutzen: Konsumenten wie bagmenu brauchen aus einem DB-owner-String
+        den player_id, um munchlax.rando_tm_moves[pid] zu lookupen. int(owner)
+        geht nicht, weil der Owner ``Bothhaft_1`` lautet (siehe
+        ``feedback_owner_slot_extract``).
+        """
+        if not owner:
+            return None
+        idx = owner.rfind("_")
+        if idx <= 0 or idx == len(owner) - 1:
+            return None
+        suffix = owner[idx + 1:]
+        if not suffix.isdigit():
+            return None
+        try:
+            return int(suffix)
+        except ValueError:
+            return None
+
     @_serialized
     def upsert_pokemon(self, owner: str, edition, pokemon: Pokemon) -> str:
         """Gibt 'inserted', 'updated' oder 'skipped' zurück."""

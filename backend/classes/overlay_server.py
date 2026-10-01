@@ -871,13 +871,21 @@ class OverlayServer:
             return web.Response(status=404, text="Items-Pfad nicht konfiguriert")
         raw_item = team[slot].item
         item_slug = str(raw_item)
+        # Per-Player-Lookup: jeder Spieler hat seine eigene randomisierte
+        # TM/HM-Zuordnung. Flat-Dict (vorher) nutzte die Zuordnung des
+        # lokalen Hosts fuer ALLE player_ids → Remote-Spieler bekamen
+        # vanilla-Icons (Phänomen 3 2026-09-30).
+        tm_moves = self.munchlax.rando_tm_moves.get(player_id) or None
+        hm_moves = self.munchlax.rando_hm_moves.get(player_id) or None
         item_slug = resolve_tm_hm_sprite(
-            edition, item_slug,
-            self.munchlax.rando_tm_moves,
-            self.munchlax.rando_hm_moves,
+            edition, item_slug, tm_moves, hm_moves,
         )
         file_path = str(Path(items_path) / f"{item_slug}.png")
-        self.logger.debug(f"Item-Request: player={player_id}, slot={slot}, raw_item={raw_item!r}, slug={item_slug}, path={file_path}")
+        self.logger.debug(
+            f"Item-Request: player={player_id}, slot={slot}, "
+            f"raw_item={raw_item!r}, slug={item_slug}, path={file_path}, "
+            f"rando_tms={len(tm_moves or {})}, rando_hms={len(hm_moves or {})}"
+        )
         return self._serve_resolved_file(file_path)
 
     async def _handle_badge_img(self, request: web.Request) -> web.Response:

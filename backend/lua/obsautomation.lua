@@ -418,6 +418,21 @@ local function compute_battle_stats(state)
     return battle_stats
 end
 
+-- Slow-response-Detektor: wenn Python-Antwort auf "Aufgabe" laenger als
+-- SLOW_RESPONSE_S dauert, Lua haengt waehrend dieser Zeit (comm.socketServer-
+-- Response blockiert). Emulator-Lag ist 1:1 die Summe dieser Wartezeiten.
+-- GUI-Click im Tracker -> Event-Loop-Pause auf Python-Seite -> hier sichtbar.
+--
+-- Rate-Limit: Lua schreibt pro Zeile synchron (safe_write oeffnet/schliesst
+-- die Datei), bei dauerhaftem Lag wuerden 60 WARN/s das Instrument selbst
+-- zum Lag-Treiber machen. Daher nur 1 WARN/sek + Summary alle 60s.
+local SLOW_RESPONSE_S = 0.05
+local SLOW_WARN_INTERVAL_S = 1.0
+local SLOW_SUMMARY_INTERVAL_S = 60
+local slow_response_summary = {count = 0, total = 0, max = 0, max_at = ""}
+local last_summary_at = os.clock()
+local last_slow_warn_at = 0
+
 local function handle_protocol_step(msg, battle_stats, state)
     if state.fluctcount > 3 then
         save_msg = msg
@@ -426,7 +441,46 @@ local function handle_protocol_step(msg, battle_stats, state)
 
     local check_msg = "Aufgabe"
     comm.socketServerSend(check_msg)
+    local resp_t0 = os.clock()
     local response = comm.socketServerResponse()
+    local resp_dt = os.clock() - resp_t0
+    if resp_dt > SLOW_RESPONSE_S then
+        local resp_tag = tostring(response or "nil")
+        if #resp_tag > 32 then resp_tag = resp_tag:sub(1, 32) .. "..." end
+        slow_response_summary.count = slow_response_summary.count + 1
+        slow_response_summary.total = slow_response_summary.total + resp_dt
+        if resp_dt > slow_response_summary.max then
+            slow_response_summary.max = resp_dt
+            slow_response_summary.max_at = resp_tag
+        end
+        local now_warn = os.clock()
+        if now_warn - last_slow_warn_at >= SLOW_WARN_INTERVAL_S then
+            last_slow_warn_at = now_warn
+            logging.warning(string.format(
+                "SLOW RESPONSE player=%s dt=%.1fms response=%s",
+                tostring(PLAYER), resp_dt * 1000, resp_tag
+            ))
+        end
+    end
+    local now = os.clock()
+    if now - last_summary_at >= SLOW_SUMMARY_INTERVAL_S then
+        if slow_response_summary.count > 0 then
+            logging.info(string.format(
+                "Slow-Response-Summary player=%s: %d events in %ds, "
+                .. "total=%.1fms max=%.1fms at=%s",
+                tostring(PLAYER),
+                slow_response_summary.count, SLOW_SUMMARY_INTERVAL_S,
+                slow_response_summary.total * 1000,
+                slow_response_summary.max * 1000,
+                slow_response_summary.max_at
+            ))
+        end
+        slow_response_summary.count = 0
+        slow_response_summary.total = 0
+        slow_response_summary.max = 0
+        slow_response_summary.max_at = ""
+        last_summary_at = now
+    end
     if response == "team" then
         if fluct_init then
             comm.socketServerSendBytes(save_msg)

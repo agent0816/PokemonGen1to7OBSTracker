@@ -51,12 +51,29 @@ for logger_name, log in logging.Logger.manager.loggerDict.items():
             log.setLevel(logging.INFO)
 
 
+async def _run_app(app):
+    # Event-Loop-Latency-Monitor startet VOR dem App-Lauf, damit auch die
+    # ersten Boot-Phasen (Config-Load, Sprite-Pull, Server-Autostart)
+    # vermessen werden. Diagnose fuer BizHawk-Lag: wenn der Kivy-Thread
+    # einen Click-Handler lange ausfuehrt, blockiert das den asyncio-Loop
+    # und damit auch comm.socketServerResponse() in der Lua.
+    from backend.event_loop_monitor import (
+        start_event_loop_monitor,
+        stop_event_loop_monitor,
+    )
+    start_event_loop_monitor()
+    try:
+        await app.async_run()
+    finally:
+        await stop_event_loop_monitor()
+
+
 def main():
     app = FEApp.TrackerApp()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.set_exception_handler(_asyncio_exception_handler)
-    loop.run_until_complete(app.async_run())
+    loop.run_until_complete(_run_app(app))
 
 
 if __name__ == '__main__':

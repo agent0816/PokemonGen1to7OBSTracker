@@ -40,25 +40,47 @@ def resolve_tm_hm_sprite(edition: int, slug: str,
     number = int(num_match.group(2))
 
     move_name = None
+    source = None
 
     if prefix == "tm":
         if rando_tm_moves:
             move_name = rando_tm_moves.get(number)
+            if move_name:
+                source = "rando"
         if not move_name:
             ed_data = _TM_MOVES_LUT.get(edition, {})
             move_name = ed_data.get("tm", {}).get(number)
+            if move_name:
+                source = "vanilla"
     else:
         if rando_hm_moves:
             move_name = rando_hm_moves.get(number)
+            if move_name:
+                source = "rando"
         if not move_name:
             ed_data = _TM_MOVES_LUT.get(edition, {})
             move_name = ed_data.get("hm", {}).get(number)
+            if move_name:
+                source = "vanilla"
 
     if not move_name:
+        logger.debug(
+            f"resolve_tm_hm_sprite: no mapping edition={edition} slug={slug} "
+            f"rando_tm={bool(rando_tm_moves)} rando_hm={bool(rando_hm_moves)}"
+        )
         return slug
 
     mtype = move_type(move_name)
     if not mtype:
+        logger.debug(
+            f"resolve_tm_hm_sprite: unknown move type for '{move_name}' "
+            f"(edition={edition} slug={slug} source={source})"
+        )
         return slug
 
-    return f"{prefix}-{mtype}"
+    result = f"{prefix}-{mtype}"
+    logger.debug(
+        f"resolve_tm_hm_sprite: {slug} → {result} "
+        f"(edition={edition} move={move_name} source={source})"
+    )
+    return result

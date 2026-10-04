@@ -18,16 +18,36 @@ import time
 
 from backend.logging_setup import get_logger
 
-logger = get_logger(__name__, './logs/event_loop_monitor.log')
-
 TICK_INTERVAL_S = 0.1
 SLOW_DRIFT_S = 0.05
 SUMMARY_INTERVAL_S = 60.0
 
-_monitor_task: asyncio.Task | None = None
+# Pro Tag (= Loop) einmal registrierbar — Kivy-Loop und BH-Loop haben separate
+# Tasks und separate Logfiles, damit sich die Drift-Reports nicht ueberlagern.
+_monitor_tasks: dict[str, asyncio.Task] = {}
+_loggers: dict[str, object] = {}
 
 
-async def _run_monitor():
+def _get_logger_for(tag: str):
+    if tag not in _loggers:
+        # Logger-Name explizit so waehlen, dass `_module_key` einen
+        # sinnvollen Settings-Spinner-Eintrag liefert:
+        #   tag=kivy -> "backend.event_loop_monitor"       -> key "event_loop_monitor"
+        #   tag=bh   -> "backend.event_loop_monitor_bh"    -> key "event_loop_monitor_bh"
+        # Dadurch bleibt der bestehende log_settings.yml-Key fuer den
+        # Kivy-Monitor rueckwaerts-kompatibel.
+        if tag == "kivy":
+            logger_name = __name__
+            logfile = "./logs/event_loop_monitor.log"
+        else:
+            logger_name = f"{__name__}_{tag}"
+            logfile = f"./logs/event_loop_monitor_{tag}.log"
+        _loggers[tag] = get_logger(logger_name, logfile)
+    return _loggers[tag]
+
+
+async def _run_monitor(tag: str):
+    logger = _get_logger_for(tag)
     stats = {"count": 0, "slow": 0, "sum_drift": 0.0, "max_drift": 0.0}
     next_summary = time.perf_counter() + SUMMARY_INTERVAL_S
     last_slow_warn_at = 0.0
@@ -51,7 +71,7 @@ async def _run_monitor():
                     if now_warn - last_slow_warn_at >= 1.0:
                         last_slow_warn_at = now_warn
                         logger.warning(
-                            f"Event-Loop-Drift: {drift*1000:.1f}ms "
+                            f"[{tag}] Event-Loop-Drift: {drift*1000:.1f}ms "
                             f"(sleep({TICK_INTERVAL_S}s) returned nach "
                             f"{elapsed*1000:.1f}ms)"
                         )
@@ -59,7 +79,7 @@ async def _run_monitor():
                 if now >= next_summary and stats["count"] > 0:
                     avg_drift = stats["sum_drift"] / stats["count"]
                     logger.info(
-                        f"Loop-Latency-Summary: ticks={stats['count']}, "
+                        f"[{tag}] Loop-Latency-Summary: ticks={stats['count']}, "
                         f"slow(>{int(SLOW_DRIFT_S*1000)}ms)={stats['slow']}, "
                         f"avg_drift={avg_drift*1000:.1f}ms, "
                         f"max_drift={stats['max_drift']*1000:.1f}ms"
@@ -70,38 +90,49 @@ async def _run_monitor():
                     stats["max_drift"] = 0.0
                     next_summary = now + SUMMARY_INTERVAL_S
             except Exception as err:  # pragma: no cover
-                logger.error(f"Monitor-Iteration failed: {err}")
+                logger.error(f"[{tag}] Monitor-Iteration failed: {err}")
                 import traceback
                 logger.error(traceback.format_exc())
     except asyncio.CancelledError:
-        logger.info("Event-Loop-Monitor cancelled.")
+        logger.info(f"[{tag}] Event-Loop-Monitor cancelled.")
         raise
 
 
-def start_event_loop_monitor() -> None:
-    """Startet den Monitor einmal pro Prozess (idempotent).
+def start_event_loop_monitor(tag: str = "kivy") -> None:
+    """Startet den Monitor einmal pro Tag (idempotent).
 
-    Muss aus einem Kontext mit laufendem Event-Loop aufgerufen werden.
+    Muss aus einem Kontext mit laufendem Event-Loop aufgerufen werden; der
+    create_task bindet den Monitor an diesen Loop. Fuer die BH-Thread-
+    Isolation wird eine zweite Instance mit tag='bh' gestartet, die in
+    ``logs/event_loop_monitor_bh.log`` schreibt.
     """
-    global _monitor_task
-    if _monitor_task is not None and not _monitor_task.done():
+    existing = _monitor_tasks.get(tag)
+    if existing is not None and not existing.done():
         return
-    _monitor_task = asyncio.create_task(_run_monitor())
+    task = asyncio.create_task(_run_monitor(tag))
+    _monitor_tasks[tag] = task
+    logger = _get_logger_for(tag)
     logger.info(
-        f"Event-Loop-Monitor gestartet "
+        f"[{tag}] Event-Loop-Monitor gestartet "
         f"(tick={TICK_INTERVAL_S}s, slow_threshold={SLOW_DRIFT_S*1000:.0f}ms)"
     )
 
 
-async def stop_event_loop_monitor() -> None:
-    """Stoppt den Monitor sauber (cancel + await). Shutdown-Hook."""
-    global _monitor_task
-    if _monitor_task is None or _monitor_task.done():
-        _monitor_task = None
-        return
-    _monitor_task.cancel()
-    try:
-        await _monitor_task
-    except (asyncio.CancelledError, Exception):
-        pass
-    _monitor_task = None
+async def stop_event_loop_monitor(tag: str | None = None) -> None:
+    """Stoppt den Monitor sauber (cancel + await). Shutdown-Hook.
+
+    ``tag=None`` stoppt alle registrierten Monitore (default-Verhalten fuer
+    den Main-Prozess-Shutdown).
+    """
+    tags = [tag] if tag is not None else list(_monitor_tasks.keys())
+    for t in tags:
+        task = _monitor_tasks.get(t)
+        if task is None or task.done():
+            _monitor_tasks.pop(t, None)
+            continue
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+        _monitor_tasks.pop(t, None)

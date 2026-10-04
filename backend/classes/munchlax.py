@@ -3,12 +3,13 @@ import hashlib
 import os
 import pickle
 import random
+import threading
 import time
+import traceback
 import uuid
 from collections import deque
 from pathlib import Path
 from pickle import UnpicklingError
-import traceback
 from backend.bag_decoder import BagItem
 from backend.classes.obs import OBS
 from backend.classes.pokedex_db import PokedexDB
@@ -99,6 +100,17 @@ class Munchlax:
         if self.client_id == 0:
             self.client_id = self.generate_hashed_id()
             rem["client_id"] = self.client_id
+        # Thread-Safety-Guard fuer Writes aus dem BH-Thread auf shared State.
+        # BizHawk schreibt bizhawk_teams/unsorted_teams/player_names +
+        # mark_box_refresh aus seinem eigenen asyncio-Loop (siehe
+        # backend/bizhawk_thread.py). Reads kommen aus Kivy — insbesondere
+        # Dict-Iterationen (_persist_teams, Overlay-Broadcast, TrainerBox)
+        # koennen in `RuntimeError: dict changed size during iteration`
+        # laufen, wenn BH gleichzeitig einen neuen Player-Key einfuegt.
+        # Writer wrappen jeden strukturellen Write in `with bh_state_lock`,
+        # Reader snapshoten den Dict-Zustand unter gleichem Lock und
+        # iterieren das Snapshot ausserhalb.
+        self.bh_state_lock = threading.Lock()
         self.bizhawk_teams = {}
         self.sorted_teams = {}
         self.unsorted_teams = {}
@@ -271,13 +283,21 @@ class Munchlax:
         self.logger = get_logger(__name__, './logs/munchlax.log')
 
     def clear_everything(self):
-        self.bizhawk_teams = {}
-        self.sorted_teams = {}
-        self.unsorted_teams = {}
-        self.badges = {}
-        self.editions = {}
-        self.boxes = {}
-        self.player_names.clear()
+        # bh_state_lock schuetzt den Rebind: BH-Thread kann sonst zwischen
+        # dem Lesen von `teams = self.munchlax.bizhawk_teams` (bizhawk.py)
+        # und dem anschliessenden `with bh_state_lock:` auf dem alten Dict
+        # arbeiten → Writes landen im verworfenen Dict und fehlen bis zum
+        # naechsten Tick, oder unsorted_teams[player] wirft KeyError.
+        # player_names: clear() + update() (statt Rebind) nicht noetig,
+        # da `.clear()` bereits Lock-sicher den Inhalt leert.
+        with self.bh_state_lock:
+            self.bizhawk_teams = {}
+            self.sorted_teams = {}
+            self.unsorted_teams = {}
+            self.badges = {}
+            self.editions = {}
+            self.boxes = {}
+            self.player_names.clear()
         self.client_names.clear()
         self.remote_connection_status.clear()
         self.remote_connection_names.clear()
@@ -310,12 +330,15 @@ class Munchlax:
         Behalten: ``player_names``, ``client_names``, ``remote_connection_*``
         (Verbindungs-Metadaten, kein Session-Content) und ``soullink_config``.
         """
-        self.bizhawk_teams = {}
-        self.sorted_teams = {}
-        self.unsorted_teams = {}
-        self.badges = {}
-        self.editions = {}
-        self.boxes = {}
+        # Analog clear_everything: Rebind unter bh_state_lock, damit kein
+        # BH-Write im verworfenen Dict landet (siehe dort).
+        with self.bh_state_lock:
+            self.bizhawk_teams = {}
+            self.sorted_teams = {}
+            self.unsorted_teams = {}
+            self.badges = {}
+            self.editions = {}
+            self.boxes = {}
         self.initialized = False
         self.soullink_links = {}
         self.soullink_deaths = {}
@@ -670,7 +693,14 @@ class Munchlax:
                                 f"box_count={len(boxes)}"
                             )
                     elif msg_type == "player_names":
-                        self.player_names = data.get("names", {})
+                        # clear() + update() statt Rebind: BH-Thread schreibt
+                        # player_names[player] = name unter bh_state_lock
+                        # (bizhawk.py). Ein Rebind hier wuerde BH-Writes im
+                        # verworfenen Dict verlieren.
+                        incoming_names = data.get("names", {})
+                        with self.bh_state_lock:
+                            self.player_names.clear()
+                            self.player_names.update(incoming_names)
                         # client_names (dict[client_id -> client_name]) fuellt der
                         # Server unabhaengig von player_ids — enthaelt also auch
                         # Clients, die noch kein BizHawk-Team gesendet haben.
@@ -936,22 +966,32 @@ class Munchlax:
                     else:
                         self.logger.warning(f"Unbekannter Message-Typ vom Server: {msg_type}")
                     continue
-                self.unsorted_teams = data
-                new_teams = self.unsorted_teams.copy()
-                self.logging_teams(self.unsorted_teams, "unsorted teams received")
+                # bh_state_lock schuetzt gegen Dict-Size-Change-Race:
+                # BH-Thread kann waehrend des Rebinds `unsorted_teams[p] = t`
+                # auf dem alten Dict schreiben; `copy()` dort wuerde dann
+                # RuntimeError werfen. Komplett-Replace + Snapshots unter Lock.
+                # `unsorted_snapshot` wird an _persist_teams uebergeben, damit
+                # BH-Mutationen waehrend des await-Fensters (upsert_team im
+                # Executor) nicht in `dict changed size during iteration`
+                # laufen koennen.
+                with self.bh_state_lock:
+                    self.unsorted_teams = data
+                    new_teams = self.unsorted_teams.copy()
+                    unsorted_snapshot = self.unsorted_teams.copy()
+                self.logging_teams(unsorted_snapshot, "unsorted teams received")
                 for player in new_teams:
                     team = new_teams[player]
                     new_teams[player] = self.sort(team[:6], self.sp['order'])
-                    if player not in self.editions or self.unsorted_teams[player][7] != self.editions[player]:
-                        self.editions[player] = self.unsorted_teams[player][7]
-                    if player not in self.badges or self.unsorted_teams[player][6] != self.badges[player]:
-                        self.badges[player] = self.unsorted_teams[player][6]
+                    if player not in self.editions or unsorted_snapshot[player][7] != self.editions[player]:
+                        self.editions[player] = unsorted_snapshot[player][7]
+                    if player not in self.badges or unsorted_snapshot[player][6] != self.badges[player]:
+                        self.badges[player] = unsorted_snapshot[player][6]
                         self.logger.info(f"{self.badges[player]=}")
                         if self.obs and self.obs.is_connected:
                             await self.obs.change_badges(player)
                         if self.overlay_server and self.overlay_server.is_connected:
                             await self.overlay_server.notify_update(player, "badges")
-                await self._persist_teams(self.unsorted_teams)
+                await self._persist_teams(unsorted_snapshot)
                 if new_teams != self.sorted_teams or not self.initialized:
                     for player in new_teams:
                         if player not in self.sorted_teams or not self.initialized:
@@ -1491,8 +1531,9 @@ class Munchlax:
             subject_owner = self.player_names.get(int(subject_pid), "")
             subject_team = team_map.get(subject_owner)
             if subject_team:
-                my_owners = [self.player_names.get(pid, "")
-                              for pid in list(self.bizhawk_teams.keys())]
+                with self.bh_state_lock:
+                    pid_snapshot = list(self.bizhawk_teams.keys())
+                my_owners = [self.player_names.get(pid, "") for pid in pid_snapshot]
                 my_teams = {team_map.get(o) for o in my_owners if o}
                 share_team = subject_team in my_teams
         if not share_team:
@@ -1563,7 +1604,17 @@ class Munchlax:
         Leere Slots werden mit ``None``-Feldern eingefügt, damit die Länge (6)
         erhalten bleibt.
         """
-        teams_src = self.sorted_teams or self.unsorted_teams or {}
+        # Snapshot unter bh_state_lock: unsorted_teams wird vom BH-Thread
+        # befuellt (bizhawk.py), direkt `for ... in ...` wuerde sonst in
+        # `dict changed size during iteration` laufen, wenn BH mitten im
+        # Finalize einen neuen Player-Key schreibt. sorted_teams ist zwar
+        # Kivy-only, aber Fallback-or-Chain evaluiert zuerst sorted; falls
+        # leer, kommt unsorted dran — Snapshot der Fallback-Quelle reicht.
+        if self.sorted_teams:
+            teams_src = dict(self.sorted_teams)
+        else:
+            with self.bh_state_lock:
+                teams_src = dict(self.unsorted_teams)
         out_players: dict[str, dict] = {}
         for pid, team in teams_src.items():
             slots: list[dict] = []
@@ -2015,11 +2066,22 @@ class Munchlax:
         return hashlib.md5("|".join(parts).encode()).hexdigest()
 
     async def _persist_teams(self, teams):
+        """Persistiert ein Teams-Snapshot in die PokedexDB.
+
+        `teams` MUSS ein Snapshot sein (`dict(unsorted_teams)` o.ae.), kein
+        Live-Dict. BH-Thread schreibt sonst waehrend des await auf
+        upsert_team parallel in das iterierte Dict → RuntimeError.
+        """
         try:
             self._ensure_pokedex_db()
             if self.pokedex_db is None or self.pokedex_db.connection is None:
                 return
             loop = asyncio.get_event_loop()
+            # Snapshot der BH-owned Slots fuer Encounter/Nuzlocke-Filter,
+            # damit BH-Mutationen waehrend der await-Fenster nicht in
+            # inkonsistente Filter-Ergebnisse laufen.
+            with self.bh_state_lock:
+                local_slots = set(self.bizhawk_teams.keys())
             for player, team_data in teams.items():
                 pokemons = team_data[:6]
                 edition = team_data[7] if len(team_data) > 7 else self.editions.get(player)
@@ -2038,19 +2100,19 @@ class Munchlax:
                     # dem eigenen your_name-Prefix persistieren und via
                     # send_encounter_sync zurück broadcasten → n Tracker × n Player
                     # = n² Duplikat-Einträge in der encounters-Tabelle.
-                    if player in self.bizhawk_teams:
+                    if player in local_slots:
                         self._on_new_pokemon_detected(player, edition, pokemons, new_pvs)
                     else:
                         self.logger.debug(
                             f"_persist_teams: skip encounter-detect für player={player} "
-                            f"(remote, lokale Slots: {list(self.bizhawk_teams.keys())})"
+                            f"(remote, lokale Slots: {sorted(local_slots)})"
                         )
                 if self._nuzlocke_rules_active():
                     # Wipe/Death nur für lokal betreute Player evaluieren
                     # (analog Encounter-Filter oben). Ohne diesen Guard würde
                     # jeder Client alle remote-Teams bewerten → n-fache
                     # soullink_rule_violation-Cascade an den Server.
-                    if player not in self.bizhawk_teams:
+                    if player not in local_slots:
                         continue
                     # Ball-Gate: rule_run_start_on_ball verhindert, dass ein
                     # HP=0 vor Ballerhalt (z.B. Starter-K.O. im Rival-Kampf)
@@ -2132,8 +2194,17 @@ class Munchlax:
         return [p for _, p in indexed]
 
     def change_order(self, *args):
-        for team in self.sorted_teams:
-            self.sorted_teams[team] = self.sort(self.unsorted_teams[team][:6], self.sp['order'])
+        # unsorted_teams wird vom BH-Thread befuellt. Snapshot unter Lock,
+        # dann iterieren — direkter Zugriff koennte sonst in KeyError oder
+        # dict-size-change-RuntimeError laufen, wenn BH einen neuen Slot
+        # waehrend des Loops einfuegt.
+        with self.bh_state_lock:
+            unsorted_snapshot = dict(self.unsorted_teams)
+        for team in list(self.sorted_teams.keys()):
+            team_data = unsorted_snapshot.get(team)
+            if team_data is None:
+                continue
+            self.sorted_teams[team] = self.sort(team_data[:6], self.sp['order'])
 
     async def send_heartbeat(self):
         while True:
@@ -2160,13 +2231,21 @@ class Munchlax:
 
     async def send_teams(self):
         while True:
+            # bizhawk_teams wird vom BH-Thread mutiert; Snapshot unter Lock,
+            # dann sowohl Empty-Check als auch Pickle-Dump auf dem Snapshot
+            # fahren. Ohne Snapshot wuerde `send_message` (pickle.dumps)
+            # das Live-Dict iterieren und bei paralleler BH-Mutation in
+            # RuntimeError laufen; vorheriger Empty-Check waere ebenfalls
+            # TOCTOU-anfaellig.
+            with self.bh_state_lock:
+                bizhawk_snapshot = dict(self.bizhawk_teams)
             if self.sorted_teams == {}:
-                self.sorted_teams = self.bizhawk_teams.copy()
+                self.sorted_teams = dict(bizhawk_snapshot)
                 self.change_order()
-            if self.bizhawk_teams != {}:
+            if bizhawk_snapshot:
                 try:
                     async with self.writer_lock:
-                        await self.send_message(self.bizhawk_teams)
+                        await self.send_message(bizhawk_snapshot)
                 except TRANSIENT_NET_EXCEPTIONS as err:
                     self._log_dedup(
                         f"send_teams_{type(err).__name__}",

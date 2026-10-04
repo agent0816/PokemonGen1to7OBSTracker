@@ -1147,7 +1147,8 @@ class NuzlockeMenu(Screen):
             self._set_status("SaveRAM wird geflusht...")
             if self.bizhawk is not None:
                 try:
-                    results = await self.bizhawk.flush_all_saverams(timeout=3.0)
+                    from frontend.bh_dispatch import bh_submit
+                    results = await bh_submit(self.bizhawk.flush_all_saverams(timeout=3.0))
                     if results:
                         failed = [cid for cid, ok in results.items() if not ok]
                         if failed:

@@ -3,6 +3,7 @@ import traceback
 import weakref
 import asyncio
 from pathlib import Path
+from kivy.app import App
 from kivy.clock import Clock
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
@@ -91,8 +92,12 @@ class BizhawkSavePopup(Popup):
             finally:
                 self.dismiss()
             return
-        # Legacy-Flow: BizHawk-Beenden
-        asyncio.create_task(self.bizhawk.stop_and_terminate(self.bizhawk_instances))
+        # Legacy-Flow: BizHawk-Beenden — stop_and_terminate lebt im BH-Loop.
+        from frontend.bh_dispatch import bh_dispatch
+        bh_dispatch(
+            self.bizhawk.stop_and_terminate(self.bizhawk_instances),
+            name='bizhawk.stop_and_terminate',
+        )
         self.bizhawk_button.text = "Bizhawk starten"
         self.dismiss()
 
@@ -168,8 +173,9 @@ class MainMenu(Screen):
         self.app_version = app_version
         self.connectors = set()
 
-        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov, overlay_server)
-        self.connection = ConnectionController(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl, overlay_server)
+        _bh_thread = getattr(App.get_running_app(), 'bizhawk_thread', None)
+        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov, overlay_server, bizhawk_thread=_bh_thread)
+        self.connection = ConnectionController(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl, overlay_server, bizhawk_thread=_bh_thread)
         self.randomizer = RandomizerController(rnd, pl, configsave=configsave)
 
         super().__init__(**kwargs)

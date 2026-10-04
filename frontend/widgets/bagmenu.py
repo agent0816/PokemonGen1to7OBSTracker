@@ -668,7 +668,8 @@ class BagMenu(Screen):
 
     async def _do_add_rare_candies_bizhawk(self, client_id: str, count: int):
         try:
-            success, msg = await self.bizhawk.add_rare_candies(client_id, count)
+            from frontend.bh_dispatch import bh_submit
+            success, msg = await bh_submit(self.bizhawk.add_rare_candies(client_id, count))
         except Exception as err:
             logger.error(f"add_rare_candies (bizhawk) failed: {type(err)},{err}")
             logger.error(traceback.format_exc())

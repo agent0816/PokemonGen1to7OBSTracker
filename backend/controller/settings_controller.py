@@ -5,7 +5,7 @@ from backend.logging_setup import get_logger
 
 
 class SettingsController:
-    def __init__(self, configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov=None, overlay_server=None, nuz=None):
+    def __init__(self, configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov=None, overlay_server=None, nuz=None, bizhawk_thread=None):
         self.configsave = configsave
         self.sp = sp
         self.rem = rem
@@ -20,6 +20,9 @@ class SettingsController:
         self.munchlax = munchlax
         self.obs_websocket = obs_websocket
         self.overlay_server = overlay_server
+        # Fuer Port-Setter: Writes auf self.bizhawk.port muessen im BH-Loop
+        # passieren, nicht im Kivy-Loop (sonst race mit laufenden Reads).
+        self.bizhawk_thread = bizhawk_thread
 
         self.logger = get_logger(__name__, './logs/settings_controller.log')
 
@@ -56,7 +59,16 @@ class SettingsController:
         try:
             self.logger.debug(f"_update_bizhawk: server={self.bizhawk.server is not None}, port={self.bh.get('port')}")
             if not self.bizhawk.server:
-                self.bizhawk.port = self.bh['port']
+                port = self.bh['port']
+                if self.bizhawk_thread is not None:
+                    # Cross-thread-Write via Setter im BH-Loop. submit_coro_logged
+                    # loggt Exceptions via done_callback — nicht silent.
+                    self.bizhawk_thread.submit_coro_logged(
+                        self.bizhawk.set_port(port), name='set_port'
+                    )
+                else:
+                    # Fallback (Legacy-/Testkonstruktion): direkter Write wie bisher.
+                    self.bizhawk.port = port
         except Exception as err:
             self.logger.error(f"Fehler beim Aktualisieren von BizHawk: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())

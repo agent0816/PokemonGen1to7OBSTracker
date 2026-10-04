@@ -234,7 +234,8 @@ class BoxMenu(Screen):
                 0,
             )
             return None
-        return await self.bizhawk.read_and_decode_boxes(client_id)
+        from frontend.bh_dispatch import bh_submit
+        return await bh_submit(self.bizhawk.read_and_decode_boxes(client_id))
 
     def _after_refresh(self, player: int, box_count: int):
         self.refresh_button.disabled = False

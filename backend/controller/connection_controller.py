@@ -6,7 +6,7 @@ from backend.logging_setup import get_logger
 
 
 class ConnectionController:
-    def __init__(self, arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl, overlay_server=None):
+    def __init__(self, arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl, overlay_server=None, bizhawk_thread=None):
         self.arceus = arceus
         self.bizhawk = bizhawk
         self.citra = citra
@@ -16,8 +16,50 @@ class ConnectionController:
         self.bh = bh
         self.pl = pl
         self.overlay_server = overlay_server
+        # Cross-thread-Submitter fuer BH-Server-Coros (start/stop). Darf
+        # None sein — Fallback-Pfad weiter unten nutzt dann asyncio.create_task,
+        # was mit dem Kivy-Loop-Server (vor Phase 3a) rueckwaerts-kompatibel ist.
+        self.bizhawk_thread = bizhawk_thread
 
         self.logger = get_logger(__name__, './logs/connection_controller.log')
+
+    def _submit_bh(self, coro, name: str = ""):
+        """Schickt eine Bizhawk-Coro auf den BH-Loop und gibt ein awaitable zurueck.
+
+        Fehlt der BH-Thread (Legacy-/Testkonstruktion), fallback auf
+        asyncio.create_task — der Caller kann das Resultat genauso awaiten.
+        Bei disconnect_all werden die Awaitables in asyncio.wait geschoben;
+        das triggert die Exception-Delivery und verhindert "never retrieved"-
+        Warnungen.
+        """
+        if self.bizhawk_thread is not None:
+            fut = self.bizhawk_thread.submit_coro(coro)
+            awaitable = asyncio.wrap_future(fut)
+        else:
+            awaitable = asyncio.create_task(coro)
+        if name:
+            def _log(f):
+                # CancelledError ist ab Python 3.8 BaseException-Subklasse,
+                # `except Exception` wuerde ihn verfehlen und als "coro never
+                # awaited" durchschlagen. Shutdown-Cancel ist erwartet → INFO.
+                if f.cancelled():
+                    self.logger.info(f"_submit_bh({name}) wurde gecancelt.")
+                    return
+                try:
+                    exc = f.exception()
+                except asyncio.CancelledError:
+                    self.logger.info(
+                        f"_submit_bh({name}) wurde gecancelt (exception())."
+                    )
+                    return
+                except Exception:
+                    exc = None
+                if exc is not None:
+                    self.logger.error(
+                        f"_submit_bh({name}) failed: {type(exc).__name__}: {exc}"
+                    )
+            awaitable.add_done_callback(_log)
+        return awaitable
 
     # --- OBS ---
 
@@ -70,7 +112,7 @@ class ConnectionController:
         try:
             self.logger.debug(f"Bizhawk-Status: server={self.bizhawk.server is not None}, port={self.bizhawk.port}, path={self.bh.get('path')}")
             if not self.bizhawk.server:
-                asyncio.create_task(self.bizhawk.start(self.munchlax))
+                self._submit_bh(self.bizhawk.start(self.munchlax), name='bizhawk.start')
 
             log_dir = os.path.abspath("./logs")
             for i in range(self.pl["player_count"]):
@@ -107,7 +149,7 @@ class ConnectionController:
     def disconnect_all(self):
         """Trennt alle aktiven Verbindungen (BizHawk, OBS, Munchlax, Arceus, Overlay)."""
         tasks = [
-            asyncio.create_task(self.bizhawk.stop()),
+            self._submit_bh(self.bizhawk.stop(), name='bizhawk.stop'),
             asyncio.create_task(self.obs_websocket.disconnect()),
             asyncio.create_task(self.munchlax.disconnect()),
             asyncio.create_task(self.arceus.stop()),

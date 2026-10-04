@@ -30,6 +30,7 @@ from backend.classes.citrahandler import CitraHandler
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
 from backend.classes.overlay_server import OverlayServer
+from backend.bizhawk_thread import BizhawkThread
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, 'logs/frontend.log')
@@ -242,6 +243,17 @@ class TrackerApp(App):
 
         self.arceus = Arceus("", self.rem["client_port"], self.rem)
         self.bizhawk = Bizhawk(self.bh["host"], self.bh["port"], self.bh)
+        # Isolierter Thread + eigener asyncio-Loop fuer den BizHawk-Server.
+        # Phase 1: Thread lebt bereits, wird aber noch nicht genutzt — Server
+        # laeuft weiter auf dem Kivy-Loop (connection_controller zieht spaeter
+        # in Phase 3a um). set_kivy_loop merkt den Kivy-Loop fuer die
+        # BH->Kivy-Delegation (Phase 2).
+        self.bizhawk_thread = BizhawkThread()
+        self.bizhawk_thread.start()
+        # get_running_loop() statt get_event_loop(): Kivy's async_run garantiert
+        # einen aktiven Loop in build(); get_event_loop ist in Python 3.12+
+        # deprecated ausserhalb von Coroutines.
+        self.bizhawk.set_kivy_loop(asyncio.get_running_loop())
         self.bizhawk_instances = []
 
         self.citra = CitraHandler()
@@ -329,15 +341,62 @@ class TrackerApp(App):
 
         for bizhawk in self.bizhawk_instances:
             bizhawk.terminate()
+        # Bizhawk.stop() lebt auf dem BH-Loop — via submit_coro posten und als
+        # Future in die wait()-Liste packen, damit der Shutdown-Grace die
+        # Server-Close-Zeit mitabwartet.
+        bh_stop_fut = self.bizhawk_thread.submit_coro(self.bizhawk.stop())
+        bh_stop_awaitable = asyncio.wrap_future(bh_stop_fut)
         tasks = [
             asyncio.create_task(self.arceus.stop()),
             asyncio.create_task(self.citra.stop()),
-            asyncio.create_task(self.bizhawk.stop()),
+            bh_stop_awaitable,
             asyncio.create_task(self.obs_websocket.disconnect()),
             asyncio.create_task(self.munchlax.disconnect()),
             asyncio.create_task(self.overlay_server.stop()),
         ]
-        asyncio.create_task(asyncio.wait(tasks, timeout=3))
+        # Shutdown-Flow kapseln: wait() + BH-Thread-shutdown in einem Task,
+        # done_callback loggt Exceptions. Ersetzt das alte Fire-and-Forget-
+        # create_task-Paar, bei dem Shutdown-Fehler schweigend verschwanden.
+        shutdown_task = asyncio.create_task(
+            self._run_shutdown(tasks, bh_stop_awaitable)
+        )
+        shutdown_task.add_done_callback(self._log_shutdown_result)
+
+    async def _run_shutdown(self, tasks, bh_stop_awaitable):
+        # Worst-Case-Latenz: 3s (asyncio.wait) + 3s (bh_stop wait_for) +
+        # 5s (BizhawkThread.join im Executor) = max ~11s bis das Fenster
+        # endgueltig verschwindet, falls alle drei Pfade voll in ihre
+        # Timeouts laufen. Im Normalfall landen alle unter 500ms. Timeouts
+        # sind absichtlich grosszuegig, damit haengende Netz-Sockets
+        # (writer.wait_closed) nicht gewaltsam abgerissen werden.
+        try:
+            await asyncio.wait(tasks, timeout=3)
+        except Exception as err:
+            logger.error(f"Shutdown-wait fehlgeschlagen: {err}")
+        # BH-Thread erst stoppen, wenn stop() auf dem BH-Loop fertig ist.
+        # wait_for mit 3s Grace statt starres sleep — stop() beendet sich
+        # typischerweise unter 200ms, kann aber bei haengenden Clients
+        # bis zum serve_forever-cancel brauchen.
+        try:
+            await asyncio.wait_for(asyncio.shield(bh_stop_awaitable), timeout=3)
+        except asyncio.TimeoutError:
+            logger.warning("bizhawk.stop() Timeout — BH-Thread wird trotzdem gestoppt.")
+        except Exception as err:
+            logger.warning(f"bizhawk.stop() Fehler ignoriert fuer Shutdown: {err}")
+        try:
+            await self.bizhawk_thread.shutdown()
+        except Exception as err:
+            logger.error(f"BizhawkThread-Shutdown fehlgeschlagen: {err}")
+
+    def _log_shutdown_result(self, task):
+        try:
+            exc = task.exception()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            exc = None
+        if exc is not None:
+            logger.error(f"Shutdown-Task Exception: {type(exc).__name__}: {exc}")
 
     async def _auto_pull_sprites(self, repo_root: str):
         try:

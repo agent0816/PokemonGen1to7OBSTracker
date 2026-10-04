@@ -3,6 +3,7 @@ import os
 import socket
 import weakref
 from pathlib import Path
+from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 from kivy.uix.boxlayout import BoxLayout
@@ -133,7 +134,8 @@ class ScrollSettings(ScrollView):
         self.bh = bh
         self.pl = pl
 
-        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov, overlay_server, nuz)
+        _bh_thread = getattr(App.get_running_app(), 'bizhawk_thread', None)
+        self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov, overlay_server, nuz, bizhawk_thread=_bh_thread)
 
         self.games={
             'Rot und Blau':'gen1_red','Gelb':'gen1_yellow',

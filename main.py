@@ -61,11 +61,13 @@ async def _run_app(app):
         start_event_loop_monitor,
         stop_event_loop_monitor,
     )
-    start_event_loop_monitor()
+    start_event_loop_monitor("kivy")
     try:
         await app.async_run()
     finally:
-        await stop_event_loop_monitor()
+        # Nur den Kivy-Monitor stoppen — der BH-Monitor laeuft im
+        # BH-Loop und wird mit BizhawkThread.shutdown() mitgecancelled.
+        await stop_event_loop_monitor("kivy")
 
 
 def main():

@@ -6,7 +6,7 @@ from backend.logging_setup import get_logger
 
 
 class ConnectionController:
-    def __init__(self, arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl, overlay_server=None, bizhawk_thread=None):
+    def __init__(self, arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl, overlay_server=None, bizhawk_thread=None, arceus_thread=None, munchlax_thread=None):
         self.arceus = arceus
         self.bizhawk = bizhawk
         self.citra = citra
@@ -20,20 +20,31 @@ class ConnectionController:
         # None sein — Fallback-Pfad weiter unten nutzt dann asyncio.create_task,
         # was mit dem Kivy-Loop-Server (vor Phase 3a) rueckwaerts-kompatibel ist.
         self.bizhawk_thread = bizhawk_thread
+        # Analog zu bizhawk_thread: Arceus-Server + check_heartbeats +
+        # timer_tick_loop laufen seit Phase 1 der Loop-Isolation auf dem
+        # ArceusLoop. start()/stop()/disconnect_all muss die Coros via
+        # submit_coro dorthin schieben, sonst versuchen die Watchdog-Tasks
+        # auf dem Kivy-Loop zu laufen und blockieren bei GUI-Lag.
+        self.arceus_thread = arceus_thread
+        # Munchlax-Thread (Phase 3 der Loop-Isolation): connect/disconnect
+        # und alle Netz-/Teams-Coros laufen auf dem MunchlaxLoop. Von Kivy
+        # aus muss der Submit cross-thread passieren, sonst bindet
+        # asyncio.open_connection an den Kivy-Loop.
+        self.munchlax_thread = munchlax_thread
 
         self.logger = get_logger(__name__, './logs/connection_controller.log')
 
-    def _submit_bh(self, coro, name: str = ""):
-        """Schickt eine Bizhawk-Coro auf den BH-Loop und gibt ein awaitable zurueck.
+    def _submit_on_thread(self, thread, coro, name: str = ""):
+        """Schickt eine Coro auf einen isolierten Loop und gibt ein awaitable zurueck.
 
-        Fehlt der BH-Thread (Legacy-/Testkonstruktion), fallback auf
+        Fehlt der Thread (Legacy-/Testkonstruktion), fallback auf
         asyncio.create_task — der Caller kann das Resultat genauso awaiten.
         Bei disconnect_all werden die Awaitables in asyncio.wait geschoben;
         das triggert die Exception-Delivery und verhindert "never retrieved"-
         Warnungen.
         """
-        if self.bizhawk_thread is not None:
-            fut = self.bizhawk_thread.submit_coro(coro)
+        if thread is not None:
+            fut = thread.submit_coro(coro)
             awaitable = asyncio.wrap_future(fut)
         else:
             awaitable = asyncio.create_task(coro)
@@ -43,23 +54,32 @@ class ConnectionController:
                 # `except Exception` wuerde ihn verfehlen und als "coro never
                 # awaited" durchschlagen. Shutdown-Cancel ist erwartet → INFO.
                 if f.cancelled():
-                    self.logger.info(f"_submit_bh({name}) wurde gecancelt.")
+                    self.logger.info(f"_submit_on_thread({name}) wurde gecancelt.")
                     return
                 try:
                     exc = f.exception()
                 except asyncio.CancelledError:
                     self.logger.info(
-                        f"_submit_bh({name}) wurde gecancelt (exception())."
+                        f"_submit_on_thread({name}) wurde gecancelt (exception())."
                     )
                     return
                 except Exception:
                     exc = None
                 if exc is not None:
                     self.logger.error(
-                        f"_submit_bh({name}) failed: {type(exc).__name__}: {exc}"
+                        f"_submit_on_thread({name}) failed: {type(exc).__name__}: {exc}"
                     )
             awaitable.add_done_callback(_log)
         return awaitable
+
+    def _submit_bh(self, coro, name: str = ""):
+        return self._submit_on_thread(self.bizhawk_thread, coro, name=name)
+
+    def _submit_arc(self, coro, name: str = ""):
+        return self._submit_on_thread(self.arceus_thread, coro, name=name)
+
+    def _submit_mun(self, coro, name: str = ""):
+        return self._submit_on_thread(self.munchlax_thread, coro, name=name)
 
     # --- OBS ---
 
@@ -76,34 +96,42 @@ class ConnectionController:
 
     # --- Arceus (Server) ---
 
-    def start_server(self) -> asyncio.Task:
+    def start_server(self):
         """Startet den Arceus-Server, falls noch nicht gestartet."""
         if not self.arceus.server:
-            task = asyncio.create_task(self.arceus.start())
+            awaitable = self._submit_arc(self.arceus.start(), name='arceus.start')
             self.logger.info("Arceus-Server wird gestartet.")
-            return task
+            return awaitable
 
     def stop_server(self):
         """Trennt den Client und stoppt den Arceus-Server."""
-        asyncio.create_task(self.munchlax.disconnect())
-        asyncio.create_task(self.arceus.stop())
+        self._submit_mun(self.munchlax.disconnect(), name='munchlax.disconnect')
+        self._submit_arc(self.arceus.stop(), name='arceus.stop')
         self.logger.info("Arceus-Server wird gestoppt.")
 
     # --- Munchlax (Client) ---
 
-    def connect_client(self) -> asyncio.Task | None:
+    def connect_client(self):
         """Verbindet den Munchlax-Client, falls noch nicht verbunden."""
         self.logger.debug(f"Munchlax-Status vor Connect: is_connected={self.munchlax.is_connected}, host={self.munchlax.host}, port={self.munchlax.port}")
         if not self.munchlax.is_connected:
-            task = asyncio.create_task(self.munchlax.connect())
+            awaitable = self._submit_mun(self.munchlax.connect(), name='munchlax.connect')
             self.logger.info("Munchlax-Client wird verbunden.")
-            return task
+            return awaitable
 
     def disconnect_client(self):
-        """Trennt den Munchlax-Client, falls verbunden."""
-        if self.munchlax.is_connected:
-            asyncio.create_task(self.munchlax.disconnect())
-            self.logger.info("Munchlax-Client wird getrennt.")
+        """Trennt den Munchlax-Client. Idempotent — bricht auch waehrend
+        connect-Retry oder _auto_reconnect-Backoff ab (R4 WARN).
+
+        Rationale: `is_connected` ist waehrend der ConnectionRefused-
+        Retry-Phase (bis 1s) und waehrend _auto_reconnect-Backoff False.
+        Ein frueherer Guard `if self.munchlax.is_connected` hat User-
+        Disconnect in genau diesen Phasen stillschweigend verworfen,
+        anschliessend konnte die Verbindung doch zustande kommen und
+        der User hatte eine Verbindung, die er nicht wollte.
+        """
+        self._submit_mun(self.munchlax.disconnect(), name='munchlax.disconnect')
+        self.logger.info("Munchlax-Client wird getrennt.")
 
     # --- BizHawk ---
 
@@ -151,8 +179,8 @@ class ConnectionController:
         tasks = [
             self._submit_bh(self.bizhawk.stop(), name='bizhawk.stop'),
             asyncio.create_task(self.obs_websocket.disconnect()),
-            asyncio.create_task(self.munchlax.disconnect()),
-            asyncio.create_task(self.arceus.stop()),
+            self._submit_mun(self.munchlax.disconnect(), name='munchlax.disconnect'),
+            self._submit_arc(self.arceus.stop(), name='arceus.stop'),
         ]
         if self.overlay_server:
             tasks.append(asyncio.create_task(self.overlay_server.stop()))

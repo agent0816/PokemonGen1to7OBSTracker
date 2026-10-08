@@ -30,7 +30,9 @@ from backend.classes.citrahandler import CitraHandler
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
 from backend.classes.overlay_server import OverlayServer
+from backend.arceus_thread import ArceusThread
 from backend.bizhawk_thread import BizhawkThread
+from backend.munchlax_thread import MunchlaxThread
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, 'logs/frontend.log')
@@ -133,7 +135,12 @@ class Screens(ScreenManager):
             except Exception as err:
                 logger.error(f"_open_wipe_banner: banner.open() failed: {err}")
                 logger.error(traceback.format_exc())
-        munchlax.on_total_wipe_callback = lambda v: _open_wipe_banner(v)
+        # Clock-wrap: Munchlax ruft Callback aus seinem eigenen Thread
+        # (Phase 3). Clock.schedule_once ist thread-safe und bringt die
+        # UI-Mutation (Popup.open) sicher auf den Kivy-Main-Thread.
+        munchlax.on_total_wipe_callback = (
+            lambda v: Clock.schedule_once(lambda dt: _open_wipe_banner(v), 0)
+        )
 
         # Wipe-Dismissed-Callback: anderer Team-Mitglied hat sein Wipe-Popup
         # per Cancel geschlossen (nur coop/versus). Wenn unser Popup noch
@@ -142,7 +149,9 @@ class Screens(ScreenManager):
             banner = self._active_wipe_banner
             if banner is not None and getattr(banner, "_is_open", False):
                 banner.dismiss()
-        munchlax.on_wipe_dismissed_callback = lambda pid: _dismiss_wipe_banner(pid)
+        munchlax.on_wipe_dismissed_callback = (
+            lambda pid: Clock.schedule_once(lambda dt: _dismiss_wipe_banner(pid), 0)
+        )
 
         # Slot-Kollision: Server hat declared_player_ids abgelehnt weil ein anderer
         # Client denselben Netz-Slot belegt. Popup zeigt betroffene Slots + Konkurrenz.
@@ -242,21 +251,13 @@ class TrackerApp(App):
             self.session_list = yaml.safe_load(file)
 
         self.arceus = Arceus("", self.rem["client_port"], self.rem)
-        self.bizhawk = Bizhawk(self.bh["host"], self.bh["port"], self.bh)
-        # Isolierter Thread + eigener asyncio-Loop fuer den BizHawk-Server.
-        # Phase 1: Thread lebt bereits, wird aber noch nicht genutzt — Server
-        # laeuft weiter auf dem Kivy-Loop (connection_controller zieht spaeter
-        # in Phase 3a um). set_kivy_loop merkt den Kivy-Loop fuer die
-        # BH->Kivy-Delegation (Phase 2).
-        self.bizhawk_thread = BizhawkThread()
-        self.bizhawk_thread.start()
-        # get_running_loop() statt get_event_loop(): Kivy's async_run garantiert
-        # einen aktiven Loop in build(); get_event_loop ist in Python 3.12+
-        # deprecated ausserhalb von Coroutines.
-        self.bizhawk.set_kivy_loop(asyncio.get_running_loop())
-        self.bizhawk_instances = []
-
-        self.citra = CitraHandler()
+        # Isolierter Thread + eigener asyncio-Loop fuer den Arceus-Server.
+        # Alle Arceus-Coros (start, stop, start_helper_listener,
+        # handle_munchlax, check_heartbeats, timer_tick_loop) laufen von jetzt
+        # an auf dem ArceusLoop. Kivy-Code postet sie via
+        # connection_controller._submit_arc.
+        self.arceus_thread = ArceusThread()
+        self.arceus_thread.start()
 
         ip_to_connect = (
             "127.0.0.1" if self.rem["start_server"] else self.rem["server_ip_adresse"]
@@ -266,7 +267,41 @@ class TrackerApp(App):
             if self.rem["start_server"]
             else self.rem["server_port"]
         )
+        # Reihenfolge Phase 3: Munchlax + MunchlaxThread VOR BizhawkThread.
+        # BH-Dispatcher (`_dispatch_on_munchlax`) soll Encounter-/Team-Coros
+        # auf dem MunchlaxLoop landen lassen, nicht auf Kivy. Dafuer muss
+        # der MunchlaxThread laufen BEVOR `self.bizhawk.set_munchlax_loop`
+        # ihn als Target einhaengt. Munchlax selbst wird mit
+        # `set_kivy_loop` zusaetzlich das OBS/Overlay-Target bekommen.
         self.munchlax = Munchlax(ip_to_connect, port_to_connect, self.rem, self.sp, self.pl, self.configsave, self.nuz)
+        self.munchlax_thread = MunchlaxThread()
+        self.munchlax_thread.start()
+        # get_running_loop() statt get_event_loop(): Kivy's async_run garantiert
+        # einen aktiven Loop in build(); get_event_loop ist in Python 3.12+
+        # deprecated ausserhalb von Coroutines.
+        self.munchlax.set_kivy_loop(asyncio.get_running_loop())
+        # Backend-Thread-Ref: Munchlax-interne submit_cross_thread
+        # /dispatch_cross_thread brauchen den Thread, um Fremd-Thread-Coros
+        # (CitraHandler aus Kivy) auf den eigenen Loop zu posten, ohne
+        # kivy.app importieren zu muessen.
+        self.munchlax.set_own_thread(self.munchlax_thread)
+
+        self.bizhawk = Bizhawk(self.bh["host"], self.bh["port"], self.bh)
+        # Isolierter Thread + eigener asyncio-Loop fuer den BizHawk-Server
+        # (siehe commit f78a4ec).
+        self.bizhawk_thread = BizhawkThread()
+        self.bizhawk_thread.start()
+        # BH-Target ist der MunchlaxLoop (nicht mehr Kivy): BH dispatcht
+        # Encounter-/Teams-Sync via `_dispatch_on_munchlax` auf diesen Loop,
+        # Munchlax ruft dann OBS/Overlay via `_dispatch_on_kivy` ins
+        # Kivy-Loop. Zusaetzlich das Thread-Objekt uebergeben, damit BH-
+        # Dispatches das `_closing`-Shutdown-Window-Guard des Threads
+        # abfragen (R3 WARN).
+        self.bizhawk.set_munchlax_loop(self.munchlax_thread.loop)
+        self.bizhawk.set_munchlax_thread(self.munchlax_thread)
+        self.bizhawk_instances = []
+
+        self.citra = CitraHandler()
         # client_id wurde ggf. frisch generiert (Default 0 in initialize_tree) —
         # sofort persistieren, damit auch bei hartem Exit (Crash/Task-Kill) die
         # ID stabil bleibt. exit_check läuft nur bei sauberem Window-Close.
@@ -322,10 +357,31 @@ class TrackerApp(App):
                 asyncio.create_task(self._auto_pull_sprites(repo_root))
 
         if self.sp.get('obs_2_pc'):
-            def _save_sprites_from_helper():
-                self.save_config(f"{self.configsave}sprites.yml", self.sp)
-            asyncio.create_task(self.arceus.start_helper_listener(
-                self.sp, self.configsave, save_callback=_save_sprites_from_helper))
+            # save_callback laeuft im arceus-Loop (_handle_helper). sp selbst
+            # wird NICHT dort mutiert — stattdessen uebergibt _handle_helper
+            # die Payload hier an den Callback, der Mutation + YAML-Write
+            # atomar auf den Kivy-Loop verschiebt (Clock.schedule_once).
+            # Damit lesen Kivy-Code (UI, save_config) und arceus-Code das
+            # Config-Dict nie gleichzeitig.
+            def _save_sprites_from_helper(payload: dict):
+                def _do(_dt):
+                    try:
+                        self.sp.update(payload)
+                        self.save_config(
+                            f"{self.configsave}sprites.yml", self.sp
+                        )
+                    except Exception as err:
+                        logger.error(
+                            f"_save_sprites_from_helper failed: "
+                            f"{type(err).__name__}: {err}"
+                        )
+                Clock.schedule_once(_do, 0)
+            self.arceus_thread.submit_coro_logged(
+                self.arceus.start_helper_listener(
+                    self.sp, self.configsave,
+                    save_callback=_save_sprites_from_helper),
+                name='arceus.start_helper_listener',
+            )
 
         return Screens(*arguments)
 
@@ -341,52 +397,71 @@ class TrackerApp(App):
 
         for bizhawk in self.bizhawk_instances:
             bizhawk.terminate()
-        # Bizhawk.stop() lebt auf dem BH-Loop — via submit_coro posten und als
-        # Future in die wait()-Liste packen, damit der Shutdown-Grace die
-        # Server-Close-Zeit mitabwartet.
+        # Server-Stops leben auf ihren eigenen Loops — via submit_coro posten
+        # und als Futures in die wait()-Liste packen, damit der Shutdown-Grace
+        # beide Close-Zeiten mitabwartet.
         bh_stop_fut = self.bizhawk_thread.submit_coro(self.bizhawk.stop())
         bh_stop_awaitable = asyncio.wrap_future(bh_stop_fut)
+        arc_stop_fut = self.arceus_thread.submit_coro(self.arceus.stop())
+        arc_stop_awaitable = asyncio.wrap_future(arc_stop_fut)
+        # Munchlax lebt seit Phase 3 auf eigenem Loop. disconnect() muss
+        # dort laufen (sendet client_disconnect-Message vom Munchlax-Loop,
+        # wartet auf writer.wait_closed). Reihenfolge: Munchlax zuerst in
+        # der Awaitable-Liste, damit sein disconnect-Broadcast raus ist
+        # bevor Arceus die Server-Sockets zerreisst.
+        mun_disc_fut = self.munchlax_thread.submit_coro(self.munchlax.disconnect())
+        mun_disc_awaitable = asyncio.wrap_future(mun_disc_fut)
         tasks = [
-            asyncio.create_task(self.arceus.stop()),
+            mun_disc_awaitable,
+            arc_stop_awaitable,
             asyncio.create_task(self.citra.stop()),
             bh_stop_awaitable,
             asyncio.create_task(self.obs_websocket.disconnect()),
-            asyncio.create_task(self.munchlax.disconnect()),
             asyncio.create_task(self.overlay_server.stop()),
         ]
-        # Shutdown-Flow kapseln: wait() + BH-Thread-shutdown in einem Task,
+        # Shutdown-Flow kapseln: wait() + Thread-Shutdowns in einem Task,
         # done_callback loggt Exceptions. Ersetzt das alte Fire-and-Forget-
         # create_task-Paar, bei dem Shutdown-Fehler schweigend verschwanden.
         shutdown_task = asyncio.create_task(
-            self._run_shutdown(tasks, bh_stop_awaitable)
+            self._run_shutdown(tasks, bh_stop_awaitable, arc_stop_awaitable, mun_disc_awaitable)
         )
         shutdown_task.add_done_callback(self._log_shutdown_result)
 
-    async def _run_shutdown(self, tasks, bh_stop_awaitable):
-        # Worst-Case-Latenz: 3s (asyncio.wait) + 3s (bh_stop wait_for) +
-        # 5s (BizhawkThread.join im Executor) = max ~11s bis das Fenster
-        # endgueltig verschwindet, falls alle drei Pfade voll in ihre
-        # Timeouts laufen. Im Normalfall landen alle unter 500ms. Timeouts
-        # sind absichtlich grosszuegig, damit haengende Netz-Sockets
+    async def _run_shutdown(self, tasks, bh_stop_awaitable, arc_stop_awaitable, mun_disc_awaitable):
+        # Worst-Case-Latenz: 3s (asyncio.wait) + 3*3s (mun_disc/bh/arc
+        # wait_for) + 3*5s (Thread.join im Executor) = max ~27s bis das
+        # Fenster verschwindet, falls alle Pfade voll in ihre Timeouts
+        # laufen. Im Normalfall landen alle unter 500ms. Timeouts sind
+        # absichtlich grosszuegig, damit haengende Netz-Sockets
         # (writer.wait_closed) nicht gewaltsam abgerissen werden.
         try:
             await asyncio.wait(tasks, timeout=3)
         except Exception as err:
             logger.error(f"Shutdown-wait fehlgeschlagen: {err}")
-        # BH-Thread erst stoppen, wenn stop() auf dem BH-Loop fertig ist.
-        # wait_for mit 3s Grace statt starres sleep — stop() beendet sich
-        # typischerweise unter 200ms, kann aber bei haengenden Clients
-        # bis zum serve_forever-cancel brauchen.
+        for awt, name in [(mun_disc_awaitable, 'munchlax'),
+                          (bh_stop_awaitable, 'bizhawk'),
+                          (arc_stop_awaitable, 'arceus')]:
+            try:
+                await asyncio.wait_for(asyncio.shield(awt), timeout=3)
+            except asyncio.TimeoutError:
+                logger.warning(f"{name}.stop() Timeout — Thread wird trotzdem gestoppt.")
+            except Exception as err:
+                logger.warning(f"{name}.stop() Fehler ignoriert fuer Shutdown: {err}")
+        # Reihenfolge der Thread-Shutdowns: Munchlax zuerst (BH-Dispatcher
+        # zielt auf dessen Loop — nach seinem Shutdown prueft BH is_closed
+        # und loggt nur, statt zu crashen), dann BH, dann Arceus.
         try:
-            await asyncio.wait_for(asyncio.shield(bh_stop_awaitable), timeout=3)
-        except asyncio.TimeoutError:
-            logger.warning("bizhawk.stop() Timeout — BH-Thread wird trotzdem gestoppt.")
+            await self.munchlax_thread.shutdown()
         except Exception as err:
-            logger.warning(f"bizhawk.stop() Fehler ignoriert fuer Shutdown: {err}")
+            logger.error(f"MunchlaxThread-Shutdown fehlgeschlagen: {err}")
         try:
             await self.bizhawk_thread.shutdown()
         except Exception as err:
             logger.error(f"BizhawkThread-Shutdown fehlgeschlagen: {err}")
+        try:
+            await self.arceus_thread.shutdown()
+        except Exception as err:
+            logger.error(f"ArceusThread-Shutdown fehlgeschlagen: {err}")
 
     def _log_shutdown_result(self, task):
         try:

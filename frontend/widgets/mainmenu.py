@@ -174,8 +174,10 @@ class MainMenu(Screen):
         self.connectors = set()
 
         _bh_thread = getattr(App.get_running_app(), 'bizhawk_thread', None)
+        _arc_thread = getattr(App.get_running_app(), 'arceus_thread', None)
+        _mun_thread = getattr(App.get_running_app(), 'munchlax_thread', None)
         self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov, overlay_server, bizhawk_thread=_bh_thread)
-        self.connection = ConnectionController(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl, overlay_server, bizhawk_thread=_bh_thread)
+        self.connection = ConnectionController(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl, overlay_server, bizhawk_thread=_bh_thread, arceus_thread=_arc_thread, munchlax_thread=_mun_thread)
         self.randomizer = RandomizerController(rnd, pl, configsave=configsave)
 
         super().__init__(**kwargs)
@@ -530,8 +532,15 @@ class MainMenu(Screen):
     def change_munchlax_status(self, box):
         self._sync_connection_button_texts()
         if self.rem["start_server"]:
-            for client_id in self.arceus.munchlax_status:
-                name = self.arceus.munchlax_names[client_id]
+            # snapshot_clients liefert eine konsistente Momentaufnahme ueber
+            # beide Dicts (munchlax_status + munchlax_names). Live-Iteration
+            # ueber self.arceus.munchlax_status waere unsicher, da der
+            # arceus-Loop in einem anderen Thread (ArceusLoop) parallel
+            # Clients hinzufuegt/entfernt. Die Dict-Referenz
+            # self.arceus.munchlax_status wird weiterhin an den Circle
+            # uebergeben — ValueConnectionStatusCircle macht nur
+            # single-key-Lookups, die GIL-safe sind.
+            for client_id, (name, _status) in self.arceus.snapshot_clients().items():
                 if client_id not in self.ids:
                     UI.create_connection_status_with_labels(
                         box,
@@ -550,8 +559,13 @@ class MainMenu(Screen):
                 and self.ids["server_client_button"].text != "Client beenden"
             ):
                 self.ids["server_client_button"].text = "Client beenden"
-            for client_id, connected in self.munchlax.remote_connection_status.items():
-                name = self.munchlax.remote_connection_names.get(client_id, client_id[:8])
+            # Snapshot statt Live-items(): Munchlax-Loop kann wahrend der
+            # Iteration parallel remote_connection_status rebind oder einen
+            # neuen Client eintragen → `dict changed size during iteration`.
+            status_snapshot = self.munchlax.snapshot_remote_connection_status()
+            names_snapshot = self.munchlax.snapshot_remote_connection_names()
+            for client_id, connected in status_snapshot.items():
+                name = names_snapshot.get(client_id, client_id[:8])
                 if client_id not in self.ids:
                     UI.create_connection_status_with_labels(
                         box,
@@ -652,7 +666,10 @@ class MainMenu(Screen):
     async def _session_reset_async(self, handle):
         try:
             try:
-                ok, msg = await self.munchlax.reset_session_data()
+                # Munchlax auf eigenem Thread (Phase 3).
+                ok, msg = await self.munchlax.submit_cross_thread(
+                    self.munchlax.reset_session_data()
+                )
             except Exception as err:
                 logger.error(f"reset_session_data failed: {type(err)},{err}")
                 logger.error(traceback.format_exc())
@@ -850,15 +867,15 @@ class MainMenu(Screen):
 
     def _schedule_rando_sync(self, slot: int,
                               tm_moves: dict, hm_moves: dict) -> None:
-        """asyncio.create_task mit Strong-Ref in self.connectors — ohne das
-        wuerde der Task GC-raus laufen bevor send_rando_moves_sync
-        ausgefuehrt ist (siehe feedback_async_task_strong_ref).
+        """Munchlax auf eigenem Thread seit Phase 3 → cross-thread dispatch.
+        `dispatch_cross_thread` haelt das Future ueber `submit_coro_logged`
+        selbst stark (Thread-interne queue), die alte Strong-Ref in
+        `self.connectors` ist nicht mehr noetig.
         """
-        task = asyncio.create_task(
-            self.munchlax.send_rando_moves_sync(slot, tm_moves, hm_moves)
+        self.munchlax.dispatch_cross_thread(
+            self.munchlax.send_rando_moves_sync(slot, tm_moves, hm_moves),
+            name="send_rando_moves_sync",
         )
-        self.connectors.add(task)
-        task.add_done_callback(self.connectors.discard)
 
     def _local_player_slots(self) -> list[int]:
         """Spiegelt randomizer_controller._local_player_slots — lokale
@@ -910,7 +927,9 @@ class MainMenu(Screen):
     def clear_clients(self, instance):
         self.munchlax.clear_everything()
         box = self.ids["munchlax_status_box"]
-        id_list = [id for id in self.arceus.munchlaxes]
+        # snapshot_clients statt Live-Iteration — Thread-Safe gegen
+        # paralleles handle_munchlax / disconnect_client auf dem ArceusLoop.
+        id_list = list(self.arceus.snapshot_clients().keys())
         if not self.munchlax.is_connected:
             id_list.append(self.munchlax.client_id)
 
@@ -1040,8 +1059,9 @@ class MainMenu(Screen):
     def start_or_end_arceus(self, instance):
         if instance.state == "down":
             if not self.rem["start_server"]:
-                asyncio.create_task(self.munchlax.disconnect())
-                asyncio.create_task(self.arceus.stop())
+                # stop_server() kuemmert sich um munchlax.disconnect() und
+                # routet arceus.stop() ueber _submit_arc auf den ArceusLoop.
+                self.connection.stop_server()
 
     def switch_to_pokedex(self, instance):
         self.manager.current = "PokedexMenu"

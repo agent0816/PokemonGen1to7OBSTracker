@@ -378,7 +378,11 @@ class CitraHandler:
         """Box-Read als Reaktion auf Team-Änderung. Cache + Push via Munchlax."""
         try:
             boxes = await self.read_and_decode_boxes()
-            await self.munchlax.update_boxes(self.player_number, boxes)
+            # Munchlax lebt seit Phase 3 auf eigenem Thread. CitraHandler
+            # laeuft im Kivy-Loop → cross-thread submit zum Munchlax-Loop.
+            await self.munchlax.submit_cross_thread(
+                self.munchlax.update_boxes(self.player_number, boxes)
+            )
             self.logger.info(f"Auto-Box-Refresh player={self.player_number}: {len(boxes)} Boxen aktualisiert.")
         except Exception as err:
             self.logger.warning(f"Auto-Box-Refresh player={self.player_number} fehlgeschlagen: {type(err)},{err}")
@@ -550,7 +554,9 @@ class CitraHandler:
             pockets = await self.read_and_decode_bag()
             if not pockets:
                 return
-            await self.munchlax.update_bag(self.player_number, self.edition, pockets)
+            await self.munchlax.submit_cross_thread(
+                self.munchlax.update_bag(self.player_number, self.edition, pockets)
+            )
             self.logger.debug(
                 f"Auto-Bag-Refresh player={self.player_number}: "
                 f"{', '.join(f'{k}={len(v)}' for k, v in pockets.items())}"
@@ -701,21 +707,25 @@ class CitraHandler:
                     f"shiny_override={result.is_shiny_override} "
                     f"dupes={result.is_dupes_skip} balls={result.has_balls}"
                 )
-                asyncio.create_task(self.munchlax.send_encounter_sync({
-                    "personality": int(opp["personality"]),
-                    "owner": owner,
-                    "edition": int(self.edition),
-                    "route": int(route),
-                    "dexnr": int(opp["dexnr"]),
-                    "lvl": int(opp["lvl"]),
-                    "shiny": int(opp["shiny"]),
-                    "is_first": int(result.is_first),
-                    "is_shiny_override": int(result.is_shiny_override),
-                    "is_dupes_skip": int(result.is_dupes_skip),
-                    "has_balls": int(result.has_balls),
-                    "method": result.method,
-                    "outcome": result.outcome,
-                }))
+                # Munchlax auf eigenem Thread (Phase 3) → cross-thread dispatch.
+                self.munchlax.dispatch_cross_thread(
+                    self.munchlax.send_encounter_sync({
+                        "personality": int(opp["personality"]),
+                        "owner": owner,
+                        "edition": int(self.edition),
+                        "route": int(route),
+                        "dexnr": int(opp["dexnr"]),
+                        "lvl": int(opp["lvl"]),
+                        "shiny": int(opp["shiny"]),
+                        "is_first": int(result.is_first),
+                        "is_shiny_override": int(result.is_shiny_override),
+                        "is_dupes_skip": int(result.is_dupes_skip),
+                        "has_balls": int(result.has_balls),
+                        "method": result.method,
+                        "outcome": result.outcome,
+                    }),
+                    name="send_encounter_sync(wild)",
+                )
         except Exception as err:
             self.logger.error(f"Encounter-Read fehlgeschlagen: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
@@ -747,8 +757,9 @@ class CitraHandler:
                 int(battle_pv), owner, outcome)
             if updated:
                 self.logger.info(f"Encounter-Outcome: PV={battle_pv:#x} → {outcome}")
-                asyncio.create_task(
-                    self.munchlax.send_encounter_outcome(int(battle_pv), owner, outcome)
+                self.munchlax.dispatch_cross_thread(
+                    self.munchlax.send_encounter_outcome(int(battle_pv), owner, outcome),
+                    name="send_encounter_outcome",
                 )
         except Exception as err:
             self.logger.error(f"Outcome-Check fehlgeschlagen: {type(err)},{err}")
@@ -829,21 +840,24 @@ class CitraHandler:
                         self.logger.error(traceback.format_exc())
                         starter_result = None
                     if starter_result is not None and not starter_result.already_logged:
-                        asyncio.create_task(self.munchlax.send_encounter_sync({
-                            "personality": int(first_pv),
-                            "owner": owner,
-                            "edition": int(self.edition),
-                            "route": int(starter_result.route),
-                            "dexnr": int(starter_result.dexnr),
-                            "lvl": int(starter_result.lvl),
-                            "shiny": int(starter_result.shiny),
-                            "is_first": int(starter_result.is_first),
-                            "is_shiny_override": int(starter_result.is_shiny_override),
-                            "is_dupes_skip": int(starter_result.is_dupes_skip),
-                            "has_balls": int(starter_result.has_balls),
-                            "method": starter_result.method,
-                            "outcome": starter_result.outcome,
-                        }))
+                        self.munchlax.dispatch_cross_thread(
+                            self.munchlax.send_encounter_sync({
+                                "personality": int(first_pv),
+                                "owner": owner,
+                                "edition": int(self.edition),
+                                "route": int(starter_result.route),
+                                "dexnr": int(starter_result.dexnr),
+                                "lvl": int(starter_result.lvl),
+                                "shiny": int(starter_result.shiny),
+                                "is_first": int(starter_result.is_first),
+                                "is_shiny_override": int(starter_result.is_shiny_override),
+                                "is_dupes_skip": int(starter_result.is_dupes_skip),
+                                "has_balls": int(starter_result.has_balls),
+                                "method": starter_result.method,
+                                "outcome": starter_result.outcome,
+                            }),
+                            name="send_encounter_sync(starter)",
+                        )
 
         # Party-Slot-Reihenfolge statt Set-Hash-Order — konsistent mit
         # Starter-Fix. Bei zwei neuen Gift-PVs im selben Tick bleibt so die
@@ -887,26 +901,32 @@ class CitraHandler:
                     f"Gift erkannt: dex={dexnr} lv={pokemon.lvl} "
                     f"method={result.method} zone_id=0x{zone_id:04X}"
                 )
-                asyncio.create_task(self.munchlax.send_encounter_sync({
-                    "personality": int(pv),
-                    "owner": owner,
-                    "edition": int(self.edition),
-                    "route": int(result.route),
-                    "dexnr": int(result.dexnr),
-                    "lvl": int(result.lvl),
-                    "shiny": int(result.shiny),
-                    "is_first": int(result.is_first),
-                    "is_shiny_override": int(result.is_shiny_override),
-                    "is_dupes_skip": int(result.is_dupes_skip),
-                    "has_balls": int(result.has_balls),
-                    "method": result.method,
-                    "outcome": result.outcome,
-                }))
+                self.munchlax.dispatch_cross_thread(
+                    self.munchlax.send_encounter_sync({
+                        "personality": int(pv),
+                        "owner": owner,
+                        "edition": int(self.edition),
+                        "route": int(result.route),
+                        "dexnr": int(result.dexnr),
+                        "lvl": int(result.lvl),
+                        "shiny": int(result.shiny),
+                        "is_first": int(result.is_first),
+                        "is_shiny_override": int(result.is_shiny_override),
+                        "is_dupes_skip": int(result.is_dupes_skip),
+                        "has_balls": int(result.has_balls),
+                        "method": result.method,
+                        "outcome": result.outcome,
+                    }),
+                    name="send_encounter_sync(gift)",
+                )
             if result and result.token_earned:
                 # Trigger auf dem Event-Loop-Thread — process_gift_encounter im
                 # Executor-Worker konnte kein asyncio.create_task rufen.
                 self.logger.info(f"Token-Earn ausgelöst für {owner}")
-                asyncio.create_task(self.munchlax.send_soullink_token_earned(owner))
+                self.munchlax.dispatch_cross_thread(
+                    self.munchlax.send_soullink_token_earned(owner),
+                    name="send_soullink_token_earned",
+                )
 
     async def _auto_reconnect(self) -> bool:
         delays = [10, 20, 40]

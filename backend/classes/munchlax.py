@@ -107,10 +107,10 @@ class Munchlax:
         # Dict-Iterationen (_persist_teams, Overlay-Broadcast, TrainerBox)
         # koennen in `RuntimeError: dict changed size during iteration`
         # laufen, wenn BH gleichzeitig einen neuen Player-Key einfuegt.
-        # Writer wrappen jeden strukturellen Write in `with bh_state_lock`,
+        # Writer wrappen jeden strukturellen Write in `with state_lock`,
         # Reader snapshoten den Dict-Zustand unter gleichem Lock und
         # iterieren das Snapshot ausserhalb.
-        self.bh_state_lock = threading.Lock()
+        self.state_lock = threading.Lock()
         self.bizhawk_teams = {}
         self.sorted_teams = {}
         self.unsorted_teams = {}
@@ -166,8 +166,42 @@ class Munchlax:
         self._pending_rando_moves: dict[int, dict] = {}
         self._rando_flush_task: asyncio.Task | None = None
         self.rando_abilities_gen3: dict[int, list[int]] | None = None
-        self.writer_lock = asyncio.Lock()
-        self.disconnect_lock = asyncio.Lock()
+        # Lazy init in connect(): Lock an aktuellen Loop binden. Im __init__
+        # lief Munchlax historisch unter Kivy-Loop; mit Thread-Isolation
+        # (Phase 3) laeuft connect/receive_messages auf dem Munchlax-Loop
+        # eines dedizierten OS-Threads. asyncio.Lock() in __init__ wuerde
+        # an den Kivy-Loop binden und spaeter RuntimeError werfen.
+        self.writer_lock: asyncio.Lock | None = None
+        self.disconnect_lock: asyncio.Lock | None = None
+        # Cross-Thread-Delegation: wird in app.py:build() nach
+        # Munchlax-Instanzierung via set_kivy_loop() auf den Kivy-Loop
+        # gesetzt. _call_on_kivy / _dispatch_on_kivy posten OBS-/Overlay-
+        # /UI-Coros dort hin, auch wenn der Caller im Munchlax-Thread
+        # laeuft. None → Fallback auf direktes await (Testkontext).
+        self._kivy_loop: asyncio.AbstractEventLoop | None = None
+        # Connect-Generation-Counter (R4 WARN): bool-Flag war anfaellig
+        # fuer disconnect→connect-Race (B resettet A's Cancel). Jetzt
+        # inkrementiert disconnect() den Counter, connect() snapshotet
+        # ihn am Entry und bricht ab, sobald die Snapshot-Generation
+        # nicht mehr der aktuellen entspricht — jeder in-flight connect
+        # kann so sauber abbrechen, auch wenn ein frischer connect schon
+        # laeuft.
+        self._connect_generation = 0
+        # Serialisiert connect()-Aufrufe (R6 KRIT): zwei parallele
+        # connects (User-Klick waehrend _auto_reconnect) wuerden sonst
+        # self.reader/self.writer gegenseitig clobbern und stale-Handshake-
+        # Writes in frische Sockets senden. Lock lazy im Munchlax-Loop
+        # angelegt (siehe _ensure_async_locks).
+        self._connect_lock: asyncio.Lock | None = None
+        # OBS-Serialisierung: der Lock liegt jetzt am OBS-Objekt
+        # (`obs._obs_serial`), damit auch OBS.redraw_obs + redraw-Pfade
+        # aus settings_controller unter derselben Reihenfolge laufen.
+        # Siehe backend/classes/obs.py.
+        # Referenz auf den eigenen MunchlaxThread; via set_own_thread()
+        # von app.py gesetzt. submit_cross_thread/dispatch_cross_thread
+        # posten damit Coros aus Fremd-Threads (z.B. CitraHandler aus
+        # Kivy) auf den Munchlax-Loop. None → create_task-Fallback.
+        self._own_thread = None
         self._last_bag_hash: dict[str, str] = {}
         # Soullink-State, gespiegelt vom Server. Persistenz auf DB kommt in
         # späteren Tasks (Frontend/Persistierung); hier reine In-Memory-Ablage.
@@ -230,6 +264,21 @@ class Munchlax:
         self._msg_counters: dict[str, int] = {"recv": 0, "sent": 0}
         self._err_counts: dict[str, dict] = {}
         self._last_disconnect_reason: str = "unknown"
+        # Markiert die Session, fuer die ein intentional-Disconnect
+        # bereits in Flight ist (R10 WARN): verhindert, dass ein paralleler
+        # Loop-Error-Handler (`alter_teams`/`send_heartbeat`/`send_teams`)
+        # mit demselben `_session_id` den intentional-Grund mit einem
+        # transienten `recv_*`/`heartbeat_*` ueberschreibt, obwohl der
+        # Disconnect vom User kommt.
+        self._intentional_session: str | None = None
+        # Signal fuer `_auto_reconnect`: User-Disconnect ist unterwegs
+        # oder gerade abgeschlossen (R11 KRIT). Ohne dieses Flag koennte
+        # ein Loop-Error-Disconnect, der VOR dem intentional-Call das
+        # Lock bekommt, nach seiner Teardown-Phase einen `_auto_reconnect`
+        # spawnen, dessen reference im intentional-Pfad (vor Lock) noch
+        # nicht existierte. Ergebnis: User klickt Trennen, Verbindung
+        # wird kurz zu, Reconnect laeuft trotzdem durch.
+        self._user_disconnect_pending = False
         self._session_started_at: float = 0.0
 
         # Phase C — Replay-Buffer. Haelt (seq, payload)-Tupel. Monoton
@@ -283,14 +332,23 @@ class Munchlax:
         self.logger = get_logger(__name__, './logs/munchlax.log')
 
     def clear_everything(self):
-        # bh_state_lock schuetzt den Rebind: BH-Thread kann sonst zwischen
-        # dem Lesen von `teams = self.munchlax.bizhawk_teams` (bizhawk.py)
-        # und dem anschliessenden `with bh_state_lock:` auf dem alten Dict
-        # arbeiten → Writes landen im verworfenen Dict und fehlen bis zum
-        # naechsten Tick, oder unsorted_teams[player] wirft KeyError.
-        # player_names: clear() + update() (statt Rebind) nicht noetig,
-        # da `.clear()` bereits Lock-sicher den Inhalt leert.
-        with self.bh_state_lock:
+        # state_lock schuetzt den Rebind: BH-Thread und (seit Phase 3)
+        # Munchlax-Thread schreiben parallel auf shared State. Zwischen dem
+        # Lesen von `teams = self.munchlax.bizhawk_teams` (bizhawk.py) und
+        # dem anschliessenden `with state_lock:` koennten Writes im
+        # verworfenen Dict landen und fehlen bis zum naechsten Tick, oder
+        # Iterationen in Kivy wuerden `dict changed size`-RuntimeErrors
+        # werfen. Alle cross-thread-sichtbaren Dicts gehen deshalb unter
+        # Lock.
+        # clear_everything laeuft aus Kivy (`clear_clients` Button), die
+        # mutierten Felder gehoeren aber zum Munchlax-Thread. Alle Rebinds
+        # unter state_lock, damit konkurrierende Munchlax-Loop-Reads nicht
+        # halbleere Dicts sehen oder RuntimeError (`dict changed size`).
+        # Einzel-Key-Writes aus dem Munchlax-Loop auf diese Felder sind
+        # GIL-atomar (`.add()`, `[k] = v`, `.append()`) — der kurze Race-
+        # Spalt beim Rebind kostet im Worst-Case eine verlorene Add-Op,
+        # das ist bei Reset-Semantik vertretbar.
+        with self.state_lock:
             self.bizhawk_teams = {}
             self.sorted_teams = {}
             self.unsorted_teams = {}
@@ -298,24 +356,24 @@ class Munchlax:
             self.editions = {}
             self.boxes = {}
             self.player_names.clear()
-        self.client_names.clear()
-        self.remote_connection_status.clear()
-        self.remote_connection_names.clear()
+            self.client_names.clear()
+            self.remote_connection_status.clear()
+            self.remote_connection_names.clear()
+            self.soullink_config = {}
+            self.soullink_links = {}
+            self.soullink_deaths = {}
+            self.soullink_versus_state = {}
+            self.soullink_versus_battles = []
+            self.soullink_team_state = {}
+            self.soullink_rule_violations = {}
+            self.soullink_tokens = {}
+            self.timer_state = {}
+            self.countdown_state = {}
+            self._reported_deaths = set()
+            self._pending_death_reports = []
+            self.timer_last_tick = None
+            self.countdown_last_tick = None
         self.initialized = False
-        self.soullink_config = {}
-        self.soullink_links = {}
-        self.soullink_deaths = {}
-        self.soullink_versus_state = {}
-        self.soullink_versus_battles = []
-        self.soullink_team_state = {}
-        self.soullink_rule_violations = {}
-        self.soullink_tokens = {}
-        self._reported_deaths = set()
-        self._pending_death_reports = []
-        self.timer_state = {}
-        self.timer_last_tick = None
-        self.countdown_state = {}
-        self.countdown_last_tick = None
         # rando_tm_moves/rando_hm_moves bewusst NICHT clearen: die ROMs der
         # Clients bleiben randomisiert, bis zum naechsten Randomize kommt
         # kein Sync-Push mehr. Clearen wuerde Overlays bis zum naechsten
@@ -330,30 +388,31 @@ class Munchlax:
         Behalten: ``player_names``, ``client_names``, ``remote_connection_*``
         (Verbindungs-Metadaten, kein Session-Content) und ``soullink_config``.
         """
-        # Analog clear_everything: Rebind unter bh_state_lock, damit kein
-        # BH-Write im verworfenen Dict landet (siehe dort).
-        with self.bh_state_lock:
+        # Analog clear_everything: alle Rebinds unter state_lock, damit
+        # weder BH- noch Munchlax-Writes im verworfenen Dict landen und
+        # keine Reader auf halbleere Dicts stossen.
+        with self.state_lock:
             self.bizhawk_teams = {}
             self.sorted_teams = {}
             self.unsorted_teams = {}
             self.badges = {}
             self.editions = {}
             self.boxes = {}
+            self.soullink_links = {}
+            self.soullink_deaths = {}
+            self.soullink_versus_state = {}
+            self.soullink_versus_battles = []
+            self.soullink_team_state = {}
+            self.soullink_rule_violations = {}
+            self.soullink_tokens = {}
+            self._reported_deaths = set()
+            self._pending_death_reports = []
+            self._wipe_signaled = {}
+            self._last_wipe_player_id = None
+            self._pokemon_hp_state = {}
+            self._last_bag_hash = {}
+            self.last_box_refresh_at = {}
         self.initialized = False
-        self.soullink_links = {}
-        self.soullink_deaths = {}
-        self.soullink_versus_state = {}
-        self.soullink_versus_battles = []
-        self.soullink_team_state = {}
-        self.soullink_rule_violations = {}
-        self.soullink_tokens = {}
-        self._reported_deaths = set()
-        self._pending_death_reports = []
-        self._wipe_signaled = {}
-        self._last_wipe_player_id = None
-        self._pokemon_hp_state = {}
-        self._last_bag_hash = {}
-        self.last_box_refresh_at = {}
         # rando_tm_moves/rando_hm_moves bewusst NICHT clearen — siehe
         # Begruendung in clear_everything.
         # Replay-Buffer leeren — Payloads referenzieren den alten Session-State
@@ -363,6 +422,280 @@ class Munchlax:
         # resume_ack vom Server traegt last_seen_seq=0 fuer diesen Client
         # (wird in Arceus beim Session-Reset ebenfalls geloescht).
         self._outbound_buffer.clear()
+
+    # ------------------------------------------------------------------
+    # Snapshot-Getter fuer cross-thread-Reads aus dem Kivy-Loop.
+    #
+    # Seit Phase 3 (Loop-Isolation) laufen Munchlax-Loop (receive_messages,
+    # alter_teams, Timer-Ticks) und BH-Thread (update_teams) parallel zu
+    # Kivy. Direkt iteration ueber die Live-Dicts aus Kivy wuerde
+    # `RuntimeError: dict changed size during iteration` werfen, sobald
+    # ein paralleler Writer einen Key einfuegt oder entfernt.
+    #
+    # Die Snapshot-Getter kopieren den Dict-Zustand unter `state_lock`
+    # einmal flach aus, der Caller iteriert dann ausserhalb des Locks.
+    # Shallow-Copy reicht fuer Dicts mit primitiven Werten; verschachtelte
+    # Dicts (badges, sorted_teams) werden level-2 kopiert, damit auch die
+    # inneren Dict-Objekte stabil iteriert werden koennen.
+    # ------------------------------------------------------------------
+
+    def snapshot_badges(self) -> dict:
+        with self.state_lock:
+            return {pid: dict(b) if isinstance(b, dict) else b
+                    for pid, b in self.badges.items()}
+
+    def snapshot_sorted_teams(self) -> dict:
+        with self.state_lock:
+            return {pid: list(t) if isinstance(t, list) else t
+                    for pid, t in self.sorted_teams.items()}
+
+    def snapshot_unsorted_teams(self) -> dict:
+        with self.state_lock:
+            return {pid: list(t) if isinstance(t, list) else t
+                    for pid, t in self.unsorted_teams.items()}
+
+    def snapshot_editions(self) -> dict:
+        with self.state_lock:
+            return dict(self.editions)
+
+    def snapshot_player_names(self) -> dict:
+        with self.state_lock:
+            return dict(self.player_names)
+
+    def snapshot_client_names(self) -> dict:
+        with self.state_lock:
+            return dict(self.client_names)
+
+    def snapshot_remote_connection_status(self) -> dict:
+        with self.state_lock:
+            return dict(self.remote_connection_status)
+
+    def snapshot_remote_connection_names(self) -> dict:
+        with self.state_lock:
+            return dict(self.remote_connection_names)
+
+    def snapshot_timer_state(self) -> dict:
+        with self.state_lock:
+            return dict(self.timer_state)
+
+    def snapshot_countdown_state(self) -> dict:
+        with self.state_lock:
+            return dict(self.countdown_state)
+
+    def snapshot_soullink_links(self) -> dict:
+        with self.state_lock:
+            return {pid: dict(v) if isinstance(v, dict) else v
+                    for pid, v in self.soullink_links.items()}
+
+    def snapshot_soullink_team_state(self) -> dict:
+        with self.state_lock:
+            return {tid: dict(v) if isinstance(v, dict) else v
+                    for tid, v in self.soullink_team_state.items()}
+
+    def snapshot_soullink_tokens(self) -> dict:
+        with self.state_lock:
+            return {owner: dict(v) if isinstance(v, dict) else v
+                    for owner, v in self.soullink_tokens.items()}
+
+    def snapshot_rando_tm_moves(self) -> dict:
+        with self.state_lock:
+            return {pid: dict(v) if isinstance(v, dict) else v
+                    for pid, v in self.rando_tm_moves.items()}
+
+    def snapshot_rando_hm_moves(self) -> dict:
+        with self.state_lock:
+            return {pid: dict(v) if isinstance(v, dict) else v
+                    for pid, v in self.rando_hm_moves.items()}
+
+    # ------------------------------------------------------------------
+    # Cross-Thread-Dispatcher auf den Kivy-Loop.
+    #
+    # Seit Phase 3 laeuft Munchlax (connect, receive_messages, alter_teams,
+    # Timer-Ticks) auf einem eigenen asyncio-Loop im MunchlaxThread. OBS,
+    # OverlayServer und UI leben weiterhin auf dem Kivy-Loop. Direkte
+    # `await self.obs.xxx(...)` aus dem Munchlax-Loop wuerde `asyncio.Lock`-
+    # Instanzen anfassen, die an den Kivy-Loop gebunden sind → RuntimeError
+    # "attached to a different loop".
+    #
+    # Blaupause: backend/classes/bizhawk.py:1898-2009
+    # (set_munchlax_loop/_call_on_munchlax/_dispatch_on_munchlax/_guard_coro).
+    # ------------------------------------------------------------------
+
+    def set_own_thread(self, thread) -> None:
+        """Setzt die MunchlaxThread-Referenz fuer Fremd-Thread-Submits.
+
+        Wird in frontend/app.py:build() nach Thread-Start aufgerufen.
+        submit_cross_thread / dispatch_cross_thread nutzen die Ref, um
+        Coros aus anderen Threads (CitraHandler auf Kivy-Loop, ggf.
+        andere Backend-Komponenten) auf den eigenen Loop zu posten,
+        ohne dass der Caller die App-Singleton kennen muss.
+        """
+        self._own_thread = thread
+
+    def submit_cross_thread(self, coro) -> asyncio.Future:
+        """Postet eine Coroutine auf den Munchlax-Loop. Thread-safe.
+
+        Fallback (Testkontext, kein Thread gesetzt): create_task auf dem
+        aktuellen Loop. Caller erhaelt entweder asyncio.Future (nach
+        wrap_future) oder einen Task — beide via `await` abwartbar.
+
+        Caller-Erwartung: `await submit_cross_thread(...)` kann RuntimeError
+        werfen, wenn der Munchlax-Thread bereits im Shutdown ist (R3 WARN).
+        Widget-Caller sollten im try/except arbeiten, oder stattdessen
+        `dispatch_cross_thread` nutzen, das Shutdown-Fehler schluckt.
+        """
+        thread = self._own_thread
+        if thread is None or thread.loop is None:
+            return asyncio.create_task(coro)
+        return asyncio.wrap_future(thread.submit_coro(coro))
+
+    def dispatch_cross_thread(self, coro, name: str = "<unnamed>") -> None:
+        """Fire-and-forget-Dispatch einer Coroutine auf den Munchlax-Loop.
+
+        Ersatz fuer `asyncio.create_task(munchlax.xxx(...))` aus einem
+        anderen Thread. Exceptions laufen durch submit_coro_logged ins
+        Munchlax-Threadlog, nicht silent.
+        """
+        thread = self._own_thread
+        if thread is None or thread.loop is None:
+            task = asyncio.create_task(coro)
+
+            def _log(t):
+                # CancelledError ist BaseException-Subklasse — getrennter
+                # cancelled()-Zweig plus Exception-Handler in exception().
+                if t.cancelled():
+                    self.logger.info(f"dispatch_cross_thread({name}) wurde gecancelt.")
+                    return
+                try:
+                    exc = t.exception()
+                except asyncio.CancelledError:
+                    self.logger.info(
+                        f"dispatch_cross_thread({name}) wurde gecancelt (exception())."
+                    )
+                    return
+                except Exception:
+                    exc = None
+                if exc is not None:
+                    self.logger.error(
+                        f"dispatch_cross_thread({name}) failed: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+            task.add_done_callback(_log)
+            return
+        try:
+            thread.submit_coro_logged(coro, name=name)
+        except RuntimeError as err:
+            # MunchlaxThread bereits im Shutdown (`_closing=True`): coro
+            # wurde durch submit_coro bereits geschlossen. Fire-and-forget-
+            # Semantik → kein Weiterwerfen in den Caller (Kivy-Button).
+            self.logger.warning(
+                f"dispatch_cross_thread({name}): MunchlaxThread shutdown — "
+                f"Dispatch verworfen ({err})"
+            )
+
+    def set_kivy_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Setzt die Kivy-Loop-Referenz fuer cross-thread-Delegation.
+
+        Wird in frontend/app.py:build() nach Munchlax-Instanzierung
+        aufgerufen. _call_on_kivy / _dispatch_on_kivy nutzen diese Ref,
+        um OBS-/Overlay-/UI-Coros thread-safe auf den Kivy-Loop zu posten,
+        auch wenn der Caller im Munchlax-Thread laeuft.
+        """
+        self._kivy_loop = loop
+
+    async def _call_on_kivy(self, coro):
+        """Delegiert eine Coroutine an den Kivy-Loop und wartet auf Ergebnis.
+
+        Fallback: wenn _kivy_loop (noch) nicht gesetzt ist (Testkontext),
+        oder falls der Call bereits auf dem Kivy-Loop lebt, direkt `await`
+        der Coro — identisches Ergebnis ohne cross-thread-Overhead.
+        """
+        current = None
+        try:
+            current = asyncio.get_running_loop()
+        except RuntimeError:
+            current = None
+        kivy_loop = getattr(self, '_kivy_loop', None)
+        if kivy_loop is None or current is kivy_loop:
+            return await coro
+        if kivy_loop.is_closed():
+            try:
+                coro.close()
+            except Exception:
+                pass
+            raise RuntimeError("_call_on_kivy: Kivy-Loop ist geschlossen")
+        # TOCTOU: zwischen is_closed()-Check und run_coroutine_threadsafe
+        # kann der Kivy-Loop sterben (Shutdown-Race). Submit wuerde dann
+        # RuntimeError werfen und die Coro ungeschlossen zuruecklassen.
+        try:
+            fut = asyncio.run_coroutine_threadsafe(coro, kivy_loop)
+        except RuntimeError as err:
+            try:
+                coro.close()
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"_call_on_kivy: Submit abgelehnt (Loop-Shutdown-Race): {err}"
+            ) from err
+        return await asyncio.wrap_future(fut)
+
+    def _dispatch_on_kivy(self, coro) -> None:
+        """Fire-and-forget-Dispatch einer Coroutine auf den Kivy-Loop.
+
+        Ersatz fuer `asyncio.create_task(obs.xxx(...))` an Call-Sites ohne
+        Rueckkanal. Fehler aus der Coroutine werden ueber `_guard_coro`
+        geloggt (nicht silent gedropt).
+        """
+        try:
+            current = asyncio.get_running_loop()
+        except RuntimeError:
+            current = None
+        kivy_loop = getattr(self, '_kivy_loop', None)
+        if kivy_loop is None or current is kivy_loop:
+            if current is None:
+                self.logger.error(
+                    "_dispatch_on_kivy ohne Loop — Coro verworfen."
+                )
+                try:
+                    coro.close()
+                except Exception:
+                    pass
+                return
+            asyncio.create_task(self._guard_coro(coro))
+            return
+        if kivy_loop.is_closed():
+            self.logger.warning(
+                "_dispatch_on_kivy: Kivy-Loop geschlossen, Coro verworfen."
+            )
+            try:
+                coro.close()
+            except Exception:
+                pass
+            return
+        # Wrapper-Coro materialisieren, damit sie bei Submit-Fehler
+        # geschlossen werden kann (sonst "coroutine was never awaited").
+        guard = self._guard_coro(coro)
+        try:
+            asyncio.run_coroutine_threadsafe(guard, kivy_loop)
+        except RuntimeError as err:
+            self.logger.warning(
+                f"_dispatch_on_kivy submit fehlgeschlagen: {err}"
+            )
+            try:
+                guard.close()
+            except Exception:
+                pass
+            try:
+                coro.close()
+            except Exception:
+                pass
+
+    async def _guard_coro(self, coro):
+        try:
+            await coro
+        except Exception as err:
+            self.logger.error(f"_dispatch_on_kivy coro failed: {type(err)},{err}")
+            self.logger.error(traceback.format_exc())
 
     async def reset_session_data(self) -> tuple[bool, str]:
         """Host-Trigger: löscht pokemon.db-Inhalte + In-Memory-Session-State,
@@ -424,12 +757,10 @@ class Munchlax:
         srv = self.overlay_server
         if srv is None or not getattr(srv, "is_connected", False):
             return
-        try:
-            notifier = getattr(srv, "notify_config_change", None)
-            if callable(notifier):
-                await notifier()
-        except Exception as err:
-            self.logger.warning(f"overlay notify_config_change nach reset failed: {err}")
+        notifier = getattr(srv, "notify_config_change", None)
+        if callable(notifier):
+            # Fire-and-forget auf Kivy-Loop (OverlayServer dort).
+            self._dispatch_on_kivy(notifier())
 
     async def force_overlay_broadcast(self, reason: str = ""):
         """Erzwingt einen kompletten Team- + Badge-Refresh an alle SSE-Clients.
@@ -470,7 +801,8 @@ class Munchlax:
         BoxMenüs auf Remote-Clients automatisch frische Daten bekommen.
         """
         await self._enrich_box_levels(boxes)
-        self.boxes[player_id] = boxes
+        with self.state_lock:
+            self.boxes[player_id] = boxes
         if not self.is_connected:
             return
         try:
@@ -562,10 +894,39 @@ class Munchlax:
                 )
         self._err_counts.clear()
 
-    def _record_disconnect(self, reason: str) -> None:
+    def _record_disconnect(self, reason: str,
+                            expected_session: str | None = None) -> None:
         """Loop-Hooks setzen den Grund bevor sie disconnect(intentional=False)
         aufrufen. Wird im Reconnect-Log festgehalten + im naechsten connect
-        geloggt."""
+        geloggt.
+
+        `expected_session` (R9 WARN): Session-Identity-Check. Stale Loops
+        einer alten Session wuerden sonst `_last_disconnect_reason` der
+        frischen Session ueberschreiben und einen irrefuehrenden Log-
+        Eintrag anhaengen. Caller aus Loop-Error-Handlern uebergeben
+        `my_session`. Mismatch → noop.
+        """
+        if (expected_session is not None
+                and expected_session != self._session_id):
+            self.logger.info(
+                f"_record_disconnect(reason={reason}, session="
+                f"{expected_session}) uebersprungen — Session gehoert "
+                f"inzwischen einem frischeren Connect ({self._session_id})."
+            )
+            return
+        # Zusaetzlicher Guard (R10 WARN): intentional-Disconnect laeuft
+        # und hat `_last_disconnect_reason='intentional'` gesetzt. Ein
+        # Loop-Error-Handler mit gleicher Session wuerde den Grund jetzt
+        # mit `recv_*`/`heartbeat_*` ueberschreiben, obwohl der User-
+        # Disconnect der eigentliche Trigger ist. Skip + Log.
+        if (expected_session is not None
+                and expected_session == self._intentional_session):
+            self.logger.info(
+                f"_record_disconnect(reason={reason}, session="
+                f"{expected_session}) uebersprungen — intentional-"
+                f"Disconnect ist bereits in Flight."
+            )
+            return
         self._last_disconnect_reason = reason
         self._reconnect_log.append({
             "ts": time.time(),
@@ -579,6 +940,10 @@ class Munchlax:
         })
 
     async def alter_teams(self):
+        # Snapshot der aktuellen Session, damit ein verspaeteter Error-
+        # Disconnect dieses Tasks keinen frisch aufgebauten Socket einer
+        # spaeteren Session kappen kann (R6 WARN).
+        my_session = self._session_id
         while True:
             try:
                 data = await self.receive_message()
@@ -687,33 +1052,43 @@ class Munchlax:
                         player_id = data.get("player_id")
                         boxes = data.get("boxes")
                         if player_id is not None and boxes is not None:
-                            self.boxes[player_id] = boxes
+                            with self.state_lock:
+                                self.boxes[player_id] = boxes
                             self.logger.info(
                                 f"boxes_update empfangen: player={player_id}, "
                                 f"box_count={len(boxes)}"
                             )
                     elif msg_type == "player_names":
                         # clear() + update() statt Rebind: BH-Thread schreibt
-                        # player_names[player] = name unter bh_state_lock
+                        # player_names[player] = name unter state_lock
                         # (bizhawk.py). Ein Rebind hier wuerde BH-Writes im
                         # verworfenen Dict verlieren.
                         incoming_names = data.get("names", {})
-                        with self.bh_state_lock:
+                        incoming_client_names = data.get("client_names", {}) or {}
+                        # Writes unter state_lock: Kivy iteriert player_names
+                        # /client_names fuer Popup-Rendering, zwischen clear
+                        # und update sieht Kivy sonst kurz einen leeren Zustand.
+                        with self.state_lock:
                             self.player_names.clear()
                             self.player_names.update(incoming_names)
-                        # client_names (dict[client_id -> client_name]) fuellt der
-                        # Server unabhaengig von player_ids — enthaelt also auch
-                        # Clients, die noch kein BizHawk-Team gesendet haben.
-                        self.client_names = data.get("client_names", {}) or {}
+                            self.client_names.clear()
+                            self.client_names.update(incoming_client_names)
                         self.logger.info(
                             f"player_names empfangen: {self.player_names}, "
                             f"client_names: {self.client_names}"
                         )
                     elif msg_type == "connection_status":
-                        self.remote_connection_status.clear()
-                        self.remote_connection_status.update(data.get("status", {}))
-                        self.remote_connection_names.clear()
-                        self.remote_connection_names.update(data.get("names", {}))
+                        # Writes unter state_lock, damit Kivy
+                        # (mainmenu.change_munchlax_status) nicht zwischen
+                        # clear und update einen leeren Zustand sieht
+                        # → "status flackert kurz leer".
+                        new_status = data.get("status", {})
+                        new_names = data.get("names", {})
+                        with self.state_lock:
+                            self.remote_connection_status.clear()
+                            self.remote_connection_status.update(new_status)
+                            self.remote_connection_names.clear()
+                            self.remote_connection_names.update(new_names)
                     elif msg_type == "slot_collision":
                         # Server hat declared_player_ids abgelehnt weil ein anderer
                         # Client bereits einen dieser Slots belegt. Callback ins
@@ -759,14 +1134,19 @@ class Munchlax:
                             else:
                                 tm_moves = data.get("tm_moves") or {}
                                 hm_moves = data.get("hm_moves") or {}
-                                if isinstance(tm_moves, dict):
-                                    self.rando_tm_moves[pid] = {
-                                        int(k): v for k, v in tm_moves.items()
-                                    }
-                                if isinstance(hm_moves, dict):
-                                    self.rando_hm_moves[pid] = {
-                                        int(k): v for k, v in hm_moves.items()
-                                    }
+                                # Writes auf cross-thread-sichtbare Dicts
+                                # unter state_lock, damit Kivy-Snapshots
+                                # (snapshot_rando_tm_moves etc.) atomar
+                                # bleiben.
+                                with self.state_lock:
+                                    if isinstance(tm_moves, dict):
+                                        self.rando_tm_moves[pid] = {
+                                            int(k): v for k, v in tm_moves.items()
+                                        }
+                                    if isinstance(hm_moves, dict):
+                                        self.rando_hm_moves[pid] = {
+                                            int(k): v for k, v in hm_moves.items()
+                                        }
                                 self.logger.info(
                                     f"rando_moves_sync empfangen: player_id={pid}, "
                                     f"tms={len(tm_moves)}, hms={len(hm_moves)}"
@@ -837,7 +1217,8 @@ class Munchlax:
                     elif msg_type == "soullink_link_state":
                         link = data.get("link") or {}
                         if link.get("link_id") is not None:
-                            self.soullink_links[link["link_id"]] = link
+                            with self.state_lock:
+                                self.soullink_links[link["link_id"]] = link
                             self.logger.info(
                                 f"soullink_link_state empfangen: link={link.get('link_id')} "
                                 f"state={link.get('state')} members={list(link.get('members', {}).keys())}"
@@ -848,8 +1229,9 @@ class Munchlax:
                         self._handle_remote_death(death)
                         await self._notify_overlay_session("soullink_death", death)
                     elif msg_type == "soullink_versus_state":
-                        self.soullink_versus_state = data.get("state", {}) or {}
-                        self.soullink_versus_battles = data.get("battles", []) or []
+                        with self.state_lock:
+                            self.soullink_versus_state = data.get("state", {}) or {}
+                            self.soullink_versus_battles = data.get("battles", []) or []
                         self.logger.info(
                             f"soullink_versus_state empfangen: teams={list(self.soullink_versus_state.keys())}"
                         )
@@ -858,7 +1240,8 @@ class Munchlax:
                             "battles": self.soullink_versus_battles,
                         })
                     elif msg_type == "soullink_team_state":
-                        self.soullink_team_state = data.get("state", {}) or {}
+                        with self.state_lock:
+                            self.soullink_team_state = data.get("state", {}) or {}
                         self.logger.info(
                             f"soullink_team_state empfangen: teams={list(self.soullink_team_state.keys())}"
                         )
@@ -869,29 +1252,25 @@ class Munchlax:
                         if self.overlay_server is not None:
                             notifier = getattr(self.overlay_server, "notify_team_update", None)
                             if callable(notifier):
+                                # OverlayServer lebt auf Kivy-Loop (SSE-Queues
+                                # dort gebunden). Fire-and-forget via
+                                # _dispatch_on_kivy — Receive-Loop stall soll
+                                # nicht durch Kivy-Lag entstehen.
                                 for team_id in team_ids:
-                                    try:
-                                        await notifier(team_id, "badges")
-                                    except Exception as err:
-                                        self.logger.warning(f"notify_team_update failed: {err}")
+                                    self._dispatch_on_kivy(notifier(team_id, "badges"))
                         if self.obs is not None:
                             team_updater = getattr(self.obs, "change_team_badges", None)
                             if callable(team_updater) and team_ids:
-                                # Parallel per gather statt sequenzielles await:
-                                # ein langsamer OBS-Call darf die Empfangsschleife
-                                # nicht fuer die Summe aller Team-Batches blockieren.
-                                # return_exceptions=True damit ein Fehler die
-                                # uebrigen Teams nicht abbricht.
-                                results = await asyncio.gather(
-                                    *(team_updater(team_id) for team_id in team_ids),
-                                    return_exceptions=True,
-                                )
-                                for team_id, result in zip(team_ids, results):
-                                    if isinstance(result, Exception):
-                                        self.logger.warning(f"change_team_badges({team_id}) failed: {result}")
+                                # OBS-WebSocket auf Kivy-Loop. fire-and-forget +
+                                # _obs_serial: pro Team ein Call, globaler Lock
+                                # verhindert Ueberschneidung mit anderen OBS-
+                                # Dispatches (change_badges/changeSource).
+                                for team_id in team_ids:
+                                    self._dispatch_on_kivy(self.obs._obs_serial(team_updater(team_id)))
                     elif msg_type == "soullink_versus_battle":
                         battle = data.get("battle") or {}
-                        self.soullink_versus_battles.append(battle)
+                        with self.state_lock:
+                            self.soullink_versus_battles.append(battle)
                         self.logger.info(
                             f"soullink_versus_battle empfangen: {battle.get('winner')} vs {battle.get('loser')}"
                         )
@@ -899,7 +1278,8 @@ class Munchlax:
                     elif msg_type == "soullink_rule_violation":
                         violation = data.get("violation") or {}
                         key = (violation.get("type", "unknown"), str(violation.get("subject", "")))
-                        self.soullink_rule_violations[key] = violation
+                        with self.state_lock:
+                            self.soullink_rule_violations[key] = violation
                         self.logger.warning(
                             f"soullink_rule_violation empfangen: type={violation.get('type')} "
                             f"subject={violation.get('subject')} msg={violation.get('message')}"
@@ -966,7 +1346,7 @@ class Munchlax:
                     else:
                         self.logger.warning(f"Unbekannter Message-Typ vom Server: {msg_type}")
                     continue
-                # bh_state_lock schuetzt gegen Dict-Size-Change-Race:
+                # state_lock schuetzt gegen Dict-Size-Change-Race:
                 # BH-Thread kann waehrend des Rebinds `unsorted_teams[p] = t`
                 # auf dem alten Dict schreiben; `copy()` dort wuerde dann
                 # RuntimeError werfen. Komplett-Replace + Snapshots unter Lock.
@@ -974,7 +1354,7 @@ class Munchlax:
                 # BH-Mutationen waehrend des await-Fensters (upsert_team im
                 # Executor) nicht in `dict changed size during iteration`
                 # laufen koennen.
-                with self.bh_state_lock:
+                with self.state_lock:
                     self.unsorted_teams = data
                     new_teams = self.unsorted_teams.copy()
                     unsorted_snapshot = self.unsorted_teams.copy()
@@ -982,40 +1362,76 @@ class Munchlax:
                 for player in new_teams:
                     team = new_teams[player]
                     new_teams[player] = self.sort(team[:6], self.sp['order'])
-                    if player not in self.editions or unsorted_snapshot[player][7] != self.editions[player]:
-                        self.editions[player] = unsorted_snapshot[player][7]
-                    if player not in self.badges or unsorted_snapshot[player][6] != self.badges[player]:
-                        self.badges[player] = unsorted_snapshot[player][6]
-                        self.logger.info(f"{self.badges[player]=}")
+                    # Pre-fetch edition/badges aus dem authoritativen
+                    # unsorted_snapshot (lokale Variablen), damit nachgelagerte
+                    # Dispatches gegen `clear_everything` aus Kivy immun sind
+                    # (sonst KeyError auf self.editions[player] → Exception →
+                    # Receive-Loop break → stiller Disconnect-Cascade).
+                    new_edition = unsorted_snapshot[player][7]
+                    new_badges_val = unsorted_snapshot[player][6]
+                    # Writes auf editions/badges unter state_lock, damit
+                    # Kivy-Snapshots (snapshot_badges/snapshot_editions) kein
+                    # half-updates sehen und keine dict-size-Races auftreten.
+                    with self.state_lock:
+                        current_edition = self.editions.get(player)
+                        if current_edition is None or new_edition != current_edition:
+                            self.editions[player] = new_edition
+                        current_badges = self.badges.get(player)
+                        badges_changed = (
+                            current_badges is None
+                            or new_badges_val != current_badges
+                        )
+                        if badges_changed:
+                            self.badges[player] = new_badges_val
+                    if badges_changed:
+                        self.logger.info(f"badges[{player}]={new_badges_val}")
                         if self.obs and self.obs.is_connected:
-                            await self.obs.change_badges(player)
+                            # Fire-and-forget + _obs_serial: Kivy-Lag darf
+                            # Receive-Loop nicht blockieren, aber OBS-Calls
+                            # desselben Spielers in Reihenfolge laufen.
+                            self._dispatch_on_kivy(self.obs._obs_serial(self.obs.change_badges(player)))
                         if self.overlay_server and self.overlay_server.is_connected:
-                            await self.overlay_server.notify_update(player, "badges")
+                            self._dispatch_on_kivy(self.overlay_server.notify_update(player, "badges"))
                 await self._persist_teams(unsorted_snapshot)
                 if new_teams != self.sorted_teams or not self.initialized:
                     for player in new_teams:
-                        if player not in self.sorted_teams or not self.initialized:
+                        # Edition pro Player wieder lokal, falls clear_everything
+                        # inzwischen gefeuert hat.
+                        edition_val = unsorted_snapshot[player][7]
+                        # old_team unter Lock holen; snapshot-Semantik gegen
+                        # parallelen Rebind durch clear_everything.
+                        with self.state_lock:
+                            old_team = self.sorted_teams.get(player)
+                        if old_team is None or not self.initialized:
                             if self.obs and self.obs.is_connected:
-                                await self.obs.changeSource(player, range(6), new_teams[player], self.editions[player])
-                                self.initialized = True
-                            self.sorted_teams[player] = new_teams[player]
+                                # Initial-Draw fire-and-forget via _obs_serial.
+                                # Reihenfolge gegen nachfolgende diff-Updates
+                                # bleibt gewahrt, OBS-Lag entkoppelt Receive.
+                                self._dispatch_on_kivy(self.obs._obs_serial(self.obs.changeSource(player, range(6), new_teams[player], edition_val)))
+                            with self.state_lock:
+                                self.sorted_teams[player] = new_teams[player]
+                            # initialized erst nach erfolgter sorted_teams-
+                            # Zuordnung — sonst wuerde bei einem Fehler im
+                            # Dispatch der Flag gesetzt bleiben und der naechste
+                            # Tick den Initial-Draw ueberspringen.
+                            self.initialized = True
                             if self.overlay_server and self.overlay_server.is_connected:
-                                await self.overlay_server.notify_update(player, "team")
+                                self._dispatch_on_kivy(self.overlay_server.notify_update(player, "team"))
                             continue
 
                         diff = []
                         team = new_teams[player]
-                        old_team = self.sorted_teams[player]
                         for i in range(6):
                             if not team[i].obs_property_changed(old_team[i], self.sp):
                                 self.logger.debug(f"{i=},{team[i]=}")
                                 diff.append(i)
                         slot_mapping = self.compute_slot_mapping(old_team, team)
                         if self.obs and self.obs.is_connected:
-                            await self.obs.changeSource(player, diff, team, self.editions[player], slot_mapping=slot_mapping)
-                        self.sorted_teams[player] = team
+                            self._dispatch_on_kivy(self.obs._obs_serial(self.obs.changeSource(player, diff, team, edition_val, slot_mapping=slot_mapping)))
+                        with self.state_lock:
+                            self.sorted_teams[player] = team
                         if self.overlay_server and self.overlay_server.is_connected:
-                            await self.overlay_server.notify_update(player, "team", slot_mapping=slot_mapping)
+                            self._dispatch_on_kivy(self.overlay_server.notify_update(player, "team", slot_mapping=slot_mapping))
             except (UnicodeEncodeError, UnicodeDecodeError) as err:
                 self.logger.warning(f"Unicode error:{type(err)},{err}")
                 self.logger.warning(f"{traceback.format_exc()}")
@@ -1039,15 +1455,15 @@ class Munchlax:
                     exc=err,
                     level="warning",
                 )
-                self._record_disconnect(f"recv_{type(err).__name__}")
+                self._record_disconnect(f"recv_{type(err).__name__}", expected_session=my_session)
                 break
             except Exception as err:
                 self.logger.error(f"alter_teams abgebrochen: {type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")
-                self._record_disconnect(f"recv_unexpected_{type(err).__name__}")
+                self._record_disconnect(f"recv_unexpected_{type(err).__name__}", expected_session=my_session)
                 break
 
-        await self.disconnect(intentional=False)
+        await self.disconnect(intentional=False, expected_session=my_session)
 
     def _ensure_pokedex_db(self):
         if self.configsave is None:
@@ -1324,10 +1740,9 @@ class Munchlax:
         srv = self.overlay_server
         if srv is None or not srv.is_connected:
             return
-        try:
-            await srv.notify_session_event(event_type, payload)
-        except Exception as err:
-            self.logger.debug(f"notify_overlay_session {event_type} failed: {err}")
+        # Fire-and-forget auf Kivy-Loop (OverlayServer-SSE-Queues dort
+        # gebunden). Receive-Loop koppelt nicht an GUI-Lag.
+        self._dispatch_on_kivy(srv.notify_session_event(event_type, payload))
 
     async def _run_active_for_local_player(self, player_id, edition) -> bool:
         """True wenn der Nuzlocke-Run für diesen lokalen Player scharf ist.
@@ -1531,7 +1946,7 @@ class Munchlax:
             subject_owner = self.player_names.get(int(subject_pid), "")
             subject_team = team_map.get(subject_owner)
             if subject_team:
-                with self.bh_state_lock:
+                with self.state_lock:
                     pid_snapshot = list(self.bizhawk_teams.keys())
                 my_owners = [self.player_names.get(pid, "") for pid in pid_snapshot]
                 my_teams = {team_map.get(o) for o in my_owners if o}
@@ -1604,7 +2019,7 @@ class Munchlax:
         Leere Slots werden mit ``None``-Feldern eingefügt, damit die Länge (6)
         erhalten bleibt.
         """
-        # Snapshot unter bh_state_lock: unsorted_teams wird vom BH-Thread
+        # Snapshot unter state_lock: unsorted_teams wird vom BH-Thread
         # befuellt (bizhawk.py), direkt `for ... in ...` wuerde sonst in
         # `dict changed size during iteration` laufen, wenn BH mitten im
         # Finalize einen neuen Player-Key schreibt. sorted_teams ist zwar
@@ -1613,7 +2028,7 @@ class Munchlax:
         if self.sorted_teams:
             teams_src = dict(self.sorted_teams)
         else:
-            with self.bh_state_lock:
+            with self.state_lock:
                 teams_src = dict(self.unsorted_teams)
         out_players: dict[str, dict] = {}
         for pid, team in teams_src.items():
@@ -1813,14 +2228,16 @@ class Munchlax:
         text = f"{s // 3600:02d}:{(s // 60) % 60:02d}:{s % 60:02d}"
         try:
             import simpleobsws
-            await self.obs.ws.call(simpleobsws.Request(
+            # Fire-and-forget auf Kivy-Loop + _obs_serial: OBS-Call-Reihenfolge
+            # bleibt konsistent mit alter_teams-Dispatches, kein Ueberlappen.
+            self._dispatch_on_kivy(self.obs._obs_serial(self.obs.ws.call(simpleobsws.Request(
                 "SetInputSettings",
                 {
                     "inputName": "RaceTimer",
                     "inputSettings": {"text": text},
                     "overlay": True,
                 },
-            ))
+            ))))
         except Exception as err:
             # OBS-Text-Source ist optional — kein Grund für Log-Spam.
             self.logger.debug(f"OBS RaceTimer-Text set failed: {err}")
@@ -1839,7 +2256,8 @@ class Munchlax:
         owner = death.get("owner")
         if pv is None or not owner:
             return
-        self.soullink_deaths[(pv, owner)] = death
+        with self.state_lock:
+            self.soullink_deaths[(pv, owner)] = death
         partners = death.get("partners", [])
         # Ist dieser Client Owner eines Partners? Dann lokale UI/DB-Reaktion nötig.
         my_partner = None
@@ -1971,6 +2389,16 @@ class Munchlax:
         try:
             if not self._pending_rando_moves:
                 return
+            # Entry-Guard: disconnect zwischen Scheduling und Flush-Run →
+            # Writer tot, send_message wuerde nur warn-spammen. Payload
+            # bleibt in Queue (kein Verlust) — naechster Reconnect-Flush
+            # pusht ihn.
+            if not self.is_connected:
+                self.logger.info(
+                    "_flush_pending_rando_moves: nicht verbunden, "
+                    "Payloads bleiben gequeued"
+                )
+                return
             # Symmetrisch zum Direct-Send-Guard: nur bei bestaetigtem True
             # flushen. None (vor resume_ack) oder False (Legacy) → skip.
             # Verhindert, dass ein Refactoring, das den Flush frueher aufruft,
@@ -1986,6 +2414,14 @@ class Munchlax:
                 f"_flush_pending_rando_moves: {len(items)} queued payload(s)"
             )
             for pid, payload in items:
+                # Pro Iteration erneut pruefen: Disconnect kann waehrend des
+                # Flush-Loops passieren (sleep-Zyklen in send_message).
+                if not self.is_connected:
+                    self.logger.info(
+                        "_flush_pending_rando_moves: Verbindung mittendrin "
+                        "verloren, Rest bleibt gequeued"
+                    )
+                    return
                 if self._pending_rando_moves.get(pid) is not payload:
                     self.logger.info(
                         f"_flush_pending_rando_moves: pid={pid} von Direct-Send "
@@ -2080,7 +2516,7 @@ class Munchlax:
             # Snapshot der BH-owned Slots fuer Encounter/Nuzlocke-Filter,
             # damit BH-Mutationen waehrend der await-Fenster nicht in
             # inkonsistente Filter-Ergebnisse laufen.
-            with self.bh_state_lock:
+            with self.state_lock:
                 local_slots = set(self.bizhawk_teams.keys())
             for player, team_data in teams.items():
                 pokemons = team_data[:6]
@@ -2197,16 +2633,27 @@ class Munchlax:
         # unsorted_teams wird vom BH-Thread befuellt. Snapshot unter Lock,
         # dann iterieren — direkter Zugriff koennte sonst in KeyError oder
         # dict-size-change-RuntimeError laufen, wenn BH einen neuen Slot
-        # waehrend des Loops einfuegt.
-        with self.bh_state_lock:
+        # waehrend des Loops einfuegt. sorted_teams-Writes ebenfalls unter
+        # Lock, damit Kivy-Snapshots (snapshot_sorted_teams) nicht gegen
+        # eine Munchlax-Loop-parallele Mutation iterieren.
+        with self.state_lock:
             unsorted_snapshot = dict(self.unsorted_teams)
-        for team in list(self.sorted_teams.keys()):
+            team_keys = list(self.sorted_teams.keys())
+        sorted_updates = {}
+        for team in team_keys:
             team_data = unsorted_snapshot.get(team)
             if team_data is None:
                 continue
-            self.sorted_teams[team] = self.sort(team_data[:6], self.sp['order'])
+            sorted_updates[team] = self.sort(team_data[:6], self.sp['order'])
+        if sorted_updates:
+            with self.state_lock:
+                for team, sorted_team in sorted_updates.items():
+                    self.sorted_teams[team] = sorted_team
 
     async def send_heartbeat(self):
+        # Session-Snapshot (R6 WARN): verspaeteter Error-Disconnect dieses
+        # Tasks darf keinen Socket einer spaeteren Session schliessen.
+        my_session = self._session_id
         while True:
             try:
                 self.logger.debug("Heartbeat gesendet")
@@ -2219,17 +2666,20 @@ class Munchlax:
                     f"send_heartbeat Netz-Fehler: {type(err).__name__}: {err}",
                     exc=err,
                 )
-                self._record_disconnect(f"heartbeat_{type(err).__name__}")
+                self._record_disconnect(f"heartbeat_{type(err).__name__}", expected_session=my_session)
                 break
             except Exception as err:
                 self.logger.warning(f"Heartbeat failed: {type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")
-                self._record_disconnect(f"heartbeat_unexpected_{type(err).__name__}")
+                self._record_disconnect(f"heartbeat_unexpected_{type(err).__name__}", expected_session=my_session)
                 break
 
-        await self.disconnect(intentional=False)
+        await self.disconnect(intentional=False, expected_session=my_session)
 
     async def send_teams(self):
+        # Session-Snapshot (R6 WARN): verspaeteter Error-Disconnect dieses
+        # Tasks darf keinen Socket einer spaeteren Session schliessen.
+        my_session = self._session_id
         while True:
             # bizhawk_teams wird vom BH-Thread mutiert; Snapshot unter Lock,
             # dann sowohl Empty-Check als auch Pickle-Dump auf dem Snapshot
@@ -2237,10 +2687,19 @@ class Munchlax:
             # das Live-Dict iterieren und bei paralleler BH-Mutation in
             # RuntimeError laufen; vorheriger Empty-Check waere ebenfalls
             # TOCTOU-anfaellig.
-            with self.bh_state_lock:
+            with self.state_lock:
                 bizhawk_snapshot = dict(self.bizhawk_teams)
-            if self.sorted_teams == {}:
-                self.sorted_teams = dict(bizhawk_snapshot)
+                # sorted_teams-Rebind MUSS unter dem gleichen Lock stehen
+                # (Rebind-unter-Lock-Regel). Ohne Lock koennte clear_everything
+                # (Kivy) oder alter_teams (Munchlax) den Zustand parallel
+                # neu setzen → check-then-rebind-Race ueberschreibt den Clear.
+                needs_initial = not self.sorted_teams
+                if needs_initial:
+                    self.sorted_teams = dict(bizhawk_snapshot)
+            if needs_initial:
+                # change_order nimmt den Lock selbst — ausserhalb des with-
+                # Blocks aufrufen, damit threading.Lock (non-reentrant)
+                # nicht in Rekursion laeuft.
                 self.change_order()
             if bizhawk_snapshot:
                 try:
@@ -2252,18 +2711,72 @@ class Munchlax:
                         f"send_teams Netz-Fehler: {type(err).__name__}: {err}",
                         exc=err,
                     )
-                    self._record_disconnect(f"send_teams_{type(err).__name__}")
+                    self._record_disconnect(f"send_teams_{type(err).__name__}", expected_session=my_session)
                     break
                 except Exception as err:
                     self.logger.warning(f"Teams senden failed: {type(err)},{err}")
                     self.logger.error(f"{traceback.format_exc()}")
-                    self._record_disconnect(f"send_teams_unexpected_{type(err).__name__}")
+                    self._record_disconnect(f"send_teams_unexpected_{type(err).__name__}", expected_session=my_session)
                     break
             await asyncio.sleep(1)
 
-        await self.disconnect(intentional=False)
+        await self.disconnect(intentional=False, expected_session=my_session)
     
     async def connect(self):
+        # Locks lazy anlegen (Phase-3-Isolation: Munchlax-Loop !=
+        # Kivy-Loop). Zentrale Hilfe, auch von disconnect() genutzt.
+        self._ensure_async_locks()
+        # Generation VOR Lock-Erwerb snapshotten (R12 WARN): User-
+        # Disconnect, der waehrend des Lock-Wartens eintrifft,
+        # inkrementiert _connect_generation. Ohne diesen Pre-Snapshot
+        # wuerde connect() nach Lock-Erwerb das Pending-Flag resetten
+        # und mit der neuen (bereits erhoehten) Generation
+        # weiterverbinden — trotz Trennen-Klick.
+        initial_gen = self._connect_generation
+        # _connect_lock serialisiert ganze connect()-Aufrufe (R6 KRIT).
+        # Zweiter connect (User-Klick oder _auto_reconnect) wartet, bis
+        # der erste komplett durch ist. Verhindert Writer-Clobber,
+        # stale-Handshake auf frischem Writer und doppelte Task-Starts.
+        async with self._connect_lock:
+            # Deduplizierung (R7 KRIT): zweiter connect-Call sieht nach
+            # Lock-Erwerb, dass der erste bereits erfolgreich verbunden
+            # hat. Ohne Guard wuerden self.reader/writer ueberschrieben,
+            # alte Tasks laufen als Zombie weiter, Server sieht doppelte
+            # client_id. Check unter Lock + atomar bis _connect_impl →
+            # kein TOCTOU.
+            if self.is_connected:
+                self.logger.info(
+                    "connect() uebersprungen — bereits verbunden "
+                    f"(session={self._session_id})"
+                )
+                return
+            # Pre-Snapshot-Check (R12 WARN): User hat waehrend
+            # Lock-Wartens disconnect ausgeloest → Generation gebumpt.
+            # Nur gen vergleichen (R13 KRIT): `pending` auch zu lesen
+            # wuerde einen User-Connect NACH Trennen dauerhaft blocken,
+            # weil disconnect(intentional=True) `_user_disconnect_pending=
+            # True` setzt und erst der RESET innerhalb connect() es
+            # loescht — der steht aber hinter diesem Check. Jeder
+            # intentional-Disconnect bumpt synchron auch die Generation
+            # (Z. 2993 im disconnect-Pfad), der Gen-Vergleich deckt den
+            # Lock-Warte-Fall also allein ab.
+            if self._connect_generation != initial_gen:
+                self.logger.info(
+                    "connect() abgebrochen — User-Disconnect waehrend "
+                    f"Lock-Wartens (gen {initial_gen} -> "
+                    f"{self._connect_generation})."
+                )
+                return
+            # Pending-Flags zuruecksetzen (R11): ein frischer connect-
+            # Call reset't den User-Disconnect-Marker, damit anschliessende
+            # _auto_reconnects nicht noch noop'en. _intentional_session
+            # analog, damit Loop-Error-Handler der neuen Session ihre
+            # Gruende wieder schreiben koennen.
+            self._user_disconnect_pending = False
+            self._intentional_session = None
+            await self._connect_impl()
+
+    async def _connect_impl(self):
         # Host/Port frisch aus rem-Dict lesen. Nach Session-Wechsel wird rem
         # in-place aktualisiert, aber self.host/self.port tragen noch die beim
         # __init__ kopierten Startwerte — Verbindung liefe sonst auf die
@@ -2274,21 +2787,80 @@ class Munchlax:
         else:
             self.host = self.rem.get('server_ip_adresse', self.host)
             self.port = self.rem.get('server_port', self.port)
-        # Neue Session-ID — alle Logs ab hier taggen diesen Verbindungszyklus.
-        self._session_id = uuid.uuid4().hex[:8]
+        # Neue Session-ID — lokal halten (R7 WARN): Wenn der Connect
+        # scheitert (ConnectionRefused, Gen-Cancel), bleibt die bisherige
+        # Session-Id auf self (noch laufende Tasks der alten Session
+        # koennen weiter sauber per expected_session identifiziert
+        # werden). Erst nach Handshake-Erfolg wird die neue ID
+        # committed (siehe unten).
+        new_session_id = uuid.uuid4().hex[:8]
         self._session_started_at = time.time()
         self._msg_counters = {"recv": 0, "sent": 0}
         self._last_recv_at = 0.0
         self._last_recv_type = ""
         self.logger.info(
             f"Verbinde Munchlax zu ({self.host}, {self.port}) "
-            f"session={self._session_id} "
+            f"session={new_session_id} "
             f"vorheriger_disconnect_grund={self._last_disconnect_reason!r}"
         )
-        self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
+        # Generation-Snapshot (R4 WARN): disconnect() inkrementiert
+        # `_connect_generation`. Dieser connect-Durchlauf prueft den
+        # Snapshot gegen den aktuellen Wert — jeder User-Disconnect
+        # bricht genau diese connect-Instanz ab, auch bei schnellem
+        # disconnect→connect→(alte Retry wacht auf).
+        gen = self._connect_generation
+        # Startup-Race Mitigation (Phase 3): wenn der Server lokal in
+        # diesem Prozess hochgefahren wird (`rem['start_server']=True`),
+        # ArceusLoop (eigener Thread) und MunchlaxLoop starten parallel.
+        # `connect` kann den Port treffen bevor `arceus.start()` an
+        # start_server zurueck ist → ConnectionRefusedError. Kurzer Retry
+        # mit 100ms-Backoff, max ~1s. Fuer nicht-lokale Server (externer
+        # Arceus) direkt ohne Retry — dort ist ConnectionRefused ein
+        # echter User-Fehler.
+        retries = 10 if self.rem.get('start_server') else 1
+        last_err = None
+        for attempt in range(retries):
+            if self._connect_generation != gen:
+                # User hat disconnect() waehrend Retry-Backoff gedrueckt
+                # (oder einen frischen connect gestartet). Mit
+                # CancelledError raus — alter connect-Task endet sauber,
+                # kein doppelter Socket.
+                raise asyncio.CancelledError(
+                    "connect() durch neuere Generation abgebrochen"
+                )
+            try:
+                # Lokale Variablen, damit ein verzoegerter alter Connect
+                # einen frischen `self.writer` eines parallelen Connects
+                # nicht ueberschreibt (R5 KRIT: Writer-Clobber).
+                local_reader, local_writer = await asyncio.open_connection(
+                    self.host, self.port
+                )
+                break
+            except ConnectionRefusedError as err:
+                last_err = err
+                if attempt + 1 >= retries:
+                    raise
+                await asyncio.sleep(0.1)
+        else:
+            if last_err is not None:
+                raise last_err
+        # Nach erfolgreichem open_connection erneut die Generation
+        # pruefen: zwischen Backoff-Attempt und open_connection-Erfolg
+        # kann der User ebenfalls disconnect/reconnect gedrueckt haben.
+        # Lokalen writer schliessen (nicht self.writer, der koennte vom
+        # frischen Connect schon gesetzt sein), dann CancelledError.
+        if self._connect_generation != gen:
+            try:
+                local_writer.close()
+            except Exception:
+                pass
+            raise asyncio.CancelledError(
+                "connect() nach open_connection durch neuere Generation abgebrochen"
+            )
+        self.reader, self.writer = local_reader, local_writer
         self.logger.info(
             f"Munchlax {self.client_id} bei Arceus({self.host},{self.port}) "
-            f"registriert (session={self._session_id})"
+            f"registriert (session={new_session_id})"
         )
         self.logger.debug(f"Client-ID: {self.client_id}, Start-Server: {self.rem.get('start_server')}")
         # Dedup-Fenster schliessen (Summary der Disconnect-Fehler) + Reconnect-
@@ -2297,7 +2869,7 @@ class Munchlax:
         self._reconnect_log.append({
             "ts": time.time(),
             "event": "connect",
-            "session_id": self._session_id,
+            "session_id": new_session_id,
         })
 
         # Phase C: Handshake-Phase. Capability-Flag + Resume-Pending werden
@@ -2333,10 +2905,33 @@ class Munchlax:
                     f"Handshake abgebrochen oder fehlgeschlagen — "
                     f"schliesse Socket"
                 )
+                # local_writer-Close (R6 KRIT): kein self.writer-Close,
+                # sonst wuerde ein paralleler frischer connect dessen
+                # Writer verlieren. _connect_lock verhindert das zwar
+                # bereits, aber defensive Konsistenz mit F1-Pattern.
                 try:
-                    self.writer.close()
+                    local_writer.close()
                 except Exception:
                     pass
+
+        # Nach Handshake erneut die Generation pruefen (R5 WARN):
+        # User-Disconnect waehrend des Handshake-Fensters sieht
+        # `is_connected=False` → `disconnect()` skippt Close-Pfad; ohne
+        # diese Pruefung wuerde connect() danach `is_connected='connected'`
+        # setzen und Tasks starten, obwohl der User getrennt hat.
+        if self._connect_generation != gen:
+            self.logger.info(
+                "connect(): Generation-Mismatch nach Handshake — Socket "
+                "schliessen und abbrechen (User-Disconnect waehrend "
+                "Handshake)."
+            )
+            try:
+                local_writer.close()
+            except Exception:
+                pass
+            raise asyncio.CancelledError(
+                "connect() nach Handshake durch neuere Generation abgebrochen"
+            )
 
         # Handshake durch — Resume-Phase ab jetzt. Capability-Flag auf None
         # (unknown), wird durch resume_ack auf True oder durch Watchdog-Timeout
@@ -2348,6 +2943,10 @@ class Munchlax:
             self._resume_timeout_task.cancel()
         self._resume_timeout_task = asyncio.create_task(self._resume_timeout_watchdog())
 
+        # Session-ID jetzt committen (R7 WARN): neue Loops lesen
+        # self._session_id gleich im `my_session`-Snapshot. Alte Tasks
+        # haben bereits ihre alte Session-ID gespeichert.
+        self._session_id = new_session_id
         self.is_connected = 'connected'
 
         self.heartbeat_task = asyncio.create_task(self.send_heartbeat())
@@ -2378,17 +2977,68 @@ class Munchlax:
             slots.append(slot)
         return slots
 
-    async def disconnect(self, intentional=True, reason: str | None = None):
-        self.initialized = False
+    def _ensure_async_locks(self):
+        """Legt writer_lock + disconnect_lock + connect_lock an, falls
+        connect() noch nie lief. In Py3.11.5 bindet `asyncio.Lock` den
+        Loop beim ersten `__aenter__`, nicht beim `__init__` — Lazy-Create
+        reicht; der Bind erfolgt in connect/disconnect auf dem Munchlax-
+        Loop. Alle Lock-Pfade (disconnect, send_message-Wrapper, etc.)
+        rufen _ensure_async_locks()-defensive, damit kein Pfad vor
+        connect() auf `async with None` crasht.
+        """
+        if self.writer_lock is None:
+            self.writer_lock = asyncio.Lock()
+        if self.disconnect_lock is None:
+            self.disconnect_lock = asyncio.Lock()
+        if self._connect_lock is None:
+            self._connect_lock = asyncio.Lock()
+
+    async def disconnect(self, intentional=True, reason: str | None = None,
+                         expected_session: str | None = None):
+        """Trennt Munchlax-Verbindung.
+
+        `expected_session` (R6 WARN): Fuer Non-intentional-Disconnects
+        aus Loop-Error-Pfaden. Caller snapshotet `self._session_id` beim
+        Task-Start, passed ihn hier rein. disconnect noop'ed, falls die
+        aktuelle Session nicht mehr der erwarteten entspricht — alter
+        Error-Handler-Call wuerde sonst einen frischen Socket schliessen.
+        """
+        self._ensure_async_locks()
+        # Intentional-Disconnect als allererstes markieren (R10 WARN),
+        # VOR Lock + send_message. Parallele Loop-Error-Handler mit
+        # derselben Session werden damit in `_record_disconnect`
+        # verworfen und ueberschreiben `_last_disconnect_reason` nicht.
+        if intentional and self._session_id:
+            self._intentional_session = self._session_id
+        # User-Disconnect-Pending Flag (R11 KRIT): auch dann setzen, wenn
+        # unser Lock-Erwerb hinter einem Loop-Disconnect wartet. Dieser
+        # koennte in seinem Teardown nachgelagert einen _auto_reconnect
+        # spawnen (siehe should_reconnect-Pfad weiter unten) — das Flag
+        # laesst den Reconnect bei seinem Entry noop'en, so dass die
+        # Verbindung nach User-Klick auch wirklich getrennt bleibt.
+        if intentional:
+            self._user_disconnect_pending = True
+        # Session-Identity-Check: alte Non-intentional-Disconnect-Calls
+        # (z.B. verspaetet aus disconnect_lock-Queue) sollen keinen
+        # frischen, neu aufgebauten Socket zerreissen.
+        if (expected_session is not None
+                and expected_session != self._session_id):
+            self.logger.info(
+                f"disconnect(expected_session={expected_session}) "
+                f"uebersprungen — aktuelle Session {self._session_id} "
+                f"gehoert einem frischeren Connect."
+            )
+            return
+        # Signal an einen laufenden connect()-Retry-Loop (R4 WARN):
+        # Generation-Counter inkrementieren → in-flight connect sieht
+        # mismatch im naechsten Retry-Check und bricht mit CancelledError
+        # ab. NUR bei intentional=True bumpen (R5 HINWEIS): ein spaet
+        # eintreffender auto-Disconnect (Receive-Loop-Fehler eines alten
+        # Sockets) soll einen frisch laufenden _auto_reconnect nicht
+        # abschiessen.
+        if intentional:
+            self._connect_generation += 1
         should_reconnect = False
-        # Reason-Parameter ueberschreibt den vom Loop-Caller via
-        # _record_disconnect gesetzten Wert. Default: Bei intentional=True
-        # setzen wir "intentional", bei intentional=False bleibt der vom
-        # Loop-Caller gesetzte (recv_IncompleteReadError o.ae.) stehen.
-        if reason is not None:
-            self._last_disconnect_reason = reason
-        elif intentional:
-            self._last_disconnect_reason = "intentional"
         # Fix sync-reviewer R2 Runde 2 WARNUNG: Reconnect-Cancel MUSS ausserhalb
         # des `if self.is_connected`-Blocks laufen. Waehrend `_auto_reconnect`
         # Backoff-Sleept, ist is_connected=False — ein User-Disconnect in
@@ -2402,6 +3052,31 @@ class Munchlax:
             )
             self._reconnect_task.cancel()
         async with self.disconnect_lock:
+            # Session-Identity-Recheck (R7 KRIT): zwischen dem Fast-Path-
+            # Check oben und dem Lock-Erwerb kann ein paralleler
+            # intentional-Disconnect + Reconnect eine neue Session
+            # aufgebaut haben. Ohne diese zweite Pruefung wuerde ein
+            # verspaeteter Error-Handler den frischen Socket abreissen.
+            if (expected_session is not None
+                    and expected_session != self._session_id):
+                self.logger.info(
+                    f"disconnect(expected_session={expected_session}) "
+                    f"unter Lock verworfen — aktuelle Session "
+                    f"{self._session_id} gehoert einem frischeren Connect."
+                )
+                return
+            # Side-Effects NACH dem Recheck (R8 WARN): initialized/reason
+            # sind globale Flags, die ein verworfener stale-Caller sonst
+            # auf der frischen Session veraendern wuerde.
+            self.initialized = False
+            # Reason-Parameter ueberschreibt den vom Loop-Caller via
+            # _record_disconnect gesetzten Wert. Default: Bei intentional=True
+            # setzen wir "intentional", bei intentional=False bleibt der vom
+            # Loop-Caller gesetzte (recv_IncompleteReadError o.ae.) stehen.
+            if reason is not None:
+                self._last_disconnect_reason = reason
+            elif intentional:
+                self._last_disconnect_reason = "intentional"
             if self.is_connected:
                 if intentional:
                     try:
@@ -2413,8 +3088,9 @@ class Munchlax:
                     should_reconnect = True
 
                 self.is_connected = False
-                self.remote_connection_status.clear()
-                self.remote_connection_names.clear()
+                with self.state_lock:
+                    self.remote_connection_status.clear()
+                    self.remote_connection_names.clear()
 
                 # Fix sync-reviewer-Hinweis: Self-Cancel darf nicht den
                 # aufrufenden Task selbst canceln, sonst wird der Rest
@@ -2487,7 +3163,21 @@ class Munchlax:
                     f"{last_msg_info})"
                 )
 
-                self.close_pokedex_db()
+                # DB-Close nur, wenn die Session seit Lock-Entry nicht
+                # ersetzt wurde (R8 WARN): wait_closed() haelt
+                # disconnect_lock bis zu 2s. connect() nimmt den Lock
+                # nicht und kann in dem Fenster eine frische Session mit
+                # neuer DB-Verbindung aufbauen. Close wuerde dann die
+                # frische DB zerreissen.
+                if (expected_session is None
+                        or expected_session == self._session_id):
+                    self.close_pokedex_db()
+                else:
+                    self.logger.info(
+                        f"close_pokedex_db uebersprungen — Session "
+                        f"{self._session_id} unterscheidet sich von "
+                        f"erwarteter {expected_session}."
+                    )
 
                 self.host = '127.0.0.1' if self.rem["start_server"] else self.rem["server_ip_adresse"]
                 self.port = self.rem["client_port"] if self.rem["start_server"] else self.rem["server_port"]
@@ -2506,6 +3196,17 @@ class Munchlax:
             )
 
     async def _auto_reconnect(self):
+        # User-Disconnect-Guard (R11 KRIT): wenn der User "Trennen"
+        # geklickt hat waehrend ein Loop-Disconnect den disconnect_lock
+        # hielt, kann dieser Loop-Disconnect den Reconnect bereits
+        # gespawnt haben, bevor der User-Call zum Lock kam. Das Flag
+        # sorgt dafuer, dass dieser Reconnect sofort noop'ed.
+        if self._user_disconnect_pending:
+            self.logger.info(
+                "_auto_reconnect: User-Disconnect pending — Trigger "
+                f"verworfen (letzter_grund={self._last_disconnect_reason!r})."
+            )
+            return
         # Dedup gegen parallelen Reconnect: wenn disconnect(intentional=False)
         # mehrfach triggert (z.B. alter_teams + heartbeat + send_teams brechen
         # fast gleichzeitig weg), wuerden sonst mehrere Reconnect-Tasks laufen

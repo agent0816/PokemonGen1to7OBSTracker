@@ -711,7 +711,10 @@ class OverlayServer:
     async def _handle_state(self, request: web.Request) -> web.Response:
         player_id = int(request.match_info['player_id'])
         payload = self._build_full_payload(player_id)
-        known_players = list(self.munchlax.sorted_teams.keys()) if self.munchlax else []
+        # Snapshot statt Live-keys(): Munchlax-Loop kann wahrend des HTTP-
+        # Handlers parallel rebind. snapshot_sorted_teams nimmt
+        # Momentaufnahme unter state_lock.
+        known_players = list(self.munchlax.snapshot_sorted_teams().keys()) if self.munchlax else []
         if player_id not in known_players:
             self.logger.warning(f"/state: player_id={player_id} nicht in sorted_teams (bekannt: {known_players})")
         else:

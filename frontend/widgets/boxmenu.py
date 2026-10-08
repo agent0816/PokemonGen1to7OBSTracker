@@ -205,7 +205,10 @@ class BoxMenu(Screen):
                 return
             # update_boxes cached lokal und pusht (falls verbunden) an Arceus,
             # damit Remote-Munchlaxes automatisch nachgezogen werden.
-            await self.munchlax.update_boxes(player, boxes)
+            # Munchlax auf eigenem Thread (Phase 3) → cross-thread submit.
+            await self.munchlax.submit_cross_thread(
+                self.munchlax.update_boxes(player, boxes)
+            )
             self.current_box_index = 0
             # Kivy-Widgets nur im Main-Thread updaten: Clock.schedule_once().
             Clock.schedule_once(lambda dt: self._after_refresh(player, len(boxes)), 0)

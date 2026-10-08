@@ -201,8 +201,11 @@ class TotalWipeBanner(Popup):
                 # notify_update verschlucken, wenn der neue Save identisch
                 # zum letzten sorted_teams-Snapshot wirkt.
                 try:
-                    await self.munchlax.force_overlay_broadcast(
-                        f"snapshot restore: {snap_id}"
+                    # Munchlax auf eigenem Thread (Phase 3).
+                    await self.munchlax.submit_cross_thread(
+                        self.munchlax.force_overlay_broadcast(
+                            f"snapshot restore: {snap_id}"
+                        )
                     )
                 except Exception as err:
                     logger.warning(f"force_overlay_broadcast nach restore failed: {err}")
@@ -225,7 +228,10 @@ class TotalWipeBanner(Popup):
                 subject_pid = int(raw)
         except Exception as err:
             logger.debug(f"_cancel_wipe: subject_pid-Parse failed: {err}")
-        asyncio.create_task(self.munchlax.dismiss_wipe(subject_pid))
+        self.munchlax.dispatch_cross_thread(
+            self.munchlax.dismiss_wipe(subject_pid),
+            name="dismiss_wipe",
+        )
         self.dismiss()
 
     def _pick_other(self):
@@ -311,7 +317,10 @@ class TotalWipeBanner(Popup):
         dismiss_delay = None
         try:
             try:
-                ok, msg = await self.munchlax.reset_session_data()
+                # Munchlax auf eigenem Thread (Phase 3).
+                ok, msg = await self.munchlax.submit_cross_thread(
+                    self.munchlax.reset_session_data()
+                )
             except Exception as err:
                 logger.error(f"full_reset failed: {type(err)},{err}")
                 logger.error(traceback.format_exc())
@@ -400,8 +409,10 @@ class TotalWipeBanner(Popup):
         # potentiell neue Team-Zustaende, aber der Diff-Guard koennte den
         # ersten notify_update verschlucken.
         try:
-            await self.munchlax.force_overlay_broadcast(
-                f"randomize+restore: {snap_id}"
+            await self.munchlax.submit_cross_thread(
+                self.munchlax.force_overlay_broadcast(
+                    f"randomize+restore: {snap_id}"
+                )
             )
         except Exception as err:
             logger.warning(f"force_overlay_broadcast nach randomize+restore failed: {err}")

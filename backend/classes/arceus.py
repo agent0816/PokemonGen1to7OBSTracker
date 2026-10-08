@@ -1,5 +1,6 @@
 import asyncio
 import pickle
+import threading
 import time
 import traceback
 from backend.classes.pokedex_db import PokedexDB
@@ -173,6 +174,11 @@ class Arceus:
         # Zuletzt gesehene Badge-Werte pro (client_id, player_id) für Auto-Splits.
         self._timer_last_badges: dict[tuple[str, int], int] = {}
         self.timer_task = None
+        # Explicit None-init analog timer_task: ohne diese Zeile liefe
+        # `stop()` vor dem ersten `start()` in AttributeError, weil
+        # `self.heartbeattask` dann noch nicht als Attribut existiert
+        # (sync-reviewer R3 H1).
+        self.heartbeattask: asyncio.Task | None = None
         # Countdown-Timer (unabhängig vom Race-Timer). Für z.B. YouTube-Aufnahme:
         # Zeit setzen, Server broadcastet countdown_finished wenn abgelaufen,
         # Clients spielen dann einen Ton oder zeigen ein Popup.
@@ -192,7 +198,19 @@ class Arceus:
         self.writer_locks = {}
         self.server = None
         self.is_connected = False
-        self.disconnect_lock = asyncio.Lock()
+        # asyncio.Lock() wird an den Loop gebunden, auf dem er erstellt wird.
+        # Seit Phase 1 der Loop-Isolation (Arceus laeuft auf ArceusLoop, nicht
+        # mehr Kivy) muss der Lock VOR Lock-Nutzung auf dem arceus-Loop
+        # entstehen — darum lazy init in start().
+        self.disconnect_lock: asyncio.Lock | None = None
+        # Schuetzt die Kivy-sichtbaren Client-Dicts (munchlaxes,
+        # munchlax_names, munchlax_status) vor gleichzeitiger Mutation durch
+        # den arceus-Loop (handle_munchlax, disconnect_client,
+        # check_heartbeats) und Iteration durch den Kivy-Loop (mainmenu
+        # change_munchlax_status, clear_clients). threading.Lock, kein
+        # asyncio.Lock — der Zugriff kommt aus zwei verschiedenen Loops.
+        # Lock-Haltezeit minimal: Writes/Pops im Lock, Netz-Awaits ausserhalb.
+        self.arc_state_lock = threading.Lock()
         self.rem = rem
 
         # Diagnose-State pro Client (Phase B). session_started_at, recv/sent-
@@ -266,6 +284,29 @@ class Arceus:
                     )
                 del self._err_counts[err_type]
 
+    def snapshot_clients(self) -> dict[str, tuple[str, str]]:
+        """Konsistenter Snapshot der Kivy-sichtbaren Client-Dicts.
+
+        Rueckgabe: ``{client_id: (name, status)}``. Wird vom Kivy-Thread aus
+        aufgerufen (mainmenu.change_munchlax_status, clear_clients) als
+        thread-sicherer Ersatz fuer die Live-Iteration ueber
+        ``self.munchlax_status`` / ``self.munchlax_names`` — der arceus-Loop
+        kann waehrend einer solchen Iteration jederzeit Clients adden oder
+        rauswerfen, was ohne Lock in ``RuntimeError: dict changed size
+        during iteration`` endet.
+
+        Lock-Haltezeit ist eine flache Dict-Comprehension — kein Netz, kein
+        await, keine andere Lock-Nutzung dazwischen.
+        """
+        with self.arc_state_lock:
+            return {
+                cid: (
+                    self.munchlax_names.get(cid, ""),
+                    self.munchlax_status.get(cid, "unknown"),
+                )
+                for cid in self.munchlax_status
+            }
+
     async def handle_munchlax(self, reader, writer):
 
         raw = await self.receive_message(reader)
@@ -285,9 +326,10 @@ class Arceus:
                 client_name, client_id = raw.rsplit("_", 1)
         else:
             client_name, client_id = parts
-        self.munchlaxes[client_id] = writer
-        self.munchlax_names[client_id] = client_name
-        self.munchlax_status[client_id] = 'connected'
+        with self.arc_state_lock:
+            self.munchlaxes[client_id] = writer
+            self.munchlax_names[client_id] = client_name
+            self.munchlax_status[client_id] = 'connected'
         self.heartbeat_counts[client_id] = 0
         self._client_sessions[client_id] = {
             "started_at": time.time(),
@@ -2195,9 +2237,10 @@ class Arceus:
                 # + Frueh-Disconnect) hat ein fehlender Heartbeat-Key hier
                 # KeyError geworfen und den gesamten Cleanup + Broadcasts
                 # verschluckt. Alle State-Dicts konsistent robust halten.
-                self.munchlaxes.pop(client_id, None)
-                self.munchlax_names.pop(client_id, None)
-                self.munchlax_status.pop(client_id, None)
+                with self.arc_state_lock:
+                    self.munchlaxes.pop(client_id, None)
+                    self.munchlax_names.pop(client_id, None)
+                    self.munchlax_status.pop(client_id, None)
                 self.munchlax_heartbeats.pop(client_id, None)
                 self.heartbeat_counts.pop(client_id, None)
                 self.writer_locks.pop(client_id, None)
@@ -2340,14 +2383,16 @@ class Arceus:
                         )
                         self.heartbeat_counts[client_id] += 1
                         if self.heartbeat_counts[client_id] > HEARTBEAT_MISS_LIMIT:
-                            to_disconnect.append(
-                                (client_id, self.munchlaxes.get(client_id))
-                            )
+                            with self.arc_state_lock:
+                                snap_writer = self.munchlaxes.get(client_id)
+                            to_disconnect.append((client_id, snap_writer))
                         else:
-                            self.munchlax_status[client_id] = "warning"
+                            with self.arc_state_lock:
+                                self.munchlax_status[client_id] = "warning"
                     else:
                         self.heartbeat_counts[client_id] = 0
-                        self.munchlax_status[client_id] = "connected"
+                        with self.arc_state_lock:
+                            self.munchlax_status[client_id] = "connected"
                 for client_id, snap_writer in to_disconnect:
                     await self.disconnect_client(
                         client_id, writer=snap_writer, reason="heartbeat_timeout"
@@ -2395,6 +2440,12 @@ class Arceus:
         # den beim __init__ kopierten Startwert — ohne Sync öffnet der Socket
         # auf dem alten Port. Analog Bizhawk.start.
         self.port = self.rem.get('client_port', self.port)
+        # asyncio.Lock lazy auf dem arceus-Loop erzeugen (siehe Kommentar
+        # im __init__ zu disconnect_lock). start() laeuft via
+        # ArceusThread.submit_coro bereits auf dem arceus-Loop; der Lock
+        # bindet damit an den richtigen Loop.
+        if self.disconnect_lock is None:
+            self.disconnect_lock = asyncio.Lock()
         self.server = await asyncio.start_server(
             self.handle_munchlax, self.host, self.port)
 
@@ -2417,11 +2468,16 @@ class Arceus:
         try:
             data = await self.receive_message(reader)
             if isinstance(data, dict) and data.get("type") == "sprite_path_obs":
-                for key, value in data.items():
-                    if key != "type":
-                        sp[key] = value
+                # sp wird NICHT auf dem arceus-Loop mutiert — der Kivy-Thread
+                # iteriert/dumpt dasselbe Config-Dict (save_config, UI-Reads),
+                # und ein Add-Key-On-arceus-Loop neben einer Iteration-On-Kivy
+                # endet in `dict changed size during iteration`. Statt dessen
+                # Payload bauen und save_callback uebergeben; der Callback
+                # verschiebt Mutation + YAML-Write per Clock.schedule_once auf
+                # den Kivy-Loop.
+                payload = {k: v for k, v in data.items() if k != "type"}
                 if save_callback:
-                    save_callback()
+                    save_callback(payload)
                 await self.send_message(writer, "ok")
                 self.logger.info(f"OBS-Sprite-Pfade vom Helper empfangen und gespeichert.")
             else:
@@ -2429,27 +2485,112 @@ class Arceus:
                 self.logger.warning(f"Unbekannte Helper-Nachricht: {data}")
         except Exception as err:
             self.logger.error(f"Fehler im Helper-Handler: {err}")
+            self.logger.error(traceback.format_exc())
         finally:
-            writer.close()
-            await writer.wait_closed()
+            # wait_closed() ohne try/except warf bei Reset der Gegenseite
+            # ConnectionResetError aus dem Handler-Task, der als "Task
+            # exception never retrieved" verloren ging (sync-reviewer R2 W5).
+            try:
+                writer.close()
+            except Exception as exc:
+                self.logger.warning(
+                    f"Helper-Handler writer.close() failed: {type(exc).__name__},{exc}"
+                )
+            try:
+                # Timeout analog zu disconnect_client/stop_helper_listener
+                # (sync-reviewer R3 H2 Konsistenz). Windows WinError 121 kann
+                # wait_closed() minutenlang haengen lassen.
+                await asyncio.wait_for(writer.wait_closed(), timeout=2.0)
+            except asyncio.TimeoutError:
+                self.logger.warning(
+                    "Helper-Handler writer.wait_closed() Timeout — Socket wird aufgegeben"
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    f"Helper-Handler writer.wait_closed() failed: "
+                    f"{type(exc).__name__},{exc}"
+                )
 
     async def stop_helper_listener(self):
         if hasattr(self, 'helper_server') and self.helper_server:
             self.helper_server.close()
-            await self.helper_server.wait_closed()
+            # wait_closed() mit Timeout analog zu stop(): ab Python 3.12.1
+            # wartet Server.wait_closed() auf alle offenen Verbindungen,
+            # ohne Timeout haengt stop_helper_listener und blockiert damit
+            # auch den Server-stop() (dieser Call ist die erste Zeile dort).
+            # sync-reviewer R3 H2.
+            try:
+                await asyncio.wait_for(self.helper_server.wait_closed(), timeout=2.0)
+            except asyncio.TimeoutError:
+                self.logger.warning(
+                    "stop_helper_listener(): wait_closed Timeout — "
+                    "Helper-Server trotzdem als beendet markiert"
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    f"stop_helper_listener(): wait_closed failed: "
+                    f"{type(exc).__name__},{exc}"
+                )
             self.helper_server = None
             self.logger.info("Helper-Listener gestoppt.")
 
     async def stop(self):
         await self.stop_helper_listener()
         if self.server:
-            self.heartbeattask.cancel()
+            # heartbeattask-None-Guard: wenn stop() aufgerufen wird ohne dass
+            # start() lief, waere heartbeattask noch nicht gesetzt. Praktisch
+            # verhindert `if self.server`-Guard oben diesen Pfad, aber
+            # defensiv absichern (sync-reviewer R2 W4).
+            if self.heartbeattask is not None:
+                self.heartbeattask.cancel()
+                self.heartbeattask = None
             if self.timer_task is not None:
                 self.timer_task.cancel()
                 self.timer_task = None
-            self.server.close()
-            await self.server.wait_closed()
-            self.server = None
-            self.is_connected = False
-            self.logger.info("Arceus has been stopped.")
-            self.port = self.rem['client_port']
+            # Vor server.wait_closed() alle Client-Writer schliessen. Ab
+            # Python 3.12.1 wartet Server.wait_closed() auf alle offenen
+            # Verbindungen; ohne explicit close haengt stop() und ein
+            # nachfolgendes start() ist stiller No-Op (self.server != None).
+            # Snapshot unter arc_state_lock, Close ausserhalb — die
+            # close()-Calls sind sync (StreamWriter), aber async-close via
+            # wait_closed() haetten await noetig und wuerden das Lock halten.
+            with self.arc_state_lock:
+                writers = list(self.munchlaxes.values())
+            for w in writers:
+                try:
+                    w.close()
+                except Exception as exc:
+                    self.logger.warning(
+                        f"stop(): writer.close() failed: {type(exc).__name__},{exc}"
+                    )
+            try:
+                try:
+                    self.server.close()
+                except Exception as exc:
+                    self.logger.warning(
+                        f"stop(): server.close() failed: {type(exc).__name__},{exc}"
+                    )
+                try:
+                    await asyncio.wait_for(self.server.wait_closed(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    self.logger.warning(
+                        "stop(): server.wait_closed() Timeout — Server trotzdem "
+                        "als beendet markiert"
+                    )
+                except Exception as exc:
+                    self.logger.warning(
+                        f"stop(): wait_closed failed: {type(exc).__name__},{exc}"
+                    )
+            finally:
+                # self.server = None im finally, damit auch bei Cancel von
+                # stop() selbst (z.B. Shutdown-wait_for in app.py laeuft in
+                # Timeout und cancelt den Task) ein spaeteres start() nicht
+                # auf `if not self.arceus.server` stillschweigend returned
+                # (sync-reviewer R2 W3).
+                self.server = None
+                self.is_connected = False
+                self.logger.info("Arceus has been stopped.")
+                # .get() statt [], damit ein fehlender rem-Key im finally
+                # keinen laufenden CancelledError ueberdeckt (reviewer R3 W6).
+                # start() liest den Port ohnehin frisch via .get.
+                self.port = self.rem.get('client_port', self.port)

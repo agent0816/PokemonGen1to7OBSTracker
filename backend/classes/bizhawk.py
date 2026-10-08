@@ -64,11 +64,17 @@ class Bizhawk:
         self.is_connected = False
         # Thread-Isolation (Phase 1 Infra). Werden spaeter in Phase 2 fuer
         # cross-thread run_coroutine_threadsafe-Delegationen genutzt.
-        # - _kivy_loop: Loop, auf dem Kivy + Munchlax leben (per set_kivy_loop).
+        # - _munchlax_loop: Loop, auf dem Kivy + Munchlax leben (per set_munchlax_loop).
         # - _bh_loop: Loop, auf dem der Bizhawk-Server + handle_bizhawk laufen
         #   (gesetzt am Anfang von self.start(), sobald die Coro im BH-Thread
         #   ausgefuehrt wird).
-        self._kivy_loop: asyncio.AbstractEventLoop | None = None
+        self._munchlax_loop: asyncio.AbstractEventLoop | None = None
+        # Optional: Referenz auf das MunchlaxThread-Objekt, dessen
+        # `submit_coro` mit atomic _closing-Check die Shutdown-Window-
+        # Race abfaengt. Wird in frontend/app.py:build() per
+        # set_munchlax_thread() gesetzt. None → Fallback-Pfad in
+        # _call_on_munchlax / _dispatch_on_munchlax.
+        self._munchlax_thread = None
         self._bh_loop: asyncio.AbstractEventLoop | None = None
         # Aktuell ungenutzt: disconnect() koordiniert Reconnect-Races ueber
         # Writer-Identitaets-Guards (siehe dortige Kommentare), nicht ueber
@@ -169,7 +175,7 @@ class Bizhawk:
                 ev = self._team_updated_events.get(client_id)
                 if ev is not None:
                     ev.set()
-                # Writes auf shared Munchlax-Dicts unter bh_state_lock serialisieren,
+                # Writes auf shared Munchlax-Dicts unter state_lock serialisieren,
                 # damit Kivy-seitige Iterationen (overlay-Broadcast, _persist_teams)
                 # keine Dict-Size-Changes mitten im Loop sehen.
                 # Dict-Referenzen INNERHALB des Locks holen, sonst kann
@@ -178,7 +184,7 @@ class Bizhawk:
                 # das verworfene Dict (Writes gehen verloren, oder
                 # unsorted_teams[player][index] wirft KeyError, weil der neue
                 # Dict leer ist).
-                with self.munchlax.bh_state_lock:
+                with self.munchlax.state_lock:
                     teams = self.munchlax.bizhawk_teams
                     unsorted = self.munchlax.unsorted_teams
                     # Vor dem Update den alten Dex-Stand merken — wenn sich die
@@ -225,7 +231,7 @@ class Bizhawk:
                 # inkonsistenten Snapshot in _persist_teams / change_order /
                 # _serialize_final_teams).
                 splitted_stats = stats.split(",")
-                with self.munchlax.bh_state_lock:
+                with self.munchlax.state_lock:
                     team = self.munchlax.bizhawk_teams.get(player)
                     if team is None:
                         return
@@ -260,7 +266,7 @@ class Bizhawk:
 
             name = self.munchlax.pl.get('your_name', '')
             if name:
-                with self.munchlax.bh_state_lock:
+                with self.munchlax.state_lock:
                     self.munchlax.player_names[player] = name
 
             self.munchlax._on_new_pokemon_detected = lambda p, ed, pkmns, pvs: (
@@ -1003,7 +1009,7 @@ class Bizhawk:
         """Box-Read als Reaktion auf Team-Änderung. Cache + Push via Munchlax."""
         try:
             boxes = await self.read_and_decode_boxes(client_id)
-            await self._call_on_kivy(self.munchlax.update_boxes(player, boxes))
+            await self._call_on_munchlax(self.munchlax.update_boxes(player, boxes))
             self.logger.info(f"Auto-Box-Refresh player={player}: {len(boxes)} Boxen aktualisiert.")
         except Exception as err:
             self.logger.warning(f"Auto-Box-Refresh player={player} fehlgeschlagen: {type(err)},{err}")
@@ -1027,7 +1033,7 @@ class Bizhawk:
             pockets = await self.read_and_decode_bag(client_id)
             if not pockets:
                 return
-            await self._call_on_kivy(self.munchlax.update_bag(player, edition, pockets))
+            await self._call_on_munchlax(self.munchlax.update_bag(player, edition, pockets))
             self.logger.debug(
                 f"Auto-Bag-Refresh player={player}: "
                 f"{', '.join(f'{k}={len(v)}' for k, v in pockets.items())}"
@@ -1262,7 +1268,7 @@ class Bizhawk:
                     f"shiny_override={result.is_shiny_override} "
                     f"dupes={result.is_dupes_skip} balls={result.has_balls}"
                 )
-                self._dispatch_on_kivy(self.munchlax.send_encounter_sync({
+                self._dispatch_on_munchlax(self.munchlax.send_encounter_sync({
                     "personality": int(opp["personality"]),
                     "owner": owner,
                     "edition": int(edition),
@@ -1307,7 +1313,7 @@ class Bizhawk:
             self._process_new_pokemon_sync(client_id, player, edition, pokemons, new_pvs)
             return
         # Same-Thread-Guard: wenn wir bereits auf dem BH-Loop laufen (z.B.
-        # Lambda wird nach einem _call_on_kivy wieder zurueckgereicht),
+        # Lambda wird nach einem _call_on_munchlax wieder zurueckgereicht),
         # run_coroutine_threadsafe lief in einen Deadlock — stattdessen
         # direkt create_task.
         try:
@@ -1435,7 +1441,7 @@ class Bizhawk:
                         self.logger.error(traceback.format_exc())
                         starter_result = None
                     if starter_result is not None and not starter_result.already_logged:
-                        self._dispatch_on_kivy(self.munchlax.send_encounter_sync({
+                        self._dispatch_on_munchlax(self.munchlax.send_encounter_sync({
                             "personality": int(first_pv),
                             "owner": owner,
                             "edition": int(edition),
@@ -1487,7 +1493,7 @@ class Bizhawk:
                     f"Gift erkannt: dex={dexnr} lv={pokemon.lvl} "
                     f"method={result.method} map_header={map_header}"
                 )
-                self._dispatch_on_kivy(self.munchlax.send_encounter_sync({
+                self._dispatch_on_munchlax(self.munchlax.send_encounter_sync({
                     "personality": int(pv),
                     "owner": owner,
                     "edition": int(edition),
@@ -1506,7 +1512,7 @@ class Bizhawk:
                 # Trigger auf dem Kivy-Loop — Munchlax-Writer lebt dort. Executor-Worker
                 # von process_gift_encounter konnte kein asyncio.create_task rufen.
                 self.logger.info(f"Token-Earn ausgelöst für {owner}")
-                self._dispatch_on_kivy(self.munchlax.send_soullink_token_earned(owner))
+                self._dispatch_on_munchlax(self.munchlax.send_soullink_token_earned(owner))
 
     def _process_new_pokemon_sync(self, client_id: str, player: int, edition,
                                     pokemons, new_pvs: list[int]):
@@ -1776,7 +1782,7 @@ class Bizhawk:
                 self.logger.info(
                     f"Encounter-Outcome: PV={battle_pv:#x} → {outcome}"
                 )
-                self._dispatch_on_kivy(
+                self._dispatch_on_munchlax(
                     self.munchlax.send_encounter_outcome(int(battle_pv), owner, outcome)
                 )
         except Exception as err:
@@ -1895,20 +1901,32 @@ class Bizhawk:
                     f"disconnect({client_id}): Reconnect waehrend Cleanup — Status wird nicht ueberschrieben."
                 )
     
-    def set_kivy_loop(self, loop: asyncio.AbstractEventLoop) -> None:
-        """Setzt die Kivy-Loop-Referenz fuer cross-thread-Delegation.
+    def set_munchlax_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Setzt die Munchlax-Loop-Referenz fuer cross-thread-Delegation.
 
         Wird in frontend/app.py:build() nach Bizhawk-Instanzierung aufgerufen.
-        _call_on_kivy / _dispatch_on_kivy nutzen diese Ref, um Munchlax-Coros
-        thread-safe auf den Kivy-Loop zu posten, auch wenn handle_bizhawk im
+        _call_on_munchlax / _dispatch_on_munchlax nutzen diese Ref, um Munchlax-Coros
+        thread-safe auf den Munchlax-Loop zu posten, auch wenn handle_bizhawk im
         BH-Thread laeuft.
         """
-        self._kivy_loop = loop
+        self._munchlax_loop = loop
 
-    async def _call_on_kivy(self, coro):
+    def set_munchlax_thread(self, thread) -> None:
+        """Setzt die MunchlaxThread-Referenz, damit Dispatches die
+        shutdown-Window-Guard (`_closing`-Flag) des Threads abfragen koennen.
+
+        Ohne diese Ref wuerde `_call_on_munchlax` / `_dispatch_on_munchlax` nur
+        `_munchlax_loop.is_closed()` pruefen und verpasst das Fenster
+        zwischen `loop.stop()` und `loop.close()` (R3 WARN) — Coros
+        wuerden auf einem stoppenden Loop landen und als "Task was
+        destroyed" enden, Caller haengen auf wrap_future-Awaits.
+        """
+        self._munchlax_thread = thread
+
+    async def _call_on_munchlax(self, coro):
         """Delegiert eine Coroutine an den Kivy-Loop und wartet auf Ergebnis.
 
-        Fallback: wenn _kivy_loop (noch) nicht gesetzt ist (Testkontext),
+        Fallback: wenn _munchlax_loop (noch) nicht gesetzt ist (Testkontext),
         oder falls der Call bereits auf dem Kivy-Loop lebt, direkt `await`
         der Coro — identisches Ergebnis ohne cross-thread-Overhead.
 
@@ -1923,31 +1941,44 @@ class Bizhawk:
             current = asyncio.get_running_loop()
         except RuntimeError:
             current = None
-        if self._kivy_loop is None or current is self._kivy_loop:
+        if self._munchlax_loop is None or current is self._munchlax_loop:
             return await coro
-        if self._kivy_loop.is_closed():
+        # Wenn ein Thread-Objekt bekannt ist, uebernimmt dessen `submit_coro`
+        # den atomic _closing+is_closed-Check (R3 WARN). Fallback-Pfad
+        # unten pruefts nur is_closed(), weil der Thread-Hinweis fehlt.
+        thread = getattr(self, '_munchlax_thread', None)
+        if thread is not None:
+            try:
+                fut = thread.submit_coro(coro)
+            except RuntimeError as err:
+                raise RuntimeError(
+                    f"_call_on_munchlax: Submit abgelehnt "
+                    f"(MunchlaxThread shutdown): {err}"
+                ) from err
+            return await asyncio.wrap_future(fut)
+        if self._munchlax_loop.is_closed():
             try:
                 coro.close()
             except Exception:
                 pass
-            raise RuntimeError("_call_on_kivy: Kivy-Loop ist geschlossen")
-        # TOCTOU: zwischen is_closed()-Check und run_coroutine_threadsafe
-        # kann der Kivy-Loop sterben (Shutdown-Race). Der Submit wuerde
-        # dann RuntimeError werfen und die Coro ungeschlossen zuruecklassen
-        # (RuntimeWarning: coroutine was never awaited).
+            raise RuntimeError("_call_on_munchlax: Munchlax-Loop ist geschlossen")
+        # Fallback-Pfad (kein Thread-Objekt bekannt). TOCTOU: zwischen
+        # is_closed()-Check und run_coroutine_threadsafe kann der Loop
+        # sterben; Submit wuerde dann RuntimeError werfen und die Coro
+        # ungeschlossen lassen (RuntimeWarning).
         try:
-            fut = asyncio.run_coroutine_threadsafe(coro, self._kivy_loop)
+            fut = asyncio.run_coroutine_threadsafe(coro, self._munchlax_loop)
         except RuntimeError as err:
             try:
                 coro.close()
             except Exception:
                 pass
             raise RuntimeError(
-                f"_call_on_kivy: Submit abgelehnt (Loop-Shutdown-Race): {err}"
+                f"_call_on_munchlax: Submit abgelehnt (Loop-Shutdown-Race): {err}"
             ) from err
         return await asyncio.wrap_future(fut)
 
-    def _dispatch_on_kivy(self, coro) -> None:
+    def _dispatch_on_munchlax(self, coro) -> None:
         """Fire-and-forget-Dispatch einer Coroutine auf den Kivy-Loop.
 
         Ersatz fuer `asyncio.create_task(munchlax.X(...))`. Fehler aus der
@@ -1960,10 +1991,10 @@ class Bizhawk:
             current = asyncio.get_running_loop()
         except RuntimeError:
             current = None
-        if self._kivy_loop is None or current is self._kivy_loop:
+        if self._munchlax_loop is None or current is self._munchlax_loop:
             if current is None:
                 self.logger.error(
-                    "_dispatch_on_kivy ohne Loop — Coro verworfen."
+                    "_dispatch_on_munchlax ohne Loop — Coro verworfen."
                 )
                 try:
                     coro.close()
@@ -1972,9 +2003,33 @@ class Bizhawk:
                 return
             asyncio.create_task(self._guard_coro(coro))
             return
-        if self._kivy_loop.is_closed():
+        # Thread-Objekt (wenn gesetzt) uebernimmt den atomic
+        # _closing+is_closed-Check (R3 WARN). submit_coro_logged schliesst
+        # die Coro bei Shutdown-Window-Hit sauber ab und loggt den
+        # Fehler via done_callback.
+        thread = getattr(self, '_munchlax_thread', None)
+        if thread is not None:
+            try:
+                thread.submit_coro_logged(
+                    self._guard_coro(coro),
+                    name="bizhawk._dispatch_on_munchlax",
+                )
+            except RuntimeError as err:
+                self.logger.warning(
+                    f"_dispatch_on_munchlax: MunchlaxThread shutdown — "
+                    f"Coro verworfen ({err})"
+                )
+                # submit_coro hat den guard-Wrapper schon geschlossen.
+                # Innere coro muss hier noch zu, sonst "never awaited".
+                try:
+                    coro.close()
+                except Exception:
+                    pass
+            return
+        # Fallback (kein Thread-Objekt bekannt).
+        if self._munchlax_loop.is_closed():
             self.logger.warning(
-                "_dispatch_on_kivy: Kivy-Loop geschlossen, Coro verworfen."
+                "_dispatch_on_munchlax: Munchlax-Loop geschlossen, Coro verworfen."
             )
             try:
                 coro.close()
@@ -1987,10 +2042,10 @@ class Bizhawk:
         # "coroutine was never awaited"-Warnung.
         guard = self._guard_coro(coro)
         try:
-            asyncio.run_coroutine_threadsafe(guard, self._kivy_loop)
+            asyncio.run_coroutine_threadsafe(guard, self._munchlax_loop)
         except RuntimeError as err:
             self.logger.warning(
-                f"_dispatch_on_kivy submit fehlgeschlagen: {err}"
+                f"_dispatch_on_munchlax submit fehlgeschlagen: {err}"
             )
             try:
                 guard.close()
@@ -2005,7 +2060,7 @@ class Bizhawk:
         try:
             await coro
         except Exception as err:
-            self.logger.error(f"_dispatch_on_kivy coro failed: {type(err)},{err}")
+            self.logger.error(f"_dispatch_on_munchlax coro failed: {type(err)},{err}")
             self.logger.error(traceback.format_exc())
 
     async def start(self, munchlax):

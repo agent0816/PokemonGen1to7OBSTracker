@@ -59,8 +59,59 @@ class OBS():
         self._swap_filters: set[str] = set()
         self._fade_filters_initialized: set[str] = set()
         self._move_filters_initialized: set[str] = set()
+        # Serialisiert OBS-WebSocket-Calls auf dem Kivy-Loop. Rationale:
+        # changeSource / change_badges / change_team_badges und redraw_obs
+        # haben mehrere internen awaits (Fade-Filter, Slot-Shift) und
+        # ueberlappen sich sonst (Munchlax fire-and-forget-Dispatches aus
+        # dem Munchlax-Loop, OBS-Reconnect-redraw aus Kivy). Lock lazy auf
+        # dem Kivy-Loop angelegt (OBS lebt dort).
+        self._obs_dispatch_lock: asyncio.Lock | None = None
+        # Timeout fuer OBS-Call unter Lock — hängt simpleobsws (nicht
+        # identified / Netz tot), stauen sich sonst alle folgenden
+        # Updates. 15s ist mehr als jeder reale OBS-Call (ms-Bereich).
+        self._OBS_DISPATCH_TIMEOUT = 15.0
 
         self.logger = get_logger(__name__, './logs/obs.log')
+
+    async def _obs_serial(self, coro, *, timeout: float | None = -1):
+        """Serialisiert eine OBS-Coro unter dem app-weiten OBS-Dispatch-
+        Lock. Reihenfolge-Konsistenz zwischen Munchlax-Receive-Loop-
+        Dispatches und OBS-eigenem redraw.
+
+        `timeout` Sentinel:
+          -1 (default, nicht uebergeben) → `_OBS_DISPATCH_TIMEOUT` (15s).
+             Fuer atomic Einzelcalls (change_badges, changeSource,
+             change_team_badges, RaceTimer-Set) ausreichend — simpleobsws
+             selbst hat internes WS-Timeout.
+          None → Timeout deaktiviert. Fuer mehrstufige Pfade (redraw_obs
+             mit Player x Slot Iteration) muss explizit None gesetzt
+             werden, sonst reisst wait_for den Redraw mitten in der
+             Schleife ab (R4 WARN).
+          float → eigener Timeout fuer Spezialfaelle.
+        """
+        if self._obs_dispatch_lock is None:
+            self._obs_dispatch_lock = asyncio.Lock()
+        effective_timeout = (
+            self._OBS_DISPATCH_TIMEOUT if timeout == -1 else timeout
+        )
+        async with self._obs_dispatch_lock:
+            try:
+                if effective_timeout is not None:
+                    await asyncio.wait_for(coro, timeout=effective_timeout)
+                else:
+                    await coro
+            except asyncio.TimeoutError:
+                self.logger.warning(
+                    f"_obs_serial Timeout nach {effective_timeout}s — "
+                    "OBS-Call verworfen, Reihenfolge bleibt sauber"
+                )
+            except Exception as err:
+                # CLAUDE.md: Traceback bei Exceptions pflicht. Vorher nur
+                # eine Zeile ohne Context (R4 HINWEIS).
+                self.logger.warning(
+                    f"_obs_serial failed: {type(err).__name__}: {err}"
+                )
+                self.logger.warning(traceback.format_exc())
 
     async def load_obsws(self):
         if not self.ws or not self.ws.is_identified():
@@ -111,7 +162,9 @@ class OBS():
         batch = []
         # Alle Slot-Sources prüfen (auch stale Filter aus vorherigen Sessions)
         # Spieler aus sorted_teams oder Fallback auf [1..max_players]
-        players = list(self.munchlax.sorted_teams.keys()) if self.munchlax.sorted_teams else list(range(1, self.munchlax.pl.get('number_of_players', 1) + 1))
+        # Snapshot statt Live-keys(): Munchlax-Loop kann parallel rebind.
+        teams_snapshot = self.munchlax.snapshot_sorted_teams()
+        players = list(teams_snapshot.keys()) if teams_snapshot else list(range(1, self.munchlax.pl.get('number_of_players', 1) + 1))
         for player in players:
             for slot in range(6):
                 for source in self._all_slot_sources(player, slot):
@@ -143,21 +196,49 @@ class OBS():
             await self.ws.call_batch(batch)
 
     async def redraw_obs(self):
+        """Full redraw. Laeuft serialisiert gegen Munchlax-Dispatches
+        (change_badges/changeSource/change_team_badges), damit Reconnect-
+        redraw und Live-Updates sich nicht ueberlappen.
+
+        `timeout=None` MUSS gesetzt bleiben: der Redraw iteriert alle
+        Player x Slot mit Fade-Filter-/HP-/Swap-Init. Bei vielen Spielern
+        oder einem traegen OBS kann das > 15s dauern — der Default-
+        Timeout wuerde den Redraw mitten in der Schleife abschneiden
+        (siehe R4 WARN). Einzelne ws-Requests haben ihr eigenes
+        simpleobsws-Timeout.
+        """
+        await self._obs_serial(self._redraw_obs_impl(), timeout=None)
+
+    async def _redraw_obs_impl(self):
         if self.ws and self.ws.is_identified():
             await self._find_scene()
             await self._reset_fade_filters()
+            # Snapshots statt Live-Iteration: Munchlax-Loop (seit Phase 3)
+            # kann wahrend des redraws parallel Teams rebind oder einen
+            # neuen Spieler-Key setzen → `dict changed size during
+            # iteration`. snapshot_sorted_teams nimmt deshalb eine
+            # konsistente Momentaufnahme unter state_lock.
+            teams_snapshot = self.munchlax.snapshot_sorted_teams()
+            editions_snapshot = self.munchlax.snapshot_editions()
             if self.conf.get('show_hp_bars'):
-                for player in self.munchlax.sorted_teams:
+                for player in teams_snapshot:
                     await self._ensure_hp_bars(player, range(6))
             if self.conf.get('show_status_effects'):
-                for player in self.munchlax.sorted_teams:
+                for player in teams_snapshot:
                     await self._ensure_filters(player, range(6))
             if self.conf.get('animate_obs_reorder'):
-                for player in self.munchlax.sorted_teams:
+                for player in teams_snapshot:
                     await self._cache_slot_info(player)
                     await self._ensure_swap_filters(player)
-            for player in self.munchlax.sorted_teams:
-                await self.changeSource(player, range(6), self.munchlax.sorted_teams[player], self.munchlax.editions[player])
+            for player, team in teams_snapshot.items():
+                edition = editions_snapshot.get(player)
+                if edition is None:
+                    self.logger.warning(
+                        f"redraw_obs: Edition fehlt fuer player={player} — "
+                        "Slot uebersprungen (snapshot inkonsistent)"
+                    )
+                    continue
+                await self.changeSource(player, range(6), team, edition)
                 await self.change_badges(player)
 
     # ── Scene-Auto-Detection ─────────────────────────────────────────

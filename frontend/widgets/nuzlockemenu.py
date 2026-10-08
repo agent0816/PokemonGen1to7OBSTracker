@@ -984,7 +984,11 @@ class NuzlockeMenu(Screen):
             return
         cfg = self._collect_config()
         try:
-            asyncio.create_task(self.munchlax.send_soullink_config(cfg))
+            # Munchlax auf eigenem Thread (Phase 3).
+            self.munchlax.dispatch_cross_thread(
+                self.munchlax.send_soullink_config(cfg),
+                name="send_soullink_config",
+            )
             self.status_label.text = f"Config gesendet: mode={cfg['mode']}, {len(cfg['expected_owners'])} Spieler"
             logger.info(f"Soullink-Config gesendet: {cfg}")
         except Exception as err:
@@ -1076,8 +1080,10 @@ class NuzlockeMenu(Screen):
             except ValueError:
                 edition = edition_text
         try:
-            asyncio.create_task(
-                self.munchlax.send_soullink_token_redeem(owner, edition, route)
+            # Munchlax auf eigenem Thread (Phase 3).
+            self.munchlax.dispatch_cross_thread(
+                self.munchlax.send_soullink_token_redeem(owner, edition, route),
+                name="send_soullink_token_redeem",
             )
             self.status_label.text = f"Token-Redeem gesendet: {owner} route {route}"
         except Exception as err:
@@ -1249,8 +1255,10 @@ class NuzlockeMenu(Screen):
             # Fix Bug 4a: nach Restore Overlay explizit refreshen (Diff-Guard
             # in alter_teams kann sonst den ersten notify_update verschlucken).
             try:
-                await self.munchlax.force_overlay_broadcast(
-                    f"snapshot restore (nuzlockemenu): {snap_id}"
+                await self.munchlax.submit_cross_thread(
+                    self.munchlax.force_overlay_broadcast(
+                        f"snapshot restore (nuzlockemenu): {snap_id}"
+                    )
                 )
             except Exception as err:
                 logger.warning(f"force_overlay_broadcast nach restore failed: {err}")

@@ -87,8 +87,15 @@ class TimerWidget(BoxLayout):
                                     on_press=lambda *_: self._send_async(self._send_countdown_cancel())))
         self.add_widget(cd_btns)
 
-        # Countdown-Sound-Callback registrieren
-        self.munchlax.countdown_finished_callback = self._on_countdown_finished
+        # Countdown-Sound-Callback registrieren. Clock-wrap: Munchlax ruft
+        # Callback aus seinem eigenen Thread (Phase 3). Clock.schedule_once
+        # bringt die UI-Mutation (Audio-Spawn, Label-Update) sicher auf den
+        # Kivy-Main-Thread.
+        self.munchlax.countdown_finished_callback = (
+            lambda label, dur: Clock.schedule_once(
+                lambda dt: self._on_countdown_finished(label, dur), 0
+            )
+        )
 
         # UI-Update-Tick (rein lokal, nutzt Munchlax-Tick-Anker)
         Clock.schedule_interval(self._refresh_display, 0.25)
@@ -112,20 +119,24 @@ class TimerWidget(BoxLayout):
             logger.error(f"async task create failed: {type(err)},{err}")
             logger.error(f"{traceback.format_exc()}")
 
+    # Munchlax lebt seit Phase 3 auf eigenem Thread (siehe
+    # backend/munchlax_thread.py). Timer-/Countdown-Coros muessen via
+    # submit_cross_thread auf den Munchlax-Loop gelegt werden, sonst
+    # binden ihre writer_lock/send_message an den Kivy-Loop.
     async def _send_timer_start(self):
-        await self.munchlax.send_timer_start()
+        await self.munchlax.submit_cross_thread(self.munchlax.send_timer_start())
 
     async def _send_timer_pause(self):
-        await self.munchlax.send_timer_pause_request()
+        await self.munchlax.submit_cross_thread(self.munchlax.send_timer_pause_request())
 
     async def _send_timer_resume(self):
-        await self.munchlax.send_timer_resume_request()
+        await self.munchlax.submit_cross_thread(self.munchlax.send_timer_resume_request())
 
     async def _send_timer_split(self):
-        await self.munchlax.send_timer_split("manual")
+        await self.munchlax.submit_cross_thread(self.munchlax.send_timer_split("manual"))
 
     async def _send_timer_reset(self):
-        await self.munchlax.send_timer_reset()
+        await self.munchlax.submit_cross_thread(self.munchlax.send_timer_reset())
 
     async def _send_countdown_start(self):
         try:
@@ -134,16 +145,16 @@ class TimerWidget(BoxLayout):
             minutes = 0.0
         seconds = max(1.0, minutes * 60.0)
         label = (self.label_input.text or "").strip()
-        await self.munchlax.send_countdown_start(seconds, label)
+        await self.munchlax.submit_cross_thread(self.munchlax.send_countdown_start(seconds, label))
 
     async def _send_countdown_pause(self):
-        await self.munchlax.send_countdown_pause()
+        await self.munchlax.submit_cross_thread(self.munchlax.send_countdown_pause())
 
     async def _send_countdown_resume(self):
-        await self.munchlax.send_countdown_resume()
+        await self.munchlax.submit_cross_thread(self.munchlax.send_countdown_resume())
 
     async def _send_countdown_cancel(self):
-        await self.munchlax.send_countdown_cancel()
+        await self.munchlax.submit_cross_thread(self.munchlax.send_countdown_cancel())
 
     # ----- UI-Refresh -----
 

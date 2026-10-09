@@ -77,6 +77,13 @@ UNBUFFERED_DICT_TYPES = frozenset({
     # Resume-Replay zu einem alten Payload nach dem frischen Direkt-Send
     # (R2 WARNUNG sync).
     "rando_moves_sync",
+    # Support-Bundle-Upload: Chunks sind gross (bis 256 KiB), zustandslos
+    # auf Replay-Ebene (fehlgeschlagene Transfers startet User neu), und
+    # sollen nicht ueber den 300-Item-Replay-Buffer gepuffert werden.
+    "log_bundle_chunk",
+    "log_bundle_ack",
+    "log_bundle_request",
+    "log_bundle_response",
 })
 
 # Wipe-Detection HP-Consistency: erst nach N Zero-Reads pro Pokemon gilt
@@ -328,6 +335,29 @@ class Munchlax:
         # beide Formate kennt. Als Rueckfall-Strategie koennten wir dann
         # ohne Wrapper senden; aktuell ist nur der Phase-C-Server supported.
         self._resume_timeout_task: asyncio.Task | None = None
+
+        # Log-Bundle-Upload: pro (upload_id, chunk_index) ein Event + Resultat.
+        # Receiver (alter_teams) setzt Event beim Eintreffen eines ack-Dicts;
+        # upload_log_bundle wartet darauf, popt Result und sendet den naechsten
+        # Chunk. Keine zusaetzliche Pending-Queue — Transfer ist nicht idempotent,
+        # ein abgebrochener Upload wird vom User manuell neu getriggert.
+        self._bundle_ack_events: dict[tuple[str, int], asyncio.Event] = {}
+        self._bundle_ack_results: dict[tuple[str, int], dict] = {}
+        # Session-Pfad fuer Bundle-Builds (von MainMenu/Frontend via
+        # set_session_path injiziert). Kein Kivy-Import im Backend.
+        self._bundle_session_path: Path | None = None
+        # In-Flight-Guard: True solange ein Upload laeuft, verhindert
+        # parallele build_bundle-Aufrufe aus Host-Broadcast + User-Button.
+        self._bundle_upload_in_flight: bool = False
+        # Fire-and-forget-Tasks fuer host-angeforderte Bundles — Strong-Ref
+        # gegen GC.
+        self._bundle_request_tasks: set = set()
+        # Transparenz-Callback fuer Host-angefragte Bundles: Frontend
+        # registriert Toast-Show-Funktion ueber ``set_bundle_request_notify``,
+        # Munchlax ruft sie beim Eintreffen eines log_bundle_request mit
+        # ``(request_id, stage)`` auf. Stage: "incoming" / "sending" /
+        # "declined" / "failed" / "finished".
+        self._bundle_request_notify = None
 
         self.logger = get_logger(__name__, './logs/munchlax.log')
 
@@ -602,6 +632,31 @@ class Munchlax:
         auch wenn der Caller im Munchlax-Thread laeuft.
         """
         self._kivy_loop = loop
+
+    def set_bundle_session_path(self, session_path) -> None:
+        """Session-Pfad fuer Log-Bundle-Builds setzen. Wird vom Frontend
+        (MainMenu) nach Session-Wechsel injiziert; Backend-only Property,
+        kein Kivy-Import im Munchlax-Modul noetig."""
+        from pathlib import Path
+        self._bundle_session_path = Path(str(session_path)) if session_path else None
+
+    def set_bundle_request_notify(self, callback) -> None:
+        """Frontend-Callback fuer Transparenz bei Host-angefragten Bundles.
+        Signatur: ``callback(request_id: str, stage: str, info: str = "")``.
+        Wird aus dem Munchlax-Loop aufgerufen; der Callback sollte Clock.schedule_once
+        o.ae. nutzen um in den Kivy-Thread zu dispatchen."""
+        self._bundle_request_notify = callback
+
+    def _notify_bundle_request(self, request_id: str, stage: str, info: str = "") -> None:
+        cb = self._bundle_request_notify
+        if cb is None:
+            return
+        try:
+            cb(request_id, stage, info)
+        except Exception as err:
+            self.logger.warning(
+                f"bundle_request_notify ({stage}) callback error: {err}"
+            )
 
     async def _call_on_kivy(self, coro):
         """Delegiert eine Coroutine an den Kivy-Loop und wartet auf Ergebnis.
@@ -1154,6 +1209,59 @@ class Munchlax:
                         else:
                             self.logger.warning(
                                 f"rando_moves_sync ohne gueltige player_id: {pid!r}"
+                            )
+                    elif msg_type == "log_bundle_request":
+                        # Host hat per Broadcast ein Bundle angefordert.
+                        # Lokal packen + hochladen; Host-eigene Munchlax
+                        # soll keinen Loop ausloesen (sie empfaengt den
+                        # Broadcast auch, hat aber nichts hochzuladen).
+                        rid = data.get("request_id", "")
+                        is_host = False
+                        try:
+                            is_host = bool(self.rem.get("start_server", False))
+                        except Exception:
+                            is_host = False
+                        if is_host:
+                            self.logger.info(
+                                f"log_bundle_request ignoriert (eigener Host-"
+                                f"Broadcast): request_id={rid}"
+                            )
+                        else:
+                            self.logger.info(
+                                f"log_bundle_request empfangen: request_id={rid}"
+                            )
+                            task = asyncio.create_task(
+                                self._handle_log_bundle_request(rid)
+                            )
+                            # Strong-Ref gegen GC des fire-and-forget Tasks.
+                            self._bundle_request_tasks = getattr(
+                                self, "_bundle_request_tasks", set()
+                            )
+                            self._bundle_request_tasks.add(task)
+                            task.add_done_callback(
+                                self._bundle_request_tasks.discard
+                            )
+                    elif msg_type == "log_bundle_ack":
+                        # Server quittiert einen Chunk. Event wecken, Resultat
+                        # in Buffer legen fuer den upload_log_bundle-Caller.
+                        uid = data.get("upload_id")
+                        idx = data.get("chunk_index")
+                        if isinstance(uid, str) and isinstance(idx, int):
+                            key = (uid, idx)
+                            # Nur speichern wenn ein Waiter vorhanden ist —
+                            # verspaetete Acks nach Timeout+Caller-Pop wuerden
+                            # sonst permanent im Dict liegen (Leak).
+                            ev = self._bundle_ack_events.get(key)
+                            if ev is not None:
+                                self._bundle_ack_results[key] = data
+                                ev.set()
+                            else:
+                                self.logger.debug(
+                                    f"log_bundle_ack ohne Waiter verworfen: {uid}#{idx}"
+                                )
+                        else:
+                            self.logger.warning(
+                                f"log_bundle_ack mit ungueltigen Keys: {data!r}"
                             )
                     elif msg_type == "soullink_config":
                         self.soullink_config = data.get("config", {}) or {}
@@ -2437,6 +2545,520 @@ class Munchlax:
             )
             self.logger.warning(traceback.format_exc())
 
+    async def _handle_log_bundle_request(self, request_id: str) -> None:
+        """Reaktion auf host-initiierten log_bundle_request: lokal packen +
+        hochladen, Host per log_bundle_response ueber den Ausgang informieren.
+
+        Wrapper mit outer try/except, damit kein unerwarteter Fehler diesen
+        fire-and-forget-Task silent sterben laesst. In-Flight-Guard verhindert
+        parallelen Pack-Lauf (zwei Buttons oder Doppel-Request).
+        """
+        from backend.log_bundler import build_bundle
+
+        if self._bundle_upload_in_flight:
+            self.logger.warning(
+                f"log_bundle_request {request_id}: upload bereits in-flight — "
+                f"declined"
+            )
+            self._notify_bundle_request(request_id, "declined",
+                                         info="upload bereits in-flight")
+            try:
+                await self._send_log_bundle_response(
+                    request_id, "declined", reason="upload in flight"
+                )
+            except Exception as err:
+                self.logger.warning(
+                    f"log_bundle_response send failed: {err}"
+                )
+            return
+
+        self._bundle_upload_in_flight = True
+        name = str(self.pl.get("your_name", "") or "unknown")
+        try:
+            # Request-Session beim Eingang snapshotten: ein Reconnect auf
+            # anderen Host waehrend des 10s-Fensters darf das Bundle NICHT
+            # zum neuen Host schicken (R3 WARN).
+            request_session = self._session_id
+
+            # Transparenz-Delay: Toast anzeigen, 10s warten, dann packen.
+            # Gibt dem User Hinweis dass gleich Logs rausgehen (kein Blocker;
+            # Scope ist LAN/Freunde). Siehe Review-Diskussion R2.
+            self._notify_bundle_request(request_id, "incoming",
+                                         info="sende in 10s")
+            try:
+                await asyncio.sleep(10.0)
+            except asyncio.CancelledError:
+                raise
+
+            # Post-sleep-Guards: Verbindung + Session noch dieselben?
+            if not self.is_connected:
+                self.logger.info(
+                    f"log_bundle_request {request_id}: disconnected waehrend "
+                    f"Consent-Window — abgebrochen"
+                )
+                self._notify_bundle_request(request_id, "declined",
+                                             info="disconnected")
+                return
+            if self._session_id != request_session:
+                self.logger.info(
+                    f"log_bundle_request {request_id}: Session-Wechsel waehrend "
+                    f"Consent-Window ({request_session} -> {self._session_id}) — "
+                    f"abgebrochen"
+                )
+                self._notify_bundle_request(request_id, "declined",
+                                             info="session changed")
+                return
+
+            session_path = self._resolve_bundle_session_path()
+            if session_path is None:
+                self.logger.warning(
+                    f"log_bundle_request {request_id}: kein Session-Pfad bestimmbar"
+                )
+                self._notify_bundle_request(request_id, "declined",
+                                             info="session path unknown")
+                await self._send_log_bundle_response(
+                    request_id, "declined", reason="session path unknown"
+                )
+                return
+
+            try:
+                bundle_path = await asyncio.to_thread(
+                    build_bundle, session_path, name, False,
+                    {"request_id": request_id},
+                )
+            except Exception as err:
+                self.logger.error(
+                    f"log_bundle_request {request_id}: build_bundle failed: {err}"
+                )
+                self.logger.error(traceback.format_exc())
+                self._notify_bundle_request(request_id, "failed",
+                                             info=f"build failed: {err}")
+                # Konsistenz: lokal "failed" → Host auch "failed", nicht "declined"
+                # (R3 HINWEIS: build-fehler-pfad war inkonsistent).
+                await self._send_log_bundle_response(
+                    request_id, "failed", reason=f"build failed: {err}"
+                )
+                return
+
+            # Erneuter Session-Check vor dem Upload: Build dauerte evtl.
+            # mehrere Sekunden; ein Reconnect zu anderem Host darf das
+            # Bundle NICHT dorthin schicken (R5 WARN W3).
+            if not self.is_connected:
+                self.logger.info(
+                    f"log_bundle_request {request_id}: disconnected nach Build"
+                )
+                self._notify_bundle_request(request_id, "declined",
+                                             info="disconnected after build")
+                return
+            if self._session_id != request_session:
+                self.logger.info(
+                    f"log_bundle_request {request_id}: Session gewechselt nach "
+                    f"Build ({request_session} -> {self._session_id})"
+                )
+                self._notify_bundle_request(request_id, "declined",
+                                             info="session changed after build")
+                return
+
+            self._notify_bundle_request(request_id, "sending")
+            await self._send_log_bundle_response(request_id, "starting")
+            try:
+                ok, msg = await self._upload_log_bundle_locked(
+                    bundle_path, name,
+                    expected_session=request_session,
+                )
+            except Exception as err:
+                self.logger.error(
+                    f"log_bundle_request {request_id}: upload exception: {err}"
+                )
+                self.logger.error(traceback.format_exc())
+                ok, msg = False, f"exception: {err}"
+            self.logger.info(
+                f"log_bundle_request {request_id}: upload ok={ok}, msg={msg}"
+            )
+            self._notify_bundle_request(
+                request_id,
+                "finished" if ok else "failed",
+                info=msg,
+            )
+            try:
+                await self._send_log_bundle_response(
+                    request_id,
+                    "finished" if ok else "failed",
+                    reason=msg if not ok else "",
+                )
+            except Exception as err:
+                self.logger.warning(
+                    f"log_bundle_response finished-send failed: {err}"
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            self.logger.error(
+                f"_handle_log_bundle_request {request_id} unhandled: {err}"
+            )
+            self.logger.error(traceback.format_exc())
+        finally:
+            self._bundle_upload_in_flight = False
+
+    def _resolve_bundle_session_path(self):
+        """Pfad fuer Bundle-Builds. Priorisiert ``self.configsave``
+        (MutableString, live beim Session-Wechsel aktualisiert) ueber
+        ``pokedex_db.session_path`` (wird in disconnect auf None gesetzt)
+        und den injizierten Pfad (nur nach Pack-Klick gesetzt). Kein
+        Kivy-Zugriff aus dem Munchlax-Thread."""
+        from pathlib import Path
+        try:
+            raw = str(self.configsave) if self.configsave is not None else ""
+            if raw.strip():
+                return Path(raw)
+        except Exception:
+            pass
+        try:
+            if self.pokedex_db is not None and self.pokedex_db.session_path is not None:
+                return self.pokedex_db.session_path
+        except Exception:
+            pass
+        candidate = self._bundle_session_path
+        if candidate is not None:
+            try:
+                if str(candidate).strip():
+                    return candidate
+            except Exception:
+                pass
+        return None
+
+    async def _send_log_bundle_response(self, request_id: str, status: str,
+                                         reason: str = "") -> None:
+        """Sendet eine log_bundle_response an den Host. Nicht fatal bei Fehler."""
+        if not self.is_connected or self._server_supports_resume is not True:
+            self.logger.info(
+                f"log_bundle_response {request_id} status={status} skip "
+                f"(connected={self.is_connected}, "
+                f"supports_resume={self._server_supports_resume!r})"
+            )
+            return
+        try:
+            async with self.writer_lock:
+                await self.send_message({
+                    "type": "log_bundle_response",
+                    "request_id": request_id,
+                    "status": status,
+                    "reason": reason,
+                })
+        except Exception as err:
+            self.logger.warning(
+                f"log_bundle_response {request_id} send failed: {err}"
+            )
+
+    async def upload_log_bundle(self, bundle_path, player_name: str | None = None,
+                                chunk_timeout_s: float = 30.0,
+                                send_timeout_s: float = 60.0) -> tuple[bool, str]:
+        """Public Entry fuer manuellen Upload (MainMenu-Button). Setzt den
+        In-Flight-Guard, damit paralleler Host-Broadcast-Request keinen zweiten
+        Pack-/Upload-Lauf triggert."""
+        if self._bundle_upload_in_flight:
+            msg = "upload bereits in-flight"
+            self.logger.warning(f"upload_log_bundle: {msg}")
+            return False, msg
+        self._bundle_upload_in_flight = True
+        try:
+            return await self._upload_log_bundle_locked(
+                bundle_path, player_name,
+                chunk_timeout_s=chunk_timeout_s,
+                send_timeout_s=send_timeout_s,
+            )
+        finally:
+            self._bundle_upload_in_flight = False
+
+    async def _upload_log_bundle_locked(self, bundle_path,
+                                         player_name: str | None = None,
+                                         chunk_timeout_s: float = 30.0,
+                                         send_timeout_s: float = 60.0,
+                                         expected_session: str | None = None) -> tuple[bool, str]:
+        """Interner Upload-Pfad. Caller setzt bereits den In-Flight-Guard
+        (public Wrapper oder _handle_log_bundle_request).
+
+        Stop-and-wait pro Chunk mit Pro-Chunk-Reconnect-/Capability-Check,
+        damit ein Disconnect waehrend des Streams nicht in den vollen
+        chunk_timeout_s rennt und ein Reconnect auf None-Capability keinen
+        ungewrappten Chunk an einen Legacy-Server durchlaesst.
+        """
+        from pathlib import Path
+        from backend.log_bundle_transfer import chunk_file, generate_upload_id
+
+        path = Path(str(bundle_path))
+        if not path.exists():
+            msg = f"Bundle-Datei nicht gefunden: {path}"
+            self.logger.warning(f"upload_log_bundle: {msg}")
+            return False, msg
+
+        if not self.is_connected:
+            msg = "nicht mit Host verbunden"
+            self.logger.info(f"upload_log_bundle: {msg}")
+            return False, msg
+
+        if self._server_supports_resume is not True:
+            msg = (f"Host-Server unterstuetzt kein Bundle-Upload "
+                   f"(resume capability={self._server_supports_resume!r})")
+            self.logger.warning(f"upload_log_bundle: {msg}")
+            return False, msg
+
+        upload_id = generate_upload_id()
+        name = str(player_name or self.pl.get("your_name", "") or "unknown")
+        total_size = path.stat().st_size
+        self.logger.info(
+            f"upload_log_bundle: {path.name} ({total_size} bytes), "
+            f"upload_id={upload_id}, player={name}"
+        )
+        # Session-Snapshot: ein Reconnect auf andere Session soll den Upload
+        # abbrechen (anderer Server, falsche Zuordnung). Caller
+        # (_handle_log_bundle_request) kann per expected_session den Snapshot
+        # VOM REQUEST-EINGANG injizieren, damit ein Reconnect waehrend des
+        # 10s-Fensters oder waehrend des Builds erkannt wird (R5 WARN W3).
+        upload_session = expected_session or self._session_id
+        if expected_session is not None and self._session_id != expected_session:
+            msg = (f"Session-Mismatch beim Upload-Start "
+                   f"(expected={expected_session}, current={self._session_id})")
+            self.logger.warning(f"upload_log_bundle: {msg}")
+            return False, msg
+
+        chunks_sent = 0
+        try:
+            for chunk in chunk_file(path, upload_id, name):
+                idx = chunk["chunk_index"]
+                # Pro-Chunk Reconnect-/Capability-/Session-Guard.
+                if not self.is_connected:
+                    msg = f"Verbindung verloren vor Chunk {idx}"
+                    self.logger.warning(f"upload_log_bundle: {msg}")
+                    return False, msg
+                if self._server_supports_resume is not True:
+                    msg = (f"Capability waehrend Upload verloren "
+                           f"({self._server_supports_resume!r}) vor Chunk {idx}")
+                    self.logger.warning(f"upload_log_bundle: {msg}")
+                    return False, msg
+                if self._session_id != upload_session:
+                    msg = (f"Session-Wechsel waehrend Upload "
+                           f"({upload_session} -> {self._session_id}) vor Chunk {idx}")
+                    self.logger.warning(f"upload_log_bundle: {msg}")
+                    return False, msg
+
+                key = (upload_id, idx)
+                ev = asyncio.Event()
+                self._bundle_ack_events[key] = ev
+                try:
+                    # Send darf NICHT via wait_for mit Timeout gewrappt werden:
+                    # ein Cancel mitten im 500-Byte-Frame-Loop hinterlaesst
+                    # einen Teil-Frame im TCP-Stream, danach ist der Writer
+                    # permanent desynchronisiert. Stattdessen Watchdog-Handle:
+                    # Snapshot von Session+Writer, feuert nach send_timeout_s,
+                    # ruft transport.abort() + nicht-cancelbaren disconnect
+                    # auf. Caller-finally cancelt den Watchdog nur solange er
+                    # NICHT gefeuert hat (sonst wuerde ein Cancel den
+                    # Disconnect-Spawn-Pfad mittendrin abbrechen → Zombie-
+                    # Verbindung, R3 KRITISCH).
+                    #
+                    # Watchdog startet NACH dem writer_lock-Acquire, damit
+                    # Lock-Wait-Zeit nicht ins Timeout zaehlt (R3 HINWEIS).
+                    # Timeout 60s > Server-Heartbeat-Window 15s: der Server
+                    # trennt bei blockiertem Peer meist zuerst; der Watchdog
+                    # fuengt die Faelle wo nur der eigene drain() festhaengt.
+                    watchdog = None
+                    try:
+                        async with self.writer_lock:
+                            # Re-Check nach Lock-Acquire: ein langer wait
+                            # auf writer_lock (anderer Sender / Heartbeat)
+                            # kann waehrend des Wartens einen Reconnect zu
+                            # anderem Host erlauben. Chunk darf dann NICHT
+                            # an die neue Session gehen (R4 WARN).
+                            if (not self.is_connected
+                                    or self._session_id != upload_session
+                                    or self._server_supports_resume is not True):
+                                msg = (f"Session/Capability-Wechsel waehrend "
+                                       f"writer_lock-Wait vor Chunk {idx}")
+                                self.logger.warning(f"upload_log_bundle: {msg}")
+                                return False, msg
+                            watchdog = self._start_send_watchdog(
+                                upload_id, idx, send_timeout_s,
+                            )
+                            try:
+                                await self.send_message(chunk)
+                            except (ConnectionError, OSError, EOFError) as err:
+                                msg = f"Send-Fehler Chunk {idx}: {err}"
+                                self.logger.error(f"upload_log_bundle: {msg}")
+                                return False, msg
+                    finally:
+                        if watchdog is not None and not watchdog.fired:
+                            try:
+                                watchdog.task.cancel()
+                            except Exception:
+                                pass
+                    try:
+                        await asyncio.wait_for(ev.wait(), timeout=chunk_timeout_s)
+                    except asyncio.TimeoutError:
+                        msg = f"Ack-Timeout Chunk {idx} nach {chunk_timeout_s:.0f}s"
+                        self.logger.error(f"upload_log_bundle: {msg}")
+                        return False, msg
+                    result = self._bundle_ack_results.pop(key, {})
+                    status = result.get("status")
+                    if status != "ok":
+                        reason = result.get("reason", "unbekannter Fehler")
+                        msg = f"Server-Fehler Chunk {idx}: {reason}"
+                        self.logger.error(f"upload_log_bundle: {msg}")
+                        return False, msg
+                    chunks_sent += 1
+                    if idx == chunk["total_chunks"] - 1:
+                        final_name = result.get("final_name", "?")
+                        self.logger.info(
+                            f"upload_log_bundle: fertig {chunks_sent} Chunks, "
+                            f"Host-Datei={final_name}"
+                        )
+                        return True, f"Upload fertig ({chunks_sent} Chunks)"
+                finally:
+                    self._bundle_ack_events.pop(key, None)
+                    self._bundle_ack_results.pop(key, None)
+        except asyncio.CancelledError:
+            self.logger.info(f"upload_log_bundle: cancelled nach {chunks_sent} Chunks")
+            raise
+        except Exception as err:
+            self.logger.error(
+                f"upload_log_bundle: Exception nach {chunks_sent} Chunks: {err}"
+            )
+            self.logger.error(traceback.format_exc())
+            return False, f"Upload fehlgeschlagen: {err}"
+
+        return False, "unerwartetes Ende des Chunk-Streams"
+
+    class _SendWatchdogHandle:
+        """Snapshot-basierter Timeout-Guard fuer Chunk-Sends.
+
+        Session+Writer werden bei Erzeugung gesnapshottet, damit ein Reconnect
+        waehrend der timeout_s den frischen Socket nicht mitreisst (lazy-eval
+        hatte das Problem).
+        """
+
+        __slots__ = ("munchlax", "upload_id", "chunk_index", "timeout_s",
+                      "session", "writer", "fired", "task")
+
+        def __init__(self, munchlax, upload_id, chunk_index, timeout_s):
+            self.munchlax = munchlax
+            self.upload_id = upload_id
+            self.chunk_index = chunk_index
+            self.timeout_s = timeout_s
+            self.session = munchlax._session_id
+            self.writer = munchlax.writer
+            self.fired = False
+            self.task: "asyncio.Task | None" = None
+
+        async def _run(self):
+            try:
+                try:
+                    await asyncio.sleep(self.timeout_s)
+                except asyncio.CancelledError:
+                    return
+                # ``fired`` wird im selben Loop (Munchlax-Loop) gelesen vom
+                # Caller-finally; kein Memory-Barrier noetig, da Watchdog +
+                # Caller im selben asyncio-Loop + OS-Thread liegen.
+                self.fired = True
+                m = self.munchlax
+                # Identity-Guards: ein Reconnect in der Zwischenzeit darf
+                # nicht den frischen Socket zerreissen.
+                if m._session_id != self.session or m.writer is not self.writer:
+                    m.logger.info(
+                        f"Send-Watchdog {self.upload_id}#{self.chunk_index}: "
+                        f"Session/Writer gewechselt, Abort unterdrueckt"
+                    )
+                    return
+                m.logger.error(
+                    f"upload_log_bundle: Send-Watchdog feuert "
+                    f"{self.upload_id}#{self.chunk_index} nach {self.timeout_s:.0f}s — "
+                    f"transport.abort + disconnect"
+                )
+                # transport.abort() statt writer.close(): blockierter drain()
+                # ueber dem High-Watermark wird von close() NICHT geweckt,
+                # abort reisst den Socket hart. Danach bricht send_message
+                # mit ConnectionError ab und das Chunk-Loop faellt in den
+                # except-Pfad.
+                try:
+                    transport = self.writer.transport if self.writer is not None else None
+                    if transport is not None:
+                        transport.abort()
+                    elif self.writer is not None:
+                        self.writer.close()
+                except Exception as err:
+                    m.logger.warning(f"Send-Watchdog abort failed: {err}")
+                # Disconnect in separatem Task, damit ein Caller-finally-
+                # Cancel auf dem Watchdog nicht mitten im Teardown
+                # zuschlaegt. Strong-Ref via Set + eigener Guard mit
+                # traceback-Log fuer unerwartete Exceptions.
+                try:
+                    _disc_task = asyncio.create_task(
+                        self._guarded_disconnect(m)
+                    )
+                    m._bundle_request_tasks.add(_disc_task)
+                    _disc_task.add_done_callback(m._bundle_request_tasks.discard)
+                except Exception as err:
+                    m.logger.warning(f"Send-Watchdog disconnect-spawn failed: {err}")
+            except Exception as err:
+                try:
+                    self.munchlax.logger.error(
+                        f"Send-Watchdog {self.upload_id}#{self.chunk_index} "
+                        f"unhandled: {err}"
+                    )
+                    self.munchlax.logger.error(traceback.format_exc())
+                except Exception:
+                    pass
+
+        async def _guarded_disconnect(self, m) -> None:
+            try:
+                await m.disconnect(
+                    intentional=False,
+                    reason=f"bundle_send_timeout_{self.chunk_index}",
+                    expected_session=self.session,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                try:
+                    m.logger.error(
+                        f"Send-Watchdog disconnect failed "
+                        f"{self.upload_id}#{self.chunk_index}: {err}"
+                    )
+                    m.logger.error(traceback.format_exc())
+                except Exception:
+                    pass
+
+    def _start_send_watchdog(self, upload_id, chunk_index, timeout_s):
+        """Erzeugt und startet einen SendWatchdogHandle. Caller cancelt
+        das Handle nur, wenn ``fired`` noch False ist — ein gefeuerter
+        Watchdog ist bereits in seinem eigenen Teardown-Pfad und darf
+        nicht abgebrochen werden (Zombie-Disconnect).
+        """
+        handle = self._SendWatchdogHandle(
+            self, upload_id, chunk_index, timeout_s
+        )
+        handle.task = asyncio.create_task(handle._run())
+        return handle
+
+    def _wake_bundle_ack_waiters(self, reason: str = "disconnect") -> None:
+        """Weckt alle laufenden Chunk-Ack-Waiter mit Fehlerresultat.
+
+        Wird aus dem Disconnect-Pfad gerufen, damit `upload_log_bundle`
+        nicht die vollen 30s auf einen Ack wartet, der nie kommt.
+        """
+        if not self._bundle_ack_events:
+            return
+        for key in list(self._bundle_ack_events.keys()):
+            uid, idx = key
+            self._bundle_ack_results[key] = {
+                "status": "error",
+                "upload_id": uid,
+                "chunk_index": idx,
+                "reason": reason,
+            }
+            ev = self._bundle_ack_events.get(key)
+            if ev is not None:
+                ev.set()
+
     async def _handle_remote_encounters(self, encounters: list[dict]):
         # DB-Calls über run_in_executor, weil sync_encounter unter dem
         # PokedexDB.access_lock läuft und der Event-Loop-Thread sonst bei
@@ -3069,6 +3691,12 @@ class Munchlax:
             # sind globale Flags, die ein verworfener stale-Caller sonst
             # auf der frischen Session veraendern wuerde.
             self.initialized = False
+            # Pending Chunk-Ack-Waiter mit Fehlerresultat wecken, sonst
+            # laufen die bis zum chunk_timeout_s (30s) ins Leere.
+            try:
+                self._wake_bundle_ack_waiters(reason="disconnect")
+            except Exception as err:
+                self.logger.warning(f"wake bundle waiters failed: {err}")
             # Reason-Parameter ueberschreibt den vom Loop-Caller via
             # _record_disconnect gesetzten Wert. Default: Bei intentional=True
             # setzen wir "intentional", bei intentional=False bleibt der vom

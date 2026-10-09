@@ -39,6 +39,15 @@ from backend.logging_setup import setup_root_logger, get_logger
 setup_root_logger()
 logger = get_logger('main')
 
+# 30-Tage-Cleanup alter Support-Bundles beim Start. Nicht blockierend bei Fehlern.
+try:
+    from backend.log_bundler import cleanup_old_bundles
+    _removed = cleanup_old_bundles(max_age_days=30)
+    if _removed:
+        logger.info(f"Support-Bundle-Cleanup: {_removed} Datei(en) entfernt")
+except Exception as err:
+    logger.warning(f"Support-Bundle-Cleanup fehlgeschlagen: {err}")
+
 os.environ['KIVY_LOG_MODE'] = 'PYTHON'
 from kivy.config import Config
 Config.read("backend/kivy_config/gui.ini")

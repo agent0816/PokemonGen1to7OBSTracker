@@ -33,5 +33,6 @@ release_alpha_to_github.ps1
 tools/
 tests/
 backup-saves/
+support_bundles/
 backend/lua/verify_battletypeflags.lua
 backend/lua/verify_bf_*.log

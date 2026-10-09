@@ -169,6 +169,7 @@ class MainMenu(Screen):
         self.pl = pl
         self.rnd = rnd
         self.ov = ov
+        self.configsave = configsave
         self.selected_session = ""
         self.app_version = app_version
         self.connectors = set()
@@ -179,6 +180,20 @@ class MainMenu(Screen):
         self.controller = SettingsController(configsave, sp, rem, obs, bh, pl, rnd, arceus, bizhawk, munchlax, obs_websocket, ov, overlay_server, bizhawk_thread=_bh_thread)
         self.connection = ConnectionController(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket, bh, pl, overlay_server, bizhawk_thread=_bh_thread, arceus_thread=_arc_thread, munchlax_thread=_mun_thread)
         self.randomizer = RandomizerController(rnd, pl, configsave=configsave)
+
+        # Transparenz-Toasts fuer Host-angefragte Bundles (Client-Seite) +
+        # Response-Updates (Host-Seite). Clock.schedule_once dispatcht vom
+        # Backend-Loop in den Kivy-Thread.
+        try:
+            if munchlax is not None:
+                munchlax.set_bundle_request_notify(self._on_bundle_request_notify)
+        except Exception as err:
+            logger.warning(f"set_bundle_request_notify failed: {err}")
+        try:
+            if arceus is not None:
+                arceus.set_bundle_response_notify(self._on_bundle_response_notify)
+        except Exception as err:
+            logger.warning(f"set_bundle_response_notify failed: {err}")
 
         super().__init__(**kwargs)
         self.name = "MainMenu"
@@ -241,6 +256,22 @@ class MainMenu(Screen):
             on_press=self._confirm_session_reset,
         )
         logo_settings.add_widget(self.reset_session_button)
+
+        # Logs als Support-Bundle packen (Zip in support_bundles/). Host behaelt
+        # lokal. Client-seitiger Upload an Host folgt in Phase 3.
+        self.pack_logs_button = Button(
+            text="Logs packen",
+            on_press=self._on_pack_logs_pressed,
+        )
+        logo_settings.add_widget(self.pack_logs_button)
+
+        # Host-only: fordert von allen verbundenen Clients ein Bundle an.
+        # Jeder Client packt + streamt automatisch zurueck.
+        self.request_logs_button = Button(
+            text="Logs anfordern",
+            on_press=self._on_request_logs_pressed,
+        )
+        logo_settings.add_widget(self.request_logs_button)
 
         control_frame.add_widget(logo_settings)
 
@@ -683,6 +714,214 @@ class MainMenu(Screen):
             )
         finally:
             self.reset_session_button.disabled = False
+
+    def _on_bundle_request_notify(self, request_id: str, stage: str, info: str = ""):
+        """Backend-Hook (Munchlax-Thread) → Kivy-Toast fuer Transparenz:
+        wenn der Host unsere Logs anfordert.
+
+        Stages: incoming / sending / finished / failed / declined.
+        """
+        try:
+            text_map = {
+                "incoming": f"Host fordert Logs an — {info or 'sende gleich'}",
+                "sending": "Host-Logs-Upload startet...",
+                "finished": "Host-Logs-Upload fertig",
+                "failed": f"Host-Logs-Upload fehlgeschlagen: {info}",
+                "declined": f"Host-Logs-Upload abgelehnt: {info}",
+            }
+            text = text_map.get(stage, f"Host-Logs {stage}: {info}")
+            level = {"finished": "success", "failed": "error",
+                     "declined": "warning"}.get(stage, "info")
+            dur = 10.0 if stage == "incoming" else 4.0
+            Clock.schedule_once(
+                lambda dt: show_toast(text, level=level, duration=dur), 0
+            )
+        except Exception as err:
+            logger.warning(f"_on_bundle_request_notify failed: {err}")
+
+    def _on_bundle_response_notify(self, client_id: str, player_name: str,
+                                    request_id: str, status: str, info: str):
+        """Backend-Hook (Arceus-Thread) → Kivy-Toast fuer Host-UI nach jedem
+        log_bundle_response bzw. empfangenem Bundle."""
+        try:
+            label = player_name or client_id[:8]
+            if status == "received":
+                text = f"Logs empfangen von {label}: {info}"
+                level = "success"
+            elif status == "starting":
+                text = f"{label}: Upload startet"
+                level = "info"
+            elif status == "finished":
+                text = f"{label}: Upload fertig"
+                level = "success"
+            elif status == "declined":
+                text = f"{label}: Upload abgelehnt ({info})"
+                level = "warning"
+            elif status == "failed":
+                text = f"{label}: Upload fehlgeschlagen ({info})"
+                level = "error"
+            else:
+                text = f"{label}: {status} {info}"
+                level = "info"
+            Clock.schedule_once(
+                lambda dt: show_toast(text, level=level, duration=4.0), 0
+            )
+        except Exception as err:
+            logger.warning(f"_on_bundle_response_notify failed: {err}")
+
+    def _on_request_logs_pressed(self, instance):
+        """Host-only: fordert von allen verbundenen Clients ein Bundle an.
+        Non-Host-Call liefert nur eine Warn-Toast."""
+        if not bool(self.rem.get("start_server", False)):
+            show_toast(
+                "Nur der Host darf Logs von allen anfordern.",
+                level='warning', duration=4.0,
+            )
+            return
+        if getattr(self, "arceus", None) is None or getattr(self.arceus, "is_connected", None) != 'connected':
+            show_toast("Arceus-Server nicht aktiv.", level='error', duration=3.0)
+            return
+
+        self.request_logs_button.disabled = True
+        handle = show_pending_toast("Logs-Anfrage wird gesendet", level='info')
+
+        async def _runner():
+            try:
+                try:
+                    sent = await self.connection.request_logs_from_all()
+                except Exception as err:
+                    logger.error(f"request_logs_from_all failed: {err}")
+                    logger.error(traceback.format_exc())
+                    handle.finish(f"Anfrage fehlgeschlagen: {err}",
+                                  level='error', duration=4.0)
+                    return
+                if sent and sent > 0:
+                    handle.finish(
+                        f"Anfrage an {sent} Client(s) gesendet. "
+                        f"Bundles landen unter support_bundles/.",
+                        level='success', duration=4.0,
+                    )
+                else:
+                    handle.finish(
+                        "Keine Clients verbunden — Anfrage ohne Wirkung.",
+                        level='warning', duration=4.0,
+                    )
+            finally:
+                self.request_logs_button.disabled = False
+
+        task = asyncio.create_task(_runner())
+        self.connectors.add(task)
+        task.add_done_callback(lambda t: self.connectors.discard(t))
+
+    def _on_pack_logs_pressed(self, instance):
+        """Packt Logs + sanitized Config + aktive Run-Meta in ein Zip unter
+        support_bundles/. Host behält lokal; Client-Upload an Host kommt in
+        Phase 3. Build läuft im Executor, damit Kivy nicht blockiert."""
+        if getattr(self, "pack_logs_button", None) is None:
+            return
+        self.pack_logs_button.disabled = True
+        handle = show_pending_toast("Logs werden gepackt", level='info')
+        task = asyncio.create_task(self._pack_logs_async(handle))
+        self.connectors.add(task)
+        task.add_done_callback(lambda t: self.connectors.discard(t))
+
+    async def _pack_logs_async(self, handle):
+        from backend.log_bundler import build_bundle
+        bundle_path = None
+        try:
+            try:
+                raw_session = str(self.configsave) if self.configsave is not None else ""
+                if not raw_session.strip():
+                    handle.finish(
+                        "Keine Session gewaehlt — Logs packen abgebrochen.",
+                        level='error', duration=4.0,
+                    )
+                    return
+                session_path = Path(raw_session)
+                if not session_path.is_dir():
+                    handle.finish(
+                        f"Session-Pfad fehlt: {session_path}",
+                        level='error', duration=4.0,
+                    )
+                    return
+                player_name = str(self.pl.get("your_name", "") or "unknown")
+                is_host = bool(self.rem.get("start_server", False))
+                # Session-Pfad fuer host-angeforderte Pack-Laufe im Backend
+                # verfuegbar machen (ohne Kivy-Import in Munchlax).
+                try:
+                    self.munchlax.set_bundle_session_path(session_path)
+                except Exception as err:
+                    logger.warning(f"set_bundle_session_path failed: {err}")
+
+                try:
+                    bundle_path = await asyncio.to_thread(
+                        build_bundle, session_path, player_name, is_host, None,
+                    )
+                except Exception as err:
+                    logger.error(f"build_bundle failed: {type(err).__name__}: {err}")
+                    logger.error(traceback.format_exc())
+                    handle.finish(f"Logs packen fehlgeschlagen: {err}",
+                                  level='error', duration=4.0)
+                    return
+
+                size_mib = bundle_path.stat().st_size / (1024 * 1024)
+                if size_mib > 100:
+                    show_toast(
+                        f"Hinweis: Bundle ist groß ({size_mib:.1f} MiB).",
+                        level='warning', duration=4.0,
+                    )
+
+                if is_host:
+                    handle.finish(
+                        f"Bundle gespeichert ({size_mib:.1f} MiB): {bundle_path.name}",
+                        level='success', duration=3.5,
+                    )
+                    return
+
+                # Client-Pfad: Bundle liegt lokal, zusaetzlich an Host streamen.
+                if not getattr(self.munchlax, "is_connected", False):
+                    handle.finish(
+                        f"Bundle lokal gespeichert ({size_mib:.1f} MiB): {bundle_path.name}. "
+                        f"Kein Host verbunden — Upload uebersprungen.",
+                        level='info', duration=5.0,
+                    )
+                    return
+
+                handle.update(
+                    text=f"Bundle lokal gespeichert ({size_mib:.1f} MiB). Upload laeuft...",
+                    level='info',
+                )
+                try:
+                    ok, upload_msg = await self.munchlax.submit_cross_thread(
+                        self.munchlax.upload_log_bundle(bundle_path, player_name)
+                    )
+                except Exception as err:
+                    logger.error(f"upload_log_bundle submit failed: {err}")
+                    logger.error(traceback.format_exc())
+                    handle.finish(
+                        f"Bundle lokal da ({bundle_path.name}), Upload fehlgeschlagen: {err}",
+                        level='error', duration=5.0,
+                    )
+                    return
+                handle.finish(
+                    (f"Bundle lokal + Host-Upload fertig: {bundle_path.name}"
+                     if ok else
+                     f"Bundle lokal da ({bundle_path.name}), Upload fehlgeschlagen: {upload_msg}"),
+                    level='success' if ok else 'error',
+                    duration=4.0 if ok else 5.0,
+                )
+            except Exception as err:
+                # Catch-all: Pending-Toast muss immer finished werden,
+                # sonst steht er dauerhaft im UI.
+                logger.error(f"_pack_logs_async unhandled: {err}")
+                logger.error(traceback.format_exc())
+                try:
+                    handle.finish(f"Fehler beim Packen/Senden: {err}",
+                                  level='error', duration=5.0)
+                except Exception:
+                    pass
+        finally:
+            self.pack_logs_button.disabled = False
 
     def change_session(self, instance):
         popup = BizhawkSavePopup(

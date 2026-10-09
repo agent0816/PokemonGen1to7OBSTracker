@@ -1,6 +1,7 @@
 import asyncio
 import os
 import socket
+import traceback
 import weakref
 from pathlib import Path
 from kivy.app import App
@@ -545,6 +546,24 @@ class ScrollSettings(ScrollView):
             logging_box.add_widget(refresh_row)
             self._refresh_dev_module_log_levels()
 
+            # Dev-Shortcut: Logs packen + Ordner oeffnen. Dupliziert bewusst
+            # den MainMenu-Button, damit Dev-Flow (Repro + Zip inspizieren)
+            # ohne Screen-Wechsel ablaeuft.
+            bundle_row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                                     size=(0, "30dp"), padding=("5dp", 0),
+                                     spacing="5dp")
+            self._pack_logs_btn_dev = Button(
+                text="Logs packen",
+                on_press=lambda inst: self._on_pack_logs_pressed_dev(),
+            )
+            bundle_row.add_widget(self._pack_logs_btn_dev)
+            open_folder_btn = Button(
+                text="support_bundles/ oeffnen",
+                on_press=lambda inst: self._open_support_bundles_folder(),
+            )
+            bundle_row.add_widget(open_folder_btn)
+            logging_box.add_widget(bundle_row)
+
         box.add_widget(logging_box)
 
         self.add_widget(box)
@@ -944,6 +963,81 @@ class ScrollSettings(ScrollView):
             row.add_widget(slot_row)
 
         return row
+
+    def _on_pack_logs_pressed_dev(self):
+        """Dev-Button: Logs + sanitized Config + aktive Run-Meta packen.
+        Identische Semantik wie MainMenu-Button, nur ohne Upload-Hinweis."""
+        btn = getattr(self, "_pack_logs_btn_dev", None)
+        if btn is not None:
+            btn.disabled = True
+        handle = show_pending_toast("Logs werden gepackt", level='info')
+
+        async def _runner():
+            from backend.log_bundler import build_bundle
+            try:
+                try:
+                    raw_session = str(self.configsave) if self.configsave is not None else ""
+                    if not raw_session.strip():
+                        handle.finish(
+                            "Keine Session gewaehlt — Logs packen abgebrochen.",
+                            level='error', duration=4.0,
+                        )
+                        return
+                    session_path = Path(raw_session)
+                    if not session_path.is_dir():
+                        handle.finish(
+                            f"Session-Pfad fehlt: {session_path}",
+                            level='error', duration=4.0,
+                        )
+                        return
+                    player_name = str(self.pl.get("your_name", "") or "unknown")
+                    is_host = bool(self.rem.get("start_server", False))
+                    try:
+                        if self.munchlax is not None:
+                            self.munchlax.set_bundle_session_path(session_path)
+                    except Exception as err:
+                        logger.warning(f"[Dev] set_bundle_session_path failed: {err}")
+                    try:
+                        bundle_path = await asyncio.to_thread(
+                            build_bundle, session_path, player_name, is_host, None,
+                        )
+                    except Exception as err:
+                        logger.error(f"[Dev] build_bundle failed: {err}")
+                        logger.error(traceback.format_exc())
+                        handle.finish(f"Logs packen fehlgeschlagen: {err}",
+                                      level='error', duration=4.0)
+                        return
+                    size_mib = bundle_path.stat().st_size / (1024 * 1024)
+                    handle.finish(
+                        f"Bundle gespeichert ({size_mib:.1f} MiB): {bundle_path.name}",
+                        level='success', duration=3.5,
+                    )
+                    if size_mib > 100:
+                        show_toast(
+                            f"Hinweis: Bundle ist gross ({size_mib:.1f} MiB).",
+                            level='warning', duration=4.0,
+                        )
+                except Exception as err:
+                    logger.error(f"[Dev] _on_pack_logs_pressed_dev unhandled: {err}")
+                    logger.error(traceback.format_exc())
+                    try:
+                        handle.finish(f"Fehler: {err}", level='error', duration=5.0)
+                    except Exception:
+                        pass
+            finally:
+                if btn is not None:
+                    btn.disabled = False
+
+        task = asyncio.create_task(_runner())
+        # Strong-Ref gegen GC des fire-and-forget Tasks (Projekt-Regel).
+        self._dev_pack_tasks = getattr(self, "_dev_pack_tasks", set())
+        self._dev_pack_tasks.add(task)
+        task.add_done_callback(self._dev_pack_tasks.discard)
+
+    def _open_support_bundles_folder(self):
+        from backend.log_bundler import SUPPORT_BUNDLES_DIR
+        SUPPORT_BUNDLES_DIR.mkdir(parents=True, exist_ok=True)
+        self._open_path(str(SUPPORT_BUNDLES_DIR.resolve()))
 
     def _open_path(self, path: str):
         if not path or not os.path.exists(path):

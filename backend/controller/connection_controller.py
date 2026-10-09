@@ -133,6 +133,15 @@ class ConnectionController:
         self._submit_mun(self.munchlax.disconnect(), name='munchlax.disconnect')
         self.logger.info("Munchlax-Client wird getrennt.")
 
+    def request_logs_from_all(self):
+        """Host-only: broadcastet log_bundle_request an alle verbundenen
+        Clients. Jeder Client packt lokal und streamt per upload_log_bundle
+        zurueck."""
+        return self._submit_arc(
+            self.arceus.broadcast_log_bundle_request(),
+            name='arceus.broadcast_log_bundle_request',
+        )
+
     # --- BizHawk ---
 
     def start_bizhawk(self):

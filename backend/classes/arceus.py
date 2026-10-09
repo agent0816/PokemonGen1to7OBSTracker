@@ -242,6 +242,21 @@ class Arceus:
         # Replay → Fehler) nie durchbrochen. Session-Reset leert mit.
         self._poison_counts_by_client: dict[str, dict[int, int]] = {}
 
+        # Log-Bundle-Reassembler: nimmt Client-Chunk-Uploads entgegen,
+        # schreibt sie unter support_bundles/.incoming_<id>.part und
+        # benennt bei vollstaendigem Transfer in das finale Zip um. Lazy
+        # init beim ersten Chunk, damit beim Host-only-Start (ohne Clients)
+        # kein ungenutztes Verzeichnis zugefasst wird.
+        self._bundle_reassembler = None
+        self._bundle_cleanup_task: "asyncio.Task | None" = None
+        # Verhindert, dass ein spaet eintreffender Chunk nach stop() den
+        # Reassembler + Cleanup-Task neu lazy startet.
+        self._bundle_stopping: bool = False
+        # Response-Notify-Callback fuer Host-UI: Frontend registriert via
+        # ``set_bundle_response_notify``, Arceus ruft bei jedem
+        # log_bundle_response + bei fertigem Upload (final_name).
+        self._bundle_response_notify = None
+
         self.logger = get_logger(__name__, './logs/arceus.log')
     
     def _log_dedup(self, err_type: str, msg: str, *, exc: BaseException | None = None,
@@ -647,6 +662,20 @@ class Arceus:
                             f"rando_moves_sync ohne gueltige player_id: {pid!r} "
                             f"(client={client_id})"
                         )
+                elif isinstance(data, dict) and data.get("type") == "log_bundle_chunk":
+                    await self._handle_log_bundle_chunk(client_id, data, writer)
+                elif isinstance(data, dict) and data.get("type") == "log_bundle_response":
+                    # Rueckmeldung auf einen host-initiierten Broadcast.
+                    # Loggen + Frontend-Toast via Notify-Callback.
+                    rid = str(data.get("request_id", ""))
+                    status = str(data.get("status", ""))
+                    reason = str(data.get("reason", ""))
+                    name = self.munchlax_names.get(client_id, client_id)
+                    self.logger.info(
+                        f"log_bundle_response client={client_id} ({name}): "
+                        f"request_id={rid}, status={status}, reason={reason}"
+                    )
+                    self._notify_bundle_response(client_id, name, rid, status, reason)
                 elif isinstance(data, dict) and data.get("type") == "declared_player_ids":
                     # Client meldet welche Netz-Slots (player_ids) er belegt,
                     # abgeleitet aus seiner player.yml (nicht via BizHawk-Handshake).
@@ -947,6 +976,168 @@ class Arceus:
         sess = self._client_sessions.get(client_id)
         if sess is not None:
             sess["sent"] = sess.get("sent", 0) + 1
+
+    def _ensure_bundle_reassembler(self):
+        """Lazy-Init: Reassembler + Cleanup-Task erst beim ersten Chunk.
+
+        Returns True wenn verfuegbar, False wenn Server im Shutdown.
+        """
+        if self._bundle_stopping:
+            return False
+        if self._bundle_reassembler is not None:
+            return True
+        from backend.log_bundle_transfer import BundleReassembler
+        from backend.log_bundler import SUPPORT_BUNDLES_DIR
+        SUPPORT_BUNDLES_DIR.mkdir(parents=True, exist_ok=True)
+        self._bundle_reassembler = BundleReassembler(SUPPORT_BUNDLES_DIR)
+        if self._bundle_cleanup_task is None or self._bundle_cleanup_task.done():
+            self._bundle_cleanup_task = asyncio.create_task(
+                self._bundle_cleanup_loop()
+            )
+        return True
+
+    async def _bundle_cleanup_loop(self):
+        """Alle 60s stale Pending-Uploads droppen (abgebrochene Clients)."""
+        while True:
+            try:
+                await asyncio.sleep(60)
+                if self._bundle_reassembler is None:
+                    continue
+                killed = self._bundle_reassembler.cleanup_stale()
+                if killed:
+                    self.logger.info(
+                        f"Bundle-Cleanup: {killed} stale Upload(s) verworfen"
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                self.logger.warning(f"Bundle-Cleanup Iteration failed: {err}")
+
+    async def _handle_log_bundle_chunk(self, client_id: str, data: dict, writer):
+        """Nimmt einen Chunk eines Client-Bundle-Uploads entgegen und ackt zurueck.
+
+        Disk-I/O (append + sha + rename) laeuft im Executor, damit andere
+        Clients nicht hinter einem lahmen Disk-/AV-Scan einfrieren.
+        """
+        try:
+            if not self._ensure_bundle_reassembler():
+                self.logger.info(
+                    f"log_bundle_chunk abgelehnt (Shutdown): client={client_id}, "
+                    f"upload_id={data.get('upload_id')}, "
+                    f"chunk_index={data.get('chunk_index')}"
+                )
+                result = {
+                    "status": "error",
+                    "upload_id": data.get("upload_id"),
+                    "chunk_index": data.get("chunk_index"),
+                    "reason": "server shutting down",
+                }
+                ack = {"type": "log_bundle_ack", **result}
+                await self.send_to_client(client_id, ack)
+                return
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                self._bundle_reassembler.accept_chunk,
+                data, client_id,
+            )
+        except Exception as err:
+            self.logger.error(
+                f"accept_chunk Exception von client={client_id}: {err}"
+            )
+            self.logger.error(traceback.format_exc())
+            result = {
+                "status": "error",
+                "upload_id": data.get("upload_id"),
+                "chunk_index": data.get("chunk_index"),
+                "reason": f"server exception: {err}",
+            }
+
+        ack = {"type": "log_bundle_ack", **result}
+        try:
+            await self.send_to_client(client_id, ack)
+        except Exception as err:
+            self.logger.error(
+                f"log_bundle_ack an {client_id} failed: {err}"
+            )
+            return
+
+        if result.get("status") == "ok" and result.get("final_name"):
+            name = self.munchlax_names.get(client_id, client_id)
+            final_name = result["final_name"]
+            self.logger.info(
+                f"Bundle empfangen von client={client_id} ({name}): {final_name}"
+            )
+            self._notify_bundle_response(
+                client_id, name, "", "received", final_name,
+            )
+
+    def set_bundle_response_notify(self, callback) -> None:
+        """Frontend-Callback fuer Host-UI-Updates. Signatur:
+        ``callback(client_id, player_name, request_id, status, info)``.
+        Wird aus dem Arceus-Loop aufgerufen; der Callback muss in den
+        Kivy-Thread dispatchen (z.B. ueber Clock.schedule_once)."""
+        self._bundle_response_notify = callback
+
+    def _notify_bundle_response(self, client_id: str, player_name: str,
+                                 request_id: str, status: str, info: str) -> None:
+        cb = self._bundle_response_notify
+        if cb is None:
+            return
+        try:
+            cb(client_id, player_name, request_id, status, info)
+        except Exception as err:
+            self.logger.warning(
+                f"bundle_response_notify callback error: {err}"
+            )
+
+    async def broadcast_log_bundle_request(self, request_id: str | None = None) -> int:
+        """Fordert verbundene Clients auf, lokal ein Bundle zu packen und
+        per log_bundle_chunk-Stream an den Host zu uploaden. Returns Anzahl
+        tatsaechlich bedienter Clients.
+
+        Capability-Gate: ein alter Client ohne Resume-Protokoll parst
+        unbekannte Dict-Payloads als Teams-Branch und wuerde den
+        log_bundle_request falsch verarbeiten. Deshalb nur an Clients
+        senden, von denen eine Boot-Epoch im Handshake gesehen wurde
+        (Phase-C-Capability).
+        """
+        import secrets as _secrets
+        rid = request_id or f"req_{int(time.time()*1000)}_{_secrets.token_hex(3)}"
+        message = {"type": "log_bundle_request", "request_id": rid}
+        targets = [
+            cid for cid in self.munchlaxes.keys()
+            if cid in self._boot_epoch_by_client
+        ]
+        skipped = [cid for cid in self.munchlaxes.keys()
+                   if cid not in self._boot_epoch_by_client]
+        if skipped:
+            self.logger.warning(
+                f"broadcast_log_bundle_request: {len(skipped)} Client(s) ohne "
+                f"Phase-C-Capability uebersprungen: {skipped}"
+            )
+        self.logger.info(
+            f"broadcast_log_bundle_request: request_id={rid}, "
+            f"targets={len(targets)}"
+        )
+        sent = 0
+        for client_id in targets:
+            writer = self.munchlaxes.get(client_id)
+            lock = self.writer_locks.get(client_id)
+            if writer is None or lock is None:
+                self.logger.warning(
+                    f"log_bundle_request skipped: client={client_id} "
+                    f"writer/lock fehlt"
+                )
+                continue
+            try:
+                await self.send_to_client(client_id, message)
+                sent += 1
+            except Exception as exc:
+                self.logger.error(
+                    f"log_bundle_request an {client_id} failed: {type(exc)},{exc}"
+                )
+        return sent
 
     async def broadcast_boxes_update(self, sender_id, player_id, boxes):
         """Verteilt einen Box-Update an alle Clients außer dem Absender."""
@@ -2247,6 +2438,16 @@ class Arceus:
                 self.client_player_ids.pop(client_id, None)
                 self.declared_player_ids_by_client.pop(client_id, None)
                 self._client_sessions.pop(client_id, None)
+                # Pending-Bundle-Uploads dieses Clients verwerfen, damit
+                # cleanup_stale sie nicht erst nach 10min aufraeumt und
+                # die Teil-Dateien schneller weg sind.
+                if self._bundle_reassembler is not None:
+                    try:
+                        self._bundle_reassembler.drop_client_uploads(client_id)
+                    except Exception as err:
+                        self.logger.warning(
+                            f"drop_client_uploads({client_id}) failed: {err}"
+                        )
             else:
                 self.logger.info(
                     f"Client {client_id} disconnect (reason={reason!r}): "
@@ -2452,6 +2653,8 @@ class Arceus:
         self.logger.info(f"Arceus auf Port {self.port} gestartet")
         self.heartbeattask = asyncio.create_task(self.check_heartbeats())
         self.timer_task = asyncio.create_task(self.timer_tick_loop())
+        # Shutdown-Flag zuruecksetzen fuer Restart-Pfade.
+        self._bundle_stopping = False
         self.is_connected = 'connected'
 
         async with self.server:
@@ -2547,6 +2750,31 @@ class Arceus:
             if self.timer_task is not None:
                 self.timer_task.cancel()
                 self.timer_task = None
+            # Reassembler-Shutdown: Flag zuerst, dann Teil-Dateien unter
+            # Reassembler-Lock verwerfen, dann Cleanup-Task canceln + awaiten.
+            # Ohne Flag wuerde ein spaet eintreffender Chunk den Reassembler
+            # per _ensure_bundle_reassembler lazy neu anlegen; drop_all unter
+            # Lock verhindert dict-mutation-while-iter mit Executor-Chunks.
+            self._bundle_stopping = True
+            if self._bundle_reassembler is not None:
+                try:
+                    self._bundle_reassembler.drop_all()
+                except Exception as err:
+                    self.logger.warning(f"reassembler drop_all failed: {err}")
+                self._bundle_reassembler = None
+            if self._bundle_cleanup_task is not None:
+                # Nur cancel() + None — kein await auf den Task. Der Loop
+                # verwirft den gecancelten Coroutine-Frame beim naechsten
+                # Scheduling; der Task haelt keine Ressourcen die wir vor
+                # Writer-Close synchronisieren muessten. Ein await hier
+                # oeffnet ausserdem ein Cancel-Fenster, in dem ein outer-
+                # Cancel von stop() den Rest (Writer-/Server-Close)
+                # ueberspringen koennte (R7 WARN cave + sync).
+                try:
+                    self._bundle_cleanup_task.cancel()
+                except Exception as err:
+                    self.logger.warning(f"bundle_cleanup_task cancel: {err}")
+                self._bundle_cleanup_task = None
             # Vor server.wait_closed() alle Client-Writer schliessen. Ab
             # Python 3.12.1 wartet Server.wait_closed() auf alle offenen
             # Verbindungen; ohne explicit close haengt stop() und ein

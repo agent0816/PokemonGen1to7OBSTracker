@@ -13,6 +13,7 @@ import initialize_tree as init
 init.init_logging_folder()
 
 CRASH_LOG = 'logs/crash_report.log'
+ASYNCIO_LOG = 'logs/asyncio_errors.log'
 
 
 def _crash_excepthook(exc_type, exc_value, exc_tb):
@@ -26,12 +27,20 @@ sys.excepthook = _crash_excepthook
 
 
 def _asyncio_exception_handler(loop, context):
+    # Asyncio-Exceptions landen in eigener Datei, damit sie nicht das
+    # Crash-Popup triggern — "silent task death" und Netz-Timeouts sind oft
+    # nicht fatal und sollten den User nicht bei jedem Neustart anspringen.
     exc = context.get('exception')
-    with open(CRASH_LOG, 'a', encoding='utf-8') as f:
-        f.write(f"\n{'='*60}\n[{datetime.now().isoformat()}] ASYNCIO EXCEPTION\n")
-        f.write(f"Message: {context.get('message', 'n/a')}\n")
-        if exc:
-            traceback.print_exception(type(exc), exc, exc.__traceback__, file=f)
+    try:
+        with open(ASYNCIO_LOG, 'a', encoding='utf-8') as f:
+            f.write(f"\n{'='*60}\n[{datetime.now().isoformat()}] ASYNCIO EXCEPTION\n")
+            f.write(f"Message: {context.get('message', 'n/a')}\n")
+            if exc:
+                traceback.print_exception(type(exc), exc, exc.__traceback__, file=f)
+    except OSError as err:
+        # I/O-Fehler im Handler darf den Loop-Exception-Handler nicht
+        # zusaetzlich zerreissen. Nur loggen.
+        logger.error(f"Konnte Asyncio-Exception nicht in {ASYNCIO_LOG} schreiben: {err}")
     logger.error(f"Asyncio exception: {context.get('message')}")
 
 

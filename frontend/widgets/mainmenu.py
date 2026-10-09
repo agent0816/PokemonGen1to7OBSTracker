@@ -1,7 +1,11 @@
 import os
+import secrets
+import shutil
+import threading
 import traceback
 import weakref
 import asyncio
+from datetime import datetime
 from pathlib import Path
 from kivy.app import App
 from kivy.clock import Clock
@@ -29,6 +33,99 @@ import frontend.UIFactory as UI
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, 'logs/frontend.log')
+
+
+_CRASH_ACK_FILENAME = 'crash_report.ack'
+
+
+def _ack_path_for(crash_log_abs_path: str) -> str:
+    return os.path.join(os.path.dirname(crash_log_abs_path), _CRASH_ACK_FILENAME)
+
+
+def _write_ack_marker(crash_log_abs_path: str, mtime_ns: int, size: int) -> None:
+    """Schreibt (mtime_ns, size) in logs/crash_report.ack.
+
+    Werte werden explizit uebergeben, NICHT per erneutem ``os.stat``
+    gelesen — der Call-Site haelt bereits einen konsistenten Snapshot
+    (meist aus ``os.fstat`` unter offenem Handle), und ein frischer Stat
+    wuerde einen zwischenzeitlichen Append mit-quittieren.
+
+    Beim naechsten App-Start vergleicht ``should_show_crash_popup`` den
+    aktuellen Dateistand mit dem Marker — stimmt beides ueberein, war
+    der Log seit der letzten Archivierung unveraendert und kein Popup
+    noetig.
+
+    Schreibt via .tmp + os.replace atomar, damit ein Crash mitten im
+    Write keinen defekten Marker hinterlaesst.
+    """
+    tmp_path = None
+    try:
+        ack_path = _ack_path_for(crash_log_abs_path)
+        tmp_path = ack_path + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            f.write(f"{mtime_ns},{size}\n")
+        os.replace(tmp_path, ack_path)
+        tmp_path = None
+    except OSError as err:
+        logger.warning(f"Ack-Marker schreiben fehlgeschlagen: {err}")
+    finally:
+        if tmp_path is not None:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def _remove_ack_marker(crash_log_abs_path: str) -> None:
+    """Entfernt den Ack-Marker neben dem Crash-Log, falls vorhanden.
+
+    Signatur analog zu ``_write_ack_marker`` — nimmt den Log-Dateipfad,
+    nicht das Verzeichnis, damit Verwechslungen nicht still falsch sind.
+    """
+    try:
+        ack_path = _ack_path_for(crash_log_abs_path)
+        if os.path.exists(ack_path):
+            os.remove(ack_path)
+    except OSError as err:
+        logger.warning(f"Ack-Marker entfernen fehlgeschlagen: {err}")
+
+
+def should_show_crash_popup(crash_log_path: str = 'logs/crash_report.log') -> bool:
+    """True, wenn ein noch nicht quittierter Crash-Log existiert.
+
+    Pruefreihenfolge:
+    - Datei fehlt oder leer → False
+    - Kein Marker → True (Crash seit letzter Session, nicht quittiert)
+    - Marker vorhanden und (mtime_ns, size) unveraendert → False
+    - Marker vorhanden aber Datei veraendert → True (neuer Crash)
+
+    Defekte Marker (unlesbar, falsches Format) werden entfernt und das
+    Popup wird gezeigt — sonst entstuende ein fail-open-Dauerzustand.
+    """
+    try:
+        st = os.stat(crash_log_path)
+    except OSError:
+        return False
+    if st.st_size == 0:
+        return False
+    ack_path = _ack_path_for(os.path.abspath(crash_log_path))
+    try:
+        with open(ack_path, 'r', encoding='utf-8') as f:
+            parts = f.read().strip().split(',')
+        ack_mtime_ns = int(parts[0])
+        ack_size = int(parts[1])
+    except (OSError, ValueError, IndexError):
+        # Defekter oder fehlender Marker: Popup zeigen, defekten Marker
+        # entfernen, damit die naechste Archivierung einen sauberen
+        # Marker schreibt und kein Dauer-fail-open-Loop entsteht.
+        try:
+            if os.path.exists(ack_path):
+                os.remove(ack_path)
+        except OSError:
+            pass
+        return True
+    return st.st_mtime_ns != ack_mtime_ns or st.st_size != ack_size
 
 
 class BizhawkSavePopup(Popup):
@@ -107,21 +204,41 @@ class BizhawkSavePopup(Popup):
 
 
 class CrashReportPopup(Popup):
-    def __init__(self, crash_log_path, **kwargs):
+    def __init__(self, crash_log_path, configsave=None, pl=None, rem=None, **kwargs):
         super().__init__(**kwargs)
         self.title = "Crash erkannt"
         self.size_hint = (0.8, 0.4)
         self.auto_dismiss = False
+        self._crash_log_path = crash_log_path
+        self._configsave = configsave
+        # Config-Dict-Referenzen durchreichen, nicht durch neues {} ersetzen.
+        # Dadurch sieht das Popup spaete Config-Updates (CLAUDE.md: Config-
+        # Dicts werden by-reference weitergereicht).
+        self._pl = pl if pl is not None else {}
+        self._rem = rem if rem is not None else {}
+        # Snapshot-at-Open: Log sofort archivieren, damit auch Fenster-Close
+        # oder Prozess-Kill waehrend offenem Popup den Re-Popup-Bug nicht
+        # triggert. Zusaetzlich entkoppelt es den Bundle-Worker vom
+        # Dismiss-Timing (os.replace waehrend zipfile liest = Windows-Fehler).
+        self._archived_path = self._archive_log(crash_log_path)
+        display_path = self._archived_path or os.path.abspath(crash_log_path)
+
+        # Session-Pfad entscheidet, ob der Bundle-Button nutzbar ist.
+        # Vor Session-Load (sehr frueher Start) bleibt er disabled.
+        session_ok = bool(configsave) and Path(str(configsave)).is_dir()
 
         layout = BoxLayout(orientation="vertical", spacing="10dp")
         layout.add_widget(Label(text="Beim letzten Start ist ein Fehler aufgetreten.\nCrash-Log wurde gespeichert."))
-        path_label = Label(text=os.path.abspath(crash_log_path), font_size="12sp")
+        path_label = Label(text=display_path, font_size="12sp")
         layout.add_widget(path_label)
 
         btn_layout = BoxLayout(size_hint_y=None, height="50dp", spacing="5dp")
-        btn_copy = Button(text="Pfad kopieren", on_press=lambda _: self._copy_path(crash_log_path))
-        btn_close = Button(text="Schließen", on_press=lambda _: self.dismiss())
+        btn_copy = Button(text="Pfad kopieren", on_press=lambda _: self._copy_path(display_path))
+        self._bundle_button = Button(text="Support-Bundle", on_press=self._on_bundle)
+        self._bundle_button.disabled = not session_ok
+        btn_close = Button(text="Schließen", on_press=self._on_close)
         btn_layout.add_widget(btn_copy)
+        btn_layout.add_widget(self._bundle_button)
         btn_layout.add_widget(btn_close)
         layout.add_widget(btn_layout)
         self.content = layout
@@ -131,6 +248,248 @@ class CrashReportPopup(Popup):
         abs_path = os.path.abspath(path)
         Clipboard.copy(abs_path)
         show_toast(f"Pfad kopiert: {abs_path}", level='success')
+
+    def _on_close(self, _instance):
+        self.dismiss()
+
+    def _archive_log(self, path: str) -> str | None:
+        """Verschiebt crash_report.log → crash_report_<ts>_<hex>.log.
+
+        Returns den archivierten Pfad oder None, wenn Datei bereits weg war
+        oder weder Rename noch Copy funktioniert haben. WICHTIG: Truncate
+        darf NIEMALS passieren bevor der Inhalt sicher kopiert ist, sonst
+        geht der Crash-Log verloren, bevor der User oder das Support-Bundle
+        ihn gesehen haben.
+
+        Marker-Verhalten (crash_report.ack):
+        - Rename ok / Copy+Truncate ok: Marker entfernt (Original leer/weg).
+        - Groessen-Mismatch: KEIN Marker — Original hat unquittierten
+          Zuwachs, Popup soll beim naechsten Start erneut erscheinen.
+        - Getsize-Err: KEIN Marker — Zustand unklar.
+        - Open-r+b-Err: Marker nur, wenn Fallback-Stat zeigt
+          ``size == copy_size`` (Archiv deckt Stand ab, Windows-Lock-Fall).
+          Sonst kein Marker.
+        - Truncate-Err nach Size-Check-OK: Marker mit (mtime_ns, size)
+          aus fstat-Snapshot, denn Archiv == Original ist bestaetigt. So
+          verhindert ``should_show_crash_popup`` die Re-Popup-Schleife
+          bei permanent gelocktem Original, erkennt aber neue Appends
+          als Veraenderung.
+        """
+        archived: str | None = None
+        try:
+            abs_path = os.path.abspath(path)
+            if not os.path.exists(abs_path):
+                return None
+            ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            suffix = secrets.token_hex(3)
+            base_dir = os.path.dirname(abs_path)
+            archived = os.path.join(base_dir, f"crash_report_{ts}_{suffix}.log")
+
+            # 1) Atomic Rename versuchen — nur os.replace im try, Erfolgs-
+            #    Pfad verlaesst den try, damit kein spaeterer Fehler als
+            #    Rename-Fehler fehlinterpretiert wird.
+            rename_ok = False
+            try:
+                os.replace(abs_path, archived)
+                rename_ok = True
+            except OSError as rename_err:
+                logger.warning(
+                    f"Crash-Log Rename fehlgeschlagen ({rename_err}); Copy-Fallback"
+                )
+
+            if rename_ok:
+                logger.info(f"Crash-Log archiviert nach {archived}")
+                # Nicht-fatale Nachbereitung in eigenem try, damit das
+                # bereits erfolgreiche Archiv den return-Pfad erreicht
+                # auch wenn Prune oder Marker-Loeschen scheitert.
+                try:
+                    _remove_ack_marker(abs_path)
+                    self._prune_old_archives(base_dir, exclude=archived)
+                except Exception as post_err:
+                    logger.warning(f"Post-Rename-Nachbereitung fehlgeschlagen: {post_err}")
+                    logger.warning(traceback.format_exc())
+                return archived
+
+            # 2) Copy-Fallback: Original lesbar, aber nicht loeschbar (Windows-Lock).
+            try:
+                shutil.copy2(abs_path, archived)
+            except OSError as copy_err:
+                # Partielle Zieldatei entfernen, damit sie nicht im Bundle landet.
+                try:
+                    if os.path.exists(archived):
+                        os.remove(archived)
+                except OSError as rm_err:
+                    logger.warning(
+                        f"Partielle Archiv-Datei nicht loeschbar ({archived}): {rm_err}"
+                    )
+                logger.error(f"Crash-Log Copy-Fallback fehlgeschlagen: {copy_err}")
+                logger.error(traceback.format_exc())
+                return None
+
+            # 3) Groessen-Check UND Truncate unter einem Handle. Mit r+b
+            #    + fstat + truncate(0) halten wir das TOCTOU-Fenster
+            #    minimal; ein Append aus _crash_excepthook zwischen Check
+            #    und Truncate wuerde die Groesse veraendern und das
+            #    truncate skippen. Vollstaendig schliessen laesst sich
+            #    das nur mit gemeinsamem File-Lock im Excepthook — hier
+            #    nicht praktikabel.
+            try:
+                copy_size = os.path.getsize(archived)
+            except OSError as size_err:
+                logger.warning(
+                    f"Archiv-Groesse nicht lesbar, Truncate uebersprungen: {size_err}"
+                )
+                # Kein Marker: unklarer Zustand → Popup soll beim naechsten
+                # Start erneut erscheinen und sauber archivieren.
+                self._prune_old_archives(base_dir, exclude=archived)
+                return archived
+
+            # Flag + captured_stat unterscheiden drei Faelle:
+            # - Open/fstat-Fehler: kein captured_stat → Fallback-Pfad.
+            # - Mismatch: Return im with, kein Marker.
+            # - Truncate-Err nach Size-OK: captured_stat aus fstat ins
+            #   Marker schreiben (nicht neu stat'n, sonst wandert ein
+            #   zwischenzeitlicher Append ins Snapshot).
+            size_check_passed = False
+            captured_mtime_ns: int | None = None
+            captured_size: int | None = None
+            try:
+                with open(abs_path, 'r+b') as f:
+                    st = os.fstat(f.fileno())
+                    current_size = st.st_size
+                    if current_size != copy_size:
+                        logger.warning(
+                            f"Crash-Log Groesse weicht nach Copy ab "
+                            f"(orig={current_size}, copy={copy_size}); "
+                            f"Truncate uebersprungen, kein Marker"
+                        )
+                        # Original hat Zuwachs → KEIN Marker. Popup
+                        # erscheint beim naechsten Start erneut und
+                        # archiviert vollstaendig.
+                        self._prune_old_archives(base_dir, exclude=archived)
+                        return archived
+                    size_check_passed = True
+                    captured_mtime_ns = st.st_mtime_ns
+                    captured_size = current_size
+                    f.truncate(0)
+                logger.info(f"Crash-Log kopiert nach {archived} und Original geleert")
+                _remove_ack_marker(abs_path)
+            except OSError as trunc_err:
+                logger.warning(f"Crash-Log Truncate-Pfad fehlgeschlagen: {trunc_err}")
+                logger.warning(traceback.format_exc())
+                if size_check_passed and captured_mtime_ns is not None and captured_size is not None:
+                    # fstat-Snapshot aus dem Handle VOR truncate: Archiv
+                    # == Original zum Snapshot-Zeitpunkt bestaetigt.
+                    _write_ack_marker(abs_path, captured_mtime_ns, captured_size)
+                else:
+                    # Open/fstat selbst failed (z.B. Windows-Lock ohne
+                    # Write-Share). Fallback: wenn Datei stat'bar und
+                    # Groesse immer noch == copy_size, dann deckt Archiv
+                    # den aktuellen Stand und Marker verhindert Dup-Loop.
+                    try:
+                        fb = os.stat(abs_path)
+                        if fb.st_size == copy_size:
+                            _write_ack_marker(abs_path, fb.st_mtime_ns, fb.st_size)
+                        # Sonst: Datei groesser → neuer Content, kein Marker.
+                    except OSError as fb_err:
+                        logger.warning(f"Fallback-Stat fehlgeschlagen: {fb_err}")
+            self._prune_old_archives(base_dir, exclude=archived)
+            return archived
+        except Exception as err:
+            logger.error(f"_archive_log unerwarteter Fehler: {err}")
+            logger.error(traceback.format_exc())
+            # Wenn das Archiv tatsaechlich erzeugt wurde (nach Rename oder
+            # Copy), lieber den Pfad zurueckgeben als None — Call-Site
+            # waehlt sonst den Original-Pfad, der jetzt eventuell weg oder
+            # inkonsistent ist.
+            if archived and os.path.exists(archived):
+                return archived
+            return None
+
+    @staticmethod
+    def _prune_old_archives(base_dir: str, keep: int = 5, exclude: str | None = None) -> None:
+        """Haelt nur die neuesten ``keep`` crash_report_*.log im logs-Ordner.
+
+        Sortiert lexikografisch nach Dateinamen (Timestamp-Praefix im
+        Namen ist ISO-sortierbar) statt nach mtime, weil ``shutil.copy2``
+        die mtime der Quelle uebernimmt und frische Archive sonst mit
+        alten mtimes ins Loesch-Set rutschen koennten.
+
+        ``exclude`` schuetzt den gerade erzeugten Archiv-Pfad vor dem
+        Loeschen, egal wo er im Sort-Ergebnis landet.
+        """
+        try:
+            exclude_name = os.path.basename(exclude) if exclude else None
+            archives = sorted(
+                (p for p in Path(base_dir).glob("crash_report_*.log") if p.is_file()),
+                key=lambda p: p.name,
+                reverse=True,
+            )
+            for old in archives[keep:]:
+                if exclude_name and old.name == exclude_name:
+                    continue
+                try:
+                    old.unlink()
+                    logger.info(f"Altes Crash-Archiv entfernt: {old.name}")
+                except OSError as rm_err:
+                    logger.warning(f"Konnte altes Crash-Archiv nicht loeschen ({old.name}): {rm_err}")
+        except Exception as err:
+            # Prune ist Housekeeping — kein Fehler hier darf den
+            # Hauptpfad in `_archive_log` ueber den outer-except in None
+            # umschlagen lassen.
+            logger.warning(f"_prune_old_archives fehlgeschlagen: {err}")
+            logger.warning(traceback.format_exc())
+
+    def _on_bundle(self, _instance):
+        session_raw = str(self._configsave) if self._configsave is not None else ""
+        if not session_raw.strip():
+            show_toast("Keine Session gewaehlt — Bundle nicht moeglich.",
+                       level='error', duration=4.0)
+            return
+        session_path = Path(session_raw)
+        if not session_path.is_dir():
+            show_toast(f"Session-Pfad fehlt: {session_path}",
+                       level='error', duration=4.0)
+            return
+
+        player_name = str(self._pl.get("your_name", "") or "unknown")
+        is_host = bool(self._rem.get("start_server", False))
+
+        self._bundle_button.disabled = True
+        handle = show_pending_toast("Support-Bundle wird gepackt", level='info')
+
+        def _worker():
+            try:
+                from backend.log_bundler import build_bundle
+                bundle_path = build_bundle(session_path, player_name, is_host, None)
+                size_mib = bundle_path.stat().st_size / (1024 * 1024)
+
+                # Button bleibt bei Erfolg disabled — Bundle ist gebaut,
+                # weitere Klicks waeren redundant. Fehler-Pfad re-enabled.
+                def _finish_ok(_dt):
+                    handle.finish(
+                        f"Bundle gespeichert ({size_mib:.1f} MiB): {bundle_path.name}",
+                        level='success', duration=3.5,
+                    )
+                Clock.schedule_once(_finish_ok, 0)
+            except Exception as err:
+                logger.error(f"build_bundle aus Crash-Popup fehlgeschlagen: {err}")
+                logger.error(traceback.format_exc())
+                # Python cleart `err` am Ende des except-Blocks. Vor dem
+                # Closure in lokale Variable kopieren, sonst NameError beim
+                # spaeteren Clock-Tick.
+                err_msg = str(err)
+
+                def _finish_err(_dt):
+                    handle.finish(
+                        f"Bundle fehlgeschlagen: {err_msg}",
+                        level='error', duration=5.0,
+                    )
+                    # Button wieder aktivieren, damit User es erneut probieren kann.
+                    self._bundle_button.disabled = False
+                Clock.schedule_once(_finish_err, 0)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
 
 class MainMenu(Screen):

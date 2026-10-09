@@ -341,9 +341,17 @@ class TrackerApp(App):
         ]
 
         crash_log = 'logs/crash_report.log'
-        if os.path.exists(crash_log) and os.path.getsize(crash_log) > 0:
-            from frontend.widgets.mainmenu import CrashReportPopup
-            Clock.schedule_once(lambda dt: CrashReportPopup(crash_log).open(), 2)
+        from frontend.widgets.mainmenu import CrashReportPopup, should_show_crash_popup
+        if should_show_crash_popup(crash_log):
+            Clock.schedule_once(
+                lambda dt: CrashReportPopup(
+                    crash_log,
+                    configsave=self.configsave,
+                    pl=self.pl,
+                    rem=self.rem,
+                ).open(),
+                2,
+            )
 
         if not self.sp.get('common_path'):
             from frontend.widgets.sprite_setup_popup import SpriteSetupPopup

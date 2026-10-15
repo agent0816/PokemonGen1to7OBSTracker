@@ -63,6 +63,19 @@ class TrackerNavigationRail(MDNavigationRail):
         # nach). Initial-Sync erst nach einem Frame, wenn die box_items-Kinder
         # und ihre Icon/Label-Container stehen.
         self.screen_manager.bind(current=self._on_screen_current)
+        # Initial-Highlight ERST nach dem ersten echten Layout setzen: läuft der
+        # Sync zu früh (Icon-Breite noch 0), berechnet MDNavigationRail die
+        # Breite des Auswahl-Indikators aus der noch vollen Item-Breite und der
+        # Indikator startet viel zu breit (normalisiert sich erst beim Klick).
+        self._did_initial_sync = False
+        self.bind(size=self._maybe_initial_sync)
+
+    def _maybe_initial_sync(self, *_args) -> None:
+        if self._did_initial_sync or self.width <= 1 or self.height <= 1:
+            return
+        self._did_initial_sync = True
+        # Ein Frame nach dem ersten echten Rail-Layout, damit die Item-Icons
+        # ihre endgültige Breite haben.
         Clock.schedule_once(lambda _dt: self.sync_to_screen(self.screen_manager.current))
 
     def add_item(self, item: dict) -> None:

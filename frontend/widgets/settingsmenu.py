@@ -874,7 +874,7 @@ class ScrollSettings(ScrollView):
         if self.configsave is None:
             return None
         try:
-            # str() nötig: configsave ist MutableString (frontend.app), Path()
+            # str() nötig: configsave ist MutableString (frontend.app_core), Path()
             # akzeptiert das nicht direkt. Kein Caching — Session-Wechsel
             # mutiert configsave in-place.
             return RunManager(str(self.configsave))

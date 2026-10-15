@@ -36,3 +36,4 @@ backup-saves/
 support_bundles/
 backend/lua/verify_battletypeflags.lua
 backend/lua/verify_bf_*.log
+spikes/

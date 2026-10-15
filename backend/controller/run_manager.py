@@ -36,7 +36,7 @@ SETTINGS_FILENAME = "settings.rnqs"
 
 class RunManager:
     def __init__(self, session_path):
-        # session_path kann str, Path oder MutableString (frontend.app) sein —
+        # session_path kann str, Path oder MutableString (frontend.app_core) sein —
         # bewusst über str() normalisieren, damit Path(...) nicht auf einem
         # nicht-PathLike-Wrapper wie MutableString scheitert.
         self.session_path = Path(str(session_path))

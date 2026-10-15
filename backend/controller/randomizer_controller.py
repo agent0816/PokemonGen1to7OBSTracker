@@ -12,7 +12,7 @@ class RandomizerController:
     def __init__(self, rnd: dict, pl: dict, configsave=None):
         self.rnd = rnd
         self.pl = pl
-        # configsave ist eine langlebige Referenz (MutableString aus frontend.app),
+        # configsave ist eine langlebige Referenz (MutableString aus frontend.app_core),
         # deren .text bei Session-Wechsel in-place mutiert wird. Nicht einfrieren
         # (`Path(configsave)` schlägt sonst mit TypeError fehl UND würde alte
         # Session-Pfade festhalten). Immer lazy in `_get_run_manager` auflösen.

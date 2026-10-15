@@ -4,8 +4,8 @@ import traceback
 from pathlib import Path
 import pathvalidate
 import weakref
-import yaml
 from backend.logging_setup import get_logger
+from backend import session_store
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.floatlayout import FloatLayout
@@ -495,34 +495,14 @@ class SessionMenu(Screen):
         self.newest_session_name = None
 
     def save_new_session(self):
-        new_session_name = self.newest_session_name.replace(" ", "_")
-        new_config = self.configsave.text.replace("default", new_session_name)
-        new_session = Path(f"{new_config}")
-        new_session.mkdir()
+        new_config = session_store.session_path(self.configsave.text, self.newest_session_name)
+        session_store.write_session_files(new_config, self._session_configs(), create=True)
 
-        with open(f"{new_session}/sprites.yml", 'w') as file:
-            yaml.dump(self.sp, file)
-
-        with open(f"{new_session}/bh_config.yml", 'w') as file:
-            yaml.dump(self.bh, file)
-
-        with open(f"{new_session}/obs_config.yml", 'w') as file:
-            yaml.dump(self.obs, file)
-
-        with open(f"{new_session}/remote.yml", 'w') as file:
-            yaml.dump(self.rem, file)
-
-        with open(f"{new_session}/player.yml", 'w') as file:
-            yaml.dump(self.pl, file)
-
-        with open(f"{new_session}/randomizer.yml", 'w') as file:
-            yaml.dump(self.rnd, file)
-
-        with open(f"{new_session}/overlay.yml", 'w') as file:
-            yaml.dump(self.ov, file)
-
-        with open(f"{new_session}/nuzlocke.yml", 'w') as file:
-            yaml.dump(self.nuz, file)
+    def _session_configs(self) -> session_store.SessionConfigs:
+        return session_store.SessionConfigs(
+            sp=self.sp, bh=self.bh, obs=self.obs, rem=self.rem,
+            pl=self.pl, rnd=self.rnd, ov=self.ov, nuz=self.nuz,
+        )
 
     def select_session(self, instance, default=False):
         if not default:
@@ -570,74 +550,9 @@ class SessionMenu(Screen):
     def load_session_config(self, default=False):
         if default:
             self.configsave.text = self.default_config
-        with open(f"{self.configsave}sprites.yml", 'r') as file:
-            new_sp = yaml.safe_load(file)
-            
-        for key, value in new_sp.items():
-            self.sp[key] = value
-
-        with open(f"{self.configsave}bh_config.yml", 'r') as file:
-            new_bh = yaml.safe_load(file)
-
-        for key, value in new_bh.items():
-            self.bh[key] = value
-
-        with open(f"{self.configsave}obs_config.yml", 'r') as file:
-            new_obs = yaml.safe_load(file)
-
-        for key, value in new_obs.items():
-            self.obs[key] = value
-
-        with open(f"{self.configsave}remote.yml", 'r') as file:
-            new_rem = yaml.safe_load(file)
-
-        for key, value in new_rem.items():
-            self.rem[key] = value
-
-        with open(f"{self.configsave}player.yml", 'r') as file:
-            new_pl = yaml.safe_load(file)
-
-        for key, value in new_pl.items():
-            self.pl[key] = value
-
-        randomizer_path = Path(f"{self.configsave}randomizer.yml")
-        if randomizer_path.exists():
-            with open(randomizer_path, 'r') as file:
-                new_rnd = yaml.safe_load(file)
-            if new_rnd:
-                for key, value in new_rnd.items():
-                    self.rnd[key] = value
-
-        overlay_path = Path(f"{self.configsave}overlay.yml")
-        if overlay_path.exists():
-            with open(overlay_path, 'r') as file:
-                new_ov = yaml.safe_load(file)
-            if new_ov:
-                for key, value in new_ov.items():
-                    self.ov[key] = value
-
-        nuzlocke_path = Path(f"{self.configsave}nuzlocke.yml")
-        if nuzlocke_path.exists():
-            with open(nuzlocke_path, 'r') as file:
-                new_nuz = yaml.safe_load(file)
-            # Stale-Key-Fix (auch bei leerer/korrupter YAML): rule_* und
-            # soullink_*-Keys aus der VORHERIGEN Session zuerst leeren, sonst
-            # leaken sie ueber den Wechsel hinweg. Beispiel-Symptom: Session A
-            # hat `rule_shiny_clause_always_catchable: true` gespeichert,
-            # Session B hat den Key nicht (weil aeltere Session ohne die
-            # Regel-Migration oder komplett leere YAML) → nach Wechsel steht
-            # in self.nuz weiter True, obwohl die Session B-Config keine
-            # Aussage dazu macht. Fehlende Keys in der neuen Session fallen
-            # dann sauber auf RULE_CHECKBOXES-Defaults zurueck (per .get in
-            # nuzlockemenu) bzw. bei App-Start via init_config_folder-
-            # Migration.
-            stale_keys = [k for k in list(self.nuz.keys())
-                           if k.startswith("rule_") or k.startswith("soullink_")]
-            for k in stale_keys:
-                del self.nuz[k]
-            if new_nuz:
-                for key, value in new_nuz.items():
-                    self.nuz[key] = value
+        # Alle acht Session-YAMLs in-place laden (inkl. Stale-Key-Fix fuer nuz),
+        # gemeinsame Logik mit der KivyMD-SessionMenu.
+        session_store.load_session_into(str(self.configsave), self._session_configs())
 
     def delete_session(self, instance):
         session_to_delete = self.get_selected_session()
@@ -655,6 +570,4 @@ class SessionMenu(Screen):
         return result
 
     def save_session_list(self):
-        new_config = self.default_config.replace("default/", "")
-        with open(f"{new_config}/session_list.yml", "w") as file:
-            yaml.dump(self.session_list_names, file)
+        session_store.save_session_list(self.default_config, self.session_list_names)

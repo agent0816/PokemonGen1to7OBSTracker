@@ -5,22 +5,19 @@ Aktivierung: Umgebungsvariable ``TRACKER_UI=md`` vor ``python main.py``.
 Ohne Variable startet weiterhin die klassische Kivy-UI (``frontend.app``).
 
 Backend-Start/-Shutdown kommt komplett aus ``TrackerCoreMixin`` — hier lebt
-nur UI. Screens werden schrittweise migriert; noch nicht migrierte Bereiche
-zeigen einen Platzhalter, statt halbfertige Logik auf echte Session-Daten
-loszulassen.
+nur UI. Screens werden schrittweise migriert.
 """
 
 from kivy.clock import Clock
 from kivy.uix.screenmanager import FadeTransition, ScreenManager
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.label import MDLabel
-from kivymd.uix.screen import MDScreen
 
 from backend.logging_setup import get_logger
 from frontend.app_core import TrackerCoreMixin
 from frontend.widgets.mainmenumd import MainMenu
 from frontend.widgets.navbar import TrackerNavigationBar
+from frontend.widgets.sessionsmenumd import SessionMenu
 from frontend.widgets.settingsmenumd import SettingsMenu
 from version import VERSION
 
@@ -30,13 +27,9 @@ APP_NAME = "PokemonOBSTracker"
 APP_VERSION = VERSION
 
 
-class PlaceholderScreen(MDScreen):
-    """Platzhalter für Screens, die noch nicht nach KivyMD migriert sind."""
-
-    def __init__(self, name: str, text: str, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self.name = name
-        self.add_widget(MDLabel(text=text, halign="center"))
+def _window_title(session_name: str | None) -> str:
+    session = session_name or "Standard-Einstellungen"
+    return f"{APP_NAME} {APP_VERSION} (KivyMD-Vorschau) | Session: {session}"
 
 
 class Screens(ScreenManager):
@@ -46,13 +39,9 @@ class Screens(ScreenManager):
         super().__init__(**kwargs)
         self.transition = FadeTransition()
 
-        # Sessions bewusst noch Platzhalter: sessionsmenumd (Prototyp-Stand 0.7.11)
-        # lädt beim Wechsel nur 5 der 8 Session-YAMLs neu — exit_check würde dann
-        # rnd/ov/nuz der alten Session in die neue schreiben. Wird in Schritt 5
-        # nachgezogen (8 YAMLs, runs/, initialize_tree-Migration, Screen-Refresh).
-        self.add_widget(PlaceholderScreen(
-            "SessionMenu",
-            "Sessions: noch nicht migriert.\nSession-Wechsel bitte über die klassische UI.",
+        self.add_widget(SessionMenu(
+            session_list, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, APP_VERSION,
+            on_session_changed=self._on_session_changed,
         ))
         # MainMenu-/SettingsMenu-MD haben noch die Prototyp-Signatur (Stand 0.7.11);
         # MainMenu ist rein optisch, SettingsMenu leer.
@@ -62,6 +51,14 @@ class Screens(ScreenManager):
         self.add_widget(SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6,
                                      configsave, sp, rem, obs, bh, pl, APP_VERSION))
         self.current = "MainMenu"
+
+    def _on_session_changed(self, session_name: str | None) -> None:
+        # Screens, die Session-Werte anzeigen, hier nachladen (siehe Skill
+        # menu-session-wechsel-refresh). MainMenu-/SettingsMenu-MD zeigen
+        # noch keine Session-Werte.
+        app = MDApp.get_running_app()
+        if app is not None:
+            app.title = _window_title(session_name)
 
 
 class MainWindow(MDBoxLayout):
@@ -83,7 +80,7 @@ class MainWindow(MDBoxLayout):
 
 class TrackerAppMD(TrackerCoreMixin, MDApp):
     def build(self):
-        self.title = f"{APP_NAME} {APP_VERSION} (KivyMD-Vorschau)"
+        self.title = _window_title(None)
         self.theme_cls.theme_style_switch_animation = True
         self.theme_cls.theme_style = "Dark"
         self.theme_cls.primary_palette = "Orange"

@@ -502,14 +502,39 @@ class SessionMenu(MDScreen):
             new_path = self.default_config
         else:
             new_path = session_store.session_path(self.default_config, session_card.session_name)
+        old_path = self.configsave.text
         try:
             # Probelesen in frische Dicts: ist eine YAML kaputt/fehlt, bleiben
             # die Live-Dicts der bisherigen Session unangetastet.
             session_store.read_session(new_path)
+        except Exception as err:
+            logger.error(f"Session '{new_path}' nicht lesbar, Wechsel abgebrochen: {err}")
+            logger.error(traceback.format_exc())
+            show_snackbar(f"Session konnte nicht geladen werden: {err}", level='error', duration=6.0)
+            return
+        try:
+            # Ungespeicherte Änderungen der bisherigen Session sichern, bevor
+            # die Dicts überschrieben werden. Schlägt das fehl, NICHT wechseln —
+            # sonst wären die Änderungen verloren.
+            session_store.write_session_files(old_path, self.configs)
+        except Exception as err:
+            logger.error(f"Speichern von '{old_path}' vor Session-Wechsel fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
+            show_snackbar(f"Aktuelle Session konnte nicht gespeichert werden, Wechsel abgebrochen: {err}",
+                          level='error', duration=6.0)
+            return
+        try:
             session_store.load_session_into(new_path, self.configs)
         except Exception as err:
             logger.error(f"Session-Wechsel nach '{new_path}' fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
+            # Dicts evtl. teilweise neu → bisherige Session zurückladen (wurde
+            # eben gespeichert, also verlustfrei).
+            try:
+                session_store.load_session_into(old_path, self.configs)
+            except Exception as reload_err:
+                logger.error(f"Zurückladen von '{old_path}' fehlgeschlagen: {reload_err}")
+                logger.error(traceback.format_exc())
             show_snackbar(f"Session konnte nicht geladen werden: {err}", level='error', duration=6.0)
             return
 

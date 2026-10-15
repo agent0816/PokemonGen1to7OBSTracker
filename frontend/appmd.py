@@ -21,6 +21,7 @@ from frontend.app_core import TrackerCoreMixin
 from frontend.widgets.mainmenumd import MainMenu
 from frontend.widgets.md_common import show_snackbar
 from frontend.widgets.navrail import TrackerNavigationRail
+from frontend.widgets.pokedexmenumd import PokedexMenu
 from frontend.widgets.sessionsmenumd import SessionMenu
 from frontend.widgets.settingsmenumd import SettingsMenu
 from frontend.widgets.statusbarmd import StatusBarMD
@@ -66,6 +67,8 @@ class Screens(ScreenManager):
         self.add_widget(self.main_menu)
         self.add_widget(SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6,
                                      configsave, sp, rem, obs, bh, pl, APP_VERSION))
+        self.pokedex_menu = PokedexMenu(configsave, obs_websocket, APP_VERSION)
+        self.add_widget(self.pokedex_menu)
 
         # Sicherheits-Callbacks (Total-Wipe, Wipe-Dismissed, Slot-Kollision) wie
         # in der klassischen UI verdrahten. Banner/Popup vorerst klassisch, bis
@@ -196,6 +199,11 @@ class Screens(ScreenManager):
         app = MDApp.get_running_app()
         if app is not None:
             app.title = _window_title(session_name)
+        try:
+            self.pokedex_menu.load_from_session()
+        except Exception as err:
+            logger.error(f"PokedexMenu.load_from_session fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
 
 
 class MainWindow(MDBoxLayout):
@@ -210,6 +218,7 @@ class MainWindow(MDBoxLayout):
         navigation_list: list[dict] = [
             {"icon": "view-list", "display_name": "Sessions", "screen_name": "SessionMenu"},
             {"icon": "home-variant-outline", "display_name": "Main", "screen_name": "MainMenu"},
+            {"icon": "book-open-variant", "display_name": "Pokedex", "screen_name": "PokedexMenu"},
             {"icon": "cog", "display_name": "Settings", "screen_name": "SettingsMenu"},
         ]
         self.navrail = TrackerNavigationRail(

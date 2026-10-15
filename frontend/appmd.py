@@ -11,6 +11,7 @@ nur UI. Screens werden schrittweise migriert.
 import traceback
 
 from kivy.clock import Clock
+from kivy.metrics import dp
 from kivy.uix.screenmanager import FadeTransition, ScreenManager
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -19,7 +20,7 @@ from backend.logging_setup import get_logger
 from frontend.app_core import TrackerCoreMixin
 from frontend.widgets.mainmenumd import MainMenu
 from frontend.widgets.md_common import show_snackbar
-from frontend.widgets.navbar import TrackerNavigationBar
+from frontend.widgets.navrail import TrackerNavigationRail
 from frontend.widgets.sessionsmenumd import SessionMenu
 from frontend.widgets.settingsmenumd import SettingsMenu
 from frontend.widgets.statusbarmd import StatusBarMD
@@ -43,6 +44,13 @@ class Screens(ScreenManager):
                  **kwargs) -> None:
         super().__init__(**kwargs)
         self.transition = FadeTransition()
+        # ScreenManager ist ein FloatLayout und positioniert Screens ohne
+        # pos_hint nur beim current-Wechsel (real_add_widget: screen.pos =
+        # self.pos). Hier wird SessionMenu schon in __init__ current, bevor der
+        # Manager seine Position bekommt (eingebettet rechts neben der Rail) —
+        # der Screen bliebe sonst bei (0,0) und renderte über der Rail. Daher
+        # den aktiven Screen an die Manager-Position koppeln.
+        self.bind(pos=self._align_active_screen)
 
         update_menu = Update(APP_NAME, APP_VERSION)
         self.add_widget(update_menu)
@@ -69,6 +77,12 @@ class Screens(ScreenManager):
         # weiter (SessionMenu bei keinem/fehlgeschlagenem Update, MainMenu bei Abbruch).
         self.current = "Update"
         update_menu.check_for_update()
+
+    def _align_active_screen(self, _manager, pos) -> None:
+        # Aktiven Screen an die (neue) Manager-Position heften. FloatLayout lässt
+        # pos-hint-lose Kinder beim Relayout unangetastet, daher hier explizit.
+        if self.current_screen is not None:
+            self.current_screen.pos = pos
 
     def _wire_safety_callbacks(self, munchlax, configsave, bh, bizhawk, rnd, pl, rem) -> None:
         from frontend.widgets.wipe_banner import TotalWipeBanner
@@ -190,17 +204,26 @@ class MainWindow(MDBoxLayout):
         self.orientation = "vertical"
         self.screen_manager = Screens(*screen_arguments)
 
+        # Linke NavigationRail statt Bottom-NavBar: skaliert auf die ab Phase B
+        # dazukommenden Screens (Pokedex/Box/Bag/Encounter/Nuzlocke). Neue Ziele
+        # werden hier als weiterer Eintrag ergänzt.
         navigation_list: list[dict] = [
             {"icon": "view-list", "display_name": "Sessions", "screen_name": "SessionMenu"},
-            {"icon": "home-variant-outline", "display_name": "Main", "screen_name": "MainMenu", "active": True},
+            {"icon": "home-variant-outline", "display_name": "Main", "screen_name": "MainMenu"},
             {"icon": "cog", "display_name": "Settings", "screen_name": "SettingsMenu"},
         ]
-        self.navbar = TrackerNavigationBar(self.screen_manager, navigation_list)
+        self.navrail = TrackerNavigationRail(
+            self.screen_manager, navigation_list, size_hint_x=None, width=dp(88),
+        )
 
-        self.add_widget(self.navbar)
-        self.add_widget(self.screen_manager)
-        # Globale Fußzeile mit Verbindungsstatus (holt sich die App selbst)
+        # Rumpf: Rail links, ScreenManager rechts. Status-Leiste als Fußzeile
+        # darunter über die volle Breite.
+        body = MDBoxLayout(orientation="horizontal")
+        body.add_widget(self.navrail)
+        body.add_widget(self.screen_manager)
+
         self.status_bar = StatusBarMD()
+        self.add_widget(body)
         self.add_widget(self.status_bar)
 
 

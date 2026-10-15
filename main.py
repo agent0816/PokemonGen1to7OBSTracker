@@ -60,7 +60,20 @@ except Exception as err:
 os.environ['KIVY_LOG_MODE'] = 'PYTHON'
 from kivy.config import Config
 Config.read("backend/kivy_config/gui.ini")
-import frontend.app as FEApp
+# UI-Umschalter fuer die KivyMD-Migration: TRACKER_UI=md startet die neue UI,
+# alles andere (Default) die klassische Kivy-UI.
+USE_MD_UI = os.environ.get('TRACKER_UI', '').strip().lower() == 'md'
+if USE_MD_UI:
+    # Nur fuer die MD-UI: skalierbares Fenster mit Mindestgroesse, Escape
+    # beendet nicht. gui.ini bleibt unveraendert, weil die klassische UI auf
+    # feste Fenstergroesse ausgelegt ist. Muss vor dem Window-Import passieren.
+    Config.set('graphics', 'resizable', '1')
+    Config.set('graphics', 'minimum_width', '420')
+    Config.set('graphics', 'minimum_height', '550')
+    Config.set('kivy', 'exit_on_escape', '0')
+    import frontend.appmd as FEApp
+else:
+    import frontend.app as FEApp
 import asyncio
 import logging
 for logger_name, log in logging.Logger.manager.loggerDict.items():
@@ -89,7 +102,8 @@ async def _run_app(app):
 
 
 def main():
-    app = FEApp.TrackerApp()
+    app = FEApp.TrackerAppMD() if USE_MD_UI else FEApp.TrackerApp()
+    logger.info(f"Starte {'KivyMD' if USE_MD_UI else 'klassische'} UI")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.set_exception_handler(_asyncio_exception_handler)

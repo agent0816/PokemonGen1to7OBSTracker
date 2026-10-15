@@ -10,6 +10,11 @@ _root_initialized = False
 # der GUI, alle bekannten Module aufzulisten und deren Level live umzustellen.
 # Wert: der zugehoerige RotatingFileHandler (fuer .setLevel-Live-Apply).
 _module_handlers: dict[str, RotatingFileHandler] = {}
+# Log-Dateien, die in diesem Prozess schon beim Start rotiert wurden. Mehrere
+# Module teilen sich eine Datei (z.B. logs/frontend.log) — ein spaeter (lazy)
+# importiertes Modul darf die Datei nicht erneut rotieren, waehrend andere
+# Handler sie offen halten (Windows: WinError 32 beim os.rename).
+_rolled_over_files: set[str] = set()
 
 LEVEL_MAP = {
     'DEBUG': logging.DEBUG,
@@ -74,8 +79,11 @@ def _create_rotating_handler(log_file: str, max_bytes: int, backup_count: int,
                               formatter: logging.Formatter) -> RotatingFileHandler:
     fh = RotatingFileHandler(log_file, mode='a', maxBytes=max_bytes,
                               backupCount=backup_count, encoding='utf-8')
-    if os.path.exists(log_file) and os.path.getsize(log_file) > 0:
-        fh.doRollover()
+    log_key = os.path.normcase(os.path.abspath(log_file))
+    if log_key not in _rolled_over_files:
+        _rolled_over_files.add(log_key)
+        if os.path.exists(log_file) and os.path.getsize(log_file) > 0:
+            fh.doRollover()
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(formatter)
     return fh

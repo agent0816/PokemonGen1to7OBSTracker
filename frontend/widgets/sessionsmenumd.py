@@ -27,44 +27,17 @@ from kivymd.uix.relativelayout import MDRelativeLayout
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.screenmanager import MDScreenManager
 from kivymd.uix.scrollview import MDScrollView
-from kivymd.uix.snackbar import MDSnackbar
-from kivymd.uix.snackbar import MDSnackbarText
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.textfield import MDTextFieldHintText
 
-from kivy.metrics import dp
 from kivy.properties import StringProperty
 from kivy.uix.widget import Widget
 
 from backend import session_store
 from backend.logging_setup import get_logger
+from frontend.widgets.md_common import show_snackbar
 
 logger = get_logger(__name__, 'logs/frontend.log')
-
-_SNACKBAR_COLORS = {
-    'info': None,
-    'success': (0.18, 0.49, 0.20, 1),
-    'error': (0.72, 0.11, 0.11, 1),
-}
-
-
-def show_snackbar(text: str, level: str = 'info', duration: float = 3.0) -> None:
-    """Kurze Rückmeldung unten im Fenster (Ersatz für frontend.widgets.toast)."""
-    label = MDSnackbarText(text=text)
-    snackbar = MDSnackbar(
-        label,
-        y=dp(24),
-        pos_hint={"center_x": 0.5},
-        size_hint_x=0.6,
-        duration=duration,
-    )
-    color = _SNACKBAR_COLORS.get(level)
-    if color is not None:
-        # Eigene Hintergrundfarbe → Theme-Textfarbe passt nicht mehr, weiß erzwingen
-        snackbar.md_bg_color = color
-        label.theme_text_color = "Custom"
-        label.text_color = (1, 1, 1, 1)
-    snackbar.open()
 
 
 class DeleteSessionDialog(MDDialog):

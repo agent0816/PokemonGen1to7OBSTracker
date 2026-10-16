@@ -34,7 +34,7 @@ from backend.pokemon_detail_view import (
     type_color_hex, type_image_path, type_name_id, types_de,
 )
 from backend.tm_type_resolver import resolve_tm_hm_sprite
-from frontend.widgets.stat_radar import StatRadar
+from frontend.widgets.stat_radar import RADAR_SCALE, StatRadar
 
 logger = get_logger(__name__, './logs/pokemon_detail.log')
 
@@ -111,11 +111,7 @@ class PokemonDetailMD(MDScreen):
 
         self._add_nature_ability(pokemon, rando_pokemon)
         self._add_moves(pokemon)
-        self._add_stats(dexnr, rando_pokemon)
-        self._add_stat_dict("EVs", getattr(pokemon, "evs", None), ev_max(self._edition),
-                             (0.30, 0.70, 0.38, 1.0))
-        self._add_stat_dict("IVs", getattr(pokemon, "ivs", None), iv_max(self._edition),
-                             (0.62, 0.42, 0.82, 1.0))
+        self._add_stat_radars(dexnr, rando_pokemon, pokemon)
         self._add_exp(pokemon, dexnr)
         self._add_misc(pokemon)
         self._render_soullink_section(pokemon)
@@ -201,45 +197,66 @@ class PokemonDetailMD(MDScreen):
         card.add_widget(ap)
         return card
 
-    def _add_stats(self, dexnr, rando_pokemon):
+    # Mindestbreite pro Radar-Zelle für die responsive Spaltenzahl (Radar + Rand).
+    _RADAR_CELL_MIN = dp(270)
+
+    def _add_stat_radars(self, dexnr, rando_pokemon, pokemon):
+        """Basiswerte-, EV- und IV-Radar in einem responsiven Grid: nebeneinander
+        wenn breit genug, sonst untereinander (wie die Attacken-Karten)."""
         gen1 = is_gen1_edition(self._edition)
+        specs = []
+
+        # Basiswerte (Rando überlagert, wenn abweichend)
         labels = STAT_LABELS_GEN1 if gen1 else STAT_LABELS
         rando_keys = STAT_KEYS_RANDO_GEN1 if gen1 else STAT_KEYS_RANDO
         vanilla = resolve_vanilla_stats(dexnr, self._edition)
         rando = [rando_pokemon.stats.get(k, 0) for k in rando_keys] if rando_pokemon and rando_pokemon.stats else []
         stats = rando if (rando and rando != vanilla) else vanilla
-        if not stats:
-            return
-        self._separator("Basiswerte" + (" (Rando)" if rando and rando != vanilla else ""))
-        # Achsen im Uhrzeigersinn ab oben wie im USUM-Hexagon:
-        # KP, Angriff, Vert, Initiative, SpVert, SpAng (Gen1: KP,Ang,Ver,Init,Spez).
-        order = [0, 1, 2, 4, 3] if gen1 else [0, 1, 2, 5, 4, 3]
-        r_labels = [labels[i] for i in order]
-        r_values = [stats[i] if i < len(stats) else 0 for i in order]
-        # Feste Größe + über Spacer zentriert — ein voll-breites Widget macht
-        # center_x/Radius inkonsistent (Hexagon rutscht links raus).
-        wrap = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(300))
-        wrap.add_widget(Widget())
-        wrap.add_widget(StatRadar(r_labels, r_values, size_hint=(None, None), size=(dp(300), dp(300))))
-        wrap.add_widget(Widget())
-        self.detail_layout.add_widget(wrap)
+        if stats:
+            # Achsen im Uhrzeigersinn ab oben (USUM): KP, Ang, Ver, Init, SpVer, SpAng.
+            order = [0, 1, 2, 4, 3] if gen1 else [0, 1, 2, 5, 4, 3]
+            title = "Basiswerte" + (" (Rando)" if rando and rando != vanilla else "")
+            specs.append((title, [labels[i] for i in order],
+                          [stats[i] if i < len(stats) else 0 for i in order],
+                          RADAR_SCALE, (0.20, 0.55, 0.95, 1.0)))
 
-    def _add_stat_dict(self, title, stat_dict, scale, accent):
-        """EVs/IVs als eigenes Radar (gleiche Achsen wie die Basiswerte), mit
-        generationsabhängiger Skala (``scale`` = iv_max/ev_max)."""
-        if not stat_dict:
+        # EVs / IVs (gen-abhängige Skala)
+        dlabels = RADAR_DICT_LABELS_GEN1 if gen1 else RADAR_DICT_LABELS
+        dkeys = RADAR_DICT_KEYS_GEN1 if gen1 else RADAR_DICT_KEYS
+        for name, stat_dict, scale, accent in (
+            ("EVs", getattr(pokemon, "evs", None), ev_max(self._edition), (0.30, 0.70, 0.38, 1.0)),
+            ("IVs", getattr(pokemon, "ivs", None), iv_max(self._edition), (0.62, 0.42, 0.82, 1.0)),
+        ):
+            if stat_dict:
+                specs.append((f"{name} (max {int(scale)})", dlabels,
+                              [int(stat_dict.get(k, 0) or 0) for k in dkeys], float(scale), accent))
+
+        if not specs:
             return
-        self._separator(f"{title} (max {int(scale)})")
-        gen1 = is_gen1_edition(self._edition)
-        labels = RADAR_DICT_LABELS_GEN1 if gen1 else RADAR_DICT_LABELS
-        keys = RADAR_DICT_KEYS_GEN1 if gen1 else RADAR_DICT_KEYS
-        values = [int(stat_dict.get(k, 0) or 0) for k in keys]
-        wrap = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(260))
-        wrap.add_widget(Widget())
-        wrap.add_widget(StatRadar(labels, values, accent=accent, scale=float(scale),
-                                  size_hint=(None, None), size=(dp(260), dp(260))))
-        wrap.add_widget(Widget())
-        self.detail_layout.add_widget(wrap)
+        self._separator("Werte")
+        grid = MDGridLayout(size_hint_y=None, spacing=dp(8), cols=len(specs))
+        grid.bind(minimum_height=grid.setter("height"))
+        n = len(specs)
+        # Schmal -> weniger Spalten (bis 1), nie mehr Spalten als Radare.
+        grid.bind(width=lambda g, w: setattr(g, "cols", max(1, min(n, int(w / self._RADAR_CELL_MIN)))))
+        for title, lbls, vals, scale, accent in specs:
+            grid.add_widget(self._radar_cell(title, lbls, vals, scale, accent))
+        self.detail_layout.add_widget(grid)
+
+    def _radar_cell(self, title, labels, values, scale, accent) -> MDBoxLayout:
+        """Eine Radar-Zelle: Titel oben, Radar (feste Größe, zentriert) darunter."""
+        cell = MDBoxLayout(orientation="vertical", size_hint_y=None, height=dp(268), spacing=dp(2))
+        t = MDLabel(text=title, bold=True, size_hint_y=None, height=dp(24),
+                    halign="center", valign="center")
+        t.role = "small"
+        cell.add_widget(t)
+        row = MDBoxLayout(orientation="horizontal")
+        row.add_widget(Widget())
+        row.add_widget(StatRadar(labels, values, accent=accent, scale=float(scale),
+                                 size_hint=(None, None), size=(dp(240), dp(240))))
+        row.add_widget(Widget())
+        cell.add_widget(row)
+        return cell
 
     def _item_sprite_path(self, item_id, edition) -> str:
         """Pfad zum Item-Sprite aus dem Sprite-Repo (gen3+); '' wenn nicht da.

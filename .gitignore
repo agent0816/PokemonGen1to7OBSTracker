@@ -10,6 +10,9 @@ build/
 *.spec
 specs/
 *.png
+# Repo-Assets (Typ-/Status-/Editions-Bilder) trotz globalem *.png versionieren,
+# damit der Nuitka-Build sie mit --include-data-dir einbetten kann.
+!backend/ressources/**
 pyu-data/
 client_config.py
 .pyupdater/

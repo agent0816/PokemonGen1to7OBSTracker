@@ -31,6 +31,7 @@ from backend.controller.randomizer_controller import RandomizerController
 from backend.controller.settings_controller import SettingsController
 import frontend.UIFactory as UI
 from backend.logging_setup import get_logger
+from backend.player_colors import PLAYER_COLORS
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
@@ -873,15 +874,13 @@ class MainMenu(Screen):
         )
         box.bind(minimum_width=box.setter("width"))  # type: ignore
 
-        color_lut = {1: "1a4d9a7f", 2: "9a671a7f", 3: "9a9a1a7f", 4: "1a9a1a7f"}
-
         for player in range(1, self.pl["player_count"] + 1):
             trainer = TrainerBox(
                 player,
                 self.munchlax,
                 self.obs_websocket,
                 self,
-                color_lut[player],
+                PLAYER_COLORS[player],
                 orientation="vertical",
                 size_hint=(None, 1),
                 size=("140dp", 0),

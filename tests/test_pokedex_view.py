@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.pokedex_view import (  # noqa: E402
-    edition_to_gen, filter_rows, format_row, item_name, location_name, species_name,
+    edition_to_gen, filter_rows, format_row, item_name, location_name, row_slot, species_name,
 )
 
 SPECIES = {0: "Ei", 25: "Pikachu", 4: "Glumanda"}
@@ -33,6 +33,32 @@ def test_filter_shiny_and_slot() -> None:
     assert len(filter_rows(_rows(), "", "", True, SPECIES)) == 1
     assert len(filter_rows(_rows(), "", "1", False, SPECIES)) == 2
     assert filter_rows(_rows(), "", "3", False, SPECIES) == []
+
+
+def test_row_slot_formate() -> None:
+    # int-owner (Legacy-Team-DB)
+    assert row_slot({"owner": 1}) == 1
+    # build_owner-Format name_<slot>
+    assert row_slot({"owner": "Bothhaft_2"}) == 2
+    assert row_slot({"owner": "Name_mit_3"}) == 3
+    # numerischer String
+    assert row_slot({"owner": "4"}) == 4
+    # kein Slot
+    assert row_slot({"owner": "Bothhaft"}) is None
+    assert row_slot({"owner": None}) is None
+    assert row_slot({}) is None
+
+
+def test_filter_slot_build_owner() -> None:
+    rows = [
+        {"dexnr": 25, "owner": "Alice_1"},
+        {"dexnr": 4, "owner": "Bob_2"},
+        {"dexnr": 7, "owner": "Alice_1"},
+    ]
+    assert [r["dexnr"] for r in filter_rows(rows, "", "1", False, SPECIES)] == [25, 7]
+    assert [r["dexnr"] for r in filter_rows(rows, "", "2", False, SPECIES)] == [4]
+    # nicht-numerischer Slot -> Filter aus
+    assert len(filter_rows(rows, "", "x", False, SPECIES)) == 3
 
 
 def test_filter_query() -> None:

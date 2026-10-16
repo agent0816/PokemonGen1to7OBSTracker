@@ -6,7 +6,7 @@ import traceback
 
 import yaml
 
-from backend.classes.pokedex_db import LEGACY_GIFT_ROUTE_MARKER
+from backend.classes.pokedex_db import LEGACY_GIFT_ROUTE_MARKER, PokedexDB
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, 'logs/pokedexmenu.log')
@@ -41,13 +41,39 @@ def species_name(dexnr_text: str, species_de: dict) -> str:
         return f"#{dexnr_text}"
 
 
+def row_slot(row: dict) -> int | None:
+    """Spieler-Slot (1-basiert) einer DB-Zeile, oder None.
+
+    Der ``owner`` liegt je nach Herkunft als ``name_<slot>`` (build_owner),
+    als reiner Slot-Int (Legacy-Team-DB) oder als numerischer String vor.
+    Reuse von ``PokedexDB.owner_slot`` für das build_owner-Format
+    (siehe Memory ``feedback_owner_slot_extract``: kein ``int(owner)``).
+    """
+    owner = row.get("owner")
+    if isinstance(owner, int):
+        return owner
+    if owner is None:
+        return None
+    text = str(owner)
+    slot = PokedexDB.owner_slot(text)
+    if slot is not None:
+        return slot
+    return int(text) if text.isdigit() else None
+
+
 def filter_rows(rows: list[dict], query: str, slot: str, shiny_only: bool, species_de: dict) -> list[dict]:
-    """Filtert Pokedex-Zeilen. ``query`` lowercased/getrimmt, ``slot`` getrimmt."""
+    """Filtert Pokedex-Zeilen. ``query`` lowercased/getrimmt, ``slot`` getrimmt.
+
+    ``slot`` ist ein Spieler-Slot als String ("1".."4"); verglichen wird gegen
+    ``row_slot`` (deckt ``name_<slot>`` und Legacy-numerische Owner ab). Ein
+    nicht-numerischer ``slot`` deaktiviert den Slot-Filter.
+    """
+    slot_num: int | None = int(slot) if slot and slot.isdigit() else None
     result: list[dict] = []
     for row in rows:
         if shiny_only and not row.get("shiny"):
             continue
-        if slot and str(row.get("owner", "")) != slot:
+        if slot_num is not None and row_slot(row) != slot_num:
             continue
         if query:
             haystack = " ".join(str(row.get(field, "")) for field in ("nickname", "edition", "dexnr")).lower()

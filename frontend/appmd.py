@@ -67,7 +67,7 @@ class Screens(ScreenManager):
         self.add_widget(self.main_menu)
         self.add_widget(SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6,
                                      configsave, sp, rem, obs, bh, pl, APP_VERSION))
-        self.pokedex_menu = PokedexMenu(configsave, obs_websocket, APP_VERSION)
+        self.pokedex_menu = PokedexMenu(configsave, obs_websocket, APP_VERSION, pl)
         self.add_widget(self.pokedex_menu)
 
         # Sicherheits-Callbacks (Total-Wipe, Wipe-Dismissed, Slot-Kollision) wie

@@ -68,12 +68,14 @@ class _DriveApp(MDApp):
 
     def on_start(self):
         # on_pre_enter feuert beim current-Set -> async Load startet.
+        self._tries = 0
         self.sm.current = "PokedexMenu"
-        # Erster Check mit Puffer: async DB-Load (Executor) + erster Render-Batch
-        # müssen durch sein, bevor geprüft wird (GL-Startup-Jitter).
-        steps = [self.s_loaded, self.s_filter_p2, self.s_finish]
-        for i, s in enumerate(steps):
-            Clock.schedule_once(lambda dt, s=s: self.safe(s), 2.2 + i * 1.5)
+        # Auf die async geladenen Karten pollen (statt feste Zeit), sonst flaky
+        # bei GL-Startup-Jitter / geteiltem Prozess.
+        Clock.schedule_once(lambda dt: self.safe(self.s_loaded), 1.0)
+
+    def _next(self, step, delay=1.2):
+        Clock.schedule_once(lambda dt: self.safe(step), delay)
 
     def safe(self, step):
         try:
@@ -89,6 +91,10 @@ class _DriveApp(MDApp):
 
     def s_loaded(self):
         cards = self._cards()
+        if not cards and self._tries < 20:
+            self._tries += 1
+            self._next(self.s_loaded, 0.3)
+            return
         self.check("rows_geladen", len(self.menu._all_rows) == 3,
                    (len(self.menu._all_rows), self.menu._needs_reload, self.menu._load_task))
         self.check("drei_karten", len(cards) == 3, len(cards))
@@ -98,12 +104,14 @@ class _DriveApp(MDApp):
         # P1: jede Karte hat eine Spieler-Toenung (md_bg_color mit Alpha != 0)
         self.check("karten_eingefaerbt", all(c.md_bg_color[3] > 0 for c in cards))
         self.shot("01_pokedex_alle")
+        self._next(self.s_filter_p2)
 
     def s_filter_p2(self):
         self.menu._select_slot("2")
         cards = self._cards()
         self.check("p2_filter_eine_karte", len(cards) == 1, len(cards))
         self.shot("02_pokedex_p2")
+        self._next(self.s_finish, 0.6)
 
     def s_finish(self):
         self.stop()

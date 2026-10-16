@@ -10,7 +10,6 @@ die Instanzen leben in unterschiedlichen Containern.
 Zeigt alle verfügbaren Attribute eines Pokemon-Objekts aufgelöst in menschen-
 lesbare Namen (deutsch).  Optional überlagert mit Daten aus dem Randomizer-Log.
 """
-import yaml
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.gridlayout import GridLayout
@@ -24,115 +23,19 @@ from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, './logs/pokemon_detail.log')
 
-
-def _load_yaml(path: str) -> dict:
-    try:
-        with open(path, encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    except Exception as err:
-        logger.error(f"{path} laden fehlgeschlagen: {err}")
-        return {}
-
-
-species_de = _load_yaml("backend/data/Species_de.yaml")
-moves_de = _load_yaml("backend/data/moves_de.yml")
-abilities_de = _load_yaml("backend/data/abilities_de.yml")
-natures_de = _load_yaml("backend/data/natures_de.yml")
-types_de = _load_yaml("backend/data/types_de.yml")
-types_en_reverse = _load_yaml("backend/data/types_en_reverse.yml")
-abilities_en_reverse = _load_yaml("backend/data/abilities_en_reverse.yml")
-species_personal_gen1 = _load_yaml("backend/data/species_personal_gen1.yml")
-species_personal_gen2to5 = _load_yaml("backend/data/species_personal_gen2to5.yml")
-species_personal_gen6 = _load_yaml("backend/data/species_personal_gen6.yml")
-species_personal_gen7 = _load_yaml("backend/data/species_personal_gen7.yml")
-
-
-def _get_species_personal(edition: int) -> dict:
-    """Wählt generationsspezifische Personal-Daten anhand der Edition."""
-    if 11 <= edition <= 13:
-        return species_personal_gen1
-    if 61 <= edition <= 64:
-        return species_personal_gen6
-    if 71 <= edition <= 74:
-        return species_personal_gen7
-    return species_personal_gen2to5
-
-# Wesen-Stat-Modifikatortabelle aus PKHeX NatureAmp.cs.
-# Index = Wesen-ID (0-24), Wert = [ATK, DEF, SPA, SPD, SPE] mit -1/0/+1.
-NATURE_AMPS = [
-    [ 0, 0, 0, 0, 0],  # Robust / Hardy
-    [ 1,-1, 0, 0, 0],  # Solo / Lonely
-    [ 1, 0, 0, 0,-1],  # Mutig / Brave
-    [ 1, 0,-1, 0, 0],  # Hart / Adamant
-    [ 1, 0, 0,-1, 0],  # Frech / Naughty
-    [-1, 1, 0, 0, 0],  # Kühn / Bold
-    [ 0, 0, 0, 0, 0],  # Sanft / Docile
-    [ 0, 1, 0, 0,-1],  # Locker / Relaxed
-    [ 0, 1,-1, 0, 0],  # Pfiffig / Impish
-    [ 0, 1, 0,-1, 0],  # Lasch / Lax
-    [-1, 0, 0, 0, 1],  # Scheu / Timid
-    [ 0,-1, 0, 0, 1],  # Hastig / Hasty
-    [ 0, 0, 0, 0, 0],  # Ernst / Serious
-    [ 0, 0,-1, 0, 1],  # Froh / Jolly
-    [ 0, 0, 0,-1, 1],  # Naiv / Naive
-    [-1, 0, 1, 0, 0],  # Mäßig / Modest
-    [ 0,-1, 1, 0, 0],  # Mild / Mild
-    [ 0, 0, 1, 0,-1],  # Ruhig / Quiet
-    [ 0, 0, 0, 0, 0],  # Zaghaft / Bashful
-    [ 0, 0, 1,-1, 0],  # Hitzig / Rash
-    [-1, 0, 0, 1, 0],  # Still / Calm
-    [ 0,-1, 0, 1, 0],  # Zart / Gentle
-    [ 0, 0, 0, 1,-1],  # Forsch / Sassy
-    [ 0, 0,-1, 1, 0],  # Sacht / Careful
-    [ 0, 0, 0, 0, 0],  # Kauzig / Quirky
-]
-
-STAT_LABELS = ["KP", "Ang", "Ver", "SpAng", "SpVer", "Init"]
-STAT_KEYS_PERSONAL = ["hp", "attack", "defense", "special_attack", "special_defense", "speed"]
-STAT_KEYS_RANDO = ["hp", "atk", "def", "satk", "sdef", "spd"]
-
-STAT_LABELS_GEN1 = ["KP", "Ang", "Ver", "Spez", "Init"]
-STAT_KEYS_PERSONAL_GEN1 = ["hp", "attack", "defense", "special_attack", "speed"]
-STAT_KEYS_RANDO_GEN1 = ["hp", "atk", "def", "satk", "spd"]
-
-
-def _nature_text(nature_id: int) -> str:
-    """Gibt Wesensname + Stat-Modifikatoren zurück, z.B. 'Hart (+Ang / -SpAng)'."""
-    name = natures_de.get(nature_id, f"#{nature_id}")
-    if nature_id < 0 or nature_id >= len(NATURE_AMPS):
-        return name
-    amps = NATURE_AMPS[nature_id]
-    amp_labels = ["Ang", "Ver", "SpAng", "SpVer", "Init"]
-    plus = [amp_labels[i] for i, v in enumerate(amps) if v == 1]
-    minus = [amp_labels[i] for i, v in enumerate(amps) if v == -1]
-    if plus and minus:
-        return f"{name} (+{plus[0]} / -{minus[0]})"
-    return name
-
-
-def _resolve_types_from_rando(rando_types: list[str]) -> list[str]:
-    """Löst englische Typnamen aus dem Rando-Log in deutsche auf."""
-    result = []
-    for t in rando_types:
-        type_id = types_en_reverse.get(t)
-        if type_id is not None:
-            result.append(types_de.get(type_id, t))
-        else:
-            result.append(t)
-    return result
-
-
-def _resolve_abilities_from_rando(rando_abilities: list[str]) -> list[str]:
-    """Löst Fähigkeitsnamen (EN oder DE) aus dem Rando-Log in deutsche auf."""
-    from backend.pokedecoder import resolve_ability_name
-    result = []
-    for a in rando_abilities:
-        ability_id = resolve_ability_name(a)
-        if ability_id is not None:
-            result.append(abilities_de.get(ability_id, a))
-        else:
-            result.append(a)
-    return result
+# Auflöse-/Stat-Logik + LUTs liegen gemeinsam mit der KivyMD-Variante in
+# backend/pokemon_detail_view.py (kein Kivy). Hier nur die Namen importieren,
+# die der Panel-Code nutzt (Aliase mit führendem _ für die Funktionsnamen, um
+# die bestehenden Aufrufstellen unverändert zu lassen).
+from backend.pokemon_detail_view import (  # noqa: E402
+    STAT_LABELS, STAT_LABELS_GEN1, STAT_KEYS_RANDO, STAT_KEYS_RANDO_GEN1,
+    abilities_de, moves_de, species_de,
+    nature_text as _nature_text,
+    resolve_types_from_rando as _resolve_types_from_rando,
+    resolve_abilities_from_rando as _resolve_abilities_from_rando,
+    resolve_vanilla_types as _resolve_vanilla_types_fn,
+    resolve_vanilla_stats as _resolve_vanilla_stats_fn,
+)
 
 
 class PokemonDetailPanel(BoxLayout):
@@ -404,24 +307,11 @@ class PokemonDetailPanel(BoxLayout):
 
     def _resolve_vanilla_types(self, dexnr) -> list[str]:
         """Vanilla-Typen aus generationsspezifischen Personal-Daten auflösen."""
-        if isinstance(dexnr, int):
-            personal = _get_species_personal(self._edition).get(dexnr)
-            if personal and "types" in personal:
-                type_ids = personal["types"]
-                names = [types_de.get(tid, f"#{tid}") for tid in type_ids]
-                if len(names) == 2 and names[0] == names[1]:
-                    return [names[0]]
-                return names
-        return []
+        return _resolve_vanilla_types_fn(dexnr, self._edition)
 
     def _resolve_vanilla_stats(self, dexnr) -> list[int]:
         """Vanilla-Basiswerte aus generationsspezifischen Personal-Daten."""
-        if isinstance(dexnr, int):
-            personal = _get_species_personal(self._edition).get(dexnr)
-            if personal and "stats" in personal:
-                keys = STAT_KEYS_PERSONAL_GEN1 if self._is_gen1 else STAT_KEYS_PERSONAL
-                return [personal["stats"].get(k, 0) for k in keys]
-        return []
+        return _resolve_vanilla_stats_fn(dexnr, self._edition)
 
     def _stat_row(self, stat_dict: dict) -> GridLayout:
         """Erstellt eine Grid-Zeile für EVs oder IVs."""

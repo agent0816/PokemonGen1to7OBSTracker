@@ -162,11 +162,21 @@ def _load_items(gen: int) -> dict:
 
 
 def item_name(item_id: object, edition: int) -> str:
-    """Lesbarer Item-Name (englischer Slug aufgehübscht); '' = kein Item, '#<id>' = unbekannt."""
+    """Lesbarer Item-Name (englischer Slug aufgehübscht); '' = kein Item, '#<id>' = unbekannt.
+
+    Der Decoder löst Item-IDs bereits beim Dekodieren zu Slug-Strings auf
+    (``item = items3[item]`` etc.), d.h. die DB speichert i.d.R. einen Slug wie
+    ``'oran-berry'``. Numerische Werte (Legacy/Sicherheit) werden weiter über die
+    items{gen}.yml-LUT aufgelöst.
+    """
     if item_id in (None, "", 0, "0"):
         return ""
     try:
         key = int(item_id)  # type: ignore[call-overload]
+    except (ValueError, TypeError):
+        # Bereits ein Slug-String → nur aufhübschen.
+        return str(item_id).replace("-", " ").title()
+    try:
         if key == 0:
             return ""
         slug = _load_items(edition_to_gen(edition)).get(key)

@@ -1,5 +1,6 @@
 """KivyMD-Pokedex-Screen. Filter-/Formatlogik liegt in backend/pokedex_view."""
 import asyncio
+import os
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -7,6 +8,7 @@ from types import SimpleNamespace
 
 from kivy.clock import Clock
 from kivy.metrics import dp
+from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDButton, MDButtonText
 from kivymd.uix.card import MDCard
@@ -20,10 +22,11 @@ from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
 from backend.classes.pokedex_db import PokedexDB
 from backend.logging_setup import get_logger
-from backend.player_colors import player_rgba
+from backend.player_colors import PLAYER_COLORS, player_rgba
 from backend.pokedex_view import (
     filter_rows, item_name, load_species_de, location_name, row_slot, species_name,
 )
+from backend.tm_type_resolver import resolve_tm_hm_sprite
 from frontend.widgets.md_common import show_snackbar
 
 logger = get_logger(__name__, './logs/pokedexmenu.log')
@@ -42,7 +45,7 @@ class PokemonCard(MDCard):
 
     def __init__(self, row: dict, species_de: dict, sprite_source: str = "",
                  slot: int | None = None, player_name: str = "", show_player: bool = False,
-                 on_open: Callable[[dict], None] | None = None, **kwargs):
+                 item_sprite: str = "", on_open: Callable[[dict], None] | None = None, **kwargs):
         super().__init__(style="elevated", ripple_behavior=True, orientation="horizontal",
                          size_hint_y=None, height=CARD_HEIGHT, padding=0, spacing=dp(8),
                          radius=[dp(12)] * 4, **kwargs)
@@ -68,18 +71,15 @@ class PokemonCard(MDCard):
         if row.get("shiny"):
             title = f"{title} (Shiny)"
 
-        if show_player and player_name:
-            lbl = self._label(player_name, height=dp(16), small=True)
-            lbl.theme_text_color = "Custom"
-            lbl.text_color = player_rgba(slot, alpha=1.0) if slot is not None else lbl.text_color
-            text_box.add_widget(lbl)
+        if show_player and slot is not None:
+            text_box.add_widget(self._player_label(slot, player_name))
 
         text_box.add_widget(self._label(title, bold=True, height=dp(22)))
 
         edition = self._edition(row)
         lvl = str(row.get("lvl") or "") or "–"
         text_box.add_widget(self._label(f"Lv. {lvl}", height=dp(18), small=True))
-        text_box.add_widget(self._label(f"Item: {self._item_text(row, edition)}", height=dp(18), small=True))
+        text_box.add_widget(self._item_line(self._item_text(row, edition), item_sprite))
         text_box.add_widget(self._label(f"Route: {self._route_text(row, edition)}", height=dp(18), small=True))
 
         self.add_widget(text_box)
@@ -94,6 +94,28 @@ class PokemonCard(MDCard):
         # shorten braucht eine feste Textbreite, sonst wird nicht gekürzt
         lbl.bind(width=lambda w, v: setattr(w, "text_size", (v, None)))
         return lbl
+
+    @staticmethod
+    def _player_label(slot: int, name: str):
+        """Spieler-Zeile: Slot-Nummer in Spielerfarbe + Trainer-Name in Weiß."""
+        hexcol = PLAYER_COLORS.get(slot, "7f7f7f7f")
+        text = f"[b][color={hexcol}]{slot}[/color][/b]"
+        if name:
+            text += f"  [color=ffffffff]{name}[/color]"
+        lbl = MDLabel(text=text, markup=True, size_hint_y=None, height=dp(16),
+                      halign="left", valign="center", shorten=True, shorten_from="right")
+        lbl.role = "small"
+        lbl.bind(width=lambda w, v: setattr(w, "text_size", (v, None)))
+        return lbl
+
+    def _item_line(self, text: str, sprite: str):
+        """Item-Zeile: mit Sprite-Icon (wenn vorhanden) + Name, sonst 'Item: …'."""
+        if not sprite:
+            return self._label(f"Item: {text}", height=dp(18), small=True)
+        box = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(18), spacing=dp(4))
+        box.add_widget(FitImage(source=sprite, size_hint=(None, 1), width=dp(16), fit_mode="contain"))
+        box.add_widget(self._label(text, height=dp(18), small=True))
+        return box
 
     @staticmethod
     def _edition(row: dict) -> int | None:
@@ -136,6 +158,7 @@ class PokedexMenu(MDScreen):
         self._species_de: dict = load_species_de()
         self._active_slot: str = ""          # "" = alle Spieler
         self._sprite_cache: dict[tuple, str] = {}
+        self._item_sprite_cache: dict[tuple, str] = {}
         self._needs_reload: bool = True       # Dirty-Flag (P5): nur bei Bedarf neu laden
         self._load_task: asyncio.Task | None = None
         self._reload_pending: bool = False    # Reload-Wunsch während laufendem Load
@@ -270,6 +293,7 @@ class PokedexMenu(MDScreen):
     def _force_reload(self) -> None:
         self._needs_reload = True
         self._sprite_cache.clear()  # Sprite-Repo könnte sich geändert haben (Settings)
+        self._item_sprite_cache.clear()
         self._reload()
 
     def _reload(self) -> None:
@@ -386,23 +410,76 @@ class PokedexMenu(MDScreen):
             self.cards_grid.add_widget(PokemonCard(
                 r, self._species_de, sprite_source=self._sprite_source(r),
                 slot=slot, player_name=self._player_name(r), show_player=self._render_show_player,
-                on_open=self._open_detail,
+                item_sprite=self._item_sprite(r), on_open=self._open_detail,
             ))
         if not self._pending_rows:
             self._render_event = None
             return False  # stoppt das Intervall
         return True
 
+    def _item_sprite(self, row: dict) -> str:
+        """Pfad zum Item-Sprite (gen3+, aus dem Sprite-Repo); '' wenn keins da.
+        Pro (edition, item) gecacht — vermeidet Datei-I/O je Karte im Render."""
+        conf = getattr(self.obs_websocket, "conf", None)
+        if not conf or not hasattr(conf, "get"):
+            return ""
+        try:
+            edition = int(row.get("edition"))
+        except (TypeError, ValueError):
+            return ""
+        if edition <= 20:
+            return ""
+        item = row.get("item")
+        if item in (None, "", 0, "0"):
+            return ""
+        key = (edition, str(item))
+        if key in self._item_sprite_cache:
+            return self._item_sprite_cache[key]
+        items_path = conf.get("items_path")
+        if not items_path:
+            return ""
+        slug = resolve_tm_hm_sprite(edition, str(item), None, None)
+        path = f"{items_path}/{slug}.png"
+        result = path if os.path.exists(path) else ""
+        self._item_sprite_cache[key] = result
+        return result
+
     def _player_name(self, row: dict) -> str:
+        """Trainer-Name zum Spieler-Slot. Primär aus munchlax.player_names
+        (Handshake-Name), sonst owner_root (falls im owner ein Name steckt)."""
+        slot = row_slot(row)
+        app = MDApp.get_running_app()
+        names = getattr(getattr(app, "munchlax", None), "player_names", None) if app else None
+        if isinstance(names, dict) and slot is not None:
+            name = names.get(slot) or names.get(str(slot))
+            if name:
+                return str(name)
         owner = row.get("owner")
         if owner is None:
             return ""
-        return PokedexDB.owner_root(str(owner))
+        root = PokedexDB.owner_root(str(owner))
+        # Reiner Zahl-Owner trägt keinen Namen → nichts anzeigen (nur Nummer).
+        return "" if root.isdigit() else root
 
     def _open_detail(self, row: dict) -> None:
-        """Platzhalter: später Navigation zum Pokemon-Detail-Screen."""
+        """Navigiert zum Detail-Screen und befüllt ihn aus der DB-Zeile."""
         logger.info(f"PokedexMenu Detail angefordert: dexnr={row.get('dexnr')} pv={row.get('personality')}")
-        show_snackbar("Detailansicht folgt", level='info')
+        if self.manager is None or not self.manager.has_screen("PokemonDetail"):
+            show_snackbar("Detailansicht nicht verfügbar", level='info')
+            return
+        # Lazy-Import: hält den Backend-Adapter aus dem Modul-Ladepfad der GUI.
+        from backend.pokemon_detail_view import edition_int, row_to_pokemon
+        pokemon = row_to_pokemon(row)
+        edition = edition_int(row.get("edition"))
+        app = MDApp.get_running_app()
+        munchlax = getattr(app, "munchlax", None) if app is not None else None
+        detail = self.manager.get_screen("PokemonDetail")
+        # Soullink-Member sind mit Root-Owner (ohne Slot-Suffix) geschlüsselt
+        # (arceus), DB-owner ist name_<slot> → Root extrahieren, sonst matcht nichts.
+        owner = PokedexDB.owner_root(str(row.get("owner") or "")) or None
+        detail.show(pokemon, edition, return_screen="PokedexMenu",
+                    munchlax=munchlax, owner=owner)
+        self.manager.current = "PokemonDetail"
 
     def _sprite_source(self, row: dict) -> str:
         """Sprite-Pfad fuer eine DB-Zeile via OBS.get_sprite; leer bei Fehlern.

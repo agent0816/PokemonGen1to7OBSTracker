@@ -22,6 +22,7 @@ from frontend.widgets.mainmenumd import MainMenu
 from frontend.widgets.md_common import show_snackbar
 from frontend.widgets.navrail import TrackerNavigationRail
 from frontend.widgets.pokedexmenumd import PokedexMenu
+from frontend.widgets.pokemon_detailmd import PokemonDetailMD
 from frontend.widgets.sessionsmenumd import SessionMenu
 from frontend.widgets.settingsmenumd import SettingsMenu
 from frontend.widgets.statusbarmd import StatusBarMD
@@ -69,6 +70,10 @@ class Screens(ScreenManager):
                                      configsave, sp, rem, obs, bh, pl, APP_VERSION))
         self.pokedex_menu = PokedexMenu(configsave, obs_websocket, APP_VERSION, pl)
         self.add_widget(self.pokedex_menu)
+        # Detail-Drilldown (kein Rail-Ziel): aus Pokedex per Karten-Klick erreicht,
+        # navigiert über return_screen zurück. Box/Main nutzen ihn später mit.
+        self.pokemon_detail = PokemonDetailMD(obs_websocket)
+        self.add_widget(self.pokemon_detail)
 
         # Sicherheits-Callbacks (Total-Wipe, Wipe-Dismissed, Slot-Kollision) wie
         # in der klassischen UI verdrahten. Banner/Popup vorerst klassisch, bis

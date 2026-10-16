@@ -106,7 +106,10 @@ def test_item_name() -> None:
     assert item_name("", 33) == ""
     assert item_name(4, 33) == "Poke Ball"
     assert item_name(999999, 33) == "#999999"
-    assert item_name("abc", 33) == ""
+    # Decoder speichert Slug-Strings -> aufhübschen statt "" (war Bug: Item-"–")
+    assert item_name("abc", 33) == "Abc"
+    assert item_name("oran-berry", 33) == "Oran Berry"
+    assert item_name("kings-rock", 33) == "Kings Rock"
 
 
 def test_location_name() -> None:

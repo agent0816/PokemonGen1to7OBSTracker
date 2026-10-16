@@ -121,20 +121,34 @@ def ev_max(edition: int) -> int:
     return 65535 if _gen_12(edition) else 252
 
 
-_TYPE_IMAGE_DIR = "backend/ressources/types/de"
+_TYPE_IMAGE_REL = "backend/ressources/types/de"
+# Repo-Wurzel (Dev) bzw. Onefile-Unpack-Dir (Nuitka): dirname(dirname) dieser
+# Datei → <root>/backend/pokemon_detail_view.py → <root>. Im Onefile liegen die
+# per --include-data-dir=backend/ressources gebündelten Bilder unter
+# <unpack>/backend/ressources, erreichbar über __file__ — NICHT über das cwd,
+# weil main.py bei __compiled__ ins Exe-Verzeichnis (sys.argv[0]) chdir't.
+_PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def resource_path(rel: str) -> str:
+    """Findet eine gebündelte Repo-Ressource im Dev wie im Nuitka-Onefile.
+
+    Probiert cwd (Dev; main.py-chdir ins Exe-Verzeichnis, falls Assets daneben
+    liegen) und die Paket-relative Lage (Onefile-Unpack-Dir via __file__).
+    Gibt '' zurück, wenn nichts existiert.
+    """
+    for base in (os.getcwd(), _PKG_ROOT):
+        path = os.path.join(base, rel)
+        if os.path.exists(path):
+            return path
+    return ""
 
 
 def type_image_path(type_id) -> str:
-    """Pfad zum Typ-Bild (type_wide_<NN>.png, Index = Typ-ID); '' wenn keins da.
-
-    Die Bilder liegen als Repo-Asset vor und werden im Nuitka-Onefile-Build über
-    --include-data-dir=backend/ressources mitgepackt. Pfad ist relativ, greift
-    im Dev wie im Build (main.py chdir't bei __compiled__ ins Exe-Verzeichnis).
-    """
+    """Pfad zum Typ-Bild (type_wide_<NN>.png, Index = Typ-ID); '' wenn keins da."""
     if type_id is None:
         return ""
-    path = f"{_TYPE_IMAGE_DIR}/type_wide_{int(type_id):02d}.png"
-    return path if os.path.exists(path) else ""
+    return resource_path(f"{_TYPE_IMAGE_REL}/type_wide_{int(type_id):02d}.png")
 
 
 def is_gen1_edition(edition: int) -> bool:

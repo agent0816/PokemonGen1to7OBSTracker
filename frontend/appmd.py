@@ -18,6 +18,7 @@ from kivymd.uix.boxlayout import MDBoxLayout
 
 from backend.logging_setup import get_logger
 from frontend.app_core import TrackerCoreMixin
+from frontend.widgets.encountermenumd import EncounterMenu
 from frontend.widgets.mainmenumd import MainMenu
 from frontend.widgets.md_common import show_snackbar
 from frontend.widgets.navrail import TrackerNavigationRail
@@ -70,6 +71,8 @@ class Screens(ScreenManager):
                                      configsave, sp, rem, obs, bh, pl, APP_VERSION))
         self.pokedex_menu = PokedexMenu(configsave, obs_websocket, APP_VERSION, pl)
         self.add_widget(self.pokedex_menu)
+        self.encounter_menu = EncounterMenu(configsave, pl, nuz, APP_VERSION)
+        self.add_widget(self.encounter_menu)
         # Detail-Drilldown (kein Rail-Ziel): aus Pokedex per Karten-Klick erreicht,
         # navigiert über return_screen zurück. Box/Main nutzen ihn später mit.
         self.pokemon_detail = PokemonDetailMD(obs_websocket)
@@ -209,6 +212,11 @@ class Screens(ScreenManager):
         except Exception as err:
             logger.error(f"PokedexMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
+        try:
+            self.encounter_menu.load_from_session()
+        except Exception as err:
+            logger.error(f"EncounterMenu.load_from_session fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
 
 
 class MainWindow(MDBoxLayout):
@@ -224,6 +232,7 @@ class MainWindow(MDBoxLayout):
             {"icon": "view-list", "display_name": "Sessions", "screen_name": "SessionMenu"},
             {"icon": "home-variant-outline", "display_name": "Main", "screen_name": "MainMenu"},
             {"icon": "book-open-variant", "display_name": "Pokedex", "screen_name": "PokedexMenu"},
+            {"icon": "clipboard-list-outline", "display_name": "Encounter", "screen_name": "EncounterMenu"},
             {"icon": "cog", "display_name": "Settings", "screen_name": "SettingsMenu"},
         ]
         self.navrail = TrackerNavigationRail(

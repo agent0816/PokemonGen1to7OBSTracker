@@ -28,7 +28,7 @@ from kivymd.app import MDApp
 
 from backend import session_store
 from frontend.app_core import MutableString
-from frontend.widgets.sessionsmenumd import SessionMenu, SessionCard, GenToggleButton
+from frontend.widgets.sessionsmenumd import SessionMenu, SessionCard, GameCoverCard
 
 
 class _DriveApp(MDApp):
@@ -87,9 +87,11 @@ class _DriveApp(MDApp):
         d = self.dlg
         d.session_name_text_box.text = "Neu Run"; d.on_next(None)
         d.name_text_box.text = "Misty"; d.on_next(None)
-        btn = next(w for w in d.game_selection_manager.get_screen("Gen 2").walk() if isinstance(w, GenToggleButton) and w.game_text.text == "Gold")
-        btn.state = "down"; btn.dispatch("on_press")
-        self.check("dialog_schritt3", d.current_screen_index == 2 and d.selected_game.text == "Gold", d.selected_game.text)
+        card = next(w for w in d.game_selection_manager.get_screen("Gen 2").walk() if isinstance(w, GameCoverCard) and w.game_display == "Gold")
+        card.dispatch("on_release")
+        self.check("dialog_schritt3",
+                   d.current_screen_index == 2 and d.selected_game.text == "Gold" and card.selected,
+                   d.selected_game.text)
         self.shot("01_dialog_spielwahl")
 
     def s_confirm(self):

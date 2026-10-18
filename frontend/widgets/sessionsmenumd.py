@@ -4,7 +4,7 @@ from typing import Callable
 
 import pathvalidate
 
-from kivymd.uix.behaviors.toggle_behavior import MDToggleButton
+from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDIconButton
 from kivymd.uix.button import MDButton
@@ -16,6 +16,7 @@ from kivymd.uix.dialog import MDDialogHeadlineText
 from kivymd.uix.dialog import MDDialogSupportingText
 from kivymd.uix.dialog import MDDialogButtonContainer
 from kivymd.uix.dialog import MDDialogContentContainer
+from kivymd.uix.fitimage import FitImage
 from kivymd.uix.label import MDLabel
 from kivymd.uix.label import MDIcon
 from kivymd.uix.menu import MDDropdownMenu
@@ -30,11 +31,14 @@ from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.textfield import MDTextFieldHintText
 
+from kivy.metrics import dp
+from kivy.properties import BooleanProperty
 from kivy.properties import StringProperty
 from kivy.uix.widget import Widget
 
 from backend import session_store
 from backend.logging_setup import get_logger
+from backend.pokemon_detail_view import resource_path
 from frontend.widgets.md_common import show_snackbar
 
 logger = get_logger(__name__, 'logs/frontend.log')
@@ -99,32 +103,126 @@ class GameNavigationBar(MDNavigationBar):
         self.screen_manager.current = item.screen_name
 
 
-class GenToggleButton(MDButton, MDToggleButton):
-    def __init__(self, *args, text="", **kwargs):
-        super().__init__(*args, **kwargs)
-        self.group = "games"
-        self.allow_no_selection = False
-        self.game_text = MDButtonText(text=text)
-        self.add_widget(self.game_text)
+class GameCoverCard(MDCard):
+    """Anklickbare Spiel-Karte mit Cover-Bild statt Text.
+
+    ``game_display`` ist der Anzeigename (z.B. "Alpha Saphir") und zugleich der
+    Wert, der als ``pl['session_game']`` gespeichert wird (edition_lut-Schlüssel).
+    ``game_code`` ist der Dateiname-Code des Covers (z.B. "Alpha_Saphir").
+    """
+
+    selected = BooleanProperty(False)
+
+    def __init__(self, game_display: str, game_code: str, selection_manager, **kwargs):
+        super().__init__(**kwargs)
+        self.game_display = game_display
+        self.game_code = game_code
+        self.selection_manager = selection_manager
+
+        self.orientation = "vertical"
+        self.style = "elevated"
+        self.theme_bg_color = "Custom"
+        self.ripple_behavior = True
+        self.size_hint_x = 1
+        self.padding = "4dp"
+
+        # Cover + Haken-Badge (oben rechts) in einem Overlay-Container.
+        # source erst via load_cover() gesetzt (Lazy-Load pro Gen-Tab), damit
+        # nicht alle 30 (teils mehrere MB großen) Cover beim Dialog-Öffnen in
+        # den Texturspeicher gezogen werden.
+        self._source = resource_path(f"backend/ressources/editions/{game_code}.png")
+        if not self._source:
+            logger.warning(f"Cover-Bild für '{game_display}' ({game_code}.png) nicht gefunden")
+        self._loaded = False
+        img_box = MDRelativeLayout()
+        self.cover_image = FitImage(source="", fit_mode="contain")
+        img_box.add_widget(self.cover_image)
+        self.check_icon = MDIcon(
+            icon="check-circle",
+            theme_icon_color="Custom",
+            pos_hint={"right": 1, "top": 1},
+            opacity=0,
+        )
+        img_box.add_widget(self.check_icon)
+        self.add_widget(img_box)
+
+        self.name_label = MDLabel(
+            text=game_display,
+            halign="center",
+            adaptive_height=True,
+            font_style="Label",
+            role="small",
+        )
+        self.add_widget(self.name_label)
+        self.set_selected(False)
+
+    def on_release(self, *args):
+        super().on_release(*args)
+        self.selection_manager.select(self)
+
+    def load_cover(self) -> None:
+        """Cover-Bild lazy setzen (einmalig, beim ersten Anzeigen des Gen-Tabs)."""
+        if not self._loaded and self._source:
+            self.cover_image.source = self._source
+            self._loaded = True
+
+    def set_selected(self, value: bool) -> None:
+        self.selected = value
+        theme = MDApp.get_running_app().theme_cls
+        if value:
+            # Deutlich hervorheben: Tönung + dicker Primärrand + Haken + voll sichtbar
+            self.md_bg_color = theme.primaryContainerColor
+            self.line_color = theme.primaryColor
+            self.line_width = dp(4)
+            self.check_icon.icon_color = theme.primaryColor
+            self.check_icon.opacity = 1
+            self.name_label.bold = True
+            self.opacity = 1
+        else:
+            self.md_bg_color = theme.surfaceContainerLowColor
+            self.line_color = theme.outlineVariantColor
+            self.line_width = dp(1)
+            self.check_icon.opacity = 0
+            self.name_label.bold = False
+        # MDCard merkt sich beim Hover _bg_color und schreibt es beim Verlassen
+        # zurück (card.py set_properties_widget). Ohne Nachziehen würde die
+        # Auswahl-Tönung nach einem Hover verloren gehen.
+        self._bg_color = self.md_bg_color
+
+    def set_dimmed(self, dimmed: bool) -> None:
+        """Nicht ausgewählte Karten abdunkeln, sobald eine Auswahl existiert."""
+        if not self.selected:
+            self.opacity = 0.4 if dimmed else 1
 
 
 class GenScreen(MDScreen):
-    def __init__(self, name, games, callback, **kwargs):
+    def __init__(self, name, games, selection_manager, **kwargs):
         super().__init__(**kwargs)
         self.name = name
+        self.cards: list[GameCoverCard] = []
 
-        box = MDBoxLayout(orientation='horizontal', pos_hint={'center_x': .5}, spacing="3dp")
-        box.add_widget(Widget())
-        for game in games:
-            toggle = GenToggleButton(text=game[0], on_press=callback)
-            box.add_widget(toggle)
-        box.add_widget(Widget())
+        box = MDBoxLayout(orientation='horizontal', spacing="8dp", padding="8dp")
+        for display, code in games:
+            card = GameCoverCard(display, code, selection_manager)
+            self.cards.append(card)
+            selection_manager.all_cards.append(card)
+            box.add_widget(card)
         self.add_widget(box)
+
+    def on_pre_enter(self, *args):
+        # Cover erst laden, wenn der Gen-Tab tatsächlich angezeigt wird
+        for card in self.cards:
+            card.load_cover()
 
 
 class GameSelectionScreen(MDScreenManager):
+    """Gen-Tabs mit Cover-Karten; verwaltet die Einzelauswahl über alle Gens."""
+
     def __init__(self, callback, **kwargs):
         super().__init__(**kwargs)
+        self.callback = callback
+        self.selected_card: GameCoverCard | None = None
+        self.all_cards: list[GameCoverCard] = []
 
         self.games = {
             'Gen 1': [('Rot', 'Rot'), ('Blau', 'Blau'), ('Gelb', 'Gelb')],
@@ -136,9 +234,25 @@ class GameSelectionScreen(MDScreenManager):
             'Gen 7': [('Sonne', 'Sonne'), ('Mond', 'Mond'), ('Ultra Sonne', 'Ultrasonne'), ('Ultra Mond', 'Ultramond')]
         }
         for gen, gameslist in self.games.items():
-            self.add_widget(GenScreen(gen, gameslist, callback))
+            self.add_widget(GenScreen(gen, gameslist, self))
 
         self.current = 'Gen 1'
+        # Initial sichtbaren Tab direkt laden (on_pre_enter feuert beim Setzen
+        # von current vor dem Window-Attach evtl. nicht zuverlässig).
+        self.get_screen('Gen 1').on_pre_enter()
+
+    def select(self, card: GameCoverCard) -> None:
+        """Einzelauswahl über alle Gen-Tabs: alte Karte abwählen, neue markieren."""
+        if self.selected_card is card:
+            return
+        if self.selected_card is not None:
+            self.selected_card.set_selected(False)
+        self.selected_card = card
+        card.set_selected(True)
+        # Alle anderen Karten abdunkeln, damit die Auswahl klar heraussticht
+        for other in self.all_cards:
+            other.set_dimmed(other is not card)
+        self.callback(card)
 
 
 class CreateSessionDialog(MDDialog):
@@ -283,6 +397,8 @@ class CreateSessionDialog(MDDialog):
             self.next_button.unbind(on_press=self.on_confirmation)
             self.next_button.bind(on_press=self.on_next)
 
+        # Spiel-Auswahl (Cover-Grid) braucht mehr Höhe als die Textfeld-Schritte
+        self.screen_manager.height = dp(320) if self.current_screen_index == 2 else dp(120)
         self.screen_manager.current = self.screen_list[self.current_screen_index]
 
     def validate(self):
@@ -310,8 +426,8 @@ class CreateSessionDialog(MDDialog):
 
         return True
 
-    def change_selected_game(self, instance):
-        self.selected_game.text = instance.game_text.text
+    def change_selected_game(self, card):
+        self.selected_game.text = card.game_display
 
     def on_confirmation(self, instance):
         if not self.validate():

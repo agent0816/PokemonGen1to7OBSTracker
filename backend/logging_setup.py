@@ -83,7 +83,19 @@ def _create_rotating_handler(log_file: str, max_bytes: int, backup_count: int,
     if log_key not in _rolled_over_files:
         _rolled_over_files.add(log_key)
         if os.path.exists(log_file) and os.path.getsize(log_file) > 0:
-            fh.doRollover()
+            # Rollover ist best-effort: der os.rename kann prozessübergreifend
+            # fehlschlagen (Windows WinError 32 — Datei von einer anderen
+            # Instanz/einem anderen Prozess offen; auch Antivirus). Ein
+            # Logging-Setup-Fehler darf NIEMALS den Aufrufer crashen — der
+            # Handler wurde bereits im Append-Modus geöffnet, also einfach
+            # ohne frische Rotation weiterschreiben (zuvor propagierte die
+            # Exception bis in PokedexDB.__init__ und killte den Reload-Task).
+            try:
+                fh.doRollover()
+            except OSError as err:
+                sys.stderr.write(
+                    f"[logging_setup] Rollover für {log_file} übersprungen: {err}\n"
+                )
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(formatter)
     return fh

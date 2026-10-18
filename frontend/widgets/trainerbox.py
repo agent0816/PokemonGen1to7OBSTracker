@@ -15,15 +15,9 @@ from backend.party_rules import first_type_dupe_slots
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
-STATUS_LABELS = {
-    'freeze': ('[color=3068B0]FRZ[/color]', (0.19, 0.41, 0.69, 1)),
-    'burn':   ('[color=E85030]BRN[/color]', (0.91, 0.31, 0.19, 1)),
-    'para':   ('[color=FAD300]PAR[/color]', (0.98, 0.83, 0.0, 1)),
-    'toxic':  ('[color=A040A0]TOX[/color]', (0.63, 0.25, 0.63, 1)),
-    'poison': ('[color=A040A0]PSN[/color]', (0.63, 0.25, 0.63, 1)),
-    'sleep':  ('[color=98D8D8]SLP[/color]', (0.6, 0.85, 0.85, 1)),
-}
-STATUS_PRIORITY = ('freeze', 'burn', 'para', 'toxic', 'poison', 'sleep')
+# Konstanten nach frontend/widgets/status_labels.py ausgelagert (kivy-frei,
+# gemeinsame Quelle mit der KivyMD-UI). Re-Export für bestehende Importe.
+from frontend.widgets.status_labels import STATUS_LABELS, STATUS_PRIORITY
 
 class PokemonBox(ButtonBehavior, BoxLayout):
     def __init__(self, obs_websocket: OBS, **kwargs):

@@ -24,8 +24,8 @@ from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 from frontend.widgets.trainerbox import TrainerBox
 from frontend.widgets.toast import show_toast, show_pending_toast
-from backend import pokedecoder
 from backend.classes.obs import OBS
+from backend.rando_sync import apply_rando_to_munchlax, local_player_slots
 from backend.controller.connection_controller import ConnectionController
 from backend.controller.randomizer_controller import RandomizerController
 from backend.controller.settings_controller import SettingsController
@@ -1427,78 +1427,17 @@ class MainMenu(Screen):
 
     def _sync_rando_to_munchlax(self):
         """Nach erfolgreicher Randomisierung die TM/HM-Zuordnung in Munchlax
-        schreiben und an den Server pushen. Jedes lokale Player-Slot bekommt
-        denselben rando_data-Snapshot (gleiche Settings → gleiche Seeds →
-        selbe TM-Zuordnung pro ROM). Phänomen 3 (Logs 2026-09-30): ohne
-        diesen Push wusste das Overlay anderer Hosts die TM-Mappings dieses
-        Clients nicht und zeigte Vanilla-Icons.
-
-        Kein is_connected-Guard — send_rando_moves_sync queued den Payload
-        intern in _pending_rando_moves wenn offline und flusht beim nächsten
-        Connect. Guard würde den Offline-Puffer umgehen (R1 KRITISCH sync).
-        """
-        rando_data = self.randomizer.get_log_data()
-        local_slots = self._local_player_slots()
-        if rando_data:
-            tm_moves = rando_data.tm_moves or {}
-            hm_moves = rando_data.hm_moves or {}
-            for slot in local_slots:
-                self.munchlax.rando_tm_moves[slot] = dict(tm_moves)
-                self.munchlax.rando_hm_moves[slot] = dict(hm_moves)
-                self._schedule_rando_sync(slot, tm_moves, hm_moves)
-            self._sync_rando_abilities(rando_data)
-            logger.info(
-                f"_sync_rando_to_munchlax: slots={local_slots}, "
-                f"tms={len(tm_moves)}, hms={len(hm_moves)}, "
-                f"connected={self.munchlax.is_connected}"
-            )
-        else:
-            for slot in local_slots:
-                self.munchlax.rando_tm_moves.pop(slot, None)
-                self.munchlax.rando_hm_moves.pop(slot, None)
-                self._schedule_rando_sync(slot, {}, {})
-            pokedecoder.set_gen3_abilities(None)
-            logger.info(
-                f"_sync_rando_to_munchlax: keine rando_data, slots geleert={local_slots}"
-            )
-
-    def _schedule_rando_sync(self, slot: int,
-                              tm_moves: dict, hm_moves: dict) -> None:
-        """Munchlax auf eigenem Thread seit Phase 3 → cross-thread dispatch.
-        `dispatch_cross_thread` haelt das Future ueber `submit_coro_logged`
-        selbst stark (Thread-interne queue), die alte Strong-Ref in
-        `self.connectors` ist nicht mehr noetig.
-        """
-        self.munchlax.dispatch_cross_thread(
-            self.munchlax.send_rando_moves_sync(slot, tm_moves, hm_moves),
-            name="send_rando_moves_sync",
-        )
+        schreiben und an den Server pushen (Delegation an
+        ``backend.rando_sync.apply_rando_to_munchlax`` — gemeinsame Quelle mit
+        der KivyMD-UI, kein Code-Duplikat). Externer Caller:
+        settingsmenu.py."""
+        apply_rando_to_munchlax(self.munchlax, self.randomizer, self.pl, logger)
 
     def _local_player_slots(self) -> list[int]:
-        """Spiegelt randomizer_controller._local_player_slots — lokale
-        Player-Slot-Indizes (1..player_count exkl. remote_i=True)."""
-        try:
-            count = int(self.pl.get('player_count', 1) or 1)
-        except (TypeError, ValueError):
-            count = 1
-        slots: list[int] = []
-        for slot in range(1, count + 1):
-            if self.pl.get(f'remote_{slot}', False):
-                continue
-            slots.append(slot)
-        return slots or [1]
-
-    def _sync_rando_abilities(self, rando_data):
-        lut: dict[int, list[int]] = {}
-        for dexnr, poke in rando_data.pokemon.items():
-            ids = []
-            for name in poke.abilities:
-                aid = pokedecoder.resolve_ability_name(name)
-                if aid is not None:
-                    ids.append(aid)
-            if ids:
-                lut[dexnr] = ids
-        pokedecoder.set_gen3_abilities(lut if lut else None)
+        """Lokale Spieler-Slots (1..player_count exkl. remote_i=True), Delegation
+        an backend.rando_sync.local_player_slots. Externe Caller: bagmenu.py /
+        bagmenumd.py (getattr(main_menu, "_local_player_slots", ...))."""
+        return local_player_slots(self.pl, logger)
 
     def toggle_server_client(self, instance, button, initializing=False):
         if instance.state == "down":

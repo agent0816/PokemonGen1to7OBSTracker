@@ -49,13 +49,17 @@ class TrackerNavigationRailItem(MDNavigationRailItem):
 class TrackerNavigationRail(MDNavigationRail):
     """NavigationRail, deren Highlight an ``screen_manager.current`` hängt."""
 
-    def __init__(self, screen_manager, item_list: list[dict], **kwargs) -> None:
+    def __init__(self, screen_manager, item_list: list[dict], nav_guard=None, **kwargs) -> None:
         kwargs.setdefault("type", "labeled")
         # anchor="center": Items mittig in der Rail. "top" klebt das erste Item
         # an die Oberkante, dann clippt der Auswahl-Indikator des aktiven Items.
         kwargs.setdefault("anchor", "center")
         super().__init__(**kwargs)
         self.screen_manager = screen_manager
+        # Optionaler Guard(current, target) -> bool: False vetoed die Navigation
+        # (der Guard übernimmt sie selbst, z.B. sicherer Session-Wechsel mit
+        # Save-Dialog + disconnect).
+        self._nav_guard = nav_guard
         for item in item_list:
             self.add_item(item)
         # Highlight an den ScreenManager koppeln (programmatische Wechsel wie
@@ -83,6 +87,21 @@ class TrackerNavigationRail(MDNavigationRail):
         self.add_widget(rail_item)
 
     def _select(self, screen_name: str) -> None:
+        if self._nav_guard is not None:
+            current = self.screen_manager.current
+            try:
+                allowed = self._nav_guard(current, screen_name)
+            except Exception:
+                logger.error(f"nav_guard fehlgeschlagen: {screen_name}", exc_info=True)
+                allowed = True
+            if not allowed:
+                # Navigation vom Guard übernommen/abgelehnt. KivyMD hat das
+                # geklickte Item per eigenem on_release-Binding evtl. schon aktiv
+                # geschaltet (Reihenfolge der on_release-Handler nicht garantiert)
+                # → Highlight im nächsten Frame hart auf den aktuellen Screen
+                # zurückzwingen.
+                Clock.schedule_once(lambda _dt: self._force_highlight(current), 0)
+                return
         self.screen_manager.current = screen_name
         # Highlight zusätzlich hart nachziehen: fängt den Re-Click-Fall ab, in
         # dem current unverändert bleibt (kein _on_screen_current) und das
@@ -91,6 +110,14 @@ class TrackerNavigationRail(MDNavigationRail):
 
     def _on_screen_current(self, screen_manager, screen_name: str) -> None:
         self.sync_to_screen(screen_name)
+
+    def _force_highlight(self, screen_name: str) -> None:
+        """Genau das Item zu ``screen_name`` aktiv, alle anderen inaktiv.
+        set_active_item toggelt → nur umschalten, wenn der Ist-Zustand abweicht."""
+        for it in self.get_items():
+            should = getattr(it, "screen_name", None) == screen_name
+            if it.active != should:
+                self.set_active_item(it)
 
     def sync_to_screen(self, screen_name: str) -> None:
         items = self.get_items()

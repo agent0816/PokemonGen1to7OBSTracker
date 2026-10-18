@@ -9,6 +9,7 @@ Rück-Navigation über ``return_screen`` (woher der Drilldown kam), gesetzt beim
 """
 import os
 
+from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -43,6 +44,20 @@ _OUTCOME_DE = {
     "dead": "gestorben", "unknown": "offen",
 }
 
+# Status-Effekt-Schlüssel → lesbarer deutscher Text (statt rohem Dict).
+_STATUS_DE = {
+    "freeze": "Eingefroren", "burn": "Verbrannt", "para": "Paralysiert",
+    "toxic": "Schwer vergiftet", "poison": "Vergiftet", "sleep": "Schläft",
+}
+
+
+def _status_text(status) -> str | None:
+    """Aktive Status-Effekte als lesbaren Text, oder None wenn keiner aktiv."""
+    if not status:
+        return None
+    active = [_STATUS_DE.get(k, k) for k, v in status.items() if v]
+    return ", ".join(active) if active else None
+
 
 class PokemonDetailMD(MDScreen):
     """Full-Screen-Detailansicht. Mehrere Einstiegspunkte via return_screen."""
@@ -55,6 +70,11 @@ class PokemonDetailMD(MDScreen):
         self._edition = 0
         self._detail_munchlax = None
         self._detail_owner = None
+        # Live-Refresh-Quelle (nur Hauptmenü-Team): (player_id, slot, munchlax,
+        # rando_getter). None = Snapshot-Ansicht (Pokedex/Box), kein Live-Tick.
+        self._refresh_src = None
+        self._last_sig = None
+        self._live_tick = None
 
         root = MDBoxLayout(orientation="vertical", padding="10dp", spacing="8dp")
 
@@ -81,6 +101,72 @@ class PokemonDetailMD(MDScreen):
         if self.manager is not None and self.manager.has_screen(self.return_screen):
             self.manager.current = self.return_screen
 
+    # -- Live-Refresh (nur Hauptmenü-Team) -------------------------------------
+
+    def set_refresh_source(self, player_id, slot, munchlax, rando_getter) -> None:
+        """Markiert die Ansicht als live: das Detail aktualisiert sich, solange es
+        offen ist, aus ``munchlax.sorted_teams[player_id][slot]``. ``rando_getter``
+        ist die Callable, die die aktuellen Rando-Daten liefert (oder None)."""
+        self._refresh_src = (player_id, slot, munchlax, rando_getter)
+        # Aktuelle Signatur merken, damit der erste Tick nicht sofort neu rendert.
+        team = getattr(munchlax, "sorted_teams", {}).get(player_id)
+        if team and slot < len(team):
+            self._last_sig = self._poke_signature(team[slot])
+
+    def on_pre_enter(self, *_args) -> None:
+        if self._live_tick is None:
+            self._live_tick = Clock.schedule_interval(self._live_refresh, 1)
+
+    def on_leave(self, *_args) -> None:
+        if self._live_tick is not None:
+            self._live_tick.cancel()
+            self._live_tick = None
+
+    @staticmethod
+    def _poke_signature(pokemon):
+        """Billige Änderungs-Signatur: nur neu rendern, wenn sich etwas ändert.
+        Deckt die live veränderlichen Felder ab (Level/KP/Item/EXP/Status/Shiny +
+        Identität). Moves/Basiswerte/Wesen ändern sich faktisch nur mit dem Level
+        (→ über lvl abgedeckt) oder bei Spezies-Wechsel (→ dexnr), daher nicht
+        separat in der Signatur."""
+        status = getattr(pokemon, "status", {}) or {}
+        return (
+            getattr(pokemon, "dexnr", None), getattr(pokemon, "nickname", None),
+            getattr(pokemon, "lvl", None), getattr(pokemon, "cur_hp", None),
+            getattr(pokemon, "max_hp", None), getattr(pokemon, "item", None),
+            getattr(pokemon, "experience_points", None),
+            getattr(pokemon, "shiny", None),
+            tuple(sorted(k for k, v in status.items() if v)),
+        )
+
+    def _live_refresh(self, _dt) -> None:
+        src = self._refresh_src
+        if src is None:
+            return
+        try:
+            player_id, slot, munchlax, rando_getter = src
+            team = getattr(munchlax, "sorted_teams", {}).get(player_id)
+            if not team or slot >= len(team):
+                self._last_sig = None
+                return
+            pokemon = team[slot]
+            sig = self._poke_signature(pokemon)
+            if sig == self._last_sig:
+                return
+            self._last_sig = sig
+            rando_data = rando_getter() if rando_getter else None
+            try:
+                self.show(pokemon, self._edition, rando_data,
+                          return_screen=self.return_screen, munchlax=munchlax,
+                          owner=self._detail_owner)
+            finally:
+                # show() nullt _refresh_src → als Live-Ansicht IMMER wiederherstellen,
+                # auch wenn show() mitten im Rebuild wirft (sonst stiller Tick-Tod).
+                self._refresh_src = src
+        except Exception:
+            import traceback
+            logger.error(f"PokemonDetailMD._live_refresh fehlgeschlagen: {traceback.format_exc()}")
+
     # -- Befüllung -------------------------------------------------------------
 
     def show(self, pokemon, edition: int, rando_data=None, return_screen: str = "PokedexMenu",
@@ -89,6 +175,9 @@ class PokemonDetailMD(MDScreen):
         self.return_screen = return_screen
         self._detail_munchlax = munchlax
         self._detail_owner = owner
+        # Jeder show()-Aufruf ist zunächst eine Snapshot-Ansicht; ein Live-
+        # Einstiegspunkt (Hauptmenü-Team) setzt die Quelle NACH show() erneut.
+        self._refresh_src = None
         self.detail_layout.clear_widgets()
 
         if pokemon is None or getattr(pokemon, "dexnr", 0) in (0, "", None):
@@ -122,7 +211,10 @@ class PokemonDetailMD(MDScreen):
                      height=dp(180), padding=dp(8), spacing=dp(8), radius=[dp(12)] * 4)
         top.add_widget(FitImage(source=self._sprite(pokemon, edition), fit_mode="contain",
                                 size_hint_x=0.35))
-        info = MDBoxLayout(orientation="vertical", size_hint_x=0.65, spacing=dp(2))
+        # Höhe folgt dem Inhalt (Status/Item/Shiny können die 180 dp sprengen),
+        # mit 180 dp als Mindesthöhe (Platz fürs Sprite).
+        info = MDBoxLayout(orientation="vertical", size_hint_x=0.65, size_hint_y=None,
+                           adaptive_height=True, spacing=dp(2))
         info.add_widget(self._line(f"Name: {species_name}", bold=True))
         if nickname and nickname != species_name:
             info.add_widget(self._line(f"Spitzname: {nickname}"))
@@ -134,6 +226,9 @@ class PokemonDetailMD(MDScreen):
         cur_hp, max_hp = getattr(pokemon, "cur_hp", None), getattr(pokemon, "max_hp", None)
         if cur_hp is not None and max_hp is not None:
             info.add_widget(self._line(f"KP: {cur_hp}/{max_hp}"))
+        status_txt = _status_text(getattr(pokemon, "status", None))
+        if status_txt:
+            info.add_widget(self._line(f"Status: {status_txt}"))
 
         vanilla_types = resolve_vanilla_types(dexnr, edition)
         rando_types = resolve_types_from_rando(rando_pokemon.types) if rando_pokemon and rando_pokemon.types else []
@@ -147,6 +242,7 @@ class PokemonDetailMD(MDScreen):
         if getattr(pokemon, "shiny", False):
             info.add_widget(self._line("Shiny: Ja"))
 
+        info.bind(minimum_height=lambda _i, h: setattr(top, "height", max(h + dp(16), dp(180))))
         top.add_widget(info)
         self.detail_layout.add_widget(top)
 
@@ -298,18 +394,17 @@ class PokemonDetailMD(MDScreen):
             size_hint_y=None, height=dp(6)))
 
     def _add_misc(self, pokemon):
+        # Status-Effekt steht jetzt oben in der Basis-Karte (_add_top_row), nicht
+        # mehr hier als rohes Dict.
         ot_name = getattr(pokemon, "ot_name", None)
         ot_id = getattr(pokemon, "ot_id", None)
-        status = getattr(pokemon, "status", None)
-        if all(v is None for v in (ot_name, ot_id, status)):
+        if all(v is None for v in (ot_name, ot_id)):
             return
         self._separator("Sonstiges")
         if ot_name:
             self.detail_layout.add_widget(self._line(f"OT: {ot_name}"))
         if ot_id is not None:
             self.detail_layout.add_widget(self._line(f"OT-ID: {ot_id}"))
-        if status:
-            self.detail_layout.add_widget(self._line(f"Status: {status}"))
 
     def _render_soullink_section(self, pokemon):
         m = self._detail_munchlax

@@ -64,10 +64,9 @@ class Screens(ScreenManager):
             session_list, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, APP_VERSION,
             on_session_changed=self._on_session_changed,
         ))
-        # MainMenu-/SettingsMenu-MD haben noch die Prototyp-Signatur (Stand 0.7.11);
-        # MainMenu ist rein optisch, SettingsMenu leer.
+        # MainMenu-MD voll verdrahtet (Phase C). SettingsMenu-MD noch Prototyp.
         self.main_menu = MainMenu(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket,
-                                  configsave, sp, rem, obs, bh, pl, APP_VERSION)
+                                  overlay_server, configsave, sp, rem, obs, bh, pl, rnd, ov, APP_VERSION)
         self.add_widget(self.main_menu)
         self.add_widget(SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6,
                                      configsave, sp, rem, obs, bh, pl, APP_VERSION))
@@ -214,6 +213,11 @@ class Screens(ScreenManager):
         if app is not None:
             app.title = _window_title(session_name)
         try:
+            self.main_menu.load_from_session()
+        except Exception as err:
+            logger.error(f"MainMenu.load_from_session fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
+        try:
             self.pokedex_menu.load_from_session()
         except Exception as err:
             logger.error(f"PokedexMenu.load_from_session fehlgeschlagen: {err}")
@@ -254,7 +258,8 @@ class MainWindow(MDBoxLayout):
             {"icon": "cog", "display_name": "Settings", "screen_name": "SettingsMenu"},
         ]
         self.navrail = TrackerNavigationRail(
-            self.screen_manager, navigation_list, size_hint_x=None, width=dp(88),
+            self.screen_manager, navigation_list, nav_guard=self._nav_guard,
+            size_hint_x=None, width=dp(88),
         )
 
         # Rumpf: Rail links, ScreenManager rechts. Status-Leiste als Fußzeile
@@ -266,6 +271,19 @@ class MainWindow(MDBoxLayout):
         self.status_bar = StatusBarMD()
         self.add_widget(body)
         self.add_widget(self.status_bar)
+
+    def _nav_guard(self, current: str, target: str) -> bool:
+        """Rail-Navigations-Guard: ein Wechsel zum SessionMenu bei laufender
+        Verbindung/BizHawk läuft über den sicheren Pfad von MainMenu
+        (Save-Dialog → disconnect_all → save → Nav), statt direkt zu springen.
+        Gibt False zurück (Guard übernimmt die Navigation selbst)."""
+        if target == "SessionMenu" and current not in ("SessionMenu", "Update"):
+            main_menu = getattr(self.screen_manager, "main_menu", None)
+            if (main_menu is not None and hasattr(main_menu, "_needs_safe_switch")
+                    and main_menu._needs_safe_switch()):
+                main_menu.change_session()
+                return False
+        return True
 
 
 class TrackerAppMD(TrackerCoreMixin, MDApp):

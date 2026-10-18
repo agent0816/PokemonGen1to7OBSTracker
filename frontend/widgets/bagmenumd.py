@@ -11,6 +11,7 @@ from pathlib import Path
 
 from kivy.clock import Clock
 from kivy.metrics import dp
+from kivy.uix.widget import Widget
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDButton, MDButtonText
 from kivymd.uix.card import MDCard
@@ -49,14 +50,35 @@ def _label(text: str, bold: bool = False, role: str | None = None, **kwargs) -> 
 
 
 class PocketCard(MDCard):
-    """Eine Pocket: Kopf (Label) + vertikale Item-Liste. Höhe folgt dem Inhalt."""
+    """Eine Pocket: Kopf (Label) + vertikale Item-Liste.
 
-    def __init__(self, label: str, **kwargs):
+    Mit ``fixed_height`` bekommen alle Karten einer Sektion dieselbe Höhe, damit
+    sie im MDGridLayout OBEN bündig sitzen: das Grid richtet unterschiedlich hohe
+    Zellen am UNTEREN Rand aus, und ``pos_hint={"top":1}`` greift dort nicht.
+    Ein trailing ``Widget()``-Spacer in den kürzeren Karten hält den Inhalt bei
+    fester Höhe oben (sonst schiebt die vertikale Box ihn nach unten)."""
+
+    PADDING = dp(8)
+    SPACING = dp(2)
+    HEAD_H = dp(30)
+
+    def __init__(self, label: str, fixed_height: float | None = None, **kwargs):
         super().__init__(style="elevated", orientation="vertical", size_hint_y=None,
-                         padding=dp(8), spacing=dp(2), radius=[dp(12)] * 4, **kwargs)
-        self.bind(minimum_height=self.setter("height"))
-        head = _label(label, bold=True, size_hint_y=None, height=dp(30))
+                         padding=self.PADDING, spacing=self.SPACING, radius=[dp(12)] * 4,
+                         **kwargs)
+        if fixed_height is not None:
+            self.height = fixed_height
+        else:
+            self.bind(minimum_height=self.setter("height"))
+        head = _label(label, bold=True, size_hint_y=None, height=self.HEAD_H)
         self.add_widget(head)
+
+    @classmethod
+    def content_height(cls, item_count: int) -> float:
+        """Höhe für eine Karte mit ``item_count`` Item-Zeilen (Kopf + Zeilen +
+        Zwischen-Spacing + vertikales Padding)."""
+        return (2 * cls.PADDING + cls.HEAD_H
+                + item_count * ITEM_ROW_H + item_count * cls.SPACING)
 
 
 class BagMenu(MDScreen):
@@ -471,10 +493,16 @@ class BagMenu(MDScreen):
         grid.cols = max(1, int((self.width or CARD_MIN_WIDTH) / CARD_MIN_WIDTH))
 
         rando_tm, rando_hm = self._rando_moves_for_owner(owner)
+        # Einheitliche Kartenhöhe je Sektion → Tops bündig (Grid richtet sonst am
+        # unteren Zellenrand aus).
+        max_items = max((len(p["items"]) for p in section["pockets"]), default=0)
+        card_h = PocketCard.content_height(max_items)
         for pocket in section["pockets"]:
-            card = PocketCard(pocket["label"])
+            card = PocketCard(pocket["label"], fixed_height=card_h)
             for row in pocket["items"]:
                 card.add_widget(self._make_item_row(edition, row, rando_tm, rando_hm))
+            # Trailing Spacer hält den Inhalt bei fester Höhe oben bündig.
+            card.add_widget(Widget())
             grid.add_widget(card)
         block.add_widget(grid)
         return block

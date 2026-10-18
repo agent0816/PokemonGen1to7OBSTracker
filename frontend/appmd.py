@@ -18,6 +18,7 @@ from kivymd.uix.boxlayout import MDBoxLayout
 
 from backend.logging_setup import get_logger
 from frontend.app_core import TrackerCoreMixin
+from frontend.widgets.bagmenumd import BagMenu
 from frontend.widgets.boxmenumd import BoxMenu
 from frontend.widgets.encountermenumd import EncounterMenu
 from frontend.widgets.mainmenumd import MainMenu
@@ -76,6 +77,8 @@ class Screens(ScreenManager):
         self.add_widget(self.encounter_menu)
         self.box_menu = BoxMenu(bizhawk, citra, munchlax, obs_websocket, pl)
         self.add_widget(self.box_menu)
+        self.bag_menu = BagMenu(configsave, pl, sp, bizhawk, citra, APP_VERSION)
+        self.add_widget(self.bag_menu)
         # Detail-Drilldown (kein Rail-Ziel): aus Pokedex per Karten-Klick erreicht,
         # navigiert über return_screen zurück. Box/Main nutzen ihn später mit.
         self.pokemon_detail = PokemonDetailMD(obs_websocket)
@@ -225,6 +228,11 @@ class Screens(ScreenManager):
         except Exception as err:
             logger.error(f"BoxMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
+        try:
+            self.bag_menu.load_from_session()
+        except Exception as err:
+            logger.error(f"BagMenu.load_from_session fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
 
 
 class MainWindow(MDBoxLayout):
@@ -242,6 +250,7 @@ class MainWindow(MDBoxLayout):
             {"icon": "book-open-variant", "display_name": "Pokedex", "screen_name": "PokedexMenu"},
             {"icon": "clipboard-list-outline", "display_name": "Encounter", "screen_name": "EncounterMenu"},
             {"icon": "archive-outline", "display_name": "Box", "screen_name": "BoxMenu"},
+            {"icon": "bag-personal-outline", "display_name": "Tasche", "screen_name": "BagMenu"},
             {"icon": "cog", "display_name": "Settings", "screen_name": "SettingsMenu"},
         ]
         self.navrail = TrackerNavigationRail(

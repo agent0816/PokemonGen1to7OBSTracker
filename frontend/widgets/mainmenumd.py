@@ -432,6 +432,20 @@ class MainMenu(MDScreen):
         self.trainer_grid.clear_widgets()
         self.trainer_boxes.clear()
 
+    def rebuild_trainer_boxes(self) -> None:
+        """Team-Boxen für die aktuelle pl['player_count'] neu aufbauen.
+
+        Öffentlicher Hook, damit der Settings-Screen nach einer Änderung der
+        Spieleranzahl die MainMenu-Teams sofort angleicht (Parität zum Klassik-
+        update_trainer_boxes). Reiner UI-Rebuild, keine Verbindungs-Nebenwirkung.
+        """
+        try:
+            self._clear_trainer_boxes()
+            self._build_trainer_boxes()
+        except Exception as err:
+            logger.error(f"rebuild_trainer_boxes fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
+
     # -- Responsive ------------------------------------------------------------
 
     def _on_window_resize(self, _window, width, _height) -> None:

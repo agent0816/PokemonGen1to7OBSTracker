@@ -107,6 +107,10 @@ def update_session(sessionpath, default=False):
         "silver":'',
         "silver_obs":'',
         "single_path_check":False,
+        # None = nicht gesetzt → gekoppelt an single_path_check (altes Verhalten
+        # + Klassik-UI, die den Key nie schreibt). Erst ein expliziter Toggle im
+        # MD-Settings-Screen entkoppelt den OBS-PC-Zweig (obs.py get_sprite).
+        "obs_single_path_check":None,
         "sun":'',
         "sun_obs":'',
         "usun":'',

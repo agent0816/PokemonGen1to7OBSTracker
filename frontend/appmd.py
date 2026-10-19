@@ -64,12 +64,14 @@ class Screens(ScreenManager):
             session_list, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, APP_VERSION,
             on_session_changed=self._on_session_changed,
         ))
-        # MainMenu-MD voll verdrahtet (Phase C). SettingsMenu-MD noch Prototyp.
+        # MainMenu-MD voll verdrahtet (Phase C), SettingsMenu-MD (Phase D).
         self.main_menu = MainMenu(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket,
                                   overlay_server, configsave, sp, rem, obs, bh, pl, rnd, ov, APP_VERSION)
         self.add_widget(self.main_menu)
-        self.add_widget(SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, externalIPv4, externalIPv6,
-                                     configsave, sp, rem, obs, bh, pl, APP_VERSION))
+        self.settings_menu = SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, overlay_server,
+                                          externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl,
+                                          rnd, ov, nuz, APP_VERSION)
+        self.add_widget(self.settings_menu)
         self.pokedex_menu = PokedexMenu(configsave, obs_websocket, APP_VERSION, pl)
         self.add_widget(self.pokedex_menu)
         self.encounter_menu = EncounterMenu(configsave, pl, nuz, APP_VERSION)
@@ -237,6 +239,11 @@ class Screens(ScreenManager):
         except Exception as err:
             logger.error(f"BagMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
+        try:
+            self.settings_menu.load_from_session()
+        except Exception as err:
+            logger.error(f"SettingsMenu.load_from_session fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
 
 
 class MainWindow(MDBoxLayout):
@@ -312,10 +319,10 @@ class TrackerAppMD(TrackerCoreMixin, MDApp):
             )
 
         if not self.sp.get('common_path'):
-            from frontend.widgets.sprite_setup_popup import SpriteSetupPopup
+            from frontend.widgets.sprite_setup_popupmd import SpriteSetupPopupMD
             def _save_sprites():
                 self.save_config(f"{self.configsave}sprites.yml", self.sp)
-            Clock.schedule_once(lambda dt: SpriteSetupPopup(self.sp, self.configsave, save_callback=_save_sprites).open(), 3)
+            Clock.schedule_once(lambda dt: SpriteSetupPopupMD(self.sp, self.configsave, save_callback=_save_sprites).open(), 3)
         else:
             self.start_sprite_auto_pull()
 

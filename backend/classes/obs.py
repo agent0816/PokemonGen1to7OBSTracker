@@ -1591,7 +1591,18 @@ class OBS():
         else:
             animated = ""
             filetype = ".png"
-        if not self.conf['single_path_check']:
+        # Per-Game-Auflösung getrennt pro Ziel: lokal über single_path_check,
+        # OBS-PC über obs_single_path_check (eigener Schalter im Settings-Screen).
+        # Alte Sessions ohne den OBS-Key fallen auf single_path_check zurück
+        # (altes gekoppeltes Verhalten).
+        if two_pc:
+            obs_flag = self.conf.get('obs_single_path_check')
+            # None / fehlend = nicht entkoppelt → an single_path_check gekoppelt
+            # (altes Verhalten, Klassik-UI, unmigrierte Sessions).
+            path_single = self.conf['single_path_check'] if obs_flag is None else obs_flag
+        else:
+            path_single = self.conf['single_path_check']
+        if not path_single:
             conf_path = self.conf[f"{subpath[edition]}{obs}"]
             common_slash = "" if (common_path.endswith("/") and not conf_path.startswith("/")) or (not common_path.endswith("/") and conf_path.startswith("/")) else "/"
             slash = "" if conf_path.endswith("/") else "/"

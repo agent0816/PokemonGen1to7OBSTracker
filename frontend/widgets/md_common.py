@@ -31,6 +31,12 @@ _SNACKBAR_COLORS = {
 }
 
 
+def format_hms(seconds: float) -> str:
+    """Sekunden → HH:MM:SS (gemeinsame Quelle für Status-Leiste + Timer-Tab)."""
+    s = int(max(0, seconds))
+    return f"{s // 3600:02d}:{(s // 60) % 60:02d}:{s % 60:02d}"
+
+
 def show_snackbar(text: str, level: str = 'info', duration: float = 3.0) -> None:
     """Kurze Rückmeldung unten im Fenster (Ersatz für frontend.widgets.toast)."""
     label = MDSnackbarText(text=text)
@@ -51,12 +57,13 @@ def show_snackbar(text: str, level: str = 'info', duration: float = 3.0) -> None
 
 
 def confirm_dialog(headline: str, supporting_text: str = '', *, on_confirm: Callable[[], None],
-                   confirm_text: str = 'OK', cancel_text: str = 'Abbrechen',
+                   confirm_text: str = 'OK', cancel_text: str | None = 'Abbrechen',
                    icon: str | None = None) -> MDDialog:
     """Generischer Ja/Nein-Dialog. Schließt sich vor dem Aufruf von on_confirm.
 
     on_confirm ist synchron; für async-Arbeit im Callback `asyncio.create_task(...)`
     starten (eine Coroutine-Funktion direkt zu übergeben würde nie ausgeführt).
+    ``cancel_text=None`` baut einen Ein-Button-Hinweis-Dialog (nur Bestätigen).
     """
     dialog = MDDialog(auto_dismiss=False)
 
@@ -74,20 +81,19 @@ def confirm_dialog(headline: str, supporting_text: str = '', *, on_confirm: Call
             logger.error(f"confirm_dialog: on_confirm fehlgeschlagen: {err}\n{traceback.format_exc()}")
             show_snackbar(f"Aktion fehlgeschlagen: {err}", level='error', duration=6.0)
 
-    dialog.add_widget(MDDialogButtonContainer(
-        Widget(),
-        MDButton(
+    buttons = [Widget()]
+    if cancel_text is not None:
+        buttons.append(MDButton(
             MDButtonText(text=cancel_text),
             style='tonal',
             on_press=dialog.dismiss,
-        ),
-        MDButton(
-            MDButtonText(text=confirm_text),
-            style='filled',
-            on_press=_handle_confirm,
-        ),
-        spacing="10dp",
+        ))
+    buttons.append(MDButton(
+        MDButtonText(text=confirm_text),
+        style='filled',
+        on_press=_handle_confirm,
     ))
+    dialog.add_widget(MDDialogButtonContainer(*buttons, spacing="10dp"))
     dialog.open()
     return dialog
 

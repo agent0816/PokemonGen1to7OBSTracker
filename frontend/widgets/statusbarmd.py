@@ -1,4 +1,5 @@
 """Globale Status-Leiste der KivyMD-UI (Verbindungsstatus + Timer-Slot)."""
+import asyncio
 import traceback
 from typing import Callable
 
@@ -7,9 +8,12 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDIconButton
 from kivymd.uix.label import MDLabel, MDIcon
 
 from backend.logging_setup import get_logger
+from frontend.widgets.md_common import format_hms as _format_hms
+from frontend.widgets.md_common import show_snackbar as _snackbar
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
@@ -130,8 +134,248 @@ class StatusItem(MDBoxLayout):
         self.dot.set_state(state)
 
 
+class TimerChip(MDBoxLayout):
+    """Read-only-Anzeige des Race-/Countdown-Timers in der Status-Leiste.
+
+    Der Timer läuft server-authoritativ (Arceus), gespiegelt in Munchlax. Dieser
+    Chip zeigt den Zustand und navigiert bei Klick auf den Text ins NuzlockeMenu
+    (Timer-Tab). Ist die eigene Rolle Host, blendet er zusätzlich einen Pause-/
+    Start-Button ein, der den Race-Timer über denselben konsens-basierten Request
+    pausiert/fortsetzt wie der Timer-Tab (send_timer_pause_request /
+    send_timer_resume_request). Sichtbar nur, solange ein Timer oder aktiver
+    Countdown existiert; sonst ausgeblendet (opacity 0).
+    """
+
+    def __init__(self, app, **kwargs) -> None:
+        super().__init__(
+            orientation="horizontal",
+            adaptive_width=True,
+            spacing=dp(4),
+            **kwargs,
+        )
+        self._app = app
+        self._error_logged = False
+        self._send_err_logged = False
+        self._visible = False
+        # Letzter bekannter Timer-Zustand (vom refresh gesetzt, von den Button-
+        # Handlern gelesen, damit der Klick nicht erneut munchlax abfragen muss).
+        self._race = {"present": False, "running": False, "started": False}
+        self._cd = {"present": False, "running": False, "finished": False}
+        self._tasks: set = set()  # Strong-Refs gegen GC (feedback_async_task_strong_ref)
+        self.icon = MDIcon(
+            icon="timer-outline",
+            size_hint=(None, None),
+            font_size=dp(16),
+            size=(dp(18), dp(18)),
+            pos_hint={"center_y": 0.5},
+        )
+        self.add_widget(self.icon)
+        # Layout: [icon] [race-label] [race-ctrl] [cd-label] [cd-ctrl] — jeder
+        # Button steht direkt neben SEINEM Label, nicht beide am Ende.
+        # Host-Steuerung nur eingeblendet, wenn Rolle==Host und der jeweilige
+        # Timer existiert. Icon spiegelt den aktuellen Zustand.
+        #  - ctrl   = Race-Timer: Start (reset/nie gestartet) / Pause / Fortsetzen
+        #             über den konsens-basierten Request (wie Timer-Tab).
+        #  - cd_ctrl = Countdown: Pause / Fortsetzen (direkt, kein Konsens).
+        self.race_label = MDLabel(text="", adaptive_width=True, pos_hint={"center_y": 0.5})
+        self.add_widget(self.race_label)
+        self.ctrl = MDIconButton(
+            icon="play",
+            size_hint=(None, None),
+            size=(dp(28), dp(28)),
+            pos_hint={"center_y": 0.5},
+        )
+        self.ctrl.bind(on_release=self._toggle_race)
+        self.ctrl.opacity = 0
+        self.ctrl.disabled = True
+        self.add_widget(self.ctrl)
+        self.cd_label = MDLabel(text="", adaptive_width=True, pos_hint={"center_y": 0.5})
+        self.add_widget(self.cd_label)
+        self.cd_ctrl = MDIconButton(
+            icon="pause",
+            size_hint=(None, None),
+            size=(dp(28), dp(28)),
+            pos_hint={"center_y": 0.5},
+        )
+        self.cd_ctrl.bind(on_release=self._toggle_countdown)
+        self.cd_ctrl.opacity = 0
+        self.cd_ctrl.disabled = True
+        self.add_widget(self.cd_ctrl)
+        self.opacity = 0  # leer bis ein Timer läuft
+
+    def refresh(self) -> None:
+        try:
+            race_text, cd_text, race, cd = self._compute_state()
+            self._error_logged = False
+        except Exception:
+            if not self._error_logged:
+                self._error_logged = True
+                logger.warning(f"TimerChip-Refresh fehlgeschlagen: {traceback.format_exc()}")
+            race_text, cd_text = "", ""
+            race = {"present": False, "running": False, "started": False}
+            cd = {"present": False, "running": False, "finished": False}
+        self._race = race
+        self._cd = cd
+        # Separator vor dem Countdown nur, wenn auch Race-Text vorhanden.
+        cd_display = ("  ·  " + cd_text) if (race_text and cd_text) else cd_text
+        if self.race_label.text != race_text:
+            self.race_label.text = race_text
+        if self.cd_label.text != cd_display:
+            self.cd_label.text = cd_display
+        visible = bool(race_text or cd_text)
+        if visible != self._visible:
+            self._visible = visible
+            self.opacity = 1 if visible else 0
+        self._update_controls()
+
+    def _update_controls(self) -> None:
+        """Race- und Countdown-Button nur fuer den Host, je nur bei vorhandenem
+        Timer. Icon = play (starten/fortsetzen) bzw. pause (laeuft)."""
+        host = self._is_host()
+        # Race: play, solange nicht laeuft (deckt reset/nie-gestartet UND Pause ab).
+        show_race = self._race["present"] and host
+        self.ctrl.disabled = not show_race
+        self.ctrl.opacity = 1 if show_race else 0
+        race_icon = "pause" if self._race["running"] else "play"
+        if self.ctrl.icon != race_icon:
+            self.ctrl.icon = race_icon
+        # Countdown: steuerbar solange nicht abgelaufen.
+        show_cd = self._cd["present"] and not self._cd["finished"] and host
+        self.cd_ctrl.disabled = not show_cd
+        self.cd_ctrl.opacity = 1 if show_cd else 0
+        cd_icon = "pause" if self._cd["running"] else "play"
+        if self.cd_ctrl.icon != cd_icon:
+            self.cd_ctrl.icon = cd_icon
+
+    def _is_host(self) -> bool:
+        try:
+            return bool((getattr(self._app, "rem", {}) or {}).get("start_server"))
+        except Exception:
+            return False
+
+    def _compute_state(self) -> tuple[str, str, dict, dict]:
+        """Liefert (race-Text, countdown-Text, race-Zustand, countdown-Zustand).
+
+        Getrennte Texte, damit jeder Button direkt neben SEINEM Label sitzt.
+        race/cd sind Dicts mit present/running (+ started bzw. finished), damit die
+        Button-Handler Start (reset) von Fortsetzen (Pause) unterscheiden koennen.
+        """
+        race = {"present": False, "running": False, "started": False}
+        cd = {"present": False, "running": False, "finished": False}
+        app = self._app
+        munchlax = getattr(app, "munchlax", None) if app is not None else None
+        if munchlax is None:
+            return "", "", race, cd
+        race_text = ""
+        cd_text = ""
+        timer_state = getattr(munchlax, "timer_state", None)
+        if timer_state:
+            race["present"] = True
+            race["running"] = bool(timer_state.get("running"))
+            # start_ts None = resettet/nie gestartet → Button muss STARTEN, nicht
+            # fortsetzen (Resume greift serverseitig nur bei vorhandener Pause).
+            race["started"] = timer_state.get("start_ts") is not None
+            elapsed = munchlax.current_timer_elapsed()
+            # "(Pause)" nur wenn wirklich gestartet-und-pausiert; frischer/reset-
+            # Timer zeigt schlicht 00:00:00.
+            suffix = " (Pause)" if (race["started"] and not race["running"]) else ""
+            race_text = _format_hms(elapsed) + suffix
+        countdown = getattr(munchlax, "countdown_state", None) or {}
+        # Countdown nur, wenn tatsächlich einer gesetzt ist (duration > 0).
+        if countdown.get("duration_seconds", 0) > 0:
+            cd["present"] = True
+            cd["running"] = bool(countdown.get("running"))
+            cd["finished"] = bool(countdown.get("finished"))
+            remaining = munchlax.current_countdown_remaining()
+            lbl = countdown.get("label") or "Countdown"
+            if cd["finished"]:
+                state = " ✅"
+            elif not cd["running"]:
+                state = " (Pause)"
+            else:
+                state = ""
+            cd_text = f"{lbl} {_format_hms(remaining)}{state}"
+        return race_text, cd_text, race, cd
+
+    def _toggle_race(self, *_args) -> None:
+        """Host: Race-Timer starten/pausieren/fortsetzen.
+         - laeuft    → Pause-Request (Konsens, wie Timer-Tab)
+         - gestartet+pausiert → Resume-Request (Konsens)
+         - resettet/nie gestartet → Start (direkt, wie Timer-Tab "Start")."""
+        munchlax = self._connected_munchlax()
+        if munchlax is None:
+            return
+        if self._race["running"]:
+            coro = munchlax.send_timer_pause_request()
+        elif self._race["started"]:
+            coro = munchlax.send_timer_resume_request()
+        else:
+            coro = munchlax.send_timer_start()
+        self._send(munchlax, coro)
+
+    def _toggle_countdown(self, *_args) -> None:
+        """Host: Countdown pausieren/fortsetzen (direkt, kein Konsens)."""
+        munchlax = self._connected_munchlax()
+        if munchlax is None:
+            return
+        if self._cd["running"]:
+            coro = munchlax.send_countdown_pause()
+        else:
+            coro = munchlax.send_countdown_resume()
+        self._send(munchlax, coro)
+
+    def _connected_munchlax(self):
+        """munchlax zurueckgeben, wenn verbunden; sonst Snackbar + None
+        (kein silent Dropout, feedback_no_silent_async_dropouts)."""
+        munchlax = getattr(self._app, "munchlax", None)
+        if munchlax is None or not getattr(munchlax, "is_connected", False):
+            _snackbar("Server nicht verbunden — Timer-Aktion verworfen.")
+            return None
+        return munchlax
+
+    def _send(self, munchlax, coro) -> None:
+        """Timer-Coro auf den Munchlax-Loop legen (eigener Thread seit Phase 3).
+        Start vom Kivy-Loop via create_task; Fehler landen rate-limitiert im Log."""
+        async def _runner():
+            try:
+                await munchlax.submit_cross_thread(coro)
+                self._send_err_logged = False  # nach Erfolg wieder loggen
+            except Exception:
+                if not self._send_err_logged:
+                    self._send_err_logged = True
+                    logger.error(f"TimerChip-Send fehlgeschlagen: {traceback.format_exc()}")
+        try:
+            task = asyncio.create_task(_runner())
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+        except Exception:
+            coro.close()
+            logger.error(f"TimerChip-Task-Erzeugung fehlgeschlagen: {traceback.format_exc()}")
+
+    def on_touch_down(self, touch):
+        if self.opacity and self.collide_point(*touch.pos):
+            # Treffer auf einen der Host-Buttons: der Button verarbeitet den Touch
+            # selbst (Race bzw. Countdown), nur ein Treffer daneben navigiert.
+            for btn in (self.ctrl, self.cd_ctrl):
+                if not btn.disabled and btn.collide_point(*touch.pos):
+                    return super().on_touch_down(touch)
+            self._navigate()
+            return True
+        return super().on_touch_down(touch)
+
+    def _navigate(self) -> None:
+        """Zum NuzlockeMenu springen (sobald dieser Screen existiert, Phase E3)."""
+        try:
+            root = getattr(self._app, "root", None)
+            manager = getattr(root, "screen_manager", None)
+            if manager is not None and manager.has_screen("NuzlockeMenu"):
+                manager.current = "NuzlockeMenu"
+        except Exception:
+            logger.warning(f"TimerChip-Navigation fehlgeschlagen: {traceback.format_exc()}")
+
+
 class StatusBarMD(MDBoxLayout):
-    """Fußzeile mit Verbindungsstatus; timer_slot ist Platzhalter für Phase E."""
+    """Fußzeile mit Verbindungsstatus + Race-/Countdown-Timer (timer_slot)."""
 
     def __init__(self, **kwargs) -> None:
         super().__init__(
@@ -183,8 +427,10 @@ class StatusBarMD(MDBoxLayout):
 
         # Spacer schiebt den Timer-Slot nach rechts
         self.add_widget(Widget())
-        # Platzhalter, Phase E füllt ihn mit dem Race-Timer
+        # Race-/Countdown-Timer read-only; Klick → NuzlockeMenu (Phase E).
         self.timer_slot = MDBoxLayout(adaptive_width=True, spacing=dp(4))
+        self.timer_chip = TimerChip(app)
+        self.timer_slot.add_widget(self.timer_chip)
         self.add_widget(self.timer_slot)
 
         self._refresh_all(0)
@@ -194,6 +440,7 @@ class StatusBarMD(MDBoxLayout):
         for item in self._items:
             item.refresh()
         self._refresh_clients()
+        self.timer_chip.refresh()
 
     def _refresh_clients(self) -> None:
         """Verbundene Clients im Footer nachziehen (Dot + Name pro Client)."""

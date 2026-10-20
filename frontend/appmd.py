@@ -24,6 +24,7 @@ from frontend.widgets.encountermenumd import EncounterMenu
 from frontend.widgets.mainmenumd import MainMenu
 from frontend.widgets.md_common import show_snackbar
 from frontend.widgets.navrail import TrackerNavigationRail
+from frontend.widgets.nuzlockemenu_md import NuzlockeMenu
 from frontend.widgets.pokedexmenumd import PokedexMenu
 from frontend.widgets.pokemon_detailmd import PokemonDetailMD
 from frontend.widgets.sessionsmenumd import SessionMenu
@@ -80,14 +81,16 @@ class Screens(ScreenManager):
         self.add_widget(self.box_menu)
         self.bag_menu = BagMenu(configsave, pl, sp, bizhawk, citra, APP_VERSION)
         self.add_widget(self.bag_menu)
+        self.nuzlocke_menu = NuzlockeMenu(munchlax, configsave, nuz, rem, bh, bizhawk, rnd)
+        self.add_widget(self.nuzlocke_menu)
         # Detail-Drilldown (kein Rail-Ziel): aus Pokedex per Karten-Klick erreicht,
         # navigiert über return_screen zurück. Box/Main nutzen ihn später mit.
         self.pokemon_detail = PokemonDetailMD(obs_websocket)
         self.add_widget(self.pokemon_detail)
 
         # Sicherheits-Callbacks (Total-Wipe, Wipe-Dismissed, Slot-Kollision) wie
-        # in der klassischen UI verdrahten. Banner/Popup vorerst klassisch, bis
-        # wipe_banner in Phase E auf MDDialog umgestellt ist.
+        # in der klassischen UI verdrahten. Banner + Slot-Kollision sind seit
+        # Phase E MDDialog (wipe_banner_md / md_common.confirm_dialog).
         self._active_wipe_banner = None
         self._wire_safety_callbacks(munchlax, configsave, bh, bizhawk, rnd, pl, rem)
 
@@ -103,7 +106,7 @@ class Screens(ScreenManager):
             self.current_screen.pos = pos
 
     def _wire_safety_callbacks(self, munchlax, configsave, bh, bizhawk, rnd, pl, rem) -> None:
-        from frontend.widgets.wipe_banner import TotalWipeBanner
+        from frontend.widgets.wipe_banner_md import TotalWipeBannerMD
 
         def _open_wipe_banner(violation):
             # Reentrancy-Guard: solange ein Banner offen ist, keine weiteren
@@ -124,36 +127,37 @@ class Screens(ScreenManager):
                 return
 
             def _pick_other():
-                # NuzlockeMenu existiert in der MD-UI noch nicht (Phase E).
+                # NuzlockeMenu ist seit Phase E ein Rail-Ziel.
                 if self.has_screen("NuzlockeMenu"):
                     self.current = "NuzlockeMenu"
                 else:
-                    logger.info("_open_wipe_banner: NuzlockeMenu in MD-UI noch nicht verfügbar")
-                    show_snackbar("Ersatz-Pokemon wählen ist in der MD-Vorschau noch nicht verfügbar.",
+                    logger.info("_open_wipe_banner: NuzlockeMenu nicht verfügbar")
+                    show_snackbar("Ersatz-Pokemon wählen ist noch nicht verfügbar.",
                                   level='info', duration=6.0)
 
+            def _on_dismiss():
+                if self._active_wipe_banner is banner:
+                    self._active_wipe_banner = None
+                logger.info("_open_wipe_banner: Banner dismissed")
+
             try:
-                banner = TotalWipeBanner(munchlax, configsave, bh=bh,
-                                         on_pick_other=_pick_other,
-                                         bizhawk=bizhawk, rnd=rnd, pl=pl, rem=rem,
-                                         violation=violation)
+                banner = TotalWipeBannerMD(munchlax, configsave, bh=bh,
+                                           on_pick_other=_pick_other,
+                                           bizhawk=bizhawk, rnd=rnd, pl=pl, rem=rem,
+                                           violation=violation, on_dismiss=_on_dismiss)
             except Exception as err:
                 logger.error(f"_open_wipe_banner: Banner-Konstruktor fehlgeschlagen: {err}")
                 logger.error(traceback.format_exc())
                 return
-            banner._is_open = True
-
-            def _on_dismiss(*_):
-                banner._is_open = False
-                if self._active_wipe_banner is banner:
-                    self._active_wipe_banner = None
-                logger.info("_open_wipe_banner: Banner dismissed")
-            banner.bind(on_dismiss=_on_dismiss)
             self._active_wipe_banner = banner
             try:
                 banner.open()
                 logger.info("_open_wipe_banner: banner.open() erfolgreich aufgerufen")
             except Exception as err:
+                # Reentrancy-Guard wieder freigeben, sonst blockiert ein
+                # fehlgeschlagenes open() alle weiteren Wipe-Banner.
+                if self._active_wipe_banner is banner:
+                    self._active_wipe_banner = None
                 logger.error(f"_open_wipe_banner: banner.open() failed: {err}")
                 logger.error(traceback.format_exc())
 
@@ -175,32 +179,20 @@ class Screens(ScreenManager):
         # Slot-Kollision: Server hat declared_player_ids abgelehnt, weil ein
         # anderer Client denselben Netz-Slot belegt. Client ist danach bereits
         # disconnected; User muss remote_N-Flags anpassen und neu verbinden.
-        from kivy.uix.popup import Popup
-        from kivy.uix.boxlayout import BoxLayout
-        from kivy.uix.label import Label
-        from kivy.uix.button import Button
+        from frontend.widgets.md_common import confirm_dialog
 
         def _open_slot_collision_popup(requested, conflicts):
-            box = BoxLayout(orientation="vertical", padding="10dp", spacing="8dp")
             conflict_text = "\n".join(
                 f"- Slot(s) {slots}: bereits belegt von \"{name}\""
                 for name, slots in (conflicts or {}).items()
             ) or "(keine Details)"
-            box.add_widget(Label(
-                text=(
-                    f"Verbindung abgelehnt: Netz-Slot bereits vergeben.\n\n"
-                    f"Angefordert: {requested}\n{conflict_text}\n\n"
-                    f"In Settings unter \"Spieleranzahl\" die remote_N-Flags "
-                    f"anpassen, dann neu verbinden."
-                ),
-                halign="left", valign="top",
-            ))
-            popup = Popup(title="Slot-Kollision", content=box,
-                          size_hint=(0.7, 0.5), auto_dismiss=False)
-            close_btn = Button(text="OK", size_hint_y=None, height="40dp",
-                               on_press=lambda *_: popup.dismiss())
-            box.add_widget(close_btn)
-            popup.open()
+            confirm_dialog(
+                "Slot-Kollision",
+                f"Verbindung abgelehnt: Netz-Slot bereits vergeben.\n\n"
+                f"Angefordert: {requested}\n{conflict_text}\n\n"
+                f"In Settings unter \"Spieleranzahl\" die remote_N-Flags anpassen, "
+                f"dann neu verbinden.",
+                on_confirm=lambda: None, confirm_text="OK", cancel_text=None)
         munchlax.on_slot_collision_callback = (
             lambda req, conf: Clock.schedule_once(
                 lambda dt: _open_slot_collision_popup(req, conf), 0
@@ -244,6 +236,11 @@ class Screens(ScreenManager):
         except Exception as err:
             logger.error(f"SettingsMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
+        try:
+            self.nuzlocke_menu.load_from_session()
+        except Exception as err:
+            logger.error(f"NuzlockeMenu.load_from_session fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
 
 
 class MainWindow(MDBoxLayout):
@@ -262,6 +259,7 @@ class MainWindow(MDBoxLayout):
             {"icon": "clipboard-list-outline", "display_name": "Encounter", "screen_name": "EncounterMenu"},
             {"icon": "archive-outline", "display_name": "Box", "screen_name": "BoxMenu"},
             {"icon": "bag-personal-outline", "display_name": "Tasche", "screen_name": "BagMenu"},
+            {"icon": "skull-outline", "display_name": "Nuzlocke", "screen_name": "NuzlockeMenu"},
             {"icon": "cog", "display_name": "Settings", "screen_name": "SettingsMenu"},
         ]
         self.navrail = TrackerNavigationRail(

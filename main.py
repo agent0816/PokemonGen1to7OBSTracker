@@ -60,9 +60,21 @@ except Exception as err:
 os.environ['KIVY_LOG_MODE'] = 'PYTHON'
 from kivy.config import Config
 Config.read("backend/kivy_config/gui.ini")
-# UI-Umschalter fuer die KivyMD-Migration: TRACKER_UI=md startet die neue UI,
-# alles andere (Default) die klassische Kivy-UI.
-USE_MD_UI = os.environ.get('TRACKER_UI', '').strip().lower() == 'md'
+# UI-Umschalter fuer die KivyMD-Migration (Phase F). Precedence:
+#   1. Env TRACKER_UI ('md'/'classic') als Dev-/Notausgang-Override,
+#   2. sonst gespeicherte Praeferenz aus backend/config/app_state.yml,
+#   3. sonst Default 'md' (MD ist seit Phase F der Standard).
+# app_state hat KEINEN Kivy-Import und ist daher hier (vor dem FEApp-Import und
+# vor init_config_folder) sicher ladbar; fehlt die Datei noch, liefert es 'md'.
+from backend import app_state as _app_state
+_env_ui = os.environ.get('TRACKER_UI', '').strip().lower()
+if _env_ui in (_app_state.UI_MD, _app_state.UI_CLASSIC):
+    _ui_mode = _env_ui
+    _ui_source = 'env TRACKER_UI'
+else:
+    _ui_mode = _app_state.get_ui_preference()
+    _ui_source = 'app_state.yml'
+USE_MD_UI = _ui_mode == _app_state.UI_MD
 if USE_MD_UI:
     # Nur fuer die MD-UI: skalierbares Fenster mit Mindestgroesse, Escape
     # beendet nicht. gui.ini bleibt unveraendert, weil die klassische UI auf
@@ -103,7 +115,7 @@ async def _run_app(app):
 
 def main():
     app = FEApp.TrackerAppMD() if USE_MD_UI else FEApp.TrackerApp()
-    logger.info(f"Starte {'KivyMD' if USE_MD_UI else 'klassische'} UI")
+    logger.info(f"Starte {'KivyMD' if USE_MD_UI else 'klassische'} UI (Quelle: {_ui_source})")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.set_exception_handler(_asyncio_exception_handler)

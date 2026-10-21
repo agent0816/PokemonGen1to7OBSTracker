@@ -40,6 +40,15 @@ def init_config_folder():
             'console_level': 'INFO',
             'module_levels': {},
         })
+    # App-weiter, nicht session-gebundener Zustand (UI-Modus + Onboarding-Marker).
+    # Muss wie log_settings.yml von der Aufraeum-Schleife unten ausgenommen werden,
+    # sonst wird die Datei bei jedem Start geloescht. Siehe backend/app_state.py.
+    app_state = Path('backend/config/app_state.yml')
+    if not app_state.exists():
+        save_config(app_state, {
+            'ui': 'md',
+            'onboarding_done': False,
+        })
     files = []
     sessions = []
     default_session = Path('backend/config/default')
@@ -49,7 +58,7 @@ def init_config_folder():
     if not default_session.exists():
         default_session.mkdir(parents=True, exist_ok=True)
     for entry in config.iterdir():
-        if entry.is_file() and entry not in (session_list, log_settings):
+        if entry.is_file() and entry not in (session_list, log_settings, app_state):
             files.append(entry)
         elif not entry.is_file():
             sessions.append(entry)

@@ -147,7 +147,12 @@ class Update(Screen):
         pre_level = "a" if self.channel == "alpha" else None
         return self.client.check_for_updates(pre=pre_level)
 
-    def check_for_update(self):
+    def _resolve_update_check(self):
+        """Blockierender Update-Check inkl. Cache-Reset-Retry.
+
+        Reiner Worker ohne UI-Seiteneffekt — läuft sync (Klassik) oder im
+        Executor (KivyMD-Splash, Phase F3). Rückgabe: neues Archiv-Objekt oder
+        ``None`` (kein Update ODER Fehler → beide führen zu SessionMenu)."""
         try:
             self._bootstrap_trust_anchor()
             self.target_dir.mkdir(parents=True, exist_ok=True)
@@ -164,18 +169,43 @@ class Update(Screen):
                 logger.error(
                     f"Update-Check nach Cache-Reset weiterhin fehlgeschlagen: {retry_err}\n{traceback.format_exc()}"
                 )
-                self.parent.current = "SessionMenu"
-                return
+                return None
         except Exception as err:
             logger.error(f"Update-Check fehlgeschlagen: {err}\n{traceback.format_exc()}")
-            self.parent.current = "SessionMenu"
-            return
+            return None
 
         logger.info(f"new_archive={new_archive}")
+        return new_archive
+
+    def _apply_update_result(self, new_archive, only_if_current=None):
+        """UI-Reaktion auf das Check-Ergebnis (immer auf dem Main-Thread).
+
+        `only_if_current`: navigiert nur dann weiter, wenn der ScreenManager
+        noch auf diesem Screen steht (MD-Splash-Boot: "Splash"). Verhindert,
+        dass ein zwischenzeitlicher User-Wechsel überschrieben wird. Das
+        Update-Popup wird dagegen immer gezeigt (wichtiger als die Nav)."""
         if new_archive:
             self.show_update_popup(new_archive)
-        else:
-            self.parent.current = "SessionMenu"
+            return
+        # self.manager (vom ScreenManager gesetzt) statt self.parent: parent
+        # ist nur beim gerade angezeigten Screen gesetzt. Im MD-Splash-Boot
+        # ist nicht der Update-Screen current, sondern der Splash.
+        if only_if_current is not None and self.manager.current != only_if_current:
+            return
+        self.manager.current = "SessionMenu"
+
+    def check_for_update(self):
+        """Synchroner Update-Check (klassische UI)."""
+        self._apply_update_result(self._resolve_update_check())
+
+    async def check_for_update_async(self):
+        """Nicht-blockierender Update-Check (KivyMD-Splash-Boot, Phase F3).
+
+        Die tufup-Netz-I/O läuft im Executor, die UI-Reaktion danach wieder
+        auf dem Main-Thread (run_in_executor kehrt dorthin zurück)."""
+        loop = asyncio.get_running_loop()
+        new_archive = await loop.run_in_executor(None, self._resolve_update_check)
+        self._apply_update_result(new_archive, only_if_current="Splash")
 
     def show_update_popup(self, new_archive):
         box = BoxLayout(orientation='vertical')
@@ -229,7 +259,7 @@ class Update(Screen):
 
     def cancel_update(self, instance):
         self.popup.dismiss()
-        self.parent.current = "MainMenu"
+        self.manager.current = "MainMenu"
 
     def _progress_hook(self, bytes_downloaded, bytes_expected):
         # Wird aus dem Download-Thread aufgerufen — UI-Update auf Main-Thread schieben.

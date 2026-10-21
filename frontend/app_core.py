@@ -57,24 +57,76 @@ class TrackerCoreMixin:
     # --- Start --------------------------------------------------------------
 
     def init_core(self) -> None:
-        """Aus `build()` aufrufen: IPs, Configs, Backend in fester Reihenfolge."""
-        self._load_external_ips()
+        """Aus `build()` aufrufen: Configs + Backend in fester Reihenfolge.
+
+        Die öffentlichen IPs werden hier NICHT mehr geladen (ipinfo-HTTP +
+        PowerShell blockieren den Main-Thread ~1–2s). Sie starten mit leeren
+        Defaults; die App lädt sie danach nach:
+          - klassische UI blockierend via `load_external_ips_sync()` (build),
+          - KivyMD-UI nicht-blockierend via `load_external_ips_async()`
+            während der Splash-Boot-Sequenz (Phase F3).
+        """
+        self.externalIPv4 = ""
+        self.externalIPv6 = ""
         self._load_session_configs()
         self._start_backend()
 
-    def _load_external_ips(self) -> None:
+    def _fetch_external_ips(self) -> tuple[str, str]:
+        """Blockierende Ermittlung der öffentlichen IPv4/IPv6. Reiner Worker
+        ohne Seiteneffekt auf `self` — läuft sync (Klassik) oder im Executor
+        (MD). Fehler → leerer String, damit der Boot nicht scheitert."""
         try:
-            self.externalIPv4 = requests.get("https://ipinfo.io/ip", timeout=1).text
+            v4 = requests.get("https://ipinfo.io/ip", timeout=1).text
         except requests.exceptions.Timeout:
-            self.externalIPv4 = ""
-        command = "(Get-NetIPAddress -AddressFamily IPv6 | Where-Object -Property PrefixOrigin -eq 'Dhcp').IPAddress"
-        process = subprocess.Popen(
-            ["powershell.exe", command],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        stdout, stderr = process.communicate()
-        self.externalIPv6 = stdout.decode()
+            v4 = ""
+        except Exception as err:
+            logger.warning(f"Öffentliche IPv4 konnte nicht ermittelt werden: {err}")
+            v4 = ""
+        v6 = ""
+        process = None
+        try:
+            command = "(Get-NetIPAddress -AddressFamily IPv6 | Where-Object -Property PrefixOrigin -eq 'Dhcp').IPAddress"
+            # CREATE_NO_WINDOW: kein kurz aufblitzendes Konsolenfenster.
+            # timeout: Get-NetIPAddress kann bei Netzproblemen hängen — ohne
+            # Timeout bliebe beim App-Schließen während des Boots ein nicht-
+            # daemon Executor-Thread hängen (Interpreter joint ihn beim Exit).
+            process = subprocess.Popen(
+                ["powershell.exe", command],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            stdout, _stderr = process.communicate(timeout=5)
+            v6 = stdout.decode()
+        except subprocess.TimeoutExpired:
+            logger.warning("PowerShell-IPv6-Abfrage lief in den Timeout — abgebrochen.")
+            try:
+                process.kill()
+                process.communicate()
+            except Exception:
+                pass
+            v6 = ""
+        except Exception as err:
+            logger.warning(f"Öffentliche IPv6 konnte nicht ermittelt werden: {err}")
+            v6 = ""
+        return v4, v6
+
+    def load_external_ips_sync(self) -> None:
+        """Blockierend laden (klassische UI: muss vor Screen-Konstruktion stehen)."""
+        self.externalIPv4, self.externalIPv6 = self._fetch_external_ips()
+
+    async def load_external_ips_async(self) -> tuple[str, str]:
+        """Nicht-blockierend laden (KivyMD-Boot): Worker im Executor, Ergebnis
+        auf die App schreiben und zurückgeben. Das Nachziehen des Settings-
+        Screens erledigt der Aufrufer (hält den Mixin UI-frei)."""
+        loop = asyncio.get_running_loop()
+        try:
+            v4, v6 = await loop.run_in_executor(None, self._fetch_external_ips)
+        except Exception as err:
+            logger.error(f"load_external_ips_async fehlgeschlagen: {err}")
+            v4, v6 = "", ""
+        self.externalIPv4, self.externalIPv6 = v4, v6
+        return v4, v6
 
     def _load_session_configs(self) -> None:
         self.configsave = MutableString("backend/config/default/")

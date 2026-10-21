@@ -8,6 +8,7 @@ Backend-Start/-Shutdown kommt komplett aus ``TrackerCoreMixin`` — hier lebt
 nur UI. Screens werden schrittweise migriert.
 """
 
+import asyncio
 import traceback
 
 from kivy.clock import Clock
@@ -29,6 +30,7 @@ from frontend.widgets.pokedexmenumd import PokedexMenu
 from frontend.widgets.pokemon_detailmd import PokemonDetailMD
 from frontend.widgets.sessionsmenumd import SessionMenu
 from frontend.widgets.settingsmenumd import SettingsMenu
+from frontend.widgets.splashmd import SplashScreen
 from frontend.widgets.statusbarmd import StatusBarMD
 from frontend.widgets.updatemenu import Update
 from version import VERSION
@@ -58,8 +60,17 @@ class Screens(ScreenManager):
         # den aktiven Screen an die Manager-Position koppeln.
         self.bind(pos=self._align_active_screen)
 
-        update_menu = Update(APP_NAME, APP_VERSION)
-        self.add_widget(update_menu)
+        # Ladescreen (Phase F3): sofort sichtbar, während die Boot-Sequenz die
+        # blockierenden Schritte (öffentliche IPs, Update-Check) im Executor
+        # abarbeitet. Zuerst hinzugefügt, damit er der Start-Screen sein kann.
+        self.splash = SplashScreen()
+        self.add_widget(self.splash)
+
+        self.update_menu = Update(APP_NAME, APP_VERSION)
+        self.add_widget(self.update_menu)
+        # Strong-Refs auf laufende Boot-Tasks (sonst GC-Risiko, siehe
+        # feedback_async_task_strong_ref).
+        self._boot_tasks: set = set()
 
         self.add_widget(SessionMenu(
             session_list, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, APP_VERSION,
@@ -94,10 +105,55 @@ class Screens(ScreenManager):
         self._active_wipe_banner = None
         self._wire_safety_callbacks(munchlax, configsave, bh, bizhawk, rnd, pl, rem)
 
-        # Start auf dem Update-Screen; check_for_update() navigiert danach selbst
-        # weiter (SessionMenu bei keinem/fehlgeschlagenem Update, MainMenu bei Abbruch).
-        self.current = "Update"
-        update_menu.check_for_update()
+        # Start auf dem Ladescreen; die Boot-Sequenz lädt IPs + Update-Check
+        # nicht-blockierend und navigiert danach weiter (Update-Popup bzw.
+        # SessionMenu/MainMenu). Erst nach erstem Frame starten (Clock,0), damit
+        # der Splash garantiert sichtbar ist, bevor die Arbeit losläuft.
+        self.current = "Splash"
+        Clock.schedule_once(lambda dt: self._start_boot_sequence(), 0)
+
+    def _start_boot_sequence(self) -> None:
+        task = asyncio.create_task(self._boot_sequence())
+        self._boot_tasks.add(task)
+        task.add_done_callback(self._on_boot_task_done)
+
+    def _on_boot_task_done(self, task) -> None:
+        self._boot_tasks.discard(task)
+        if task.cancelled():
+            return
+        err = task.exception()
+        if err is not None:
+            logger.error(f"Boot-Sequenz-Task mit Fehler beendet: {err}", exc_info=err)
+
+    async def _boot_sequence(self) -> None:
+        """Nicht-blockierender Start: öffentliche IPs + Update-Check, danach
+        Navigation weg vom Splash."""
+        app = MDApp.get_running_app()
+        try:
+            self.splash.set_status("Lade Netzwerk-Infos …")
+            if app is not None:
+                v4, v6 = await app.load_external_ips_async()
+                # Settings-Screen hier (im UI-Layer) nachziehen, der Mixin
+                # bleibt UI-frei (Review-Hinweis F3).
+                try:
+                    self.settings_menu.set_public_ips(v4, v6)
+                except Exception as err:
+                    logger.error(f"set_public_ips fehlgeschlagen: {err}")
+                    logger.error(traceback.format_exc())
+        except Exception as err:
+            logger.error(f"IP-Laden im Boot fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
+        try:
+            self.splash.set_status("Suche nach Updates …")
+            await self.update_menu.check_for_update_async()
+        except Exception as err:
+            logger.error(f"Update-Check im Boot fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
+            # Notfall-Navigation, nur wenn der User nicht schon weg ist (Rail
+            # ist während Splash gesperrt, aber doppelte/überschreibende Nav
+            # trotzdem vermeiden).
+            if self.current == "Splash":
+                self.current = "SessionMenu"
 
     def _align_active_screen(self, _manager, pos) -> None:
         # Aktiven Screen an die (neue) Manager-Position heften. FloatLayout lässt
@@ -282,6 +338,11 @@ class MainWindow(MDBoxLayout):
         Verbindung/BizHawk läuft über den sicheren Pfad von MainMenu
         (Save-Dialog → disconnect_all → save → Nav), statt direkt zu springen.
         Gibt False zurück (Guard übernimmt die Navigation selbst)."""
+        # Während des Ladescreens keine Rail-Navigation zulassen — die
+        # Boot-Sequenz navigiert selbst weg, und ein User-Klick würde mit
+        # ihr kollidieren (Nav-Race, Review F3).
+        if current == "Splash":
+            return False
         if target == "SessionMenu" and current not in ("SessionMenu", "Update"):
             main_menu = getattr(self.screen_manager, "main_menu", None)
             if (main_menu is not None and hasattr(main_menu, "_needs_safe_switch")

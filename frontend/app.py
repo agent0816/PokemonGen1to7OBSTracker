@@ -180,6 +180,10 @@ class TrackerApp(TrackerCoreMixin, App):
         # Backend-Start (Configs, Threads, Server) liegt in TrackerCoreMixin,
         # damit die KivyMD-App exakt denselben Ablauf nutzt.
         self.init_core()
+        # Klassische UI: öffentliche IPs blockierend laden, bevor die Screens
+        # gebaut werden (sie bekommen die Werte als Konstruktor-Argumente).
+        # Die KivyMD-UI lädt sie stattdessen asynchron während des Splash-Boots.
+        self.load_external_ips_sync()
 
         crash_log = 'logs/crash_report.log'
         from frontend.widgets.mainmenu import CrashReportPopup, should_show_crash_popup

@@ -126,6 +126,10 @@ class SettingsMenu(MDScreen):
         self._game_fields: dict[str, MDTextField] = {}
         self._obs_game_fields: dict[str, MDTextField] = {}
         self._player_switches: dict[str, MDSwitch] = {}
+        # Re-Render-Closures der öffentlichen-IP-Zeilen. Die IPs werden in der
+        # KivyMD-UI erst asynchron nach dem Start geladen (Splash-Boot), daher
+        # müssen die schon gebauten Zeilen nachträglich aktualisierbar sein.
+        self._public_ip_refreshers: list = []
 
         _app = MDApp.get_running_app()
         _bh_thread = getattr(_app, 'bizhawk_thread', None)
@@ -269,8 +273,8 @@ class SettingsMenu(MDScreen):
         self._port_server = make_textfield("Port", is_port=True,
                                            on_validate=lambda: self._save("remote"))
         card.add_widget(labeled_row("Port", self._port_server))
-        card.add_widget(self._public_ip_row("Deine öffentliche IPv4", self.externalIPv4))
-        card.add_widget(self._public_ip_row("Deine öffentliche IPv6", self.externalIPv6))
+        card.add_widget(self._public_ip_row("Deine öffentliche IPv4", "externalIPv4"))
+        card.add_widget(self._public_ip_row("Deine öffentliche IPv6", "externalIPv6"))
         pane.add_widget(card)
 
         # Overlay
@@ -308,33 +312,59 @@ class SettingsMenu(MDScreen):
         row.add_widget(MDIconButton(icon="eye-outline", on_release=_toggle))
         return row
 
-    def _public_ip_row(self, label_text: str, value: str) -> MDBoxLayout:
-        """Nur-Lese-Anzeige einer maskierten öffentlichen IP mit Aufdecken + Kopieren."""
+    def _public_ip_row(self, label_text: str, attr_name: str) -> MDBoxLayout:
+        """Nur-Lese-Anzeige einer maskierten öffentlichen IP mit Aufdecken + Kopieren.
+
+        Liest den Wert live über `attr_name` (z.B. "externalIPv4") statt ihn
+        beim Bauen einzufrieren — die IPs treffen in der MD-UI erst nach dem
+        Start asynchron ein und werden über `set_public_ips` nachgezogen.
+        """
         row = MDBoxLayout(orientation="horizontal", size_hint_y=None,
                           adaptive_height=True, spacing=dp(8))
         row.add_widget(MDLabel(text=label_text, size_hint_x=None, width=LABEL_W,
                                role="small", valign="center"))
-        shown = MDLabel(text=sv.masked_placeholder(value), size_hint_x=1,
+
+        def _current() -> str:
+            return getattr(self, attr_name, "") or ""
+
+        shown = MDLabel(text=sv.masked_placeholder(_current()), size_hint_x=1,
                         role="small", valign="center")
         state = {"revealed": False}
 
+        def _render(*_args):
+            val = _current()
+            shown.text = (val or "—") if state["revealed"] else sv.masked_placeholder(val)
+
         def _toggle(_btn):
             state["revealed"] = not state["revealed"]
-            shown.text = (value or "—") if state["revealed"] else sv.masked_placeholder(value)
+            _render()
 
         def _copy(_btn):
-            if value:
+            val = _current()
+            if val:
                 # Clipboard bekommt die echte IP (zum Einfügen), die Snackbar aber
                 # nur das, was gerade sichtbar ist — verdeckt bei zugedeckter IP,
                 # Klartext nur wenn aufgedeckt (Stream-Leak-Schutz, Feedback 2026-10-19).
-                Clipboard.copy(value)
-                shown_val = value if state["revealed"] else sv.masked_placeholder(value)
+                Clipboard.copy(val)
+                shown_val = val if state["revealed"] else sv.masked_placeholder(val)
                 show_snackbar(f"Kopiert: {shown_val}", level='success')
 
         row.add_widget(shown)
         row.add_widget(MDIconButton(icon="eye-outline", on_release=_toggle))
         row.add_widget(MDIconButton(icon="content-copy", on_release=_copy))
+        self._public_ip_refreshers.append(_render)
         return row
+
+    def set_public_ips(self, ipv4: str, ipv6: str) -> None:
+        """Asynchron nachgeladene öffentliche IPs übernehmen + Anzeige auffrischen.
+        Von `appmd.Screens._boot_sequence` nach `load_external_ips_async` aufgerufen."""
+        self.externalIPv4 = ipv4 or ""
+        self.externalIPv6 = ipv6 or ""
+        for refresh in self._public_ip_refreshers:
+            try:
+                refresh()
+            except Exception as err:
+                logger.error(f"IP-Zeile konnte nicht aktualisiert werden: {err}")
 
     def _on_overlay_option(self) -> None:
         if self._suspend_save:

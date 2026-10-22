@@ -221,7 +221,7 @@ class CrashReportPopup(Popup):
         # oder Prozess-Kill waehrend offenem Popup den Re-Popup-Bug nicht
         # triggert. Zusaetzlich entkoppelt es den Bundle-Worker vom
         # Dismiss-Timing (os.replace waehrend zipfile liest = Windows-Fehler).
-        self._archived_path = self._archive_log(crash_log_path)
+        self._archived_path = CrashReportPopup._archive_log(crash_log_path)
         display_path = self._archived_path or os.path.abspath(crash_log_path)
 
         # Session-Pfad entscheidet, ob der Bundle-Button nutzbar ist.
@@ -253,8 +253,14 @@ class CrashReportPopup(Popup):
     def _on_close(self, _instance):
         self.dismiss()
 
-    def _archive_log(self, path: str) -> str | None:
+    @staticmethod
+    def _archive_log(path: str) -> str | None:
         """Verschiebt crash_report.log → crash_report_<ts>_<hex>.log.
+
+        ``@staticmethod``, damit die MD-Variante (`crash_popup_md.py`) die
+        exakt gleiche, 8-Runden-reviewte Archivierung ohne Popup-Instanz
+        wiederverwenden kann. Nutzt nur ``path`` (und die statische
+        ``_prune_old_archives``), kein Instanz-State.
 
         Returns den archivierten Pfad oder None, wenn Datei bereits weg war
         oder weder Rename noch Copy funktioniert haben. WICHTIG: Truncate
@@ -305,7 +311,7 @@ class CrashReportPopup(Popup):
                 # auch wenn Prune oder Marker-Loeschen scheitert.
                 try:
                     _remove_ack_marker(abs_path)
-                    self._prune_old_archives(base_dir, exclude=archived)
+                    CrashReportPopup._prune_old_archives(base_dir, exclude=archived)
                 except Exception as post_err:
                     logger.warning(f"Post-Rename-Nachbereitung fehlgeschlagen: {post_err}")
                     logger.warning(traceback.format_exc())
@@ -342,7 +348,7 @@ class CrashReportPopup(Popup):
                 )
                 # Kein Marker: unklarer Zustand → Popup soll beim naechsten
                 # Start erneut erscheinen und sauber archivieren.
-                self._prune_old_archives(base_dir, exclude=archived)
+                CrashReportPopup._prune_old_archives(base_dir, exclude=archived)
                 return archived
 
             # Flag + captured_stat unterscheiden drei Faelle:
@@ -367,7 +373,7 @@ class CrashReportPopup(Popup):
                         # Original hat Zuwachs → KEIN Marker. Popup
                         # erscheint beim naechsten Start erneut und
                         # archiviert vollstaendig.
-                        self._prune_old_archives(base_dir, exclude=archived)
+                        CrashReportPopup._prune_old_archives(base_dir, exclude=archived)
                         return archived
                     size_check_passed = True
                     captured_mtime_ns = st.st_mtime_ns
@@ -394,7 +400,7 @@ class CrashReportPopup(Popup):
                         # Sonst: Datei groesser → neuer Content, kein Marker.
                     except OSError as fb_err:
                         logger.warning(f"Fallback-Stat fehlgeschlagen: {fb_err}")
-            self._prune_old_archives(base_dir, exclude=archived)
+            CrashReportPopup._prune_old_archives(base_dir, exclude=archived)
             return archived
         except Exception as err:
             logger.error(f"_archive_log unerwarteter Fehler: {err}")

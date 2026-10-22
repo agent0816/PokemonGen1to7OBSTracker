@@ -427,13 +427,13 @@ class TrackerAppMD(TrackerCoreMixin, MDApp):
             self.init_core()
             logger.info("KivyMD-UI gestartet (TRACKER_UI=md)")
 
-            # Crash-Popup + Sprite-Setup vorerst als klassische Kivy-Popups
-            # (laufen auch unter MDApp); MD-Varianten folgen mit der Migration.
+            # Crash-Popup als MD-Variante (crash_popup_md); das Sprite-Setup
+            # nutzt ebenfalls die MD-Variante (SpriteSetupPopupMD, s. unten).
             crash_log = 'logs/crash_report.log'
-            from frontend.widgets.mainmenu import CrashReportPopup, should_show_crash_popup
+            from frontend.widgets.crash_popup_md import CrashReportPopupMD, should_show_crash_popup
             if should_show_crash_popup(crash_log):
                 Clock.schedule_once(
-                    lambda dt: CrashReportPopup(
+                    lambda dt: CrashReportPopupMD(
                         crash_log,
                         configsave=self.configsave,
                         pl=self.pl,

@@ -17,22 +17,57 @@ class Citra:
     def __init__(self, address="127.0.0.1", port=CITRA_PORT):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.address = address
+        # Ausgehandelte RPC-Protokoll-Version. Azahar 2126.2 hat die Wire-
+        # Version von 1 auf 2 angehoben und prueft im Server strikt auf
+        # Gleichheit; Server <2126.2 akzeptieren nur Version 1. Der Default
+        # bleibt 1; negotiate_version() ermittelt die passende Version.
+        self.request_version = CURRENT_REQUEST_VERSION
 
     def is_connected(self):
         return self.socket is not None
 
     def _generate_header(self, request_type, data_size):
         request_id = random.getrandbits(32)
-        return (struct.pack("IIII", CURRENT_REQUEST_VERSION, request_id, request_type, data_size), request_id)
+        return (struct.pack("IIII", self.request_version, request_id, request_type, data_size), request_id)
 
     def _read_and_validate_header(self, raw_reply, expected_id, expected_type):
         reply_version, reply_id, reply_type, reply_data_size = struct.unpack("IIII", raw_reply[:4*4])
-        if (CURRENT_REQUEST_VERSION == reply_version and
+        if (self.request_version == reply_version and
             expected_id == reply_id and
             expected_type == reply_type and
             reply_data_size == len(raw_reply[4*4:])):
             return raw_reply[4*4:]
         return None
+
+    def negotiate_version(self) -> bool:
+        """Probt die RPC-Protokoll-Version des Azahar/Citra-Servers.
+
+        Azahar 2126.2 hat die Wire-Version von 1 auf 2 angehoben; der Server
+        verwirft Requests mit abweichender Version stillschweigend. Server
+        <2126.2 akzeptieren umgekehrt nur Version 1. Wir senden je Kandidat-
+        Version einen billigen 1-Byte-Read und uebernehmen die erste Version,
+        die gueltig antwortet.
+
+        Waehrend der Probe setzen wir ein kurzes Socket-Timeout, damit ein
+        stiller (falsche Version) oder gefilterter Server nicht blockiert;
+        danach wird das vorherige Timeout wiederhergestellt.
+
+        Rueckgabe: True, wenn eine Version antwortet (self.request_version ist
+        dann gesetzt), sonst False (RPC-Server aus oder nicht erreichbar).
+        """
+        prev_timeout = self.socket.gettimeout()
+        self.socket.settimeout(1.0)
+        try:
+            for version in (1, 2):
+                self.request_version = version
+                try:
+                    if self.read_memory(0, 1) is not None:
+                        return True
+                except (socket.timeout, ConnectionResetError, OSError):
+                    continue
+            return False
+        finally:
+            self.socket.settimeout(prev_timeout)
 
     def read_memory(self, read_address, read_size):
         """

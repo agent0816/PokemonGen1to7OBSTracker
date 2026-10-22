@@ -73,10 +73,27 @@ class CitraHandler:
     
     def check_connection(self):
         try:
-            self.citra_instance.read_memory(0,1)
-            self.is_connected = True
+            if self.citra_instance.negotiate_version():
+                self.is_connected = True
+                self.logger.info(
+                    f"Citra/Azahar verbunden (RPC-Protokoll-Version "
+                    f"{self.citra_instance.request_version})."
+                )
+            else:
+                self.is_connected = False
+                self.logger.warning(
+                    "Citra/Azahar RPC-Server antwortet nicht. Bei Azahar "
+                    "2121.2+ ist der RPC-Server standardmaessig deaktiviert: "
+                    "Emulation -> Konfiguration -> Debug -> 'Enable RPC "
+                    "server' aktivieren und Azahar neu starten."
+                )
         except ConnectionResetError:
             self.is_connected = False
+        except Exception as err:
+            self.is_connected = False
+            self.logger.warning(
+                f"Citra check_connection fehlgeschlagen: {type(err)},{err}"
+            )
 
     async def handle_citra(self):
         while self.started and self.is_connected:
@@ -136,17 +153,33 @@ class CitraHandler:
         result = b''
         # Teamreihenfolge auslesen:
         team_pointer = self.citra_instance.read_memory(self.pointer["team_reihenfolge"], 25)
+        # Leere RPC-Antwort (None) als sauberen Disconnect behandeln, statt beim
+        # Subscript in einen NoneType-TypeError zu laufen. Ursachen: Emu-Crash
+        # (Azahar 2126.0/.1 Render-Race) oder nicht ausgehandelte RPC-Version.
+        if team_pointer is None:
+            raise ConnectionResetError(
+                "Keine RPC-Antwort von Azahar beim Team-Read (team_reihenfolge)."
+            )
         self.number_of_team_pokemon = int.from_bytes(team_pointer[24:],'little')
         for i in range(6):
             read_address = int.from_bytes(team_pointer[i*4:i*4 + 4], 'little') + 0x40
             pokemon = self.citra_instance.read_memory(read_address, SLOT_DATA_SIZE)
             battle_stats = self.citra_instance.read_memory(read_address + SLOT_DATA_SIZE + STAT_DATA_OFFSET, STAT_DATA_SIZE)
+            if pokemon is None or battle_stats is None:
+                raise ConnectionResetError(
+                    "Unvollstaendige RPC-Antwort von Azahar (Team-Slot)."
+                )
             result += pokemon + battle_stats
         return result
     
     def read_in_battle_stats(self):
         result = {}
-        battle_kind = int.from_bytes(self.citra_instance.read_memory(self.pointer["battle_kind"], 2), 'little')
+        battle_kind_bytes = self.citra_instance.read_memory(self.pointer["battle_kind"], 2)
+        if battle_kind_bytes is None:
+            raise ConnectionResetError(
+                "Keine RPC-Antwort von Azahar beim Lesen von battle_kind."
+            )
+        battle_kind = int.from_bytes(battle_kind_bytes, 'little')
         if battle_kind == self.pointer["trainer_value"]:
             read_address = self.pointer["kampf_trainer"]
         elif battle_kind == self.pointer["wild_value"]:
@@ -161,6 +194,8 @@ class CitraHandler:
             for index in range(self.number_of_team_pokemon):
                 stats_dict = {}
                 stat_bytes = self.citra_instance.read_memory(read_address + index * offset, 20)
+                if stat_bytes is None:
+                    continue
                 stats_dict['lvl'] = int.from_bytes(stat_bytes[16:17], 'little')
                 stats_dict['max_hp'] = int.from_bytes(stat_bytes[6:8], 'little')
                 stats_dict['cur_hp'] = int.from_bytes(stat_bytes[8:10], 'little')
@@ -177,7 +212,11 @@ class CitraHandler:
         result = b'\x00'
         read_address = self.pointer["badges"]
         if read_address:
-            result = self.citra_instance.read_memory(read_address, 1)
+            badge_bytes = self.citra_instance.read_memory(read_address, 1)
+            # Bei None (keine RPC-Antwort) Default b'\x00' behalten, damit das
+            # Concat in read_team-Resultat nicht am NoneType scheitert.
+            if badge_bytes is not None:
+                result = badge_bytes
         return result
 
     async def start(self, munchlax, button):

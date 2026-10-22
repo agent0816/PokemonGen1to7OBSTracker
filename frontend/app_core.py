@@ -23,16 +23,12 @@ import yaml
 from kivy.clock import Clock
 from kivy.core.window import Window
 
-from backend.arceus_thread import ArceusThread
-from backend.bizhawk_thread import BizhawkThread
-from backend.classes.arceus import Arceus
-from backend.classes.bizhawk import Bizhawk
-from backend.classes.citrahandler import CitraHandler
-from backend.classes.munchlax import Munchlax
-from backend.classes.obs import OBS
-from backend.classes.overlay_server import OverlayServer
 from backend.logging_setup import get_logger
-from backend.munchlax_thread import MunchlaxThread
+
+# Die Backend-Klassen (Arceus/Munchlax/Bizhawk/OBS/…) werden bewusst NICHT auf
+# Modulebene importiert: ihr Import kostet ~1,2s und würde beim Start vor dem
+# ersten Fenster-Frame laufen (schwarzer Screen). Sie werden lokal in
+# `_start_backend` importiert, das die KivyMD-App erst hinter dem Splash aufruft.
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
@@ -163,6 +159,18 @@ class TrackerCoreMixin:
             self.session_list = yaml.safe_load(file)
 
     def _start_backend(self) -> None:
+        # Lokale Imports (siehe Modul-Kopf): Backend-Klassen erst hier laden,
+        # damit ihr Import nicht den Start vor dem ersten Frame blockiert.
+        from backend.arceus_thread import ArceusThread
+        from backend.bizhawk_thread import BizhawkThread
+        from backend.classes.arceus import Arceus
+        from backend.classes.bizhawk import Bizhawk
+        from backend.classes.citrahandler import CitraHandler
+        from backend.classes.munchlax import Munchlax
+        from backend.classes.obs import OBS
+        from backend.classes.overlay_server import OverlayServer
+        from backend.munchlax_thread import MunchlaxThread
+
         self.arceus = Arceus("", self.rem["client_port"], self.rem)
         # Isolierter Thread + eigener asyncio-Loop fuer den Arceus-Server.
         # Alle Arceus-Coros (start, stop, start_helper_listener,
@@ -309,6 +317,19 @@ class TrackerCoreMixin:
     # --- Shutdown -----------------------------------------------------------
 
     def exit_check(self, *args, **kwargs):
+        # Das Backend entsteht erst in init_core() (MD: in _populate, nach dem
+        # ersten Frame). Schließt der User das Fenster noch im Splash — oder
+        # schlägt _populate fehl — sind configsave/bizhawk_thread/… noch nicht
+        # gesetzt. Dann gibt es nichts zu speichern oder zu stoppen: Schließen
+        # sauber durchlassen (False = kein Veto), statt mit AttributeError zu
+        # crashen.
+        if getattr(self, "bizhawk_thread", None) is None:
+            return False
+        # Noch laufende Boot-Tasks (z.B. der Update-Check) abbrechen, damit der
+        # Loop nicht auf sie wartet. Der Executor-Thread selbst wird dadurch
+        # nicht beendet — dafür sorgt der Socket-Timeout im Update-Worker.
+        for task in list(getattr(self, "_boot_tasks", ())):
+            task.cancel()
         self.save_config(f"{self.configsave}bh_config.yml", self.bh)
         self.save_config(f"{self.configsave}obs_config.yml", self.obs)
         self.save_config(f"{self.configsave}sprites.yml", self.sp)

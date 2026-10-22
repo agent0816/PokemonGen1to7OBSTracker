@@ -17,23 +17,20 @@ from kivy.uix.screenmanager import FadeTransition, ScreenManager
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
 
+from backend import app_state
 from backend.logging_setup import get_logger
 from frontend.app_core import TrackerCoreMixin
-from frontend.widgets.bagmenumd import BagMenu
-from frontend.widgets.boxmenumd import BoxMenu
-from frontend.widgets.encountermenumd import EncounterMenu
-from frontend.widgets.mainmenumd import MainMenu
 from frontend.widgets.md_common import show_snackbar
 from frontend.widgets.navrail import TrackerNavigationRail
-from frontend.widgets.nuzlockemenu_md import NuzlockeMenu
-from frontend.widgets.pokedexmenumd import PokedexMenu
-from frontend.widgets.pokemon_detailmd import PokemonDetailMD
-from frontend.widgets.sessionsmenumd import SessionMenu
-from frontend.widgets.settingsmenumd import SettingsMenu
 from frontend.widgets.splashmd import SplashScreen
 from frontend.widgets.statusbarmd import StatusBarMD
-from frontend.widgets.updatemenu import Update
 from version import VERSION
+
+# Die eigentlichen Screen-Module (MainMenu/Settings/Pokedex/…/PokemonDetail)
+# werden NICHT auf Modulebene importiert: ihr Import kostet ~2,6s (v.a.
+# pokemon_detailmd mit seinen YAML-LUTs) und liefe beim Start vor dem ersten
+# Frame = langer Schwarz-Screen. Sie werden lokal in `Screens.__init__`
+# importiert, das erst hinter dem Splash (nach dem ersten Frame) läuft.
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
@@ -51,6 +48,20 @@ class Screens(ScreenManager):
                  externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, session_list,
                  **kwargs) -> None:
         super().__init__(**kwargs)
+        # Lokale Imports (siehe Modul-Kopf): schwere Screen-Module erst hier
+        # laden, nach dem ersten Frame hinter dem Splash.
+        from frontend.widgets.bagmenumd import BagMenu
+        from frontend.widgets.boxmenumd import BoxMenu
+        from frontend.widgets.encountermenumd import EncounterMenu
+        from frontend.widgets.mainmenumd import MainMenu
+        from frontend.widgets.nuzlockemenu_md import NuzlockeMenu
+        from frontend.widgets.onboarding_md import OnboardingScreen
+        from frontend.widgets.pokedexmenumd import PokedexMenu
+        from frontend.widgets.pokemon_detailmd import PokemonDetailMD
+        from frontend.widgets.sessionsmenumd import SessionMenu
+        from frontend.widgets.settingsmenumd import SettingsMenu
+        from frontend.widgets.updatemenu import Update
+
         self.transition = FadeTransition()
         # ScreenManager ist ein FloatLayout und positioniert Screens ohne
         # pos_hint nur beim current-Wechsel (real_add_widget: screen.pos =
@@ -99,6 +110,13 @@ class Screens(ScreenManager):
         self.pokemon_detail = PokemonDetailMD(obs_websocket)
         self.add_widget(self.pokemon_detail)
 
+        # First-Startup-Walkthrough (Phase F4, kein Rail-Ziel). Wird nur beim
+        # allerersten Start angesteuert (app_state.onboarding_done), schreibt in
+        # die Standard-Session und setzt am Ende den Marker.
+        self.onboarding = OnboardingScreen(configsave, sp, pl, bh, obs, APP_VERSION,
+                                           on_complete=self._finish_onboarding)
+        self.add_widget(self.onboarding)
+
         # Sicherheits-Callbacks (Total-Wipe, Wipe-Dismissed, Slot-Kollision) wie
         # in der klassischen UI verdrahten. Banner + Slot-Kollision sind seit
         # Phase E MDDialog (wipe_banner_md / md_common.confirm_dialog).
@@ -143,9 +161,17 @@ class Screens(ScreenManager):
         except Exception as err:
             logger.error(f"IP-Laden im Boot fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
+        # Beim allerersten Start nach dem Update-Check in den Walkthrough statt
+        # ins SessionMenu (app_state.onboarding_done, Phase F4).
+        try:
+            first_run = not app_state.is_onboarding_done()
+        except Exception as err:
+            logger.error(f"Onboarding-Status nicht lesbar: {err}")
+            first_run = False
+        no_update_target = "Onboarding" if first_run else "SessionMenu"
         try:
             self.splash.set_status("Suche nach Updates …")
-            await self.update_menu.check_for_update_async()
+            await self.update_menu.check_for_update_async(no_update_target=no_update_target)
         except Exception as err:
             logger.error(f"Update-Check im Boot fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
@@ -153,7 +179,23 @@ class Screens(ScreenManager):
             # ist während Splash gesperrt, aber doppelte/überschreibende Nav
             # trotzdem vermeiden).
             if self.current == "Splash":
-                self.current = "SessionMenu"
+                self.current = no_update_target
+
+    def _finish_onboarding(self) -> None:
+        """Vom OnboardingScreen am Ende/Überspringen gerufen: Marker setzen und
+        ins Hauptmenü. Session-Hook triggern, damit die Screens die frisch
+        gesetzten Standard-Session-Werte übernehmen."""
+        try:
+            app_state.set_onboarding_done(True)
+        except Exception as err:
+            logger.error(f"onboarding_done konnte nicht gesetzt werden: {err}")
+            logger.error(traceback.format_exc())
+        try:
+            self._on_session_changed(None)
+        except Exception as err:
+            logger.error(f"Session-Refresh nach Onboarding fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
+        self.current = "MainMenu"
 
     def _align_active_screen(self, _manager, pos) -> None:
         # Aktiven Screen an die (neue) Manager-Position heften. FloatLayout lässt
@@ -338,10 +380,11 @@ class MainWindow(MDBoxLayout):
         Verbindung/BizHawk läuft über den sicheren Pfad von MainMenu
         (Save-Dialog → disconnect_all → save → Nav), statt direkt zu springen.
         Gibt False zurück (Guard übernimmt die Navigation selbst)."""
-        # Während des Ladescreens keine Rail-Navigation zulassen — die
-        # Boot-Sequenz navigiert selbst weg, und ein User-Klick würde mit
-        # ihr kollidieren (Nav-Race, Review F3).
-        if current == "Splash":
+        # Während Ladescreen/Onboarding keine Rail-Navigation zulassen — die
+        # Boot-Sequenz navigiert selbst weg (Nav-Race, Review F3), und der
+        # Walkthrough soll über seine eigenen Buttons verlassen werden, damit
+        # der onboarding_done-Marker gesetzt wird (sonst Dauer-Schleife).
+        if current in ("Splash", "Onboarding"):
             return False
         if target == "SessionMenu" and current not in ("SessionMenu", "Update"):
             main_menu = getattr(self.screen_manager, "main_menu", None)
@@ -359,32 +402,74 @@ class TrackerAppMD(TrackerCoreMixin, MDApp):
         self.theme_cls.theme_style = "Dark"
         self.theme_cls.primary_palette = "Orange"
 
-        self.init_core()
-        logger.info("KivyMD-UI gestartet (TRACKER_UI=md)")
+        # Sofort einen minimalen Root mit Splash zurückgeben, damit der erste
+        # Frame schnell rendert (statt langem Schwarz-Screen). Der teure Rest
+        # — Backend-Start (init_core) und das Konstruieren aller Screens samt
+        # deren Imports — läuft erst nach dem ersten Frame in `_populate`,
+        # hinter dem sichtbaren Splash.
+        self._root_container = MDBoxLayout(orientation="vertical")
+        self._boot_splash = SplashScreen()
+        self._root_container.add_widget(self._boot_splash)
+        # Zwei Frames warten: der erste Clock-Tick liegt noch vor dem ersten
+        # on_draw, d.h. der Splash ist evtl. noch nicht gezeichnet. Erst im
+        # zweiten Frame ist er sicher sichtbar — dann darf _populate den
+        # nativen Nuitka-Splash abbauen und blockierend laden, ohne dass
+        # dazwischen ein leeres Fenster aufblitzt.
+        Clock.schedule_once(lambda dt: Clock.schedule_once(self._populate, 0), 0)
+        return self._root_container
 
-        # Crash-Popup + Sprite-Setup vorerst als klassische Kivy-Popups
-        # (laufen auch unter MDApp); MD-Varianten folgen mit der Migration.
-        crash_log = 'logs/crash_report.log'
-        from frontend.widgets.mainmenu import CrashReportPopup, should_show_crash_popup
-        if should_show_crash_popup(crash_log):
-            Clock.schedule_once(
-                lambda dt: CrashReportPopup(
-                    crash_log,
-                    configsave=self.configsave,
-                    pl=self.pl,
-                    rem=self.rem,
-                ).open(),
-                2,
-            )
+    def _populate(self, _dt):
+        # Der eigene Splash ist jetzt sichtbar (erster Frame ist durch) — den
+        # nativen Nuitka-Onefile-Splash abbauen (no-op im Dev-Lauf).
+        from backend.nuitka_splash import dismiss_splash
+        dismiss_splash()
+        try:
+            self.init_core()
+            logger.info("KivyMD-UI gestartet (TRACKER_UI=md)")
 
-        if not self.sp.get('common_path'):
-            from frontend.widgets.sprite_setup_popupmd import SpriteSetupPopupMD
-            def _save_sprites():
-                self.save_config(f"{self.configsave}sprites.yml", self.sp)
-            Clock.schedule_once(lambda dt: SpriteSetupPopupMD(self.sp, self.configsave, save_callback=_save_sprites).open(), 3)
-        else:
-            self.start_sprite_auto_pull()
+            # Crash-Popup + Sprite-Setup vorerst als klassische Kivy-Popups
+            # (laufen auch unter MDApp); MD-Varianten folgen mit der Migration.
+            crash_log = 'logs/crash_report.log'
+            from frontend.widgets.mainmenu import CrashReportPopup, should_show_crash_popup
+            if should_show_crash_popup(crash_log):
+                Clock.schedule_once(
+                    lambda dt: CrashReportPopup(
+                        crash_log,
+                        configsave=self.configsave,
+                        pl=self.pl,
+                        rem=self.rem,
+                    ).open(),
+                    2,
+                )
 
-        self.start_sprite_helper_listener()
+            if self.sp.get('common_path'):
+                self.start_sprite_auto_pull()
+            elif app_state.is_onboarding_done():
+                # Sprites fehlen, aber kein Onboarding mehr (Bestands-Session):
+                # klassisches Setup-Popup. Beim Erststart NICHT öffnen — der
+                # Walkthrough richtet die Sprites selbst ein, sonst stünden zwei
+                # konkurrierende Clone-Pfade auf demselben sp-Dict.
+                from frontend.widgets.sprite_setup_popupmd import SpriteSetupPopupMD
+                def _save_sprites():
+                    self.save_config(f"{self.configsave}sprites.yml", self.sp)
+                Clock.schedule_once(lambda dt: SpriteSetupPopupMD(self.sp, self.configsave, save_callback=_save_sprites).open(), 3)
 
-        return MainWindow(*self.screen_arguments())
+            self.start_sprite_helper_listener()
+
+            # Volles Fenster bauen (konstruiert alle Screens, startet die
+            # Boot-Sequenz) und den Boot-Splash ersetzen.
+            main_window = MainWindow(*self.screen_arguments())
+            self._root_container.clear_widgets()
+            self._root_container.add_widget(main_window)
+        except Exception as err:
+            logger.error(f"App-Start (_populate) fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
+            # Das Backend (Threads, Server) kann zu diesem Zeitpunkt schon
+            # laufen. Es bleibt bewusst stehen, damit kein halber Teardown
+            # mitten im Fehlerpfad passiert. Der Splash zeigt den Fehler; das
+            # Schließen des Fensters läuft dann sauber über exit_check
+            # (bizhawk_thread ist gesetzt → voller Shutdown).
+            try:
+                self._boot_splash.set_status("Startfehler — siehe Log.")
+            except Exception:
+                pass

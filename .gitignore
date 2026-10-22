@@ -5,6 +5,7 @@ logs/
 testserver.py
 testmain.py
 tmp/
+scratchpad/
 dist/
 build/
 *.spec

@@ -1,6 +1,7 @@
 import asyncio
 import os
 import shutil
+import socket
 import traceback
 from pathlib import Path
 
@@ -29,6 +30,17 @@ CHANNEL_URLS = {
 # Bei Kanalwechsel (Stable -> Alpha und umgekehrt) muss root.json aus dem neuen Bundle
 # ersetzt werden, sonst mismatched die Trust-Chain zum tufup-Repo.
 CHANNEL_MARKER_FILENAME = ".channel"
+
+# tufup/tuf setzen auf ihren Netz-Requests keinen Timeout. Ist der Release-
+# Server tot oder blockiert eine Firewall den Connect, haengt check_for_updates
+# sonst unbegrenzt im Executor-Thread. Da der Default-ThreadPoolExecutor
+# non-daemon ist und beim Interpreter-Exit gejoint wird, wuerde ein solcher
+# Hänger auch das Schliessen der App blockieren. socket.setdefaulttimeout im
+# Worker bindet den Connect- und Read-Timeout der (blockierenden) tufup-Sockets,
+# sodass der Call von selbst zurueckkehrt. UPDATE_CHECK_TOTAL_TIMEOUT ist die
+# zusaetzliche Boot-UX-Grenze (wait_for), damit der Splash nie lange haengt.
+UPDATE_CHECK_SOCKET_TIMEOUT = 15.0
+UPDATE_CHECK_TOTAL_TIMEOUT = 20.0
 
 
 def _read_channel(app_install_dir):
@@ -153,37 +165,49 @@ class Update(Screen):
         Reiner Worker ohne UI-Seiteneffekt — läuft sync (Klassik) oder im
         Executor (KivyMD-Splash, Phase F3). Rückgabe: neues Archiv-Objekt oder
         ``None`` (kein Update ODER Fehler → beide führen zu SessionMenu)."""
+        # Netz-I/O von tufup zeitlich beschränken (siehe Konstanten-Kommentar).
+        # Default global zwischenspeichern und im finally wiederherstellen —
+        # asyncio-Sockets (Arceus/Munchlax/BizHawk) ignorieren den Default und
+        # sind davon nicht betroffen.
+        prev_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(UPDATE_CHECK_SOCKET_TIMEOUT)
         try:
-            self._bootstrap_trust_anchor()
-            self.target_dir.mkdir(parents=True, exist_ok=True)
-            new_archive = self._run_update_check()
-        except ExpiredMetadataError as err:
-            logger.warning(
-                f"Metadata abgelaufen ({err}); Cache wird geleert und Update-Check erneut versucht."
-            )
             try:
-                self._reset_metadata_cache()
                 self._bootstrap_trust_anchor()
+                self.target_dir.mkdir(parents=True, exist_ok=True)
                 new_archive = self._run_update_check()
-            except Exception as retry_err:
-                logger.error(
-                    f"Update-Check nach Cache-Reset weiterhin fehlgeschlagen: {retry_err}\n{traceback.format_exc()}"
+            except ExpiredMetadataError as err:
+                logger.warning(
+                    f"Metadata abgelaufen ({err}); Cache wird geleert und Update-Check erneut versucht."
                 )
+                try:
+                    self._reset_metadata_cache()
+                    self._bootstrap_trust_anchor()
+                    new_archive = self._run_update_check()
+                except Exception as retry_err:
+                    logger.error(
+                        f"Update-Check nach Cache-Reset weiterhin fehlgeschlagen: {retry_err}\n{traceback.format_exc()}"
+                    )
+                    return None
+            except Exception as err:
+                logger.error(f"Update-Check fehlgeschlagen: {err}\n{traceback.format_exc()}")
                 return None
-        except Exception as err:
-            logger.error(f"Update-Check fehlgeschlagen: {err}\n{traceback.format_exc()}")
-            return None
+        finally:
+            socket.setdefaulttimeout(prev_timeout)
 
         logger.info(f"new_archive={new_archive}")
         return new_archive
 
-    def _apply_update_result(self, new_archive, only_if_current=None):
+    def _apply_update_result(self, new_archive, only_if_current=None,
+                             no_update_target="SessionMenu"):
         """UI-Reaktion auf das Check-Ergebnis (immer auf dem Main-Thread).
 
         `only_if_current`: navigiert nur dann weiter, wenn der ScreenManager
         noch auf diesem Screen steht (MD-Splash-Boot: "Splash"). Verhindert,
         dass ein zwischenzeitlicher User-Wechsel überschrieben wird. Das
-        Update-Popup wird dagegen immer gezeigt (wichtiger als die Nav)."""
+        Update-Popup wird dagegen immer gezeigt (wichtiger als die Nav).
+        `no_update_target`: Zielscreen wenn kein Update vorliegt (MD-Erststart
+        = "Onboarding", sonst "SessionMenu")."""
         if new_archive:
             self.show_update_popup(new_archive)
             return
@@ -192,20 +216,32 @@ class Update(Screen):
         # ist nicht der Update-Screen current, sondern der Splash.
         if only_if_current is not None and self.manager.current != only_if_current:
             return
-        self.manager.current = "SessionMenu"
+        self.manager.current = no_update_target
 
     def check_for_update(self):
         """Synchroner Update-Check (klassische UI)."""
         self._apply_update_result(self._resolve_update_check())
 
-    async def check_for_update_async(self):
+    async def check_for_update_async(self, no_update_target="SessionMenu"):
         """Nicht-blockierender Update-Check (KivyMD-Splash-Boot, Phase F3).
 
         Die tufup-Netz-I/O läuft im Executor, die UI-Reaktion danach wieder
-        auf dem Main-Thread (run_in_executor kehrt dorthin zurück)."""
+        auf dem Main-Thread (run_in_executor kehrt dorthin zurück).
+        `no_update_target`: Zielscreen wenn kein Update vorliegt."""
         loop = asyncio.get_running_loop()
-        new_archive = await loop.run_in_executor(None, self._resolve_update_check)
-        self._apply_update_result(new_archive, only_if_current="Splash")
+        try:
+            new_archive = await asyncio.wait_for(
+                loop.run_in_executor(None, self._resolve_update_check),
+                timeout=UPDATE_CHECK_TOTAL_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            # Boot nicht am Update-Check aufhängen. Der Socket-Timeout im Worker
+            # bringt den Executor-Thread ohnehin bald zurück; der Splash geht
+            # jetzt ohne Update weiter.
+            logger.warning("Update-Check-Timeout beim Start; weiter ohne Update.")
+            new_archive = None
+        self._apply_update_result(new_archive, only_if_current="Splash",
+                                  no_update_target=no_update_target)
 
     def show_update_popup(self, new_archive):
         box = BoxLayout(orientation='vertical')

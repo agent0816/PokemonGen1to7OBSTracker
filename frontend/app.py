@@ -208,4 +208,10 @@ class TrackerApp(TrackerCoreMixin, App):
 
         self.start_sprite_helper_listener()
 
+        # Nativen Nuitka-Onefile-Splash abbauen, sobald der erste Frame steht
+        # (no-op im Dev-Lauf). Klassik baut die Screens blockierend vor dem
+        # ersten Frame, daher auf den nächsten Frame planen.
+        from backend.nuitka_splash import dismiss_splash
+        Clock.schedule_once(lambda dt: dismiss_splash(), 0)
+
         return Screens(*self.screen_arguments())

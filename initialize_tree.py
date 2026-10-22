@@ -43,16 +43,37 @@ def init_config_folder():
     # App-weiter, nicht session-gebundener Zustand (UI-Modus + Onboarding-Marker).
     # Muss wie log_settings.yml von der Aufraeum-Schleife unten ausgenommen werden,
     # sonst wird die Datei bei jedem Start geloescht. Siehe backend/app_state.py.
+    default_session = Path('backend/config/default')
+    session_list = Path('backend/config/session_list.yml')
     app_state = Path('backend/config/app_state.yml')
+    # Bestandsinstallation erkennen BEVOR default/ + session_list.yml angelegt
+    # werden: existiert schon eine konfigurierte Default-Session oder eine
+    # Session-Liste, hat der Nutzer die App bereits eingerichtet — dann KEIN
+    # Erststart-Walkthrough (sonst würde er Bestandsnutzern angezeigt und ihre
+    # Configs neu schreiben). Nur bei echter Neuinstallation False.
+    preexisting = default_session.exists() or session_list.exists()
     if not app_state.exists():
         save_config(app_state, {
             'ui': 'md',
-            'onboarding_done': False,
+            'onboarding_done': bool(preexisting),
         })
+    else:
+        # Migration fehlender Keys (z.B. frühe F0/F1-Datei ohne onboarding_done):
+        # fehlt der Marker, denselben preexisting-Check anwenden, statt den
+        # Walkthrough Bestandsnutzern zu zeigen.
+        with open(app_state) as file:
+            state = yaml.safe_load(file) or {}
+        changed = False
+        if 'onboarding_done' not in state:
+            state['onboarding_done'] = bool(preexisting)
+            changed = True
+        if 'ui' not in state:
+            state['ui'] = 'md'
+            changed = True
+        if changed:
+            save_config(app_state, state)
     files = []
     sessions = []
-    default_session = Path('backend/config/default')
-    session_list = Path('backend/config/session_list.yml')
     if not session_list.exists():
         save_config(session_list, sessions)
     if not default_session.exists():

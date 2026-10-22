@@ -86,3 +86,46 @@ def test_set_ui_preserves_onboarding(state_path):
 
 def test_onboarding_default_false(state_path):
     assert app_state.is_onboarding_done() is False
+
+
+def _run_init_in(tmp_path):
+    import os
+    import importlib
+    import yaml as _yaml
+    cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        init = importlib.import_module("initialize_tree")
+        init.init_config_folder()
+        with open("backend/config/app_state.yml", encoding="utf-8") as f:
+            return _yaml.safe_load(f)
+    finally:
+        os.chdir(cwd)
+
+
+def test_init_tree_fresh_install_onboarding_false(tmp_path):
+    # Komplett leeres Verzeichnis = Neuinstallation → Onboarding anzeigen.
+    data = _run_init_in(tmp_path)
+    assert data["onboarding_done"] is False
+
+
+def test_init_tree_preexisting_install_onboarding_true(tmp_path):
+    # Bestehende Default-Session vor init → Bestandsnutzer, kein Onboarding.
+    import os
+    os.makedirs(tmp_path / "backend" / "config" / "default", exist_ok=True)
+    data = _run_init_in(tmp_path)
+    assert data["onboarding_done"] is True
+
+
+def test_init_tree_migrates_app_state_missing_key(tmp_path):
+    # Frühe F0/F1-app_state.yml OHNE onboarding_done + bestehende Session →
+    # Marker wird via preexisting-Check nachmigriert (True), kein Onboarding.
+    import os
+    import yaml as _yaml
+    cfg = tmp_path / "backend" / "config"
+    os.makedirs(cfg / "default", exist_ok=True)
+    (cfg / "app_state.yml").write_text(_yaml.dump({"ui": "classic"}))
+    data = _run_init_in(tmp_path)
+    assert data["onboarding_done"] is True
+    # Vorhandener ui-Wert bleibt erhalten.
+    assert data["ui"] == "classic"

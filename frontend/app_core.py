@@ -15,6 +15,7 @@ zugreifen (bh_dispatch.py, mainmenu.py, settingsmenu.py, nuzlockemenu.py).
 import asyncio
 import os
 import subprocess
+import traceback
 from dataclasses import dataclass
 from typing import Any
 
@@ -316,6 +317,88 @@ class TrackerCoreMixin:
 
     # --- Shutdown -----------------------------------------------------------
 
+    def _spawn_relaunch_process(self) -> None:
+        """Startet einen frischen App-Prozess mit denselben Argumenten.
+
+        Source-Run: ``sys.argv[0]`` ist das Skript (``main.py``) und
+        ``sys.executable`` der Interpreter → ``[python, main.py, …]``.
+        Nuitka-Onefile: ``sys.argv[0]`` ist die PERSISTENTE Launcher-EXE, die
+        direkt wieder gestartet wird. ``sys.executable`` zeigt dort auf die ins
+        Temp entpackte Binary, die der Bootstrapper beim Beenden wegräumt — die
+        darf NICHT als Startpfad dienen. Zusätzlich werden die
+        ``NUITKA_ONEFILE*``-Env-Variablen aus der Kind-Env entfernt, damit das
+        Kind eine frische Onefile-Umgebung bekommt (sonst zielte u.a. der
+        Splash-Dismiss auf die alte Parent-PID). ``TRACKER_UI`` wird ebenfalls
+        entfernt: der Relaunch dient dem UI-Wechsel, und ein gesetztes
+        ``TRACKER_UI`` würde (es hat Vorrang vor app_state) den gerade
+        gewählten Modus wieder überschreiben.
+
+        Der Onefile-Relaunch ist bis zum Build-Test (Phase F5) unbelegt; Fehler
+        behandelt der Aufrufer. Der Kindprozess soll unseren überleben, daher
+        kein Warten/Schließen des ``Popen``-Handles.
+        """
+        import sys
+        is_frozen = getattr(sys, "frozen", False) or globals().get("__compiled__") is not None
+        cmd = list(sys.argv) if is_frozen else [sys.executable, *sys.argv]
+        env = os.environ.copy()
+        for key in [k for k in env if k.startswith("NUITKA_ONEFILE")]:
+            env.pop(key, None)
+        env.pop("TRACKER_UI", None)
+        logger.info(f"Relaunch für UI-Wechsel: {cmd}")
+        subprocess.Popen(cmd, env=env)
+
+    def relaunch(self) -> None:
+        """App neu starten (für den UI-Modus-Wechsel).
+
+        ``App.stop()`` allein löst ``Window.on_request_close``/``exit_check``
+        NICHT aus — ein reiner Stop+Popen würde Config-Änderungen verlieren und
+        den neuen Prozess auf belegte Ports (Overlay/Arceus/BizHawk) sowie noch
+        laufende BizHawk-Instanzen treffen. Deshalb erst der volle Shutdown
+        (Configs speichern, Server/Threads stoppen, Ports freigeben), dann im
+        done-callback der frische Prozess und App-Stop.
+        """
+        # Re-Entrancy: der Shutdown dauert im Worst-Case bis ~27s, das Fenster
+        # bleibt derweil bedienbar. Ein zweiter Klick auf "Jetzt neu starten"
+        # würde sonst einen zweiten Shutdown + zweiten Kindprozess auslösen.
+        if getattr(self, "_shutting_down", False):
+            logger.info("Relaunch ignoriert — Shutdown/Relaunch läuft bereits.")
+            return
+        # Backend noch nicht gestartet (Fenster noch im Splash): nichts zu
+        # sichern/stoppen — direkt neu starten.
+        if getattr(self, "bizhawk_thread", None) is None:
+            self._shutting_down = True
+            try:
+                self._spawn_relaunch_process()
+            except Exception as err:
+                logger.error(f"Relaunch fehlgeschlagen: {err}\n{traceback.format_exc()}")
+                self._shutting_down = False  # erneuter Versuch bleibt möglich
+                return
+            self._safe_app_stop()
+            return
+
+        def _after_shutdown(clean: bool) -> None:
+            if not clean:
+                logger.warning("Relaunch trotz unvollständigem Backend-Shutdown — "
+                               "der neue Prozess könnte auf belegte Ports treffen.")
+            try:
+                self._spawn_relaunch_process()
+            except Exception as err:
+                logger.error(f"Relaunch-Prozess konnte nicht gestartet werden: "
+                             f"{err}\n{traceback.format_exc()}")
+            self._safe_app_stop()
+
+        self._shutdown_backend(on_complete=_after_shutdown)
+
+    def _safe_app_stop(self) -> None:
+        from kivy.app import App
+        app = App.get_running_app()
+        if app is None:
+            return
+        try:
+            app.stop()
+        except Exception as err:
+            logger.error(f"App.stop() fehlgeschlagen: {err}\n{traceback.format_exc()}")
+
     def exit_check(self, *args, **kwargs):
         # Das Backend entsteht erst in init_core() (MD: in _populate, nach dem
         # ersten Frame). Schließt der User das Fenster noch im Splash — oder
@@ -325,51 +408,109 @@ class TrackerCoreMixin:
         # crashen.
         if getattr(self, "bizhawk_thread", None) is None:
             return False
-        # Noch laufende Boot-Tasks (z.B. der Update-Check) abbrechen, damit der
-        # Loop nicht auf sie wartet. Der Executor-Thread selbst wird dadurch
-        # nicht beendet — dafür sorgt der Socket-Timeout im Update-Worker.
-        for task in list(getattr(self, "_boot_tasks", ())):
-            task.cancel()
-        self.save_config(f"{self.configsave}bh_config.yml", self.bh)
-        self.save_config(f"{self.configsave}obs_config.yml", self.obs)
-        self.save_config(f"{self.configsave}sprites.yml", self.sp)
-        self.save_config(f"{self.configsave}player.yml", self.pl)
-        self.save_config(f"{self.configsave}remote.yml", self.rem)
-        self.save_config(f"{self.configsave}randomizer.yml", self.rnd)
-        self.save_config(f"{self.configsave}overlay.yml", self.ov)
-        self.save_config(f"{self.configsave}nuzlocke.yml", self.nuz)
+        # Läuft bereits ein Shutdown/Relaunch, keinen zweiten starten. Fenster
+        # offen halten (Veto True) — der laufende Vorgang beendet die App selbst
+        # (Relaunch via _safe_app_stop; normaler Close-Shutdown lässt den Loop
+        # auslaufen). Verhindert den RuntimeError aus isolated_thread bei
+        # submit_coro auf einen schon schließenden Thread.
+        if getattr(self, "_shutting_down", False):
+            return True
+        self._shutdown_backend()
 
-        for bizhawk in self.bizhawk_instances:
-            bizhawk.terminate()
-        # Server-Stops leben auf ihren eigenen Loops — via submit_coro posten
-        # und als Futures in die wait()-Liste packen, damit der Shutdown-Grace
-        # beide Close-Zeiten mitabwartet.
-        bh_stop_fut = self.bizhawk_thread.submit_coro(self.bizhawk.stop())
-        bh_stop_awaitable = asyncio.wrap_future(bh_stop_fut)
-        arc_stop_fut = self.arceus_thread.submit_coro(self.arceus.stop())
-        arc_stop_awaitable = asyncio.wrap_future(arc_stop_fut)
-        # Munchlax lebt seit Phase 3 auf eigenem Loop. disconnect() muss
-        # dort laufen (sendet client_disconnect-Message vom Munchlax-Loop,
-        # wartet auf writer.wait_closed). Reihenfolge: Munchlax zuerst in
-        # der Awaitable-Liste, damit sein disconnect-Broadcast raus ist
-        # bevor Arceus die Server-Sockets zerreisst.
-        mun_disc_fut = self.munchlax_thread.submit_coro(self.munchlax.disconnect())
-        mun_disc_awaitable = asyncio.wrap_future(mun_disc_fut)
-        tasks = [
-            mun_disc_awaitable,
-            arc_stop_awaitable,
-            asyncio.create_task(self.citra.stop()),
-            bh_stop_awaitable,
-            asyncio.create_task(self.obs_websocket.disconnect()),
-            asyncio.create_task(self.overlay_server.stop()),
-        ]
-        # Shutdown-Flow kapseln: wait() + Thread-Shutdowns in einem Task,
-        # done_callback loggt Exceptions. Ersetzt das alte Fire-and-Forget-
-        # create_task-Paar, bei dem Shutdown-Fehler schweigend verschwanden.
-        shutdown_task = asyncio.create_task(
-            self._run_shutdown(tasks, bh_stop_awaitable, arc_stop_awaitable, mun_disc_awaitable)
-        )
-        shutdown_task.add_done_callback(self._log_shutdown_result)
+    def _shutdown_backend(self, on_complete=None) -> None:
+        """Configs speichern + Backend (Server/Threads/BizHawk) herunterfahren.
+
+        Gemeinsam genutzt von ``exit_check`` (Fenster schließen) und
+        ``relaunch`` (UI-Wechsel). ``on_complete`` läuft im done-callback des
+        Shutdown-Tasks — also erst, wenn alle Ports/Threads freigegeben sind
+        (z.B. um danach einen neuen Prozess zu starten und die App zu beenden).
+        """
+        if getattr(self, "_shutting_down", False):
+            logger.info("Shutdown läuft bereits — zweiter Aufruf ignoriert.")
+            return
+        self._shutting_down = True
+        try:
+            # Noch laufende Boot-Tasks (z.B. der Update-Check) abbrechen, damit
+            # der Loop nicht auf sie wartet. Der Executor-Thread selbst wird
+            # dadurch nicht beendet — dafür sorgt der Socket-Timeout im
+            # Update-Worker.
+            for task in list(getattr(self, "_boot_tasks", ())):
+                task.cancel()
+            self.save_config(f"{self.configsave}bh_config.yml", self.bh)
+            self.save_config(f"{self.configsave}obs_config.yml", self.obs)
+            self.save_config(f"{self.configsave}sprites.yml", self.sp)
+            self.save_config(f"{self.configsave}player.yml", self.pl)
+            self.save_config(f"{self.configsave}remote.yml", self.rem)
+            self.save_config(f"{self.configsave}randomizer.yml", self.rnd)
+            self.save_config(f"{self.configsave}overlay.yml", self.ov)
+            self.save_config(f"{self.configsave}nuzlocke.yml", self.nuz)
+
+            for bizhawk in self.bizhawk_instances:
+                bizhawk.terminate()
+            # Server-Stops leben auf ihren eigenen Loops — via submit_coro posten
+            # und als Futures in die wait()-Liste packen, damit der Shutdown-Grace
+            # beide Close-Zeiten mitabwartet.
+            bh_stop_fut = self.bizhawk_thread.submit_coro(self.bizhawk.stop())
+            bh_stop_awaitable = asyncio.wrap_future(bh_stop_fut)
+            arc_stop_fut = self.arceus_thread.submit_coro(self.arceus.stop())
+            arc_stop_awaitable = asyncio.wrap_future(arc_stop_fut)
+            # Munchlax lebt seit Phase 3 auf eigenem Loop. disconnect() muss
+            # dort laufen (sendet client_disconnect-Message vom Munchlax-Loop,
+            # wartet auf writer.wait_closed). Reihenfolge: Munchlax zuerst in
+            # der Awaitable-Liste, damit sein disconnect-Broadcast raus ist
+            # bevor Arceus die Server-Sockets zerreisst.
+            mun_disc_fut = self.munchlax_thread.submit_coro(self.munchlax.disconnect())
+            mun_disc_awaitable = asyncio.wrap_future(mun_disc_fut)
+            tasks = [
+                mun_disc_awaitable,
+                arc_stop_awaitable,
+                asyncio.create_task(self.citra.stop()),
+                bh_stop_awaitable,
+                asyncio.create_task(self.obs_websocket.disconnect()),
+                asyncio.create_task(self.overlay_server.stop()),
+            ]
+            # Shutdown-Flow kapseln: wait() + Thread-Shutdowns in einem Task,
+            # done_callback loggt Exceptions. Ersetzt das alte Fire-and-Forget-
+            # create_task-Paar, bei dem Shutdown-Fehler schweigend verschwanden.
+            shutdown_task = asyncio.create_task(
+                self._run_shutdown(tasks, bh_stop_awaitable, arc_stop_awaitable, mun_disc_awaitable)
+            )
+        except Exception as err:
+            # Wirft ein Schritt VOR dem create_task (z.B. save_config bei
+            # gesperrter Datei, submit_coro bei bereits schließendem Thread),
+            # entsteht kein Shutdown-Task und der done-callback feuert nie.
+            # Dann Flag zurücksetzen, damit das Fenster nicht dauerhaft via
+            # exit_check-Veto hängt, und — falls ein Relaunch wartet — ihn mit
+            # clean=False fortsetzen, statt die App bedienungslos stehenzulassen.
+            logger.error(f"Shutdown-Start fehlgeschlagen: {err}\n{traceback.format_exc()}")
+            self._shutting_down = False
+            if on_complete is not None:
+                try:
+                    on_complete(False)
+                except Exception as cb_err:
+                    logger.error(f"Shutdown on_complete (Fehlerpfad) fehlgeschlagen: "
+                                 f"{cb_err}\n{traceback.format_exc()}")
+            return
+
+        def _done(task) -> None:
+            self._log_shutdown_result(task)
+            if on_complete is not None:
+                # Vollständigkeit aus dem Shutdown-Task ziehen (True = alle
+                # Server/Threads sauber gestoppt). Bei Cancel/Exception als
+                # unvollständig werten.
+                clean = False
+                try:
+                    if not task.cancelled() and task.exception() is None:
+                        clean = bool(task.result())
+                except Exception:
+                    clean = False
+                try:
+                    on_complete(clean)
+                except Exception as err:
+                    logger.error(f"Shutdown on_complete fehlgeschlagen: "
+                                 f"{err}\n{traceback.format_exc()}")
+
+        shutdown_task.add_done_callback(_done)
 
     async def _run_shutdown(self, tasks, bh_stop_awaitable, arc_stop_awaitable, mun_disc_awaitable):
         # Worst-Case-Latenz: 3s (asyncio.wait) + 3*3s (mun_disc/bh/arc
@@ -406,6 +547,28 @@ class TrackerCoreMixin:
             await self.arceus_thread.shutdown()
         except Exception as err:
             logger.error(f"ArceusThread-Shutdown fehlgeschlagen: {err}")
+
+        # Vollständigkeit melden (für relaunch relevant, damit es eine
+        # Port-Kollision beim neuen Prozess erkennen/loggen kann): alle
+        # Stop-/Disconnect-Awaitables erledigt UND keine Isolations-Threads
+        # mehr am Leben. Beim reinen Fenster-Close ist der Rückgabewert
+        # bedeutungslos (der Prozess endet ohnehin).
+        def _task_clean(t) -> bool:
+            if not t.done() or t.cancelled():
+                return False
+            try:
+                return t.exception() is None
+            except Exception:
+                return False
+        clean = all(_task_clean(t) for t in tasks)
+        for thread_owner in (self.munchlax_thread, self.bizhawk_thread, self.arceus_thread):
+            inner = getattr(thread_owner, "_thread", None)
+            try:
+                if inner is not None and inner.is_alive():
+                    clean = False
+            except Exception:
+                pass
+        return clean
 
     def _log_shutdown_result(self, task):
         try:

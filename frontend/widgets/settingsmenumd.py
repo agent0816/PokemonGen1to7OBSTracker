@@ -34,6 +34,7 @@ from kivymd.uix.segmentedbutton import (MDSegmentedButton, MDSegmentedButtonItem
 from kivymd.uix.selectioncontrol import MDSwitch
 from kivymd.uix.textfield import MDTextField
 
+from backend import app_state
 from backend import settings_view as sv
 from backend.controller.settings_controller import SettingsController
 from backend.controller.randomizer_controller import RandomizerController
@@ -979,6 +980,38 @@ class SettingsMenu(MDScreen):
     # ---------------------------------------------------------------- Logging
     def _build_logging_tab(self) -> MDBoxLayout:
         pane = self._pane()
+
+        # --- Darstellung / UI-Modus (Phase F2) ----------------------------
+        # Der Wechsel wird sofort in app_state gespeichert, greift aber erst
+        # nach einem Neustart (main.py liest den Modus VOR dem Kivy-Import).
+        ui_card = _section_card("Darstellung")
+        ui_card.add_widget(MDLabel(
+            text="Oberfläche — Wechsel wird erst nach einem Neustart aktiv.",
+            role="small", adaptive_height=True))
+        self._ui_segment = MDSegmentedButton()
+        self._ui_items: dict[str, MDSegmentedButtonItem] = {}
+        for ui_value, label in ((app_state.UI_MD, "Material (MD)"),
+                                (app_state.UI_CLASSIC, "Klassik")):
+            item = MDSegmentedButtonItem(MDSegmentButtonLabel(text=label))
+            item.bind(active=lambda _it, val, u=ui_value: self._on_ui_segment(u, val))
+            self._ui_items[ui_value] = item
+            self._ui_segment.add_widget(item)
+        ui_card.add_widget(self._ui_segment)
+        pane.add_widget(ui_card)
+        # Der aktuell laufende Modus: diese MD-Settings existieren nur in der
+        # MD-App, also immer "md". Der Neustart-Dialog vergleicht gegen diesen
+        # Wert (nicht gegen die gespeicherte Pref), damit ein Rückwechsel auf
+        # den laufenden Modus keinen sinnlosen Dialog auslöst.
+        self._running_ui = app_state.UI_MD
+        # Initiale Auswahl aus der gespeicherten Präferenz — unter Suspend, damit
+        # das programmatische active-Setzen nicht den Neustart-Dialog auslöst.
+        prev = self._suspend_save
+        self._suspend_save = True
+        try:
+            self._ui_items[app_state.get_ui_preference()].active = True
+        finally:
+            self._suspend_save = prev
+
         card = _section_card("Logging")
         self._console_level = DropdownField(LOG_LEVELS, get_console_level(),
                                             lambda v: set_console_level(v))
@@ -1011,6 +1044,31 @@ class SettingsMenu(MDScreen):
         else:
             self._dev_module_box = None
         return pane
+
+    def _on_ui_segment(self, ui_value: str, active: bool) -> None:
+        # MDSegmentedButton feuert active=True fürs neu gewählte und active=False
+        # fürs abgewählte Item — nur auf die Auswahl reagieren.
+        if not active or self._suspend_save:
+            return
+        # Präferenz immer (idempotent) persistieren — greift beim nächsten Start.
+        # "Später" lässt sie also stehen.
+        try:
+            app_state.set_ui_preference(ui_value)
+        except Exception as err:
+            logger.error(f"UI-Modus speichern fehlgeschlagen: {err}\n{traceback.format_exc()}")
+            show_snackbar("UI-Modus konnte nicht gespeichert werden.", level='error', duration=4.0)
+            return
+        # Neustart-Dialog nur, wenn das Ziel vom laufenden Modus abweicht.
+        if ui_value == self._running_ui:
+            return
+        label = "Material (MD)" if ui_value == app_state.UI_MD else "klassischen"
+        confirm_dialog(
+            "UI-Modus gewechselt",
+            f"Die App nutzt nach einem Neustart die {label} Oberfläche.",
+            on_confirm=lambda: MDApp.get_running_app().relaunch(),
+            confirm_text="Jetzt neu starten",
+            cancel_text="Später",
+        )
 
     def _refresh_dev_module_log_levels(self) -> None:
         box = getattr(self, "_dev_module_box", None)

@@ -158,6 +158,17 @@ class _DriveApp(MDApp):
         except Exception:
             opened = False
         self.check("dropdown_oeffnet_menu", opened)
+
+        # UI-Modus-Toggle (Phase F2): initial spiegelt die Präferenz (Default md),
+        # Umschalten persistiert sofort in app_state (Dialog bietet nur den
+        # Neustart an — hier nicht bestätigt).
+        from backend import app_state
+        self.check("ui_segment_md_initial", s._ui_items[app_state.UI_MD].active)
+        s._on_ui_segment(app_state.UI_CLASSIC, True)
+        self.check("ui_switch_persists",
+                   app_state.get_ui_preference() == app_state.UI_CLASSIC,
+                   app_state.get_ui_preference())
+
         self.shot("06_logging")
         self._next(self.s_finish, 0.8)
 
@@ -168,11 +179,18 @@ class _DriveApp(MDApp):
 _EXPECTED = {"felder_vorhanden", "fuenf_panes", "bizhawk_geladen", "name_geladen",
              "session_game_readonly", "count_segment_2", "overlay_links_gebaut",
              "kein_carousel", "obs2pc_expand", "obs2pc_save", "player_expand_2",
-             "console_level_dd", "dropdown_oeffnet_menu"}
+             "console_level_dd", "dropdown_oeffnet_menu",
+             "ui_segment_md_initial", "ui_switch_persists"}
 
 
 @pytest.mark.gui
-def test_settingsmenu_aufbau_und_interaktion(screenshot_dir, config_root, run_md_app):
+def test_settingsmenu_aufbau_und_interaktion(screenshot_dir, config_root, run_md_app,
+                                             tmp_path, monkeypatch):
+    # app_state nutzt einen festen relativen Pfad (backend/config/app_state.yml),
+    # unabhängig von config_root. Für den UI-Modus-Toggle-Check auf eine Temp-
+    # Datei umbiegen, damit der Test die echte Dev-Präferenz nicht anfasst.
+    from backend import app_state
+    monkeypatch.setattr(app_state, "_APP_STATE_PATH", str(tmp_path / "app_state.yml"))
     app = run_md_app(_DriveApp(screenshot_dir, config_root))
     fehlende = _EXPECTED - set(app.results)
     assert not fehlende, f"Checks nicht gelaufen (Step-Crash?): {fehlende}"

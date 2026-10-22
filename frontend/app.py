@@ -1,4 +1,6 @@
 import asyncio
+import os
+import tempfile
 from dataclasses import dataclass
 import sys
 import subprocess
@@ -22,6 +24,7 @@ from backend.classes.bizhawk import Bizhawk
 from backend.classes.citrahandler import CitraHandler
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
+from version import VERSION
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -36,7 +39,7 @@ stream_handler.setFormatter(logging_formatter)
 logger.addHandler(stream_handler)
 
 APP_NAME = "PokemonOBSTracker"
-APP_VERSION = "0.7.12"
+APP_VERSION = VERSION
 
 
 class Screens(ScreenManager):
@@ -81,6 +84,28 @@ class TrackerApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         Window.bind(on_request_close=self.exit_check)
+
+    def on_start(self):
+        # Nuitka-Onefile-Splash schliessen, sobald der erste Screen steht.
+        # Nuitka hat kein Timeout — ohne Loeschen der Marker-Datei bliebe der
+        # Splash die ganze Laufzeit ueber allem liegen. Im Dev-Lauf (ohne
+        # NUITKA_ONEFILE_PARENT gesetzt) ist das ein No-op.
+        self._close_nuitka_splash()
+
+    @staticmethod
+    def _close_nuitka_splash():
+        parent = os.environ.get("NUITKA_ONEFILE_PARENT")
+        if not parent:
+            return
+        splash_path = os.path.join(
+            tempfile.gettempdir(),
+            f"onefile_{int(parent)}_splash_feedback.tmp",
+        )
+        try:
+            if os.path.exists(splash_path):
+                os.unlink(splash_path)
+        except OSError as err:
+            logger.warning(f"Nuitka-Splash konnte nicht geschlossen werden: {err}")
 
     def build(self):
         try:

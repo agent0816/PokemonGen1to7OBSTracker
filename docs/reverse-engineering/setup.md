@@ -159,20 +159,40 @@ notieren (3DS-Raum, Code ab `0x00100000`). Schlanker als BizHawk — mehr Iterat
 
 ### B3. GhidraMCP installieren (zweiter, separater MCP-Server)
 
-1. Release `LaurieWired/GhidraMCP` laden (Plugin-Zip + `bridge_mcp_ghidra.py`). Upstream ist
-   für **11.3.2** gebaut — passt.
-2. Ghidra → `Install Extensions` → Zip → Neustart.
-3. `File` → `Configure` → `Developer` → Haken bei GhidraMCPPlugin (HTTP `localhost:8080`).
-4. Registrieren (eigenes venv-Python nutzen):
-   ```powershell
-   claude mcp add ghidra `
-     -- D:\...\.venv\re-lab\Scripts\python.exe D:\PFAD\bridge_mcp_ghidra.py --ghidra-server http://127.0.0.1:8080/
-   ```
+**Wichtig: Release 1.4** nehmen (für Ghidra 11.3.2 gebaut), NICHT 2.0 (das ist für
+Ghidra 12.1.4 → Mismatch). Bereits heruntergeladen + entpackt unter
+`tools/ghidra-mcp/extracted/GhidraMCP-release-1-4/` (lokal, gitignored):
+- `GhidraMCP-1-4.zip` — die Ghidra-Extension (GUI-Install, siehe unten)
+- `bridge_mcp_ghidra.py` — der MCP-Bridge (bereits bei Claude registriert)
 
-### B4. code.bin analysieren
+Bridge ist registriert (venv-Python + `requests`):
+```powershell
+claude mcp add ghidra `
+  -- D:\...\.venv\re-lab\Scripts\python.exe `
+     D:\...\tools\ghidra-mcp\extracted\GhidraMCP-release-1-4\bridge_mcp_ghidra.py `
+     --ghidra-server http://127.0.0.1:8080/
+```
 
-`code.bin` importieren → Processor `ARM:LE:32`, Basis `0x00100000` → Auto-Analyse → dann
-in Claude Code dekompilieren/referenzieren/umbenennen lassen.
+Plugin in Ghidra aktivieren (einmalig):
+1. Ghidra starten (`ghidraRun.bat` im Install-Ordner).
+2. `File` → `Install Extensions…` → grünes `+` → `GhidraMCP-1-4.zip` wählen → OK → Ghidra neu starten.
+3. Ein Programm im CodeBrowser öffnen → `File` → `Configure…` → `Developer` (bzw. „Miscellaneous")
+   → Haken bei **GhidraMCPPlugin** → OK. Startet HTTP-Server auf `127.0.0.1:8080`.
+4. Prüfen: Ghidra + Programm offen → in Claude `/mcp` → `ghidra` „connected",
+   oder `curl http://127.0.0.1:8080/methods`.
+
+> Der Bridge verbindet NUR, solange Ghidra mit aktivem Plugin + geladenem Programm läuft.
+> Ohne laufendes Ghidra zeigt `/mcp` „failed" — das ist normal.
+
+### B4. code_decompressed.bin importieren + analysieren
+
+`File` → `Import File` → `code_decompressed.bin` wählen. Im Import-Dialog:
+- **Format:** Raw Binary
+- **Language:** Picker öffnen → ARM / little endian / 32 / **v6** (ARM11 = ARMv6) → `ARM:LE:32:v6`
+- **Options → Base Address:** `00100000`
+
+Dann Auto-Analyse laufen lassen (5 MB ARM → 20–40 Min). Danach in Claude Code
+dekompilieren/referenzieren/umbenennen lassen (Prompts in §4).
 
 ---
 

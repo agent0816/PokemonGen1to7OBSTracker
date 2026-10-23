@@ -613,6 +613,13 @@ class CitraHandler:
         elif self.edition in (63, 64):
             path = "backend/data/zone_id_mapping_oras.yml"
             index_path = "backend/data/zone_index_met_oras.yml"
+        elif self.edition in (71, 72):
+            # Gen 7 hat keine veraltete zone_id-Mapping-Datei, nur die Index-Tabelle.
+            path = None
+            index_path = "backend/data/zone_index_met_sm.yml"
+        elif self.edition in (73, 74):
+            path = None
+            index_path = "backend/data/zone_index_met_usum.yml"
         else:
             return
         try:
@@ -628,10 +635,13 @@ class CitraHandler:
                     self.logger.debug(f"Zonen-Index-Eintrag uebersprungen: {idx!r}")
             self.logger.info(f"Zonen-Index-Tabelle geladen: {index_path} ({len(self._zone_index_met)} Einträge)")
         except FileNotFoundError:
-            self.logger.info(f"Zonen-Index-Tabelle nicht gefunden: {index_path}")
+            # Gen 7 hat keinen zone_id-Fallback — fehlende Tabelle = met immer 0. Warnen.
+            self.logger.warning(f"Zonen-Index-Tabelle nicht gefunden: {index_path} — met_location bleibt 0")
         except Exception as err:
             self.logger.warning(f"Zonen-Index-Tabelle laden fehlgeschlagen: {index_path}: {err}")
             self.logger.warning(traceback.format_exc())
+        if not path:
+            return
         try:
             with open(path) as f:
                 raw = yaml.safe_load(f) or {}

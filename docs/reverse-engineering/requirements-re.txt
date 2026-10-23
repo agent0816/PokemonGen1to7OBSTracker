@@ -1,0 +1,19 @@
+# RE-Toolchain — getestete, funktionierende Pins (verifiziert 2026-10-23, Ghidra 11.3.2)
+#
+# NICHT in die App-venv installieren. Eigene venv:
+#   python -m venv .venv/re-lab
+#   .venv/re-lab/Scripts/python -m pip install -r docs/reverse-engineering/requirements-re.txt
+#
+# WARUM die Pins (sonst bricht der MCP-Server gegen Ghidra 11.3.2):
+#   mcp<2       : ghidra-bizhawk-mcp 1.1.0 nutzt die mcp-1.x-API (server.list_tools()).
+#                 mcp 2.x entfernt sie -> AttributeError beim Start.
+#   pyghidra<3  : pyghidra>=3.0 verlangt Ghidra>=12.0 und lehnt 11.3.2 ab
+#                 ("Unsupported Version ... minimum required version is 12.0").
+#                 pyghidra 2.2.1 akzeptiert Ghidra 11.3.2.
+#   Das Paket-Extra [ghidra] zieht pyghidra>=3.0 — darum hier NICHT das Extra nehmen,
+#   sondern pyghidra 2.2.1 explizit pinnen.
+
+ghidra-bizhawk-mcp==1.1.0
+mcp==1.30.0
+pyghidra==2.2.1
+jpype1==1.7.1

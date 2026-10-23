@@ -1,0 +1,388 @@
+# Zonen-Index -> met_location (USUM), aus ROM extrahiert (2026-10-23)
+# Quelle: Pokemon Ultra Sun (USA) (En,Ja,Fr,De,Es,It,Zh,Ko).3ds, GARC a/0/7/7, Zonedata = Sub-File 0, 380 Records a 84 Bytes
+# met = int32 LE @ +0x1C (ParentMap)
+# Index = Zonedata-Recordnummer (0-basiert); zur Laufzeit wird gegen den
+# encounter_zone_index-Pointer (u16) gelesen.
+# Randomizer (UPR) aendert Encounter-Slots, nicht Zonedata-met -> Tabelle gilt
+# auch fuer Rando-ROMs (Annahme, beim ersten Rando-Run per Log pruefen).
+
+0: 6  # Route 1
+1: 6  # Route 1
+2: 6  # Route 1
+3: 8  # Route 1
+4: 8  # Route 1
+5: 8  # Route 1
+6: 10  # Route 3
+7: 12  # Route 2
+8: 14  # Kala’e-Bucht
+9: 16  # Meer von Mele-Mele
+10: 16  # Meer von Mele-Mele
+11: 198  # Big Wave Beach
+12: 18  # Hauholi City
+13: 20  # Hauholi City
+14: 22  # Hauholi City
+15: 22  # Hauholi City
+16: 24  # Lili’i
+17: 24  # Lili’i
+18: 24  # Lili’i
+19: 26  # Mahalo-Bergpfad
+20: 28  # Mahalo-Bergpfad
+21: 28  # Mahalo-Bergpfad
+22: 30  # Ruinen des Krieges
+23: 30  # Ruinen des Krieges
+24: 30  # Ruinen des Krieges
+25: 30  # Ruinen des Krieges
+26: 34  # Tenkarat-Hügel
+27: 36  # Tenkarat-Hügel
+28: 38  # Hauholi-Friedhof
+29: 40  # Mele-Mele-Blumenmeer
+30: 42  # Meereshöhle
+31: 44  # Beerenfelder
+32: 200  # Strandhöhle
+33: 46  # Vegetationshöhle
+34: 48  # Vegetationshöhle
+35: 6  # Route 1
+36: 6  # Route 1
+37: 6  # Route 1
+38: 6  # Route 1
+39: 24  # Lili’i
+40: 24  # Lili’i
+41: 24  # Lili’i
+42: 24  # Lili’i
+43: 24  # Lili’i
+44: 24  # Lili’i
+45: 24  # Lili’i
+46: 6  # Route 1
+47: 6  # Route 1
+48: 20  # Hauholi City
+49: 12  # Route 2
+50: 12  # Route 2
+51: 20  # Hauholi City
+52: 20  # Hauholi City
+53: 20  # Hauholi City
+54: 44  # Beerenfelder
+55: 230  # Route 1
+56: 230  # Route 1
+57: 230  # Route 1
+58: 230  # Route 1
+59: 230  # Route 1
+60: 230  # Route 1
+61: 230  # Route 1
+62: 230  # Route 1
+63: 20  # Hauholi City
+64: 20  # Hauholi City
+65: 20  # Hauholi City
+66: 20  # Hauholi City
+67: 20  # Hauholi City
+68: 22  # Hauholi City
+69: 22  # Hauholi City
+70: 20  # Hauholi City
+71: 20  # Hauholi City
+72: 12  # Route 2
+73: 12  # Route 2
+74: 20  # Hauholi City
+75: 20  # Hauholi City
+76: 20  # Hauholi City
+77: 6  # Route 1
+78: 20  # Hauholi City
+79: 12  # Route 2
+80: 50  # Route 4
+81: 52  # Route 5
+82: 54  # Route 6
+83: 56  # Route 7
+84: 58  # Route 8
+85: 60  # Route 9
+86: 62  # Hanohano-Resort
+87: 64  # Hanohano-Strand
+88: 202  # Kantai-Strand
+89: 68  # Ohana
+90: 70  # Kantai City
+91: 72  # Konikoni City
+92: 74  # Avenue Royale
+93: 232  # Spaltberg-Tunnel
+94: 92  # Ruinen des Lebens
+95: 92  # Ruinen des Lebens
+96: 92  # Ruinen des Lebens
+97: 76  # Hügel des Gedenkens
+98: 94  # Akala-Küstenstreifen
+99: 100  # Digda-Tunnel
+100: 82  # Wela-Vulkanpark
+101: 84  # Wela-Vulkanpark
+102: 86  # Plätscherhügel
+103: 86  # Plätscherhügel
+104: 88  # Plätscherhügel
+105: 90  # Schattendschungel
+106: 90  # Schattendschungel
+107: 90  # Schattendschungel
+108: 90  # Schattendschungel
+109: 90  # Schattendschungel
+110: 68  # Ohana
+111: 68  # Ohana
+112: 68  # Ohana
+113: 68  # Ohana
+114: 72  # Konikoni City
+115: 72  # Konikoni City
+116: 72  # Konikoni City
+117: 72  # Konikoni City
+118: 72  # Konikoni City
+119: 72  # Konikoni City
+120: 72  # Konikoni City
+121: 72  # Konikoni City
+122: 72  # Konikoni City
+123: 70  # Kantai City
+124: 70  # Kantai City
+125: 70  # Kantai City
+126: 70  # Kantai City
+127: 70  # Kantai City
+128: 70  # Kantai City
+129: 70  # Kantai City
+130: 70  # Kantai City
+131: 70  # Kantai City
+132: 70  # Kantai City
+133: 70  # Kantai City
+134: 70  # Kantai City
+135: 70  # Kantai City
+136: 70  # Kantai City
+137: 70  # Kantai City
+138: 58  # Route 8
+139: 62  # Hanohano-Resort
+140: 74  # Avenue Royale
+141: 58  # Route 8
+142: 58  # Route 8
+143: 74  # Avenue Royale
+144: 72  # Konikoni City
+145: 72  # Konikoni City
+146: 60  # Route 9
+147: 104  # Dome Royale
+148: 58  # Route 8
+149: 78  # Ohana-Farm
+150: 78  # Ohana-Farm
+151: 78  # Ohana-Farm
+152: 70  # Kantai City
+153: 72  # Konikoni City
+154: 72  # Konikoni City
+155: 74  # Avenue Royale
+156: 70  # Kantai City
+157: 228  # Pikachu-Tal
+158: 70  # Kantai City
+159: 74  # Avenue Royale
+160: 58  # Route 8
+161: 72  # Konikoni City
+162: 68  # Ohana
+163: 52  # Route 5
+164: 106  # Route 10
+165: 108  # Route 11
+166: 110  # Strand von Ula-Ula
+167: 112  # Route 13
+168: 114  # Dorf der Kapu
+169: 126  # Route 14
+170: 116  # Route 15 (Wasserweg)
+171: 118  # Route 16
+172: 120  # Route 17
+173: 122  # Route 12
+174: 132  # Malihe City
+175: 192  # Malihe City
+176: 130  # Po’u
+177: 124  # Haina-Wüste
+178: 124  # Haina-Wüste
+179: 124  # Haina-Wüste
+180: 124  # Haina-Wüste
+181: 124  # Haina-Wüste
+182: 124  # Haina-Wüste
+183: 124  # Haina-Wüste
+184: 124  # Haina-Wüste
+185: 128  # Ula-Ula-Blumenmeer
+186: 134  # Malihe-Ziergarten
+187: 136  # Hokulani-Berg
+188: 138  # Glühberg
+189: 140  # Ruinen des Gedeihens
+190: 140  # Ruinen des Gedeihens
+191: 140  # Ruinen des Gedeihens
+192: 142  # Sonnenkreis-See
+193: 142  # Sonnenkreis-See
+194: 142  # Sonnenkreis-See
+195: 142  # Sonnenkreis-See
+196: 144  # Mondscheiben-See
+197: 144  # Mondscheiben-See
+198: 144  # Mondscheiben-See
+199: 144  # Mondscheiben-See
+200: 146  # Mount Lanakila
+201: 146  # Mount Lanakila
+202: 146  # Mount Lanakila
+203: 146  # Mount Lanakila
+204: 146  # Mount Lanakila
+205: 146  # Mount Lanakila
+206: 146  # Mount Lanakila
+207: 146  # Mount Lanakila
+208: 148  # Lottervilla
+209: 148  # Lottervilla
+210: 148  # Lottervilla
+211: 148  # Lottervilla
+212: 148  # Lottervilla
+213: 148  # Lottervilla
+214: 148  # Lottervilla
+215: 148  # Lottervilla
+216: 148  # Lottervilla
+217: 148  # Lottervilla
+218: 148  # Lottervilla
+219: 148  # Lottervilla
+220: 150  # Schnäppchenparadies
+221: 150  # Schnäppchenparadies
+222: 150  # Schnäppchenparadies
+223: 132  # Malihe City
+224: 132  # Malihe City
+225: 132  # Malihe City
+226: 132  # Malihe City
+227: 132  # Malihe City
+228: 132  # Malihe City
+229: 132  # Malihe City
+230: 132  # Malihe City
+231: 132  # Malihe City
+232: 132  # Malihe City
+233: 132  # Malihe City
+234: 116  # Route 15 (Wasserweg)
+235: 116  # Route 15 (Wasserweg)
+236: 116  # Route 15 (Wasserweg)
+237: 112  # Route 13
+238: 112  # Route 13
+239: 120  # Route 17
+240: 118  # Route 16
+241: 118  # Route 16
+242: 152  # Hokulani-Sternwarte
+243: 152  # Hokulani-Sternwarte
+244: 152  # Hokulani-Sternwarte
+245: 152  # Hokulani-Sternwarte
+246: 138  # Glühberg
+247: 192  # Malihe City
+248: 116  # Route 15 (Wasserweg)
+249: 112  # Route 13
+250: 112  # Route 13
+251: 154  # Pokémon-Liga
+252: 154  # Pokémon-Liga
+253: 154  # Pokémon-Liga
+254: 154  # Pokémon-Liga
+255: 154  # Pokémon-Liga
+256: 154  # Pokémon-Liga
+257: 154  # Pokémon-Liga
+258: 132  # Malihe City
+259: 114  # Dorf der Kapu
+260: 130  # Po’u
+261: 118  # Route 16
+262: 146  # Mount Lanakila
+263: 136  # Hokulani-Berg
+264: 158  # Wildnis von Poni
+265: 160  # Alter Pfad von Poni
+266: 162  # Felsenküste von Poni
+267: 164  # Wald von Poni
+268: 166  # Ebene von Poni
+269: 168  # Küste von Poni
+270: 170  # Beschwerlicher Pfad
+271: 204  # Strand von Poni
+272: 172  # Dorf des Seevolkes
+273: 156  # Poni-Blumenmeer
+274: 174  # Canyon von Poni
+275: 174  # Canyon von Poni
+276: 174  # Canyon von Poni
+277: 174  # Canyon von Poni
+278: 174  # Canyon von Poni
+279: 174  # Canyon von Poni
+280: 176  # Sonnenkreis-Podium
+281: 176  # Sonnenkreis-Podium
+282: 178  # Mondscheiben-Podium
+283: 178  # Mondscheiben-Podium
+284: 180  # Ruinen der Heimkehr
+285: 180  # Ruinen der Heimkehr
+286: 180  # Ruinen der Heimkehr
+287: 182  # Finalhöhle
+288: 182  # Finalhöhle
+289: 182  # Finalhöhle
+290: 184  # Kokowei-Eiland
+291: 226  # Tunnel in der Ebene
+292: 172  # Dorf des Seevolkes
+293: 172  # Dorf des Seevolkes
+294: 172  # Dorf des Seevolkes
+295: 172  # Dorf des Seevolkes
+296: 172  # Dorf des Seevolkes
+297: 160  # Alter Pfad von Poni
+298: 160  # Alter Pfad von Poni
+299: 172  # Dorf des Seevolkes
+300: 186  # Kampfbaum
+301: 186  # Kampfbaum
+302: 186  # Kampfbaum
+303: 186  # Kampfbaum
+304: 188  # Æther-Paradies
+305: 188  # Æther-Paradies
+306: 188  # Æther-Paradies
+307: 188  # Æther-Paradies
+308: 188  # Æther-Paradies
+309: 188  # Æther-Paradies
+310: 188  # Æther-Paradies
+311: 188  # Æther-Paradies
+312: 188  # Æther-Paradies
+313: 188  # Æther-Paradies
+314: 188  # Æther-Paradies
+315: 188  # Æther-Paradies
+316: 188  # Æther-Paradies
+317: 188  # Æther-Paradies
+318: 6  # Route 1
+319: 6  # Route 1
+320: 6  # Route 1
+321: 190  # Ultratiefsee
+322: 206  # Ultrametropolis
+323: 206  # Ultrametropolis
+324: 208  # Metropo Tower
+325: 208  # Metropo Tower
+326: 210  # Ultrakraftwerk
+327: 212  # Ultratal
+328: 214  # Ultrawüste
+329: 216  # Ultrawald
+330: 218  # Ultradschungel
+331: 220  # Ultrawolkenkratzer
+332: 220  # Ultrawolkenkratzer
+333: 222  # Ultradimension Zero
+334: 222  # Ultradimension Zero
+335: 222  # Ultradimension Zero
+336: 222  # Ultradimension Zero
+337: 188  # Æther-Paradies
+338: 224  # Rocket-Schloss
+339: 224  # Rocket-Schloss
+340: 224  # Rocket-Schloss
+341: 224  # Rocket-Schloss
+342: 224  # Rocket-Schloss
+343: 224  # Rocket-Schloss
+344: 224  # Rocket-Schloss
+345: 224  # Rocket-Schloss
+346: 224  # Rocket-Schloss
+347: 224  # Rocket-Schloss
+348: 224  # Rocket-Schloss
+349: 224  # Rocket-Schloss
+350: 224  # Rocket-Schloss
+351: 224  # Rocket-Schloss
+352: 224  # Rocket-Schloss
+353: 224  # Rocket-Schloss
+354: 224  # Rocket-Schloss
+355: 224  # Rocket-Schloss
+356: 224  # Rocket-Schloss
+357: 224  # Rocket-Schloss
+358: 224  # Rocket-Schloss
+359: 224  # Rocket-Schloss
+360: 224  # Rocket-Schloss
+361: 224  # Rocket-Schloss
+362: 224  # Rocket-Schloss
+363: 224  # Rocket-Schloss
+364: 224  # Rocket-Schloss
+365: 224  # Rocket-Schloss
+366: 224  # Rocket-Schloss
+367: 224  # Rocket-Schloss
+368: 224  # Rocket-Schloss
+369: 224  # Rocket-Schloss
+370: 224  # Rocket-Schloss
+371: 224  # Rocket-Schloss
+372: 224  # Rocket-Schloss
+373: 224  # Rocket-Schloss
+374: 224  # Rocket-Schloss
+375: 224  # Rocket-Schloss
+376: 224  # Rocket-Schloss
+377: 224  # Rocket-Schloss
+378: 224  # Rocket-Schloss
+379: 224  # Rocket-Schloss

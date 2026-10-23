@@ -87,6 +87,41 @@ nächste Zielfund (dann kein yml-Lookup mehr nötig).
 
 ## Feeds into
 
-- [ ] `backend/data/zone_id_mapping_xy.yml` — nur bei bestätigter Import-Auflösung
+- [ ] `backend/data/zone_id_mapping_xy.yml` — ersetzen durch Zonen-Index 0x08CEC558 + ROM-Zonedata (Plan offen)
 - [x] `docs/reverse-engineering/cro_tools.py` — wiederverwendbares CRO-Toolkit
 - [x] `docs/reverse-engineering/findings/gen6_dllfield_registry.md` — 717 Field-Funktionen
+
+## DURCHBRUCH: echter Zonen-Index + Zonedata live im RAM (2026-10-23)
+
+Kein Pointer-Chasing nötig — gefunden per Daten-Suche statt Code-Analyse:
+
+1. Zonedata (`a/0/1/2` File 360, 360×56B) aus ROM extrahiert, erste Records als Muster
+   im Heap gesucht → **Zonedata liegt live bei `0x08CFB6E4`**, Byte-identisch mit ROM
+   (20160/20160). Pointer auf die Tabelle bei `0x082F7674`.
+2. Route 10 (met 50) = **Zonedata-Record 268**. `u16 @ 0x08CEC558` = **268**.
+3. Live-Monitor (Route 10 → Relievera City → zurück → Trainerkampf):
+   ```
+   idx=268 old568=0x06E8 met=50 Route 10
+   idx=268 old568=0x04AC met=50 Route 10
+   idx=157 old568=0x06E8 met=40 Relievera City
+   idx=268 old568=0x06E8 met=50 Route 10
+   idx=268 old568=0x04AC met=50 Route 10
+   ```
+
+**Ergebnis (X, Azahar 2125.1.2):**
+- **`0x08CEC558` (u16) = aktueller Zonen-Index** (= Zonedata-Recordnummer, 0..359; danach `0xFFFF`).
+- `met_location = zd[idx*56+0x1C] + 256*(zd[idx*56+0x1D] & 1)` (gleiches Encoding wie Randomizer).
+- **`0x08CEC568` ist KEINE Standzonen-ID:** wechselt innerhalb Route 10 zwischen `0x06E8`/`0x04AC`
+  (u.a. bei Kampfstart), bleibt beim Betreten von Relievera City unverändert. Erklärt die
+  Route-8-Doppelwerte und alle 3 Proxy-Konflikte. `0x04AC` = ROM-Header-+0x0C-Wert für Route 10.
+- Folge: `zone_id_mapping_xy.yml` (manuelles Logging) wird überflüssig — Index + ROM-Zonedata
+  liefern met_location für ALLE 360 Zonen.
+
+**ORAS (Alpha Saphir, live verifiziert 2026-10-23):**
+- **Zonen-Index `u16 @ 0x08D0247C`** (gleiches Struct-Layout wie XY: 2 Heap-Ptr, idx+`FFFF`, `5a4f`-Marker).
+- Zonedata live bei `0x08D11E54`, byte-identisch mit ROM `a/0/1/3` File 536 (536 Records).
+- Alte ORAS-Vermutung `0x08D0645C` ist 0 → falsch.
+- Monitor: Route 101 (idx 23, met 204) → idx 6 (met 170) → 101 → idx 7 (met 172) → Route 102 (24, met 206)
+  → idx 7 → Route 103 (25, met 208). met 170/172 nicht in `encounter_locations_gen6.yml`
+  (Städte ohne Encounter); vermutlich Wurzelheim/Rosalia City, Namen ungeprüft. Statisch noch nicht nachgezogen, welche
+code.bin-Funktion `0x08CEC558` schreibt (nicht nötig für Tracker).

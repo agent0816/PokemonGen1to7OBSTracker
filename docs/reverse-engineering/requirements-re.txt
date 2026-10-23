@@ -17,3 +17,6 @@ ghidra-bizhawk-mcp==1.1.0
 mcp==1.30.0
 pyghidra==2.2.1
 jpype1==1.7.1
+
+# Azahar-Track: 3DS code.bin-Extraktion (extract_3ds_code.py)
+pyctr==0.7.6

@@ -127,10 +127,30 @@ ROM in Ghidra laden lassen (MCP: `triage_and_load_retro_rom`), Auto-Analyse abwa
 Kein Turnkey-MCP. Weg: Live-Suche in Azahar + statische Analyse der extrahierten
 `code.bin` über `LaurieWired/GhidraMCP`.
 
-### B1. ROM entschlüsseln + Code extrahieren
+### B1. code.bin extrahieren + dekomprimieren (verifiziert 2026-10-23)
 
-1. In Azahar `.cia`/`.3ds` laden → zu entschlüsselter `.cci`/`.3ds` konvertieren.
-2. ExeFS auspacken → `code.bin` (ARM11-Binary) extrahieren (`ctrtool` / `3dstool`).
+Kein ctrtool/boot9 nötig — `extract_3ds_code.py` nutzt pyctr + Azahars eigene
+`aes_keys.txt` und dekomprimiert BLZ automatisch:
+
+```powershell
+.venv/re-lab/Scripts/python docs/reverse-engineering/extract_3ds_code.py `
+  "tools/roms/gen6/Pokemon X (USA) ....3ds" tools/roms/gen6/x_extract
+# aes_keys.txt default: %APPDATA%\Azahar\sysdata\aes_keys.txt
+```
+
+Ergebnis in `<out>/`: `code.bin` (roh) und — falls `CompressExefsCode`-Flag gesetzt —
+`code_decompressed.bin`. **Die dekomprimierte Datei in Ghidra laden.**
+
+So funktioniert's (Details im Skript-Docstring):
+- 3DS-Decrypt braucht normal `boot9.bin`. Azahar legt die abgeleiteten Keyslots in
+  `aes_keys.txt` ab → nur die **KeyX**-Slots laden (`CryptoEngine(setup_b9_keys=False)` +
+  `set_keyslot('x', …)`), KeyY kommt aus dem NCCH-Header.
+- `CCIReader` baut intern eine eigene CryptoEngine (boot9) → **nicht** nutzbar. Stattdessen
+  NCSD-Header @0x120 parsen → Application-Partition (0) per `SubsectionIO` direkt an
+  `NCCHReader(crypto=ce)`.
+- Gen-6-Code ist BLZ-komprimiert (SCI-Flag @exheader 0x0D bit0) → backward-LZ dekomprimieren.
+- Validierung: Pokemon X (`CTR-P-EKJA`) .code 2.86 MB → 5.16 MB, Entry-Word `0xEB000007`
+  (ARM `BL`) = plausibler ARM11-Code.
 
 ### B2. Live-Wert in Azahar finden (WO)
 

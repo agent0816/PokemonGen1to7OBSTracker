@@ -87,7 +87,8 @@ nächste Zielfund (dann kein yml-Lookup mehr nötig).
 
 ## Feeds into
 
-- [ ] `backend/data/zone_id_mapping_xy.yml` — ersetzen durch Zonen-Index 0x08CEC558 + ROM-Zonedata (Plan offen)
+- [x] `backend/data/zone_index_met_{xy,oras}.yml` — Index→met aus ROM-Zonedata (via `tools/extract_zonedata.py --emit-index-met`), ersetzt manuelles `zone_id_mapping_*.yml` (nur noch Fallback) — umgesetzt 2026-10-23
+- [x] `backend/data/pointer_{xy,oras}.yml` — `encounter_zone_index` (XY 0x08CEC558, ORAS 0x08D0247C); `citrahandler._current_met_location` liest Index→Tabelle
 - [x] `docs/reverse-engineering/cro_tools.py` — wiederverwendbares CRO-Toolkit
 - [x] `docs/reverse-engineering/findings/gen6_dllfield_registry.md` — 717 Field-Funktionen
 

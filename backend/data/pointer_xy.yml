@@ -21,4 +21,12 @@ bag_medizin: 0x08c67ebc
 bag_beeren: 0x08c67fbc
 # Encounter-Tracking (verifiziert: PokemonCheatPlugin + CitraRNG)
 encounter_pokemon: 0x081FF744
+# Aktueller Zonen-Index (u16 LE) = Zonedata-Recordnummer 0..359.
+# Live verifiziert (X USA, Azahar 2125.1.2, 2026-10-23): Route 10 = 268 (met 50),
+# Relievera City = 157 (met 40). met via zone_index_met_xy.yml.
+# Y (62) teilt diese Pointer-Datei, Index aber NICHT separat live verifiziert.
+# Doku: docs/reverse-engineering/findings/gen6_cro_pipeline.md
+encounter_zone_index: 0x08CEC558
+# NICHT die Standzone — springt in Route 10 zwischen 0x06E8/0x04AC und aendert
+# sich beim Stadtwechsel nicht. Behalten als Fallback, siehe gen6_cro_pipeline.md.
 encounter_zone_pointer: 0x08CEC568

@@ -112,7 +112,18 @@ Konfiguration liegt pro Session unter `backend/config/<session_name>/` mit acht 
 
 ## Lizenz
 
-TODO — noch nicht festgelegt.
+Der **Quellcode** dieses Projekts steht unter der [Apache License 2.0](LICENSE). Siehe auch die [NOTICE](NOTICE)-Datei.
+
+Die Apache-2.0-Lizenz gilt ausschließlich für den Code und die eigenen Werke des Projekts — **nicht** für Marken, Logos oder Artworks Dritter (siehe Rechtlicher Hinweis).
+
+## Rechtlicher Hinweis / Disclaimer
+
+PokemonGen1to7OBSTracker ist ein **inoffizielles, von Fans erstelltes, kostenloses und nicht-kommerzielles** Tool. Es steht in keiner Verbindung zu und wird weder unterstützt noch gesponsert oder autorisiert von **Nintendo, The Pokémon Company oder Game Freak**.
+
+„Pokémon" sowie alle zugehörigen Namen, Editions-Titel, Logos, Charaktere und Artworks sind Marken und/oder urheberrechtlich geschützte Werke ihrer jeweiligen Eigentümer.
+
+- Dieses Tool enthält und verteilt **keine ROMs**, Spiel-Software oder sonstige Spielinhalte. Nutzer müssen legal erworbene Kopien der Spiele selbst bereitstellen.
+- Die im Tool verwendeten Editions-Logos und -Artworks dienen ausschließlich der **Kennzeichnung der jeweils unterstützten Spielversion** (nominative Nutzung). Alle Rechte daran verbleiben bei den jeweiligen Eigentümern.
 
 ## Credits
 

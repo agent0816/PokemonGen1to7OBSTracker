@@ -1,0 +1,303 @@
+# Zonen-Index -> met_location (SM), aus ROM extrahiert (2026-10-23)
+# Quelle: Pokemon Sun (USA) (En,Ja,Fr,De,Es,It,Zh,Ko).3ds, GARC a/0/7/7, Zonedata = Sub-File 0, 295 Records a 84 Bytes
+# met = int32 LE @ +0x1C (ParentMap)
+# Index = Zonedata-Recordnummer (0-basiert); zur Laufzeit wird gegen den
+# encounter_zone_index-Pointer (u16) gelesen.
+# Randomizer (UPR) aendert Encounter-Slots, nicht Zonedata-met -> Tabelle gilt
+# auch fuer Rando-ROMs (Annahme, beim ersten Rando-Run per Log pruefen).
+
+0: 6  # Route 1
+1: 8  # Route 1
+2: 10  # Route 3
+3: 12  # Route 2
+4: 14  # Kala’e-Bucht
+5: 16  # Meer von Mele-Mele
+6: 16  # Meer von Mele-Mele
+7: 18  # Hauholi City
+8: 20  # Hauholi City
+9: 22  # Hauholi City
+10: 24  # Lili’i
+11: 24  # Lili’i
+12: 24  # Lili’i
+13: 26  # Mahalo-Bergpfad
+14: 28  # Mahalo-Bergpfad
+15: 30  # Ruinen des Krieges
+16: 30  # Ruinen des Krieges
+17: 30  # Ruinen des Krieges
+18: 34  # Tenkarat-Hügel
+19: 36  # Tenkarat-Hügel
+20: 38  # Hauholi-Friedhof
+21: 40  # Mele-Mele-Blumenmeer
+22: 42  # Meereshöhle
+23: 44  # Beerenfelder
+24: 46  # Vegetationshöhle
+25: 48  # Vegetationshöhle
+26: 6  # Route 1
+27: 6  # Route 1
+28: 6  # Route 1
+29: 6  # Route 1
+30: 24  # Lili’i
+31: 24  # Lili’i
+32: 24  # Lili’i
+33: 24  # Lili’i
+34: 24  # Lili’i
+35: 24  # Lili’i
+36: 24  # Lili’i
+37: 6  # Route 1
+38: 6  # Route 1
+39: 20  # Hauholi City
+40: 12  # Route 2
+41: 12  # Route 2
+42: 20  # Hauholi City
+43: 20  # Hauholi City
+44: 20  # Hauholi City
+45: 44  # Beerenfelder
+46: 6  # Route 1
+47: 6  # Route 1
+48: 6  # Route 1
+49: 6  # Route 1
+50: 6  # Route 1
+51: 6  # Route 1
+52: 6  # Route 1
+53: 6  # Route 1
+54: 20  # Hauholi City
+55: 20  # Hauholi City
+56: 20  # Hauholi City
+57: 20  # Hauholi City
+58: 20  # Hauholi City
+59: 22  # Hauholi City
+60: 20  # Hauholi City
+61: 20  # Hauholi City
+62: 12  # Route 2
+63: 12  # Route 2
+64: 20  # Hauholi City
+65: 6  # Route 1
+66: 20  # Hauholi City
+67: 12  # Route 2
+68: 50  # Route 4
+69: 52  # Route 5
+70: 54  # Route 6
+71: 56  # Route 7
+72: 58  # Route 8
+73: 60  # Route 9
+74: 62  # Hanohano-Resort
+75: 64  # Hanohano-Strand
+76: 68  # Ohana
+77: 70  # Kantai City
+78: 72  # Konikoni City
+79: 74  # Avenue Royale
+80: 92  # Ruinen des Lebens
+81: 92  # Ruinen des Lebens
+82: 92  # Ruinen des Lebens
+83: 76  # Hügel des Gedenkens
+84: 94  # Akala-Küstenstreifen
+85: 100  # Digda-Tunnel
+86: 82  # Wela-Vulkanpark
+87: 84  # Wela-Vulkanpark
+88: 86  # Plätscherhügel
+89: 86  # Plätscherhügel
+90: 88  # Plätscherhügel
+91: 90  # Schattendschungel
+92: 90  # Schattendschungel
+93: 90  # Schattendschungel
+94: 90  # Schattendschungel
+95: 90  # Schattendschungel
+96: 68  # Ohana
+97: 68  # Ohana
+98: 68  # Ohana
+99: 68  # Ohana
+100: 72  # Konikoni City
+101: 72  # Konikoni City
+102: 72  # Konikoni City
+103: 72  # Konikoni City
+104: 72  # Konikoni City
+105: 72  # Konikoni City
+106: 72  # Konikoni City
+107: 72  # Konikoni City
+108: 72  # Konikoni City
+109: 70  # Kantai City
+110: 70  # Kantai City
+111: 70  # Kantai City
+112: 70  # Kantai City
+113: 70  # Kantai City
+114: 70  # Kantai City
+115: 70  # Kantai City
+116: 70  # Kantai City
+117: 70  # Kantai City
+118: 70  # Kantai City
+119: 58  # Route 8
+120: 62  # Hanohano-Resort
+121: 74  # Avenue Royale
+122: 58  # Route 8
+123: 58  # Route 8
+124: 74  # Avenue Royale
+125: 72  # Konikoni City
+126: 72  # Konikoni City
+127: 60  # Route 9
+128: 104  # Dome Royale
+129: 58  # Route 8
+130: 78  # Ohana-Farm
+131: 78  # Ohana-Farm
+132: 78  # Ohana-Farm
+133: 70  # Kantai City
+134: 70  # Kantai City
+135: 74  # Avenue Royale
+136: 58  # Route 8
+137: 72  # Konikoni City
+138: 68  # Ohana
+139: 52  # Route 5
+140: 106  # Route 10
+141: 108  # Route 11
+142: 110  # Strand von Ula-Ula
+143: 112  # Route 13
+144: 114  # Dorf der Kapu
+145: 126  # Route 14
+146: 116  # Route 15 (Wasserweg)
+147: 118  # Route 16
+148: 120  # Route 17
+149: 122  # Route 12
+150: 132  # Malihe City
+151: 192  # Malihe City
+152: 130  # Po’u
+153: 124  # Haina-Wüste
+154: 124  # Haina-Wüste
+155: 124  # Haina-Wüste
+156: 124  # Haina-Wüste
+157: 124  # Haina-Wüste
+158: 124  # Haina-Wüste
+159: 124  # Haina-Wüste
+160: 124  # Haina-Wüste
+161: 128  # Ula-Ula-Blumenmeer
+162: 134  # Malihe-Ziergarten
+163: 136  # Hokulani-Berg
+164: 138  # Glühberg
+165: 140  # Ruinen des Gedeihens
+166: 140  # Ruinen des Gedeihens
+167: 140  # Ruinen des Gedeihens
+168: 142  # Sonnenkreis-See
+169: 142  # Sonnenkreis-See
+170: 142  # Sonnenkreis-See
+171: 142  # Sonnenkreis-See
+172: 144  # Mondscheiben-See
+173: 144  # Mondscheiben-See
+174: 144  # Mondscheiben-See
+175: 144  # Mondscheiben-See
+176: 146  # Mount Lanakila
+177: 146  # Mount Lanakila
+178: 146  # Mount Lanakila
+179: 146  # Mount Lanakila
+180: 146  # Mount Lanakila
+181: 148  # Lottervilla
+182: 148  # Lottervilla
+183: 148  # Lottervilla
+184: 148  # Lottervilla
+185: 148  # Lottervilla
+186: 148  # Lottervilla
+187: 148  # Lottervilla
+188: 148  # Lottervilla
+189: 148  # Lottervilla
+190: 148  # Lottervilla
+191: 148  # Lottervilla
+192: 150  # Schnäppchenparadies
+193: 150  # Schnäppchenparadies
+194: 150  # Schnäppchenparadies
+195: 132  # Malihe City
+196: 132  # Malihe City
+197: 132  # Malihe City
+198: 132  # Malihe City
+199: 132  # Malihe City
+200: 132  # Malihe City
+201: 132  # Malihe City
+202: 132  # Malihe City
+203: 132  # Malihe City
+204: 132  # Malihe City
+205: 132  # Malihe City
+206: 116  # Route 15 (Wasserweg)
+207: 116  # Route 15 (Wasserweg)
+208: 116  # Route 15 (Wasserweg)
+209: 112  # Route 13
+210: 112  # Route 13
+211: 120  # Route 17
+212: 118  # Route 16
+213: 152  # Hokulani-Sternwarte
+214: 152  # Hokulani-Sternwarte
+215: 152  # Hokulani-Sternwarte
+216: 138  # Glühberg
+217: 112  # Route 13
+218: 112  # Route 13
+219: 154  # Pokémon-Liga
+220: 154  # Pokémon-Liga
+221: 154  # Pokémon-Liga
+222: 154  # Pokémon-Liga
+223: 154  # Pokémon-Liga
+224: 154  # Pokémon-Liga
+225: 132  # Malihe City
+226: 114  # Dorf der Kapu
+227: 130  # Po’u
+228: 118  # Route 16
+229: 146  # Mount Lanakila
+230: 136  # Hokulani-Berg
+231: 158  # Wildnis von Poni
+232: 160  # Alter Pfad von Poni
+233: 162  # Felsenküste von Poni
+234: 164  # Wald von Poni
+235: 166  # Ebene von Poni
+236: 168  # Küste von Poni
+237: 170  # Beschwerlicher Pfad
+238: 172  # Dorf des Seevolkes
+239: 156  # Poni-Blumenmeer
+240: 174  # Canyon von Poni
+241: 174  # Canyon von Poni
+242: 174  # Canyon von Poni
+243: 174  # Canyon von Poni
+244: 174  # Canyon von Poni
+245: 174  # Canyon von Poni
+246: 176  # Sonnenkreis-Podium
+247: 176  # Sonnenkreis-Podium
+248: 178  # Mondscheiben-Podium
+249: 178  # Mondscheiben-Podium
+250: 180  # Ruinen der Heimkehr
+251: 180  # Ruinen der Heimkehr
+252: 180  # Ruinen der Heimkehr
+253: 182  # Finalhöhle
+254: 182  # Finalhöhle
+255: 184  # Kokowei-Eiland
+256: 172  # Dorf des Seevolkes
+257: 172  # Dorf des Seevolkes
+258: 172  # Dorf des Seevolkes
+259: 172  # Dorf des Seevolkes
+260: 172  # Dorf des Seevolkes
+261: 160  # Alter Pfad von Poni
+262: 160  # Alter Pfad von Poni
+263: 172  # Dorf des Seevolkes
+264: 186  # Kampfbaum
+265: 186  # Kampfbaum
+266: 186  # Kampfbaum
+267: 186  # Kampfbaum
+268: 188  # Æther-Paradies
+269: 188  # Æther-Paradies
+270: 188  # Æther-Paradies
+271: 188  # Æther-Paradies
+272: 188  # Æther-Paradies
+273: 188  # Æther-Paradies
+274: 188  # Æther-Paradies
+275: 188  # Æther-Paradies
+276: 188  # Æther-Paradies
+277: 188  # Æther-Paradies
+278: 188  # Æther-Paradies
+279: 188  # Æther-Paradies
+280: 188  # Æther-Paradies
+281: 6  # Route 1
+282: 6  # Route 1
+283: 190  # Ultratiefsee
+284: 6  # Route 1
+285: 6  # Route 1
+286: 6  # Route 1
+287: 6  # Route 1
+288: 6  # Route 1
+289: 6  # Route 1
+290: 6  # Route 1
+291: 6  # Route 1
+292: 6  # Route 1
+293: 6  # Route 1
+294: 6  # Route 1

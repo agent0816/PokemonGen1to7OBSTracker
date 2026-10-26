@@ -1,0 +1,32 @@
+# Toolchain-Artefakte NIE einchecken — nur Doku + Fundstellen bleiben getrackt.
+# (docs/ ist sonst voll getrackt; diese Regeln wirken nur in diesem Unterbaum.)
+
+# requirements-re.txt gegen das globale *.txt (root .gitignore) wieder freigeben
+!requirements-re.txt
+
+# ROMs / entschlüsselte Spiel-Binaries
+*.gba
+*.nds
+*.3ds
+*.cia
+*.cci
+*.nes
+*.sfc
+*.smc
+*.gb
+*.gbc
+*.z64
+*.n64
+code.bin
+exefs/
+
+# Ghidra-Projekte (riesige Binaries)
+*.gpr
+*.rep
+ghidra_projects/
+
+# Memory-Dumps / Scratch
+dumps/
+*.dump
+*.bin
+scratch/

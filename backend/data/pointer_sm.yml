@@ -12,6 +12,12 @@ trainer_name: 0x330d6807
 trainer_name_in_fight: False
 trainer_value: 0x0320
 wild_value: 0x0320
+# Zonen-Index (u16 LE) = Record-Nummer in der residenten ZoneData-Tabelle
+# (@0x341BB2C4). met via zone_index_met_sm.yml (= ParentMap = PK7 met @0xD2).
+# Live-RE 2026-10-23 (Sonne USA, Azahar 2125.1.2), reboot-stabil, 5 Zonen + Catches
+# verifiziert. Mirrors: 0x34183CC6/0x34199C8C/0x3419A614/0x3419AAD8/0x3419AF9C.
+# Doku: docs/reverse-engineering/findings/gen7_zone_index.md
+encounter_zone_index: 0x3419A150
 # Bag-Pockets (Gen 7 packed slot, u32 LE bit-gepackt: 10b id + 10b qty + 10b
 # freespace + 2b flags). Per tools/find_bag_ptr.py auf deutschen ROMs verifiziert.
 # Sonne und Mond teilen den ROM-Code, identische Adressen.

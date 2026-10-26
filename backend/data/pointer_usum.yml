@@ -12,6 +12,12 @@ trainer_name: 0x3301543c
 trainer_name_in_fight: False
 trainer_value: 0x0320
 wild_value: 0x0320
+# Zonen-Index (u16 LE) = Record-Nummer in der residenten ZoneData-Tabelle
+# (@0x33FA609C). met via zone_index_met_usum.yml (= ParentMap = PK7 met @0xD2).
+# Live-RE 2026-10-23 (Ultramond USA, Azahar 2125.1.2), reboot-stabil, 3 Zonen
+# verifiziert; deckt 2026-07-07-Kandidaten. Mirror: 0x33FC3CE4 (+ Block 0x33F8xxxx).
+# Doku: docs/reverse-engineering/findings/gen7_zone_index.md
+encounter_zone_index: 0x33FC1FD4
 # Bag-Pockets (Gen 7 packed slot, u32 LE bit-gepackt: 10b id + 10b qty + 10b
 # freespace + 2b flags). Per tools/find_bag_ptr.py auf deutschen ROMs verifiziert.
 # Ultra Sonne und Ultra Mond teilen den ROM-Code, identische Adressen.

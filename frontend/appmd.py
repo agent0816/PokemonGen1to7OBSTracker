@@ -54,6 +54,7 @@ class Screens(ScreenManager):
         from frontend.widgets.boxmenumd import BoxMenu
         from frontend.widgets.encountermenumd import EncounterMenu
         from frontend.widgets.mainmenumd import MainMenu
+        from frontend.widgets.mapmenumd import MapMenu
         from frontend.widgets.nuzlockemenu_md import NuzlockeMenu
         from frontend.widgets.onboarding_md import OnboardingScreen
         from frontend.widgets.pokedexmenumd import PokedexMenu
@@ -103,6 +104,8 @@ class Screens(ScreenManager):
         self.add_widget(self.box_menu)
         self.bag_menu = BagMenu(configsave, pl, sp, bizhawk, citra, APP_VERSION)
         self.add_widget(self.bag_menu)
+        self.map_menu = MapMenu(munchlax, obs_websocket, pl, configsave)
+        self.add_widget(self.map_menu)
         self.nuzlocke_menu = NuzlockeMenu(munchlax, configsave, nuz, rem, bh, bizhawk, rnd)
         self.add_widget(self.nuzlocke_menu)
         # Detail-Drilldown (kein Rail-Ziel): aus Pokedex per Karten-Klick erreicht,
@@ -330,6 +333,11 @@ class Screens(ScreenManager):
             logger.error(f"BagMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
         try:
+            self.map_menu.load_from_session()
+        except Exception as err:
+            logger.error(f"MapMenu.load_from_session fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
+        try:
             self.settings_menu.load_from_session()
         except Exception as err:
             logger.error(f"SettingsMenu.load_from_session fehlgeschlagen: {err}")
@@ -357,6 +365,7 @@ class MainWindow(MDBoxLayout):
             {"icon": "clipboard-list-outline", "display_name": "Encounter", "screen_name": "EncounterMenu"},
             {"icon": "archive-outline", "display_name": "Box", "screen_name": "BoxMenu"},
             {"icon": "bag-personal-outline", "display_name": "Tasche", "screen_name": "BagMenu"},
+            {"icon": "map-outline", "display_name": "Karte", "screen_name": "MapMenu"},
             {"icon": "skull-outline", "display_name": "Nuzlocke", "screen_name": "NuzlockeMenu"},
             {"icon": "cog", "display_name": "Settings", "screen_name": "SettingsMenu"},
         ]

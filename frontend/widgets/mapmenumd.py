@@ -1,0 +1,526 @@
+"""KivyMD-MapMenu — Regionskarte mit Live-Position + anklickbaren Routen.
+
+Zeigt die Regionskarte des aktuellen (Gen-3-)Spiels, markiert die Route/Stadt,
+auf der der Spieler gerade steht (``map_section`` = regionMapSectionId aus dem
+Positions-Payload, siehe Kartenfeature Phase 2), und blendet beim Klick auf eine
+Route eine Legende ein (hier gefangenes Pokemon bzw. Route noch offen).
+
+Koordinaten-Hinweis: die Live-x/y des Spielers sind MAP-LOKALE Tile-Koordinaten
+(Position innerhalb der aktuellen Map), NICHT Regionskarten-Zellen. Auf der
+Regionskarte wird der Spieler deshalb auf der Zelle seiner aktuellen
+``map_section`` markiert (die Hotspot-Geometrie stammt aus backend/data/maps/).
+Die feinen x/y sind für spätere Innenraum-Detailkarten reserviert.
+"""
+import os
+import traceback
+from pathlib import Path
+from types import SimpleNamespace
+
+import yaml
+from kivy.clock import Clock
+from kivy.core.image import Image as CoreImage
+from kivy.graphics import Color, Line, Rectangle, Ellipse
+from kivy.metrics import dp
+from kivy.uix.widget import Widget
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDButton, MDButtonText
+from kivymd.uix.fitimage import FitImage
+from kivymd.uix.label import MDLabel
+from kivymd.uix.menu import MDDropdownMenu
+from kivymd.uix.screen import MDScreen
+from kivymd.uix.scrollview import MDScrollView
+
+from backend.logging_setup import get_logger
+from backend.pokemon_detail_view import resource_path
+from backend.classes.pokedex_db import PokedexDB
+
+logger = get_logger(__name__, 'logs/mapmenu.log')
+
+# Gen-3-Editionen → (Region-Schlüssel, Hotspot-YAML). Nur Gen 3: die MAPSEC-
+# Keys der Hotspot-Daten passen nur zum Gen-3-regionMapSectionId. ORAS (63/64)
+# nutzt ein anderes Zonen-System und ist hier bewusst NICHT dabei.
+EDITION_REGION = {
+    31: "hoenn_rse.yml", 32: "hoenn_rse.yml", 33: "hoenn_rse.yml",
+    34: "kanto_frlg.yml", 35: "kanto_frlg.yml",
+}
+EDITION_LUT = {
+    "Rubin": 31, "Saphir": 32, "Smaragd": 33, "Feuerrot": 34, "Blattgrün": 35,
+}
+MAPS_DATA_DIR = os.path.join("backend", "data", "maps")
+
+
+class MapCanvas(Widget):
+    """Zeichnet die Regionskarte (pixelgenau skaliert, Seitenverhältnis gewahrt)
+    mit Hotspot-Umrissen, Marker auf der aktuellen map_section und Klick-Hit-Test.
+    """
+
+    def __init__(self, on_select=None, **kwargs):
+        super().__init__(**kwargs)
+        self._texture = None
+        self.hotspots: dict[int, dict] = {}
+        self.cols = 1
+        self.rows = 1
+        self.current_section: int | None = None
+        self.selected_section: int | None = None
+        self.on_select = on_select
+        self._img_rect = (0, 0, 0, 0)  # ix, iy, iw, ih (letterbox-Rect)
+        self.bind(size=self._redraw, pos=self._redraw)
+
+    def load_map(self, image_path: str, hotspots: dict, cols: int, rows: int):
+        self.hotspots = hotspots or {}
+        self.cols = max(1, cols)
+        self.rows = max(1, rows)
+        self.current_section = None
+        self.selected_section = None
+        self._texture = None
+        try:
+            if image_path and os.path.isfile(image_path):
+                cimg = CoreImage(image_path)
+                tex = cimg.texture
+                # Pixel-Art knackig halten statt verschwommen skalieren.
+                tex.mag_filter = "nearest"
+                tex.min_filter = "nearest"
+                self._texture = tex
+        except Exception as err:
+            logger.error(f"Kartenbild laden gescheitert ({image_path}): {err}")
+            logger.error(traceback.format_exc())
+        self._redraw()
+
+    def clear_map(self):
+        self.hotspots = {}
+        self._texture = None
+        self.current_section = None
+        self.selected_section = None
+        self._redraw()
+
+    # --- Rendering ------------------------------------------------------------
+
+    def _fit_rect(self):
+        """Letterbox-Rect (ix, iy, iw, ih) für das Seitenverhältnis cols:rows."""
+        w, h = self.width, self.height
+        if w <= 0 or h <= 0:
+            return (self.x, self.y, 0, 0)
+        aspect = self.cols / self.rows
+        if w / h > aspect:
+            ih = h
+            iw = h * aspect
+        else:
+            iw = w
+            ih = w / aspect
+        ix = self.x + (w - iw) / 2
+        iy = self.y + (h - ih) / 2
+        return (ix, iy, iw, ih)
+
+    def _cell_rect(self, x, y, w, h):
+        """Hotspot-Grid-Zelle → Screen-Rect (y von oben nach unten gespiegelt)."""
+        ix, iy, iw, ih = self._img_rect
+        cw, ch = iw / self.cols, ih / self.rows
+        sx = ix + x * cw
+        sy = iy + ih - (y + h) * ch
+        return (sx, sy, w * cw, h * ch)
+
+    def _redraw(self, *args):
+        self.canvas.clear()
+        self._img_rect = self._fit_rect()
+        ix, iy, iw, ih = self._img_rect
+        if iw <= 0 or ih <= 0:
+            return
+        with self.canvas:
+            Color(0.07, 0.09, 0.13, 1)
+            Rectangle(pos=(self.x, self.y), size=(self.width, self.height))
+            if self._texture is not None:
+                Color(1, 1, 1, 1)
+                Rectangle(texture=self._texture, pos=(ix, iy), size=(iw, ih))
+            # Hotspot-Umrisse (dezent) + Auswahl/aktuelle Zelle.
+            for ms, e in self.hotspots.items():
+                sx, sy, sw, sh = self._cell_rect(e["x"], e["y"], e["width"], e["height"])
+                Color(1, 1, 1, 0.18)
+                Line(rectangle=(sx, sy, sw, sh), width=1)
+            if self.selected_section in self.hotspots:
+                e = self.hotspots[self.selected_section]
+                sx, sy, sw, sh = self._cell_rect(e["x"], e["y"], e["width"], e["height"])
+                Color(1, 0.85, 0.2, 1)
+                Line(rectangle=(sx, sy, sw, sh), width=1.6)
+            # Positions-Marker auf der aktuellen map_section.
+            if self.current_section in self.hotspots:
+                e = self.hotspots[self.current_section]
+                sx, sy, sw, sh = self._cell_rect(e["x"], e["y"], e["width"], e["height"])
+                Color(0.2, 0.55, 1, 0.30)
+                Rectangle(pos=(sx, sy), size=(sw, sh))
+                r = max(dp(6), min(sw, sh) * 0.45)
+                cx, cy = sx + sw / 2, sy + sh / 2
+                Color(1, 1, 1, 1)
+                Ellipse(pos=(cx - r - dp(1.5), cy - r - dp(1.5)),
+                        size=(2 * (r + dp(1.5)), 2 * (r + dp(1.5))))
+                Color(0.15, 0.5, 1, 1)
+                Ellipse(pos=(cx - r, cy - r), size=(2 * r, 2 * r))
+
+    # --- Interaktion ----------------------------------------------------------
+
+    def set_current_section(self, section: int | None):
+        if section != self.current_section:
+            self.current_section = section
+            self._redraw()
+
+    def _section_at(self, px, py):
+        ix, iy, iw, ih = self._img_rect
+        if iw <= 0 or not (ix <= px <= ix + iw and iy <= py <= iy + ih):
+            return None
+        cw, ch = iw / self.cols, ih / self.rows
+        col = (px - ix) / cw
+        row = (iy + ih - py) / ch  # von oben gezählt
+        for ms, e in self.hotspots.items():
+            if e["x"] <= col < e["x"] + e["width"] and e["y"] <= row < e["y"] + e["height"]:
+                return ms
+        return None
+
+    def on_touch_down(self, touch):
+        if not self.collide_point(*touch.pos):
+            return super().on_touch_down(touch)
+        ms = self._section_at(*touch.pos)
+        if ms is not None:
+            self.selected_section = ms
+            self._redraw()
+            if self.on_select:
+                self.on_select(ms)
+            return True
+        return super().on_touch_down(touch)
+
+
+class MapMenu(MDScreen):
+    def __init__(self, munchlax, obs_websocket, pl, configsave, **kwargs):
+        super().__init__(**kwargs)
+        self.name = "MapMenu"
+        self.munchlax = munchlax
+        self.obs_websocket = obs_websocket
+        self.pl = pl
+        self.configsave = configsave
+        self.current_player: int = 1
+        self._poll_ev = None
+        self._tasks: set = set()
+        self._menus: list[MDDropdownMenu] = []
+        # {mapsec: [encounter-row-dict, ...]} des aktuellen Spielers.
+        self._route_catches: dict[int, list[dict]] = {}
+        self._region_file: str | None = None
+        self._loaded_edition: int | None = None
+        # Generationszähler gegen out-of-order Encounter-Loads (Spielerwechsel).
+        self._load_gen = 0
+
+        root = MDBoxLayout(orientation="vertical", padding="10dp", spacing="8dp")
+
+        header = MDBoxLayout(orientation="horizontal", size_hint_y=None,
+                             height="48dp", spacing="10dp")
+        self.title_label = MDLabel(text="Karte", role="large", valign="center")
+        header.add_widget(self.title_label)
+        self.player_button_text = MDButtonText(text="Spieler: 1")
+        self.player_button = MDButton(self.player_button_text, style="tonal",
+                                      pos_hint={"center_y": .5})
+        self.player_button.bind(on_release=lambda btn: self._open_player_menu(btn))
+        header.add_widget(self.player_button)
+        root.add_widget(header)
+
+        self.map_canvas = MapCanvas(on_select=self._on_section_selected, size_hint_y=0.68)
+        root.add_widget(self.map_canvas)
+
+        # Legende/Detail-Panel unter der Karte.
+        self.legend_title = MDLabel(text="Route anklicken für Details",
+                                    size_hint_y=None, height="26dp", valign="center")
+        self.legend_title.role = "small"
+        root.add_widget(self.legend_title)
+
+        self.legend_scroll = MDScrollView(size_hint_y=0.32, do_scroll_x=False)
+        self.legend_box = MDBoxLayout(orientation="vertical", size_hint_y=None,
+                                      spacing="6dp", padding=(0, dp(2)))
+        self.legend_box.bind(minimum_height=self.legend_box.setter("height"))
+        self.legend_scroll.add_widget(self.legend_box)
+        root.add_widget(self.legend_scroll)
+
+        self.add_widget(root)
+
+    # --- Lifecycle ------------------------------------------------------------
+
+    def on_pre_enter(self, *args):
+        self._refresh_player_button()
+        self._load_region()
+        self._schedule_catch_load()
+
+    def on_enter(self, *args):
+        if self._poll_ev is None:
+            self._poll_ev = Clock.schedule_interval(self._poll_position, 0.5)
+        self._poll_position()
+
+    def on_leave(self, *args):
+        if self._poll_ev is not None:
+            self._poll_ev.cancel()
+            self._poll_ev = None
+
+    def load_from_session(self) -> None:
+        """Session-Wechsel-Hook: zurück auf Spieler 1, Region neu laden."""
+        self.current_player = 1
+        self._refresh_player_button()
+        self._load_region()
+        self._schedule_catch_load()
+
+    # --- Spieler-Umschalter ---------------------------------------------------
+
+    def _player_count(self) -> int:
+        try:
+            return max(1, int(self.pl.get("player_count", 1)))
+        except (TypeError, ValueError):
+            return 1
+
+    def _refresh_player_button(self):
+        if self.current_player > self._player_count():
+            self.current_player = 1
+        self.player_button_text.text = f"Spieler: {self.current_player}"
+        self.player_button.disabled = self._player_count() <= 1
+
+    def _open_player_menu(self, caller):
+        items = [{
+            "text": f"Spieler {p}",
+            "on_release": (lambda p=p: self._select_player(p)),
+        } for p in range(1, self._player_count() + 1)]
+        menu = MDDropdownMenu(caller=caller, items=items)
+        self._menus.append(menu)
+        menu.open()
+
+    def _select_player(self, player: int):
+        for menu in self._menus:
+            menu.dismiss()
+        self._menus.clear()
+        self.current_player = player
+        self._refresh_player_button()
+        self._load_region()
+        self._schedule_catch_load()
+        self._poll_position()
+
+    # --- Region/Edition -------------------------------------------------------
+
+    def _edition(self) -> int:
+        """Edition des gewählten Spielers. Priorität:
+        1. edition aus dem Positions-Payload (zuverlässigste Live-Quelle, auch
+           für Remote-Spieler — selber Tick wie map_section),
+        2. snapshot_editions() (vom Team gemeldet),
+        3. nur für LOKAL bediente Slots die konfigurierte session_game — für
+           Remote-Slots NICHT auf die lokale Edition raten (0 = unbekannt)."""
+        try:
+            pos = self.munchlax.snapshot_positions().get(self.current_player)
+        except Exception:
+            pos = None
+        if isinstance(pos, dict) and pos.get("edition"):
+            try:
+                return int(pos["edition"])
+            except (TypeError, ValueError):
+                pass
+        try:
+            ed = int(self.munchlax.snapshot_editions().get(self.current_player, 0) or 0)
+        except (TypeError, ValueError, AttributeError):
+            ed = 0
+        if ed:
+            return ed
+        if self._is_local_player(self.current_player):
+            return EDITION_LUT.get(self.pl.get("session_game"), 0)
+        return 0
+
+    def _is_local_player(self, player: int) -> bool:
+        try:
+            return player in set(self.munchlax._owned_player_ids())
+        except Exception:
+            return True  # Solo/kein Netz → als lokal behandeln
+
+    def _load_region(self, edition: int | None = None):
+        if edition is None:
+            edition = self._edition()
+        self._loaded_edition = edition
+        # Alt-Daten verwerfen, damit ein Klick direkt nach dem Wechsel nicht
+        # kurz die Encounter des vorigen Spielers/Spiels zeigt.
+        self._route_catches = {}
+        region_file = EDITION_REGION.get(edition)
+        self._region_file = region_file
+        self._clear_legend("Route anklicken für Details")
+        if region_file is None:
+            self.map_canvas.clear_map()
+            self.title_label.text = "Karte"
+            self.legend_title.text = (
+                "Für dieses Spiel gibt es noch keine Regionskarte "
+                "(aktuell nur Gen 3: Kanto/Hoenn)."
+            )
+            return
+        try:
+            with open(resource_path(os.path.join(MAPS_DATA_DIR, region_file)),
+                      encoding="utf-8") as fh:
+                data = yaml.safe_load(fh)
+            entries = {int(k): v for k, v in (data.get("entries") or {}).items()}
+            grid = data.get("grid") or {}
+            image_path = resource_path(
+                os.path.join("backend", "ressources", "maps", data.get("image", "")))
+            self.map_canvas.load_map(image_path, entries,
+                                     int(grid.get("cols", 1)), int(grid.get("rows", 1)))
+            self.title_label.text = f"Karte — {data.get('region', '').title()}"
+            self.legend_title.text = "Route anklicken für Details"
+        except Exception as err:
+            logger.error(f"Region {region_file} laden gescheitert: {err}")
+            logger.error(traceback.format_exc())
+            self.map_canvas.clear_map()
+            self.legend_title.text = "Karte konnte nicht geladen werden."
+
+    # --- Position -------------------------------------------------------------
+
+    def _poll_position(self, *args):
+        try:
+            positions = self.munchlax.snapshot_positions()
+        except Exception:
+            positions = {}
+        pos = positions.get(self.current_player)
+        # Region NUR bei einer KONKRETEN neuen Edition aus dem Payload wechseln
+        # (Emulator-Spielwechsel / Remote-Spieler mit anderer Edition). Fehlt
+        # pos/edition (Spieler offline, Disconnect-Clear, noch kein Tick), die
+        # zuletzt geladene Region behalten und nur den Marker entfernen — sonst
+        # würde die Karte irreführend geleert ("kein Kartenmaterial").
+        if isinstance(pos, dict) and pos.get("edition"):
+            try:
+                ed = int(pos["edition"])
+            except (TypeError, ValueError):
+                ed = None
+            if ed is not None and ed != self._loaded_edition:
+                self._load_region(ed)
+                self._schedule_catch_load()
+        section = pos.get("map_section") if isinstance(pos, dict) else None
+        self.map_canvas.set_current_section(section)
+
+    # --- Legende (Encounter pro Route) ---------------------------------------
+
+    def _schedule_catch_load(self):
+        """Lädt die Encounter des aktuellen Spielers gruppiert nach Route im
+        Executor (DB-I/O nicht im Kivy-Loop). No-op ohne laufenden asyncio-Loop
+        (z.B. GUI-Test ohne async_run)."""
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._load_gen += 1
+        gen = self._load_gen
+        edition = self._edition()
+        session = str(self.configsave) if self.configsave is not None else ""
+        slot = self.current_player
+        task = loop.create_task(self._load_catches(gen, session, slot, edition))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _load_catches(self, gen: int, session: str, slot: int, edition: int):
+        import asyncio
+        try:
+            rows = await asyncio.get_running_loop().run_in_executor(
+                None, self._query_catches, session, edition)
+        except Exception as err:
+            logger.error(f"Encounter-Load für Karte gescheitert: {err}")
+            logger.error(traceback.format_exc())
+            return
+        if gen != self._load_gen:
+            return  # neuerer Load (Spielerwechsel) hat Vorrang
+        grouped: dict[int, list[dict]] = {}
+        for row in rows:
+            # Slot-Filter statt exaktem Owner: der DB-owner ist 'name_<slot>',
+            # der lokale your_name stimmt bei Remote-Spielern NICHT (KRITISCH).
+            # method-Filter gegen die Route-Namespace-Kollision: nur Wild-Routen
+            # sind auf MAPSEC (= Hotspot-Key) gekeyt; Gift/Starter nutzen andere
+            # ID-Räume und würden sonst unter fremden Routen auftauchen.
+            if PokedexDB.owner_slot(row.get("owner")) != slot:
+                continue
+            if row.get("method") not in (None, "wild"):
+                continue
+            try:
+                grouped.setdefault(int(row.get("route")), []).append(row)
+            except (TypeError, ValueError):
+                continue
+        self._route_catches = grouped
+        # Legende nachziehen, falls schon eine Route gewählt war, bevor die
+        # Daten da waren (sonst bliebe sie fälschlich auf "Route frei").
+        sel = self.map_canvas.selected_section
+        if sel is not None:
+            self._on_section_selected(sel)
+
+    @staticmethod
+    def _query_catches(session: str, edition: int) -> list[dict]:
+        """Alle Encounter der Edition (owner-übergreifend) — der Slot-Filter
+        läuft danach in _load_catches. Eigene DB-Instanz im Executor-Thread."""
+        db = None
+        try:
+            db = PokedexDB(Path(session))
+            if db.connection is None:
+                return []
+            cur = db.connection.cursor()
+            if edition:
+                cur.execute("SELECT * FROM encounters WHERE edition = ?",
+                            (int(edition),))
+            else:
+                cur.execute("SELECT * FROM encounters")
+            return [dict(r) for r in cur.fetchall()]
+        except Exception as err:
+            logger.error(f"_query_catches gescheitert: {err}")
+            logger.error(traceback.format_exc())
+            return []
+        finally:
+            try:
+                if db is not None:
+                    db.close()
+            except Exception:
+                pass
+
+    def _on_section_selected(self, mapsec: int):
+        entry = self.map_canvas.hotspots.get(mapsec, {})
+        label = entry.get("label") or f"MAPSEC {mapsec}"
+        self.legend_title.text = label
+        self.legend_box.clear_widgets()
+        rows = self._route_catches.get(mapsec, [])
+        # Nur echte Wild-Erstencounter als "hier gefangen" zeigen.
+        caught = [r for r in rows if r.get("outcome") in ("caught", "obtained")]
+        if not caught:
+            self.legend_box.add_widget(self._legend_line(
+                None, "Route frei — noch kein Pokemon gefangen", self._edition()))
+            return
+        edition = self._edition()
+        for r in caught:
+            nick = r.get("nickname") or ""
+            lvl = r.get("lvl")
+            txt = nick or f"Dex #{r.get('dexnr')}"
+            if lvl:
+                txt += f"  Lv {lvl}"
+            self.legend_box.add_widget(self._legend_line(r, txt, edition))
+
+    def _legend_line(self, row, text: str, edition: int) -> MDBoxLayout:
+        try:
+            bg = self.theme_cls.surfaceContainerHighestColor
+        except Exception:
+            bg = (0.16, 0.18, 0.22, 1)
+        card = MDBoxLayout(orientation="horizontal", size_hint_y=None, height="44dp",
+                           spacing="8dp", padding=(dp(6), 0),
+                           md_bg_color=bg, radius=[dp(8)] * 4)
+        sprite = FitImage(source=self._sprite_for(row, edition), fit_mode="contain",
+                          size_hint=(None, 1), width=dp(40))
+        card.add_widget(sprite)
+        lbl = MDLabel(text=text, valign="center", shorten=True, shorten_from="right")
+        lbl.role = "small"
+        card.add_widget(lbl)
+        return card
+
+    def _sprite_for(self, row, edition: int) -> str:
+        if row is None:
+            return ""
+        try:
+            dexnr = row.get("dexnr")
+            mon = SimpleNamespace(
+                shiny=bool(row.get("shiny")),
+                female=False,
+                dexnr=int(dexnr) if dexnr not in (None, "", "egg") else "egg",
+                form=row.get("form") or "",
+            )
+            return self.obs_websocket.get_sprite(mon, False, int(edition), two_pc=False)
+        except Exception:
+            return ""
+
+    def _clear_legend(self, title: str):
+        self.legend_title.text = title
+        self.legend_box.clear_widgets()
+        self.map_canvas.selected_section = None

@@ -387,7 +387,7 @@ class Bizhawk:
                         # das Lesen ist also safe.
                         tick_phase = "map_header"
                         asyncio.create_task(
-                            self._refresh_map_header(client_id, edition)
+                            self._refresh_map_header(client_id, edition, player)
                         )
                         # Echo an Lua, sonst haengt socketServerResponse() —
                         # ohne Response kein frameadvance und BizHawk friert ein.
@@ -1064,8 +1064,12 @@ class Bizhawk:
         queue.append(("boxw", base2 + offset, 2, fut3, ""))
         return int.from_bytes(await fut3, "little")
 
-    async def _refresh_map_header(self, client_id: str, edition: int):
-        """Liest periodisch die aktuelle Map-Header-ID für Gift-Erkennung."""
+    async def _refresh_map_header(self, client_id: str, edition: int,
+                                  player: int | None = None):
+        """Liest periodisch die aktuelle Map-Header-ID für Gift-Erkennung.
+
+        Spiegelt zusätzlich die Live-Spielerposition nach ``munchlax.positions``,
+        wenn ``player`` bekannt ist (Kartenfeature, aktuell nur Gen 3 FR/LG)."""
         try:
             language = self.language_per_client.get(client_id)
             pointers = bh_pointers.get_pointers(edition, language)
@@ -1083,6 +1087,9 @@ class Bizhawk:
                 if edition in (31, 32) and layout_id > 107:
                     layout_id -= 1
                 self._last_map_header[client_id] = layout_id
+                await self._refresh_player_position(
+                    client_id, edition, player, pointers, queue, loop, layout_id
+                )
                 return
 
             mapid_offset = pointers.get("mapidoffset", 0)
@@ -1101,6 +1108,97 @@ class Bizhawk:
             self._last_map_header[client_id] = int.from_bytes(map_bytes, "little")
         except Exception:
             pass
+
+    async def _refresh_player_position(self, client_id: str, edition: int,
+                                       player: int | None, pointers: dict,
+                                       queue: list, loop, map_layout: int):
+        """Liest die Live-Spielerposition + aktuelle Map-Bank/Num und spiegelt
+        sie nach ``munchlax.positions[player]`` (Kartenfeature).
+
+        Quelle x/y: FR/LG + Smaragd lesen gObjectEvents[0].currentCoords
+        (Offset +7); Rubin/Saphir lesen SaveBlock1.pos (statisch, kein DMA,
+        Offset 0 via ``playercoordoffset``). Place-ID: gMapHeader.region-
+        MapSectionId — alles statisches EWRAM (kein Deref, kein DMA). Aktiv für
+        Gen-3-Editionen mit ``playerxpointer`` in pointer_gen3.yml (FR/LG +
+        Smaragd + Rubin live verifiziert); sonst No-op. Eigene Slots werden bei
+        Aenderung zusaetzlich via ``Munchlax.send_position_sync`` an die anderen
+        Clients gebroadcastet (Phase 2b). ``map_section`` ist die uniforme
+        Place-ID; FR/LG liefern zusätzlich map_bank/num (Innenraum → Elternkarte).
+        Nur lokal bediente Spieler — Remote-Broadcast via Arceus ist offen.
+
+        Hinweis: layout_id, x/y und section/bank werden über mehrere Emulator-Frames
+        gelesen (getrennte Queue-Ticks). Bei einem Kartenwechsel kann für <=1 s
+        ein Mischzustand (neue Bank, alte x/y) publiziert werden; der nächste
+        Messzyklus korrigiert das. Für eine Regionskarte vernachlässigbar."""
+        try:
+            px_ptr = pointers.get("playerxpointer", 0)
+            map_hdr_ptr = pointers.get("mapheaderpointer", 0)
+            if not px_ptr or player is None:
+                return
+            # x (u16) + y (u16) liegen direkt hintereinander → 4 Bytes am Stück.
+            xy_fut = loop.create_future()
+            queue.append(("boxw", px_ptr, 4, xy_fut, ""))
+            xy = await xy_fut
+            raw_x = int.from_bytes(xy[0:2], "little")
+            raw_y = int.from_bytes(xy[2:4], "little")
+            # Tile-Offset: gObjectEvents.currentCoords trägt +7 (MAP_OFFSET,
+            # FR/LG + Smaragd); SaveBlock1.pos (Rubin/Saphir) trägt keinen.
+            # Default 7 für den häufigen gObjectEvents-Fall.
+            off = pointers.get("playercoordoffset", 7)
+
+            pos = {
+                "x": raw_x - off,
+                "y": raw_y - off,
+                "map_layout": map_layout,
+                "edition": edition,
+            }
+
+            # Region-Map-Section (MAPSEC) aus gMapHeader+0x14 (u8) — uniform
+            # über ALLE Gen-3-Editionen (mapheaderpointer existiert überall) und
+            # identisch mit dem Encounter-Route-Key (met_location/MAPSEC, vgl.
+            # den MAPSEC-Fallback in _read_encounter_data). Primäre „Place"-ID
+            # der Regionskarte.
+            if map_hdr_ptr:
+                sec_fut = loop.create_future()
+                queue.append(("boxw", map_hdr_ptr + 0x14, 1, sec_fut, ""))
+                pos["map_section"] = (await sec_fut)[0]
+
+            # Optional (nur FR/LG, nur wenn mapbankpointer gesetzt): map_bank/num
+            # aus statischer EWRAM-Kopie. Liefert in Innenräumen die Außen-/
+            # Elternkarte (feiner als MAPSEC, das dort MAPSEC_NONE sein kann).
+            bank_ptr = pointers.get("mapbankpointer", 0)
+            if bank_ptr:
+                mb_fut = loop.create_future()
+                queue.append(("boxw", bank_ptr, 2, mb_fut, ""))
+                mb = await mb_fut
+                pos["map_bank"] = mb[0]
+                pos["map_num"] = mb[1]
+
+            # Delta-Gate direkt gegen munchlax.positions unter state_lock:
+            # reset-robust (nach clear_everything/Session-Reset ist der Eintrag
+            # weg → wird neu geschrieben, auch wenn der Spieler stillsteht) und
+            # atomar (Check+Write unter demselben Lock, keine Race). Deshalb
+            # KEIN separater _last_position-Cache — der liefe bei Reset/Reconnect
+            # mit stehendem Spieler auf eine dauerhaft leere Position.
+            changed = False
+            with self.munchlax.state_lock:
+                if self.munchlax.positions.get(player) != pos:
+                    self.munchlax.positions[player] = pos
+                    changed = True
+            if not changed:
+                return
+            self.logger.debug(
+                f"Position player={player} section={pos.get('map_section')} "
+                f"tile=({pos['x']},{pos['y']}) layout={map_layout}"
+            )
+            # Remote-Broadcast (Phase 2b): eigene Position an andere Clients.
+            # Munchlax ist capability-gated, der Server prueft Ownership.
+            # _dispatch_on_munchlax laeuft cross-thread auf dem Munchlax-Loop.
+            self._dispatch_on_munchlax(
+                self.munchlax.send_position_sync(player, pos)
+            )
+        except Exception as err:
+            self.logger.debug(f"_refresh_player_position fehlgeschlagen: {err}")
 
     async def _read_encounter_data(self, client_id: str, player: int,
                                     edition: int):

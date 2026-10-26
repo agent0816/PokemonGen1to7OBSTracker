@@ -43,6 +43,15 @@
   box_count: 14
   box_stride: 0x960
   mapheaderpointer: 0x0202E828
+  # Spieler-Position (Live, statisches EWRAM): Rubin/Saphir nutzen SaveBlock1.pos
+  # (kein DMA, anders als FR/LG/Smaragd). pos.x @ base+0, pos.y @ base+2; base =
+  # 0x02025734 (= WarpData location bei base+4 bestaetigt). KEIN +7-Offset
+  # (playercoordoffset=0), anders als gObjectEvents. Verifiziert 2026-10-26 auf
+  # DE-Rubin via ghidra-bizhawk-MCP (Down -> y+1, Right -> x+1). Place-ID =
+  # gMapHeader.regionMapSectionId (mapheaderpointer+0x14).
+  playerxpointer: 0x02025734
+  playerypointer: 0x02025736
+  playercoordoffset: 0
   battlerscountpointer: 0x02024A68
   # gBattleOutcome (u8): 0 = Kampf aktiv, sonst ended (1=won, 2=lost, 4=fled, 7=caught).
   # gBattlersCount alleine reicht NICHT — bleibt nach Kampfende non-zero und
@@ -79,6 +88,12 @@
   box_count: 14
   box_stride: 0x960
   mapheaderpointer: 0x0202E828
+  # Spieler-Position: wie Rubin (R/S teilen EWRAM-Layout). SaveBlock1.pos
+  # base=0x02025734, kein +7-Offset (playercoordoffset=0). Auf DE-Rubin
+  # verifiziert (siehe ed 31), fuer Saphir abgeleitet.
+  playerxpointer: 0x02025734
+  playerypointer: 0x02025736
+  playercoordoffset: 0
   battlerscountpointer: 0x02024A68
   battleoutcomepointer: 0x02024D26
   battlemonspointer: 0x02024A80
@@ -104,6 +119,13 @@
   box_count: 14
   box_stride: 0x960
   mapheaderpointer: 0x02037318
+  # Spieler-Position (Live, statisches EWRAM, kein Deref/DMA) — gObjectEvents[0]
+  # .currentCoords. Verifiziert 2026-10-26 auf DE-Smaragd via ghidra-bizhawk-MCP
+  # Differential (Up -> y-1, Right -> x+1; Wurzelheim). Tile = Rohwert - 7.
+  # Place-ID = gMapHeader.regionMapSectionId (mapheaderpointer+0x14), kein
+  # eigener Pointer noetig. Smaragd hat KEINE map_bank/num-Kopie hinterlegt.
+  playerxpointer: 0x02037360
+  playerypointer: 0x02037362
   battlerscountpointer: 0x0202406C
   # Emerald: Adressen aus Ironmon-Tracker GameAddresses/Pokemon Emerald.json.
   # TODO: vor Release mit tools/find_pointers.py auf DE-Smaragd verifizieren
@@ -138,6 +160,17 @@
   box_count: 14
   box_stride: 0x960
   mapheaderpointer: 0x02036DFC
+  # Spieler-Position (Live). Statisches EWRAM — KEIN Pointer-Deref, KEIN DMA
+  # (SaveBlock1.pos ist DMA-geschuetzt und reisst bei frame-getrennten Reads).
+  # Quelle: gObjectEvents[0].currentCoords (Spieler ist Objekt 0 in FRLG).
+  # Verifiziert 2026-10-26 auf DE-Feuerrot via ghidra-bizhawk-MCP Differential-
+  # Scan: Up -> player_y-1, Right -> player_x+1. Map-Bank/Num = datacrystal-
+  # EWRAM-Kopien, Live-Anker (3,0)=Alabastia bestaetigt. Tile-Koordinate =
+  # Rohwert - 7 (GBA-Kamera-Offset). player_x/y sind u16 LE, map_* sind u8.
+  playerxpointer: 0x02036E48
+  playerypointer: 0x02036E4A
+  mapbankpointer: 0x02031DBC
+  mapnumpointer: 0x02031DBD
   battlerscountpointer: 0x02023BCC
   # FRLG (Feuerrot/FireRed): Adressen aus Ironmon-Tracker
   # GameAddresses/Pokemon FireRed v1.0.json und Pokemon Feuerrote.json.
@@ -176,6 +209,16 @@
   box_count: 14
   box_stride: 0x960
   mapheaderpointer: 0x02036DFC
+  # Spieler-Position: Adressen wie Feuerrot (FR/LG teilen EWRAM-BSS-Layout,
+  # mapheaderpointer identisch). Auf DE-Blattgruen gegengeprueft 2026-10-26
+  # (Koordinaten live & plausibel; Map-Bank/Num aktiv). Hinweis: in Innenraeumen
+  # haelt map_bank/num die AUSSEN-/Elternkarte (z.B. Labor -> Alabastia 3,0),
+  # die exakte Innenraum-Karte steht in gMapHeader.mapLayoutId (mapheaderpointer
+  # +0x12). Fuer eine Regionskarte ist bank/num gewollt (Interieur -> Stadt).
+  playerxpointer: 0x02036E48
+  playerypointer: 0x02036E4A
+  mapbankpointer: 0x02031DBC
+  mapnumpointer: 0x02031DBD
   battlerscountpointer: 0x02023BCC
   battleoutcomepointer: 0x02023E8A
   battlemonspointer: 0x02023BE4

@@ -1,0 +1,452 @@
+# Hotspot-/Kalibrierungsdaten Regionskarte Kanto (Kartenfeature)
+# Geometrie aus pret-Decomp region_map_sections.json; Labels aus encounter_locations_gen3.yml (deutsch).
+# Key = MAPSEC (= live regionMapSectionId, gMapHeader+0x14, = Encounter-Route-Key).
+# x/y/width/height in Grid-Zellen (nativ 8 px). Phase 4: px_per_cell = Bildbreite / grid.cols.
+
+region: kanto
+image: kanto.png
+# Bild 160x128 (20x16 Zellen à 8 px). MAPSEC-Koords sind bereits auf den
+# Karten-Ausschnitt bezogen (Decomp-Tilemap-Offset 2,2 beim Crop entfernt).
+grid: {cols: 20, rows: 16}
+tile_px: 8
+entries:
+  88:
+    label: Alabastia
+    id: MAPSEC_PALLET_TOWN
+    x: 4
+    y: 11
+    width: 1
+    height: 1
+    games: [34, 35]
+  89:
+    label: Vertania City
+    id: MAPSEC_VIRIDIAN_CITY
+    x: 4
+    y: 8
+    width: 1
+    height: 1
+    games: [34, 35]
+  90:
+    label: Marmoria City
+    id: MAPSEC_PEWTER_CITY
+    x: 4
+    y: 4
+    width: 1
+    height: 1
+    games: [34, 35]
+  91:
+    label: Azuria City
+    id: MAPSEC_CERULEAN_CITY
+    x: 14
+    y: 3
+    width: 1
+    height: 1
+    games: [34, 35]
+  92:
+    label: Lavandia
+    id: MAPSEC_LAVENDER_TOWN
+    x: 18
+    y: 6
+    width: 1
+    height: 1
+    games: [34, 35]
+  93:
+    label: Orania City
+    id: MAPSEC_VERMILION_CITY
+    x: 14
+    y: 9
+    width: 1
+    height: 1
+    games: [34, 35]
+  94:
+    label: Prismania City
+    id: MAPSEC_CELADON_CITY
+    x: 11
+    y: 6
+    width: 1
+    height: 1
+    games: [34, 35]
+  95:
+    label: Fuchsania City
+    id: MAPSEC_FUCHSIA_CITY
+    x: 12
+    y: 12
+    width: 1
+    height: 1
+    games: [34, 35]
+  96:
+    label: Zinnoberinsel
+    id: MAPSEC_CINNABAR_ISLAND
+    x: 4
+    y: 14
+    width: 1
+    height: 1
+    games: [34, 35]
+  97:
+    label: Indigo Plateau
+    id: MAPSEC_INDIGO_PLATEAU
+    x: 2
+    y: 3
+    width: 1
+    height: 1
+    games: [34, 35]
+  98:
+    label: Saffronia City
+    id: MAPSEC_SAFFRON_CITY
+    x: 14
+    y: 6
+    width: 1
+    height: 1
+    games: [34, 35]
+  99:
+    label: Route 4 (Mondberg-Ausgang)
+    id: MAPSEC_ROUTE_4_POKECENTER
+    x: 8
+    y: 3
+    width: 1
+    height: 1
+    games: [34, 35]
+  100:
+    label: Route 10 (Felstunnel-Ausgang)
+    id: MAPSEC_ROUTE_10_POKECENTER
+    x: 18
+    y: 3
+    width: 1
+    height: 1
+    games: [34, 35]
+  101:
+    label: Route 1
+    id: MAPSEC_ROUTE_1
+    x: 4
+    y: 9
+    width: 1
+    height: 2
+    games: [34, 35]
+  102:
+    label: Route 2
+    id: MAPSEC_ROUTE_2
+    x: 4
+    y: 5
+    width: 1
+    height: 3
+    games: [34, 35]
+  103:
+    label: Route 3
+    id: MAPSEC_ROUTE_3
+    x: 5
+    y: 4
+    width: 4
+    height: 1
+    games: [34, 35]
+  104:
+    label: Route 4
+    id: MAPSEC_ROUTE_4
+    x: 8
+    y: 3
+    width: 6
+    height: 1
+    games: [34, 35]
+  105:
+    label: Route 5
+    id: MAPSEC_ROUTE_5
+    x: 14
+    y: 4
+    width: 1
+    height: 2
+    games: [34, 35]
+  106:
+    label: Route 6
+    id: MAPSEC_ROUTE_6
+    x: 14
+    y: 7
+    width: 1
+    height: 2
+    games: [34, 35]
+  107:
+    label: Route 7
+    id: MAPSEC_ROUTE_7
+    x: 12
+    y: 6
+    width: 2
+    height: 1
+    games: [34, 35]
+  108:
+    label: Route 8
+    id: MAPSEC_ROUTE_8
+    x: 15
+    y: 6
+    width: 3
+    height: 1
+    games: [34, 35]
+  109:
+    label: Route 9
+    id: MAPSEC_ROUTE_9
+    x: 15
+    y: 3
+    width: 3
+    height: 1
+    games: [34, 35]
+  110:
+    label: Route 10
+    id: MAPSEC_ROUTE_10
+    x: 18
+    y: 3
+    width: 1
+    height: 3
+    games: [34, 35]
+  111:
+    label: Route 11
+    id: MAPSEC_ROUTE_11
+    x: 15
+    y: 9
+    width: 3
+    height: 1
+    games: [34, 35]
+  112:
+    label: Route 12
+    id: MAPSEC_ROUTE_12
+    x: 18
+    y: 7
+    width: 1
+    height: 5
+    games: [34, 35]
+  113:
+    label: Route 13
+    id: MAPSEC_ROUTE_13
+    x: 16
+    y: 11
+    width: 2
+    height: 1
+    games: [34, 35]
+  114:
+    label: Route 14
+    id: MAPSEC_ROUTE_14
+    x: 15
+    y: 11
+    width: 1
+    height: 2
+    games: [34, 35]
+  115:
+    label: Route 15
+    id: MAPSEC_ROUTE_15
+    x: 13
+    y: 12
+    width: 2
+    height: 1
+    games: [34, 35]
+  116:
+    label: Route 16
+    id: MAPSEC_ROUTE_16
+    x: 7
+    y: 6
+    width: 4
+    height: 1
+    games: [34, 35]
+  117:
+    label: Route 17
+    id: MAPSEC_ROUTE_17
+    x: 7
+    y: 7
+    width: 1
+    height: 5
+    games: [34, 35]
+  118:
+    label: Route 18
+    id: MAPSEC_ROUTE_18
+    x: 7
+    y: 12
+    width: 5
+    height: 1
+    games: [34, 35]
+  119:
+    label: Route 19
+    id: MAPSEC_ROUTE_19
+    x: 12
+    y: 13
+    width: 1
+    height: 2
+    games: [34, 35]
+  120:
+    label: Route 20
+    id: MAPSEC_ROUTE_20
+    x: 5
+    y: 14
+    width: 7
+    height: 1
+    games: [34, 35]
+  121:
+    label: Route 21
+    id: MAPSEC_ROUTE_21
+    x: 4
+    y: 12
+    width: 1
+    height: 2
+    games: [34, 35]
+  122:
+    label: Route 22
+    id: MAPSEC_ROUTE_22
+    x: 2
+    y: 8
+    width: 2
+    height: 1
+    games: [34, 35]
+  123:
+    label: Route 23
+    id: MAPSEC_ROUTE_23
+    x: 2
+    y: 4
+    width: 1
+    height: 4
+    games: [34, 35]
+  124:
+    label: Route 24
+    id: MAPSEC_ROUTE_24
+    x: 14
+    y: 1
+    width: 1
+    height: 2
+    games: [34, 35]
+  125:
+    label: Route 25
+    id: MAPSEC_ROUTE_25
+    x: 15
+    y: 1
+    width: 2
+    height: 1
+    games: [34, 35]
+  126:
+    label: Vertania-Wald
+    id: MAPSEC_VIRIDIAN_FOREST
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  127:
+    label: Mondberg
+    id: MAPSEC_MT_MOON
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  128:
+    label: S.S. Anne
+    id: MAPSEC_S_S_ANNE
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  129:
+    label: Tunnelpfad (Routes 5-6)
+    id: MAPSEC_UNDERGROUND_PATH
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  130:
+    label: Tunnelpfad (Routes 7-8)
+    id: MAPSEC_UNDERGROUND_PATH_2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  131:
+    label: Digdas Höhle
+    id: MAPSEC_DIGLETTS_CAVE
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  132:
+    label: Siegesstraße
+    id: MAPSEC_KANTO_VICTORY_ROAD
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  133:
+    label: Rocket-Versteck
+    id: MAPSEC_ROCKET_HIDEOUT
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  134:
+    label: Silph Co.
+    id: MAPSEC_SILPH_CO
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  135:
+    label: Pokemon-Villa
+    id: MAPSEC_POKEMON_MANSION
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  136:
+    label: Safari-Zone
+    id: MAPSEC_KANTO_SAFARI_ZONE
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  137:
+    label: Pokemon-Liga
+    id: MAPSEC_POKEMON_LEAGUE
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  138:
+    label: Felstunnel
+    id: MAPSEC_ROCK_TUNNEL
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  139:
+    label: Seeschauminseln
+    id: MAPSEC_SEAFOAM_ISLANDS
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  140:
+    label: Pokémon Turm
+    id: MAPSEC_POKEMON_TOWER
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  141:
+    label: Azuria-Höhle
+    id: MAPSEC_CERULEAN_CAVE
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]
+  142:
+    label: Kraftwerk
+    id: MAPSEC_POWER_PLANT
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+    games: [34, 35]

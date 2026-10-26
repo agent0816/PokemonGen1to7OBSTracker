@@ -1,0 +1,692 @@
+# Hotspot-/Kalibrierungsdaten Regionskarte Hoenn (Kartenfeature)
+# Geometrie aus pret-Decomp region_map_sections.json; Labels aus encounter_locations_gen3.yml (deutsch).
+# Key = MAPSEC (= live regionMapSectionId, gMapHeader+0x14, = Encounter-Route-Key).
+# x/y/width/height in Grid-Zellen (nativ 8 px). Phase 4: px_per_cell = Bildbreite / grid.cols.
+
+region: hoenn
+image: hoenn.png
+# Bild 224x120 (28x15 Zellen à 8 px). Kein Tilemap-Offset (Karte beginnt bei
+# Zelle 0,0); MAPSEC-Koords bilden direkt auf den Crop ab.
+grid: {cols: 28, rows: 15}
+tile_px: 8
+entries:
+  0:
+    label: Wurzelheim
+    id: MAPSEC_LITTLEROOT_TOWN
+    x: 4
+    y: 11
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  1:
+    label: Rosaltstadt
+    id: MAPSEC_OLDALE_TOWN
+    x: 4
+    y: 9
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  2:
+    label: Faustauhaven
+    id: MAPSEC_DEWFORD_TOWN
+    x: 2
+    y: 14
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  3:
+    label: Bad Lavastadt
+    id: MAPSEC_LAVARIDGE_TOWN
+    x: 5
+    y: 3
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  4:
+    label: Wiesenflur
+    id: MAPSEC_FALLARBOR_TOWN
+    x: 3
+    y: 0
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  5:
+    label: Laubwechselfeld
+    id: MAPSEC_VERDANTURF_TOWN
+    x: 4
+    y: 6
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  6:
+    label: Floßbrunn
+    id: MAPSEC_PACIFIDLOG_TOWN
+    x: 17
+    y: 10
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  7:
+    label: Blütenburg City
+    id: MAPSEC_PETALBURG_CITY
+    x: 1
+    y: 9
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  8:
+    label: Graphitport City
+    id: MAPSEC_SLATEPORT_CITY
+    x: 8
+    y: 10
+    width: 1
+    height: 2
+    games: [31, 32, 33]
+  9:
+    label: Malvenfroh City
+    id: MAPSEC_MAUVILLE_CITY
+    x: 8
+    y: 6
+    width: 2
+    height: 1
+    games: [31, 32, 33]
+  10:
+    label: Metarost City
+    id: MAPSEC_RUSTBORO_CITY
+    x: 0
+    y: 5
+    width: 1
+    height: 2
+    games: [31, 32, 33]
+  11:
+    label: Baumhausen City
+    id: MAPSEC_FORTREE_CITY
+    x: 12
+    y: 0
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  12:
+    label: Seegrasulb City
+    id: MAPSEC_LILYCOVE_CITY
+    x: 18
+    y: 3
+    width: 2
+    height: 1
+    games: [31, 32, 33]
+  13:
+    label: Moosbach City
+    id: MAPSEC_MOSSDEEP_CITY
+    x: 24
+    y: 5
+    width: 2
+    height: 1
+    games: [31, 32, 33]
+  14:
+    label: Xeneroville
+    id: MAPSEC_SOOTOPOLIS_CITY
+    x: 21
+    y: 7
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  15:
+    label: Prachtpolis City
+    id: MAPSEC_EVER_GRANDE_CITY
+    x: 27
+    y: 8
+    width: 1
+    height: 2
+    games: [31, 32, 33]
+  16:
+    label: Route 101
+    id: MAPSEC_ROUTE_101
+    x: 4
+    y: 10
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  17:
+    label: Route 102
+    id: MAPSEC_ROUTE_102
+    x: 2
+    y: 9
+    width: 2
+    height: 1
+    games: [31, 32, 33]
+  18:
+    label: Route 103
+    id: MAPSEC_ROUTE_103
+    x: 4
+    y: 8
+    width: 4
+    height: 1
+    games: [31, 32, 33]
+  19:
+    label: Route 104
+    id: MAPSEC_ROUTE_104
+    x: 0
+    y: 7
+    width: 1
+    height: 3
+    games: [31, 32, 33]
+  20:
+    label: Route 105
+    id: MAPSEC_ROUTE_105
+    x: 0
+    y: 10
+    width: 1
+    height: 3
+    games: [31, 32, 33]
+  21:
+    label: Route 106
+    id: MAPSEC_ROUTE_106
+    x: 0
+    y: 13
+    width: 2
+    height: 1
+    games: [31, 32, 33]
+  22:
+    label: Route 107
+    id: MAPSEC_ROUTE_107
+    x: 3
+    y: 14
+    width: 3
+    height: 1
+    games: [31, 32, 33]
+  23:
+    label: Route 108
+    id: MAPSEC_ROUTE_108
+    x: 6
+    y: 14
+    width: 2
+    height: 1
+    games: [31, 32, 33]
+  24:
+    label: Route 109
+    id: MAPSEC_ROUTE_109
+    x: 8
+    y: 12
+    width: 1
+    height: 3
+    games: [31, 32, 33]
+  25:
+    label: Route 110
+    id: MAPSEC_ROUTE_110
+    x: 8
+    y: 7
+    width: 1
+    height: 3
+    games: [31, 32, 33]
+  26:
+    label: Route 111
+    id: MAPSEC_ROUTE_111
+    x: 8
+    y: 0
+    width: 1
+    height: 6
+    games: [31, 32, 33]
+  27:
+    label: Route 112
+    id: MAPSEC_ROUTE_112
+    x: 6
+    y: 3
+    width: 2
+    height: 1
+    games: [31, 32, 33]
+  28:
+    label: Route 113
+    id: MAPSEC_ROUTE_113
+    x: 4
+    y: 0
+    width: 4
+    height: 1
+    games: [31, 32, 33]
+  29:
+    label: Route 114
+    id: MAPSEC_ROUTE_114
+    x: 1
+    y: 0
+    width: 2
+    height: 3
+    games: [31, 32, 33]
+  30:
+    label: Route 115
+    id: MAPSEC_ROUTE_115
+    x: 0
+    y: 2
+    width: 1
+    height: 3
+    games: [31, 32, 33]
+  31:
+    label: Route 116
+    id: MAPSEC_ROUTE_116
+    x: 1
+    y: 5
+    width: 4
+    height: 1
+    games: [31, 32, 33]
+  32:
+    label: Route 117
+    id: MAPSEC_ROUTE_117
+    x: 5
+    y: 6
+    width: 3
+    height: 1
+    games: [31, 32, 33]
+  33:
+    label: Route 118
+    id: MAPSEC_ROUTE_118
+    x: 10
+    y: 6
+    width: 2
+    height: 1
+    games: [31, 32, 33]
+  34:
+    label: Route 119
+    id: MAPSEC_ROUTE_119
+    x: 11
+    y: 0
+    width: 1
+    height: 6
+    games: [31, 32, 33]
+  35:
+    label: Route 120
+    id: MAPSEC_ROUTE_120
+    x: 13
+    y: 0
+    width: 1
+    height: 4
+    games: [31, 32, 33]
+  36:
+    label: Route 121
+    id: MAPSEC_ROUTE_121
+    x: 14
+    y: 3
+    width: 4
+    height: 1
+    games: [31, 32, 33]
+  37:
+    label: Route 122
+    id: MAPSEC_ROUTE_122
+    x: 16
+    y: 4
+    width: 1
+    height: 2
+    games: [31, 32, 33]
+  38:
+    label: Route 123
+    id: MAPSEC_ROUTE_123
+    x: 12
+    y: 6
+    width: 5
+    height: 1
+    games: [31, 32, 33]
+  39:
+    label: Route 124
+    id: MAPSEC_ROUTE_124
+    x: 20
+    y: 3
+    width: 4
+    height: 3
+    games: [31, 32, 33]
+  40:
+    label: Route 125
+    id: MAPSEC_ROUTE_125
+    x: 24
+    y: 3
+    width: 2
+    height: 2
+    games: [31, 32, 33]
+  41:
+    label: Route 126
+    id: MAPSEC_ROUTE_126
+    x: 20
+    y: 6
+    width: 3
+    height: 3
+    games: [31, 32, 33]
+  42:
+    label: Route 127
+    id: MAPSEC_ROUTE_127
+    x: 23
+    y: 6
+    width: 3
+    height: 3
+    games: [31, 32, 33]
+  43:
+    label: Route 128
+    id: MAPSEC_ROUTE_128
+    x: 23
+    y: 9
+    width: 4
+    height: 1
+    games: [31, 32, 33]
+  44:
+    label: Route 129
+    id: MAPSEC_ROUTE_129
+    x: 24
+    y: 10
+    width: 2
+    height: 1
+    games: [31, 32, 33]
+  45:
+    label: Route 130
+    id: MAPSEC_ROUTE_130
+    x: 21
+    y: 10
+    width: 3
+    height: 1
+    games: [31, 32, 33]
+  46:
+    label: Route 131
+    id: MAPSEC_ROUTE_131
+    x: 18
+    y: 10
+    width: 3
+    height: 1
+    games: [31, 32, 33]
+  47:
+    label: Route 132
+    id: MAPSEC_ROUTE_132
+    x: 15
+    y: 10
+    width: 2
+    height: 1
+    games: [31, 32, 33]
+  48:
+    label: Route 133
+    id: MAPSEC_ROUTE_133
+    x: 12
+    y: 10
+    width: 3
+    height: 1
+    games: [31, 32, 33]
+  49:
+    label: Route 134
+    id: MAPSEC_ROUTE_134
+    x: 9
+    y: 10
+    width: 3
+    height: 1
+    games: [31, 32, 33]
+  50:
+    label: Unterwasser (Route 124)
+    id: MAPSEC_UNDERWATER_124
+    x: 20
+    y: 3
+    width: 4
+    height: 3
+    games: [31, 32, 33]
+  51:
+    label: Unterwasser (Route 124)
+    id: MAPSEC_UNDERWATER_126
+    x: 20
+    y: 6
+    width: 3
+    height: 3
+    games: [31, 32, 33]
+  52:
+    label: Unterwasser (Route 126)
+    id: MAPSEC_UNDERWATER_127
+    x: 23
+    y: 6
+    width: 3
+    height: 3
+    games: [31, 32, 33]
+  53:
+    label: Unterwasser (Route 127)
+    id: MAPSEC_UNDERWATER_128
+    x: 23
+    y: 9
+    width: 4
+    height: 1
+    games: [31, 32, 33]
+  54:
+    label: Unterwasser (Route 128)
+    id: MAPSEC_UNDERWATER_SOOTOPOLIS
+    x: 21
+    y: 7
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  55:
+    label: Unterwasser (Prachtpolis City)
+    id: MAPSEC_GRANITE_CAVE
+    x: 1
+    y: 13
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  56:
+    label: Granithöhle
+    id: MAPSEC_MT_CHIMNEY
+    x: 6
+    y: 2
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  57:
+    label: Schlotberg
+    id: MAPSEC_SAFARI_ZONE
+    x: 16
+    y: 2
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  58:
+    label: Safari-Zone
+    id: MAPSEC_BATTLE_FRONTIER
+    x: 22
+    y: 12
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  59:
+    label: Blütenburgwald
+    id: MAPSEC_PETALBURG_WOODS
+    x: 0
+    y: 8
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  60:
+    label: Blütenburgwald
+    id: MAPSEC_RUSTURF_TUNNEL
+    x: 2
+    y: 5
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  61:
+    label: Metaflurtunnel
+    id: MAPSEC_ABANDONED_SHIP
+    x: 6
+    y: 14
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  62:
+    label: Schiffswrack
+    id: MAPSEC_NEW_MAUVILLE
+    x: 8
+    y: 7
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  63:
+    label: Neu Malvenfroh
+    id: MAPSEC_METEOR_FALLS
+    x: 0
+    y: 3
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  64:
+    label: Meteorfälle
+    id: MAPSEC_METEOR_FALLS2
+    x: 1
+    y: 2
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  65:
+    label: Pyroberg
+    id: MAPSEC_MT_PYRE
+    x: 16
+    y: 4
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  66:
+    label: Pyroberg
+    id: MAPSEC_AQUA_HIDEOUT_OLD
+    x: 19
+    y: 3
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  67:
+    label: Shoal Cave
+    id: MAPSEC_SHOAL_CAVE
+    x: 24
+    y: 4
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  68:
+    label: Küstenhöhle
+    id: MAPSEC_SEAFLOOR_CAVERN
+    x: 24
+    y: 9
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  69:
+    label: Tiefseehöhle
+    id: MAPSEC_UNDERWATER_SEAFLOOR_CAVERN
+    x: 24
+    y: 9
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  70:
+    label: Unterwasser (Tiefseehöhle)
+    id: MAPSEC_VICTORY_ROAD
+    x: 27
+    y: 9
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  71:
+    label: Siegesstraße
+    id: MAPSEC_MIRAGE_ISLAND
+    x: 17
+    y: 10
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  72:
+    label: Wundereiland
+    id: MAPSEC_CAVE_OF_ORIGIN
+    x: 21
+    y: 7
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  73:
+    label: Urzeithöhle
+    id: MAPSEC_SOUTHERN_ISLAND
+    x: 12
+    y: 14
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  74:
+    label: Insel im Süden
+    id: MAPSEC_FIERY_PATH
+    x: 6
+    y: 3
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  75:
+    label: Feuriger Pfad
+    id: MAPSEC_FIERY_PATH2
+    x: 7
+    y: 3
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  76:
+    label: Jagged Pass
+    id: MAPSEC_JAGGED_PASS
+    x: 6
+    y: 3
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  77:
+    label: Steilpass
+    id: MAPSEC_JAGGED_PASS2
+    x: 7
+    y: 2
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  78:
+    label: Sealed Chamber
+    id: MAPSEC_SEALED_CHAMBER
+    x: 11
+    y: 10
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  79:
+    label: Siegelkammer
+    id: MAPSEC_UNDERWATER_SEALED_CHAMBER
+    x: 11
+    y: 10
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  80:
+    label: Unterwasser (Route 134)
+    id: MAPSEC_SCORCHED_SLAB
+    x: 13
+    y: 0
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  81:
+    label: Sonnengrotte
+    id: MAPSEC_ISLAND_CAVE
+    x: 0
+    y: 10
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  82:
+    label: Inselhöhle
+    id: MAPSEC_DESERT_RUINS
+    x: 8
+    y: 3
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  83:
+    label: Wüstenruine
+    id: MAPSEC_ANCIENT_TOMB
+    x: 13
+    y: 2
+    width: 1
+    height: 1
+    games: [31, 32, 33]
+  85:
+    label: Sky Pillar
+    id: MAPSEC_SKY_PILLAR
+    x: 19
+    y: 10
+    width: 1
+    height: 1
+    games: [31, 32, 33]

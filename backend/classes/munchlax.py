@@ -77,6 +77,11 @@ UNBUFFERED_DICT_TYPES = frozenset({
     # Resume-Replay zu einem alten Payload nach dem frischen Direkt-Send
     # (R2 WARNUNG sync).
     "rando_moves_sync",
+    # position_sync (Kartenfeature): hochfrequente Live-Position, selbst-
+    # supersedierend (naechster bizhawk-Tick ersetzt sie), Reconnect-Flush
+    # via resume_ack. Kein Outbound-Buffer-Replay — wuerde den Buffer mit
+    # Positions-Frames fluten und veraltete Staende nachspielen.
+    "position_sync",
     # Support-Bundle-Upload: Chunks sind gross (bis 256 KiB), zustandslos
     # auf Replay-Ebene (fehlgeschlagene Transfers startet User neu), und
     # sollen nicht ueber den 300-Item-Replay-Buffer gepuffert werden.
@@ -123,6 +128,14 @@ class Munchlax:
         self.unsorted_teams = {}
         self.badges = {}
         self.editions = {}
+        # Live-Spielerposition pro Player (Kartenfeature): dict[player_id,
+        # {x, y, map_section, map_layout, edition, (map_bank/num nur FR/LG)}].
+        # x/y sind Tile-Koordinaten (Offset pro Edition abgezogen). Eigene
+        # Slots: von BizHawk ~1/s unter state_lock gespiegelt (Gen 3) UND via
+        # position_sync an die anderen Clients gebroadcastet (Phase 2b). Fremde
+        # Slots: vom position_sync-Receive-Handler hier gesetzt. Bei Session-
+        # Reset geleert (Live-State, anders als rando_tm_moves).
+        self.positions: dict[int, dict] = {}
         self.player_names: dict[int, str] = {}
         # Client-Namen unabhaengig von player_ids — wird vom Server mit jedem
         # player_names-Broadcast mitgeliefert. Nuzlocke-Menue nutzt es fuer
@@ -172,6 +185,11 @@ class Munchlax:
         # Key: player_id. Value: {"tm_moves": {...}, "hm_moves": {...}}.
         self._pending_rando_moves: dict[int, dict] = {}
         self._rando_flush_task: asyncio.Task | None = None
+        # Position-Flush beim Reconnect (Kartenfeature Phase 2b): sendet die
+        # aktuellen Positionen der eigenen Slots einmal nach resume_ack.
+        # Keine Pending-Queue — Position supersediert sich selbst (naechster
+        # bizhawk-Tick re-dispatcht bei Aenderung).
+        self._position_flush_task: asyncio.Task | None = None
         self.rando_abilities_gen3: dict[int, list[int]] | None = None
         # Lazy init in connect(): Lock an aktuellen Loop binden. Im __init__
         # lief Munchlax historisch unter Kivy-Loop; mit Thread-Isolation
@@ -384,6 +402,7 @@ class Munchlax:
             self.unsorted_teams = {}
             self.badges = {}
             self.editions = {}
+            self.positions = {}
             self.boxes = {}
             self.player_names.clear()
             self.client_names.clear()
@@ -427,6 +446,7 @@ class Munchlax:
             self.unsorted_teams = {}
             self.badges = {}
             self.editions = {}
+            self.positions = {}
             self.boxes = {}
             self.soullink_links = {}
             self.soullink_deaths = {}
@@ -487,6 +507,12 @@ class Munchlax:
     def snapshot_editions(self) -> dict:
         with self.state_lock:
             return dict(self.editions)
+
+    def snapshot_positions(self) -> dict:
+        """Snapshot der Live-Spielerpositionen (Kartenfeature). Frontend liest
+        hierüber, analog snapshot_editions."""
+        with self.state_lock:
+            return {pid: dict(p) for pid, p in self.positions.items()}
 
     def snapshot_player_names(self) -> dict:
         with self.state_lock:
@@ -1103,6 +1129,29 @@ class Munchlax:
                             self._rando_flush_task = asyncio.create_task(
                                 self._flush_pending_rando_moves()
                             )
+                        # Aktuelle Positionen der eigenen Slots einmal nach-
+                        # senden (Kartenfeature). Position hat keine Pending-
+                        # Queue; ohne diesen Flush saehen andere Clients einen
+                        # nach Reconnect stillstehenden Spieler erst bei seiner
+                        # naechsten Bewegung wieder. NUR bei bestaetigter
+                        # Capability (True) flushen: im _resend_running-Zweig
+                        # bleibt sie None (Watchdog-Race), send_position_sync
+                        # wuerde dann ohnehin skippen — statt stillem Leerlauf
+                        # loggen und auf die naechste Bewegung/Reconnect warten.
+                        if self.positions and self._server_supports_resume is True and (
+                            self._position_flush_task is None
+                            or self._position_flush_task.done()
+                        ):
+                            self._position_flush_task = asyncio.create_task(
+                                self._flush_owned_positions()
+                            )
+                        elif self.positions and self._server_supports_resume is not True:
+                            self.logger.debug(
+                                "position-flush uebersprungen: resume-capability "
+                                f"unbestaetigt ({self._server_supports_resume!r}, "
+                                "Watchdog-Resend-Race) — Position folgt bei "
+                                "naechster Bewegung"
+                            )
                     elif msg_type == "boxes_update":
                         player_id = data.get("player_id")
                         boxes = data.get("boxes")
@@ -1209,6 +1258,22 @@ class Munchlax:
                         else:
                             self.logger.warning(
                                 f"rando_moves_sync ohne gueltige player_id: {pid!r}"
+                            )
+                    elif msg_type == "position_sync":
+                        # Live-Position eines REMOTE-Spielers (Kartenfeature).
+                        pid = data.get("player_id")
+                        pos = data.get("pos")
+                        if isinstance(pid, int) and isinstance(pos, dict):
+                            # Owned-Slot-Guard: fuer eigene Slots ist der lokale
+                            # BizHawk authoritativ — Server-Replay nicht ueber
+                            # frische lokale Position schreiben.
+                            if pid not in set(self._owned_player_ids()):
+                                with self.state_lock:
+                                    self.positions[pid] = dict(pos)
+                        else:
+                            self.logger.debug(
+                                f"position_sync ungueltig: pid={pid!r} "
+                                f"pos={type(pos).__name__}"
                             )
                     elif msg_type == "log_bundle_request":
                         # Host hat per Broadcast ein Bundle angefordert.
@@ -2399,6 +2464,54 @@ class Munchlax:
                 })
         except Exception as err:
             self.logger.warning(f"send_bag_sync failed: {err}")
+
+    async def send_position_sync(self, player_id: int, pos: dict):
+        """Broadcastet die Live-Position eines lokalen Spielers an die anderen
+        Clients (Kartenfeature, Phase 2b).
+
+        Leichtes Gegenstueck zu send_rando_moves_sync: Position ist hochfrequent
+        und selbst-supersedierend (jeder bizhawk-Tick re-dispatcht bei
+        Aenderung), deshalb KEINE Pending-Queue — ein verlorener Frame wird vom
+        naechsten ersetzt, und beim Reconnect flusht resume_ack die aktuellen
+        Positionen. position_sync steht in UNBUFFERED_DICT_TYPES.
+        """
+        if not self.is_connected:
+            return
+        # Capability-Gate: Legacy-Server (ohne resume) wuerde die unbekannte
+        # Message als Teams-Dict fehldeuten. None (vor resume_ack) oder False
+        # ueberspringen — resume_ack-Flush holt die aktuelle Position nach.
+        if self._server_supports_resume is not True:
+            return
+        if self.writer_lock is None:
+            return
+        try:
+            async with self.writer_lock:
+                await self.send_message({
+                    "type": "position_sync",
+                    "player_id": int(player_id),
+                    "pos": dict(pos),
+                })
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            self.logger.debug(
+                f"send_position_sync failed: {err} — naechster Tick retried"
+            )
+
+    async def _flush_owned_positions(self):
+        """Sendet die aktuellen Positionen der eigenen Slots einmal (nach
+        resume_ack). Snapshot unter state_lock, Sends danach ohne Lock."""
+        owned = set(self._owned_player_ids())
+        with self.state_lock:
+            snapshot = {pid: dict(p) for pid, p in self.positions.items()
+                        if pid in owned}
+        for pid, pos in snapshot.items():
+            try:
+                await self.send_position_sync(pid, pos)
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                self.logger.debug(f"_flush_owned_positions pid={pid}: {err}")
 
     async def send_rando_moves_sync(self, player_id: int,
                                      tm_moves: dict[int, str] | None,

@@ -36,15 +36,20 @@ from backend.classes.pokedex_db import PokedexDB
 
 logger = get_logger(__name__, 'logs/mapmenu.log')
 
-# Gen-3-Editionen → (Region-Schlüssel, Hotspot-YAML). Nur Gen 3: die MAPSEC-
-# Keys der Hotspot-Daten passen nur zum Gen-3-regionMapSectionId. ORAS (63/64)
-# nutzt ein anderes Zonen-System und ist hier bewusst NICHT dabei.
+# Edition → Hotspot-YAML. Section-Key je Region = der Live-Place-ID-Raum:
+# Gen 3 = regionMapSectionId (MAPSEC), Gen 4 Sinnoh = met_location (== mapLabelTextID,
+# via mapid_section_gen4.yml). Gen 4 Sinnoh: nur Diamant/Perl/Platin (41–43); die
+# Karte ist aus Platin gerendert, Position live aber nur für Platin (ed 43). HGSS
+# (44/45) hat zwei Regionen (Johto+Kanto) und fehlt bewusst (Schritt F). ORAS
+# (63/64) nutzt ein anderes Zonen-System und ist ebenfalls NICHT dabei.
 EDITION_REGION = {
     31: "hoenn_rse.yml", 32: "hoenn_rse.yml", 33: "hoenn_rse.yml",
     34: "kanto_frlg.yml", 35: "kanto_frlg.yml",
+    41: "sinnoh_dppt.yml", 42: "sinnoh_dppt.yml", 43: "sinnoh_dppt.yml",
 }
 EDITION_LUT = {
     "Rubin": 31, "Saphir": 32, "Smaragd": 33, "Feuerrot": 34, "Blattgrün": 35,
+    "Diamant": 41, "Perl": 42, "Platin": 43,
 }
 MAPS_DATA_DIR = os.path.join("backend", "data", "maps")
 
@@ -52,27 +57,34 @@ MAPS_DATA_DIR = os.path.join("backend", "data", "maps")
 class MapCanvas(Widget):
     """Zeichnet die Regionskarte (pixelgenau skaliert, Seitenverhältnis gewahrt)
     mit Hotspot-Umrissen, Marker auf der aktuellen map_section und Klick-Hit-Test.
+
+    Format-agnostisch: arbeitet rein in NATIVEN BILD-PIXELN. Jeder Hotspot ist
+    ``{"label": str, "rects": [(x, y, w, h), ...]}`` mit Rects in Bild-Pixeln
+    (Ursprung oben-links). Gen 3 (eine Grid-Zelle) und Gen 4 Sinnoh (mehrere
+    7px-Zellen pro Route mit Pixel-Offset) liefern dasselbe Rect-Modell — die
+    Umrechnung YAML→Rects macht der Adapter in ``MapMenu._load_region``. Die
+    Bildgröße (img_w/img_h) kommt aus der Textur, auf die sich die Rects beziehen.
     """
 
     def __init__(self, on_select=None, **kwargs):
         super().__init__(**kwargs)
         self._texture = None
         self.hotspots: dict[int, dict] = {}
-        self.cols = 1
-        self.rows = 1
+        self.img_w = 1
+        self.img_h = 1
         self.current_section: int | None = None
         self.selected_section: int | None = None
         self.on_select = on_select
         self._img_rect = (0, 0, 0, 0)  # ix, iy, iw, ih (letterbox-Rect)
         self.bind(size=self._redraw, pos=self._redraw)
 
-    def load_map(self, image_path: str, hotspots: dict, cols: int, rows: int):
+    def load_map(self, image_path: str, hotspots: dict):
         self.hotspots = hotspots or {}
-        self.cols = max(1, cols)
-        self.rows = max(1, rows)
         self.current_section = None
         self.selected_section = None
         self._texture = None
+        self.img_w = 1
+        self.img_h = 1
         try:
             if image_path and os.path.isfile(image_path):
                 cimg = CoreImage(image_path)
@@ -81,6 +93,8 @@ class MapCanvas(Widget):
                 tex.mag_filter = "nearest"
                 tex.min_filter = "nearest"
                 self._texture = tex
+                self.img_w = max(1, tex.width)
+                self.img_h = max(1, tex.height)
         except Exception as err:
             logger.error(f"Kartenbild laden gescheitert ({image_path}): {err}")
             logger.error(traceback.format_exc())
@@ -89,6 +103,8 @@ class MapCanvas(Widget):
     def clear_map(self):
         self.hotspots = {}
         self._texture = None
+        self.img_w = 1
+        self.img_h = 1
         self.current_section = None
         self.selected_section = None
         self._redraw()
@@ -96,11 +112,11 @@ class MapCanvas(Widget):
     # --- Rendering ------------------------------------------------------------
 
     def _fit_rect(self):
-        """Letterbox-Rect (ix, iy, iw, ih) für das Seitenverhältnis cols:rows."""
+        """Letterbox-Rect (ix, iy, iw, ih) für das Bild-Seitenverhältnis."""
         w, h = self.width, self.height
         if w <= 0 or h <= 0:
             return (self.x, self.y, 0, 0)
-        aspect = self.cols / self.rows
+        aspect = self.img_w / self.img_h
         if w / h > aspect:
             ih = h
             iw = h * aspect
@@ -111,13 +127,28 @@ class MapCanvas(Widget):
         iy = self.y + (h - ih) / 2
         return (ix, iy, iw, ih)
 
-    def _cell_rect(self, x, y, w, h):
-        """Hotspot-Grid-Zelle → Screen-Rect (y von oben nach unten gespiegelt)."""
+    def _px_rect(self, x, y, w, h):
+        """Bild-Pixel-Rect → Screen-Rect (y von oben nach unten gespiegelt)."""
         ix, iy, iw, ih = self._img_rect
-        cw, ch = iw / self.cols, ih / self.rows
-        sx = ix + x * cw
-        sy = iy + ih - (y + h) * ch
-        return (sx, sy, w * cw, h * ch)
+        sx = iw / self.img_w
+        sy = ih / self.img_h
+        rx = ix + x * sx
+        ry = iy + ih - (y + h) * sy
+        return (rx, ry, w * sx, h * sy)
+
+    def _rects_bbox_center(self, rects):
+        """Screen-Mittelpunkt + kleinste Rect-Kantenlänge über alle Zellen eines
+        Hotspots (für den Positions-Marker: Punkt in der Zellen-Bounding-Box)."""
+        xs0, ys0, xs1, ys1 = [], [], [], []
+        min_side = None
+        for (x, y, w, h) in rects:
+            sx, sy, sw, sh = self._px_rect(x, y, w, h)
+            xs0.append(sx); ys0.append(sy); xs1.append(sx + sw); ys1.append(sy + sh)
+            side = min(sw, sh)
+            min_side = side if min_side is None else min(min_side, side)
+        cx = (min(xs0) + max(xs1)) / 2
+        cy = (min(ys0) + max(ys1)) / 2
+        return cx, cy, (min_side or 0)
 
     def _redraw(self, *args):
         self.canvas.clear()
@@ -128,27 +159,32 @@ class MapCanvas(Widget):
         with self.canvas:
             Color(0.07, 0.09, 0.13, 1)
             Rectangle(pos=(self.x, self.y), size=(self.width, self.height))
-            if self._texture is not None:
-                Color(1, 1, 1, 1)
-                Rectangle(texture=self._texture, pos=(ix, iy), size=(iw, ih))
-            # Hotspot-Umrisse (dezent) + Auswahl/aktuelle Zelle.
+            if self._texture is None:
+                return
+            Color(1, 1, 1, 1)
+            Rectangle(texture=self._texture, pos=(ix, iy), size=(iw, ih))
+            # Hotspot-Umrisse (dezent) über alle Zellen jeder Section.
+            Color(1, 1, 1, 0.18)
             for ms, e in self.hotspots.items():
-                sx, sy, sw, sh = self._cell_rect(e["x"], e["y"], e["width"], e["height"])
-                Color(1, 1, 1, 0.18)
-                Line(rectangle=(sx, sy, sw, sh), width=1)
+                for (x, y, w, h) in e["rects"]:
+                    sx, sy, sw, sh = self._px_rect(x, y, w, h)
+                    Line(rectangle=(sx, sy, sw, sh), width=1)
+            # Ausgewählte Section (Gold).
             if self.selected_section in self.hotspots:
-                e = self.hotspots[self.selected_section]
-                sx, sy, sw, sh = self._cell_rect(e["x"], e["y"], e["width"], e["height"])
                 Color(1, 0.85, 0.2, 1)
-                Line(rectangle=(sx, sy, sw, sh), width=1.6)
-            # Positions-Marker auf der aktuellen map_section.
+                for (x, y, w, h) in self.hotspots[self.selected_section]["rects"]:
+                    sx, sy, sw, sh = self._px_rect(x, y, w, h)
+                    Line(rectangle=(sx, sy, sw, sh), width=1.6)
+            # Positions-Marker auf der aktuellen map_section: Zellen füllen +
+            # Punkt in der Bounding-Box-Mitte.
             if self.current_section in self.hotspots:
-                e = self.hotspots[self.current_section]
-                sx, sy, sw, sh = self._cell_rect(e["x"], e["y"], e["width"], e["height"])
+                rects = self.hotspots[self.current_section]["rects"]
                 Color(0.2, 0.55, 1, 0.30)
-                Rectangle(pos=(sx, sy), size=(sw, sh))
-                r = max(dp(6), min(sw, sh) * 0.45)
-                cx, cy = sx + sw / 2, sy + sh / 2
+                for (x, y, w, h) in rects:
+                    sx, sy, sw, sh = self._px_rect(x, y, w, h)
+                    Rectangle(pos=(sx, sy), size=(sw, sh))
+                cx, cy, min_side = self._rects_bbox_center(rects)
+                r = max(dp(6), min_side * 0.45)
                 Color(1, 1, 1, 1)
                 Ellipse(pos=(cx - r - dp(1.5), cy - r - dp(1.5)),
                         size=(2 * (r + dp(1.5)), 2 * (r + dp(1.5))))
@@ -166,12 +202,13 @@ class MapCanvas(Widget):
         ix, iy, iw, ih = self._img_rect
         if iw <= 0 or not (ix <= px <= ix + iw and iy <= py <= iy + ih):
             return None
-        cw, ch = iw / self.cols, ih / self.rows
-        col = (px - ix) / cw
-        row = (iy + ih - py) / ch  # von oben gezählt
+        # Screen → Bild-Pixel.
+        img_x = (px - ix) / (iw / self.img_w)
+        img_y = (iy + ih - py) / (ih / self.img_h)  # von oben gezählt
         for ms, e in self.hotspots.items():
-            if e["x"] <= col < e["x"] + e["width"] and e["y"] <= row < e["y"] + e["height"]:
-                return ms
+            for (x, y, w, h) in e["rects"]:
+                if x <= img_x < x + w and y <= img_y < y + h:
+                    return ms
         return None
 
     def on_touch_down(self, touch):
@@ -343,19 +380,17 @@ class MapMenu(MDScreen):
             self.title_label.text = "Karte"
             self.legend_title.text = (
                 "Für dieses Spiel gibt es noch keine Regionskarte "
-                "(aktuell nur Gen 3: Kanto/Hoenn)."
+                "(aktuell Gen 3: Kanto/Hoenn und Sinnoh: Diamant/Perl/Platin)."
             )
             return
         try:
             with open(resource_path(os.path.join(MAPS_DATA_DIR, region_file)),
                       encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)
-            entries = {int(k): v for k, v in (data.get("entries") or {}).items()}
-            grid = data.get("grid") or {}
+            hotspots = self._build_hotspots(data)
             image_path = resource_path(
                 os.path.join("backend", "ressources", "maps", data.get("image", "")))
-            self.map_canvas.load_map(image_path, entries,
-                                     int(grid.get("cols", 1)), int(grid.get("rows", 1)))
+            self.map_canvas.load_map(image_path, hotspots)
             self.title_label.text = f"Karte — {data.get('region', '').title()}"
             self.legend_title.text = "Route anklicken für Details"
         except Exception as err:
@@ -363,6 +398,42 @@ class MapMenu(MDScreen):
             logger.error(traceback.format_exc())
             self.map_canvas.clear_map()
             self.legend_title.text = "Karte konnte nicht geladen werden."
+
+    @staticmethod
+    def _build_hotspots(data: dict) -> dict[int, dict]:
+        """Wandelt ein Hotspot-YAML in das Pixel-Rect-Modell der MapCanvas.
+
+        Unterstützt zwei Formate:
+        - Gen 3 (grid + Rect): Eintrag ``{x, y, width, height}`` in Grid-Zellen;
+          Pixel = ``x*tile_px + x_offset`` / ``y*tile_px + y_offset`` (Default 8,
+          Offset 0). Kanto/Hoenn nutzen jetzt die echten In-Game-Spielkarten als
+          Bild; diese sind der alte Decomp-Crop rechts+unten erweitert, Offset 0
+          (via Raw-/Edge-/Land-Masken-Match bestaetigt). Der Offset bleibt
+          generisch verfuegbar, falls ein Bild doch verschoben werden muss.
+        - Gen 4 Sinnoh (cells + Offset): Eintrag ``{cells: [[x, z], ...]}``;
+          Pixel = ``x*tile_px + x_offset`` / ``z*tile_px + y_offset`` je Zelle
+          (``tile_px``/``x_offset``/``y_offset`` auf Datei-Ebene).
+        """
+        tile_px = int(data.get("tile_px", 8))
+        x_off = int(data.get("x_offset", 0))
+        y_off = int(data.get("y_offset", 0))
+        hotspots: dict[int, dict] = {}
+        for k, e in (data.get("entries") or {}).items():
+            sec = int(k)
+            if "cells" in e:
+                rects = [(int(cx) * tile_px + x_off, int(cz) * tile_px + y_off,
+                          tile_px, tile_px) for cx, cz in e["cells"]]
+            else:
+                rects = [(int(e["x"]) * tile_px + x_off,
+                          int(e["y"]) * tile_px + y_off,
+                          int(e.get("width", 1)) * tile_px,
+                          int(e.get("height", 1)) * tile_px)]
+            hotspots[sec] = {
+                "label": e.get("label"),
+                "rects": rects,
+                "games": e.get("games"),
+            }
+        return hotspots
 
     # --- Position -------------------------------------------------------------
 

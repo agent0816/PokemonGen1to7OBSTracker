@@ -66,6 +66,14 @@
   badgepointer: 0xBA8
   badgeoffset: 0x96
   mapidoffset: 0x239B0
+  # Spieler-Position (Live) im selben Chain-Block wie die Map-ID. base2 =
+  # *(*(badgepointer)&0xFFFFFF + 0x20)&0xFFFFFF (bestehende Gen-4-Chain,
+  # _resolve_gen4_pointer_chain). Offsets relativ zu base2, als u16 lesbar.
+  # Verifiziert 2026-10-26 auf DE-Platin via ghidra-bizhawk-MCP Differential
+  # (Down -> y+1, Right -> x+1; Zweiblattdorf, base2 stabil). ACHTUNG: globale
+  # Matrix-Koordinaten (ganzes verbundenes Sinnoh), NICHT map-lokal 0-basiert.
+  playerxoffset: 0x238E0
+  playeryoffset: 0x238DC
   bag_items: 0x0027E99C
   bag_keyitems: 0x0027EC30
   bag_tmvm: 0x0027ECF8

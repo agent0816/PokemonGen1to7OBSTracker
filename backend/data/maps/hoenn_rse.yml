@@ -5,10 +5,19 @@
 
 region: hoenn
 image: hoenn.png
-# Bild 224x120 (28x15 Zellen à 8 px). Kein Tilemap-Offset (Karte beginnt bei
-# Zelle 0,0); MAPSEC-Koords bilden direkt auf den Crop ab.
+# Bild 257x159 = echte In-Game RSE-Spielkarte (User-Screenshot Map_Hoenn.png).
+#   Ersetzt den fruehren 224x120-Decomp-Crop, der unten + rechts abgeschnitten
+#   war (komplette Suedsee/Eventura-Inseln fehlten). Der alte Crop war pixel-
+#   identisch mit dem oberen-linken Ausschnitt des Screenshots (SAD=0), d.h. das
+#   neue Bild ist der SELBE Inhalt nur rechts+unten erweitert.
+# Offset (8,16) = decomp-Region-Map-Cursor-Origin (MAPCURSOR_X_MIN 1,
+#   MAPCURSOR_Y_MIN 2) in px: In-Game-Karte zeichnet jede Section bei (x+1, y+2)
+#   Zellen. An 7 Stadt-Markern vermessen (Residual ~0 statt vorher versetzt).
+#   px = x*tile_px + x_offset / y*tile_px + y_offset.
 grid: {cols: 28, rows: 15}
 tile_px: 8
+x_offset: 8
+y_offset: 16
 entries:
   0:
     label: Wurzelheim

@@ -5,10 +5,20 @@
 
 region: kanto
 image: kanto.png
-# Bild 160x128 (20x16 Zellen à 8 px). MAPSEC-Koords sind bereits auf den
-# Karten-Ausschnitt bezogen (Decomp-Tilemap-Offset 2,2 beim Crop entfernt).
+# Bild 192x144 = echte In-Game FRLG-Spielkarte (User-Screenshot FRBG_integrierte_
+#   Spielkarte_(Kanto).png). Ersetzt den fruehren 160x128-Decomp-Crop, der rechts
+#   + unten abgeschnitten war (Zinnoberinsel/Suedsee fehlten).
+# Der alte Crop sitzt pixelgenau im oberen-linken Ausschnitt des Screenshots
+#   (Kuesten/Routen 1:1 deckungsgleich bei (0,0); via Raw-/Edge-/Land-Masken-Match
+#   bestaetigt) -> neues Bild = SELBER Inhalt nur rechts+unten erweitert.
+# Offset (8,16) = decomp-Region-Map-Cursor-Origin (MAPCURSOR_X_MIN 1,
+#   MAPCURSOR_Y_MIN 2) in px: die In-Game-Karte zeichnet jede Section bei
+#   (x+1, y+2) Zellen. An 7/7 Stadt-Markern vermessen (dx+8 dy+16, Residual 0).
+#   px = x*tile_px + x_offset / y*tile_px + y_offset.
 grid: {cols: 20, rows: 16}
 tile_px: 8
+x_offset: 8
+y_offset: 16
 entries:
   88:
     label: Alabastia

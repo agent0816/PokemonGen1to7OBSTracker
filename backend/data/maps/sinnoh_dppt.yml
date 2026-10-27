@@ -1,0 +1,464 @@
+# Hotspot-/Kalibrierungsdaten Regionskarte Sinnoh (Kartenfeature, DPPt).
+# Geometrie aus pret/pokeplatinum res/town_map/town_map_data.json (blocks).
+# Key = Section = met_location = LocationNames-Index (= encounter_locations_gen4.yml-Key,
+#       = DB-route). area-Name normalisiert; eternia->Eterna, mount_coronet->MtCoronet.
+# Bild sinnoh.png (216x168) = echte In-Game DPPt-Integrierte-Spielkarte (User-
+#   Screenshot). Das ist der decomp-Koordinatenraum (256x192 TOWN_MAP_GRID) links
+#   um 19px + unten um 24px gecroppt -> Transform ggü. decomp ist PURE Translation
+#   (x -19, y gleich; an 8 Städten verifiziert: Sonnewik 210->191, Herzhofen
+#   126->107, Weideburg 154->135 usw.). Der Roh-Decomp-Render traf den In-Game-
+#   Look nicht (Extended-Palettes, nur 32 Decomp-Farben) -> echtes In-Game-Bild.
+# Transform Zelle->Pixel: px = x*tile_px + x_offset, py = z*tile_px + y_offset
+#   (TOWN_MAP_GRID spacing 7; x_offset = 25-19 = 6, y_offset -36). y um 2px von
+#   -34 auf -36 nachjustiert: Hotspots sassen 2px zu tief (Staedte/Routen am
+#   oberen Box-Rand statt zentriert; an Dach-Markern + City-/Route-Pixel-Coverage
+#   vermessen, visuell im Startgebiet gegengeprueft). x bleibt 6 (vertikale
+#   Routen zentriert). Gen 3 nutzt jetzt ebenfalls Offset (Cursor-Origin 8,16).
+# cells = Liste [x,z] aller Town-Map-Blocks der Section (Routen = mehrere Zellen).
+# Labels deutsch (encounter_locations_gen4.yml -> locations_gen4.yml Staedte).
+# Layout aus PLATIN; D/P teilen dasselbe Sinnoh-Layout (games-Feld pro Eintrag aus
+# encounter-yml, sonst [41,42,43]) — DP nicht gegengeprueft (Schritt F).
+region: sinnoh
+image: sinnoh.png
+tile_px: 7
+x_offset: 6
+y_offset: -36
+entries:
+  1:
+    label: Zweiblattdorf
+    cells:
+    - [3, 27]
+    games: [41, 42, 43]
+  2:
+    label: Sandgemme
+    cells:
+    - [5, 26]
+    games: [41, 42, 43]
+  3:
+    label: Flori
+    cells:
+    - [5, 19]
+    - [5, 20]
+    games: [41, 42, 43]
+  4:
+    label: Trostu
+    cells:
+    - [17, 20]
+    - [18, 20]
+    games: [41, 42, 43]
+  5:
+    label: Elyses
+    cells:
+    - [14, 16]
+    games: [41, 42, 43]
+  6:
+    label: Jubelstadt
+    cells:
+    - [4, 23]
+    - [4, 24]
+    - [5, 23]
+    - [5, 24]
+    games: [41, 42, 43]
+  7:
+    label: Fleetburg
+    cells:
+    - [1, 22]
+    - [1, 23]
+    games: [41, 42, 43]
+  8:
+    label: Erzelingen
+    cells:
+    - [8, 23]
+    - [9, 23]
+    - [9, 24]
+    games: [41, 42, 43]
+  9:
+    label: Ewigenau
+    cells:
+    - [9, 16]
+    - [9, 17]
+    - [10, 16]
+    games: [41, 42, 43]
+  10:
+    label: Herzhofen
+    cells:
+    - [14, 21]
+    - [14, 22]
+    - [15, 21]
+    - [15, 22]
+    games: [41, 42, 43]
+  11:
+    label: Weideburg
+    cells:
+    - [18, 25]
+    - [18, 26]
+    - [19, 25]
+    - [19, 26]
+    games: [41, 42, 43]
+  12:
+    label: Schleiede
+    cells:
+    - [21, 18]
+    - [21, 19]
+    - [22, 18]
+    - [22, 19]
+    games: [41, 42, 43]
+  13:
+    label: Sonnewik
+    cells:
+    - [26, 23]
+    - [26, 24]
+    - [27, 23]
+    - [27, 24]
+    games: [41, 42, 43]
+  14:
+    label: Blizzach
+    cells:
+    - [11, 6]
+    - [11, 7]
+    games: [41, 42, 43]
+  15:
+    label: Pokémon Liga
+    cells:
+    - [26, 17]
+    games: [41, 42, 43]
+  16:
+    label: Route 201
+    cells:
+    - [3, 26]
+    - [4, 26]
+    games: [41, 42, 43]
+  17:
+    label: Route 202
+    cells:
+    - [5, 25]
+    games: [41, 42, 43]
+  18:
+    label: Route 203
+    cells:
+    - [6, 23]
+    - [7, 23]
+    games: [41, 42, 43]
+  19:
+    label: Route 204
+    cells:
+    - [5, 21]
+    - [5, 22]
+    games: [41, 42, 43]
+  20:
+    label: Route 205
+    cells:
+    - [6, 18]
+    - [6, 19]
+    - [6, 20]
+    - [8, 16]
+    games: [41, 42, 43]
+  21:
+    label: Route 206
+    cells:
+    - [9, 18]
+    - [9, 19]
+    - [9, 20]
+    - [9, 21]
+    games: [41, 42, 43]
+  22:
+    label: Route 207
+    cells:
+    - [9, 22]
+    - [10, 22]
+    games: [41, 42, 43]
+  23:
+    label: Route 208
+    cells:
+    - [12, 22]
+    - [13, 22]
+    games: [41, 42, 43]
+  24:
+    label: Route 209
+    cells:
+    - [16, 22]
+    - [17, 21]
+    - [17, 22]
+    games: [41, 42, 43]
+  25:
+    label: Route 210
+    cells:
+    - [15, 16]
+    - [16, 16]
+    - [17, 16]
+    - [17, 17]
+    - [17, 18]
+    - [17, 19]
+    games: [41, 42, 43]
+  26:
+    label: Route 211
+    cells:
+    - [11, 16]
+    - [13, 16]
+    games: [41, 42, 43]
+  27:
+    label: Route 212
+    cells:
+    - [14, 23]
+    - [14, 24]
+    - [14, 25]
+    - [14, 26]
+    - [15, 26]
+    - [16, 26]
+    - [17, 26]
+    games: [41, 42, 43]
+  28:
+    label: Route 213
+    cells:
+    - [20, 25]
+    - [20, 26]
+    - [21, 25]
+    - [21, 26]
+    - [22, 25]
+    - [22, 26]
+    games: [41, 42, 43]
+  29:
+    label: Route 214
+    cells:
+    - [22, 20]
+    - [22, 21]
+    - [22, 22]
+    games: [41, 42, 43]
+  30:
+    label: Route 215
+    cells:
+    - [18, 18]
+    - [19, 18]
+    - [20, 18]
+    games: [41, 42, 43]
+  31:
+    label: Route 216
+    cells:
+    - [9, 12]
+    - [10, 12]
+    - [11, 12]
+    games: [41, 42, 43]
+  32:
+    label: Route 217
+    cells:
+    - [9, 8]
+    - [9, 9]
+    - [9, 10]
+    - [9, 11]
+    games: [41, 42, 43]
+  33:
+    label: Route 218
+    cells:
+    - [2, 23]
+    - [3, 23]
+    games: [41, 42, 43]
+  34:
+    label: Route 219
+    cells:
+    - [5, 27]
+    games: [41, 42, 43]
+  35:
+    label: Route 220
+    cells:
+    - [5, 28]
+    - [6, 28]
+    games: [41, 42, 43]
+  36:
+    label: Route 221
+    cells:
+    - [7, 28]
+    - [8, 28]
+    - [9, 28]
+    games: [41, 42, 43]
+  37:
+    label: Route 222
+    cells:
+    - [23, 24]
+    - [24, 24]
+    - [25, 24]
+    games: [41, 42, 43]
+  38:
+    label: Route 223
+    cells:
+    - [26, 19]
+    - [26, 20]
+    - [26, 21]
+    - [26, 22]
+    games: [41, 42, 43]
+  39:
+    label: Route 224
+    cells:
+    - [27, 16]
+    - [27, 17]
+    - [28, 15]
+    - [28, 16]
+    games: [41, 42, 43]
+  40:
+    label: Route 225
+    cells:
+    - [19, 10]
+    - [19, 11]
+    - [19, 12]
+    games: [41, 42, 43]
+  41:
+    label: Route 226
+    cells:
+    - [21, 10]
+    - [22, 10]
+    - [23, 10]
+    games: [41, 42, 43]
+  42:
+    label: Route 227
+    cells:
+    - [23, 8]
+    - [23, 9]
+    games: [41, 42, 43]
+  43:
+    label: Route 228
+    cells:
+    - [24, 10]
+    - [24, 11]
+    - [24, 12]
+    games: [41, 42, 43]
+  44:
+    label: Route 229
+    cells:
+    - [24, 13]
+    - [25, 13]
+    games: [41, 42, 43]
+  45:
+    label: Route 230
+    cells:
+    - [21, 13]
+    - [22, 13]
+    - [23, 13]
+    games: [41, 42, 43]
+  47:
+    label: Erzelingen-Mine
+    cells:
+    - [7, 20]
+    games: [41, 42, 43]
+  48:
+    label: Windkraftwerk
+    cells:
+    - [6, 16]
+    - [6, 17]
+    - [7, 16]
+    - [7, 17]
+    games: [41, 42, 43]
+  49:
+    label: Ewigwald
+    cells:
+    - [5, 18]
+    games: [41, 42, 43]
+  50:
+    label: Feuriohütte
+    cells:
+    - [11, 19]
+    - [11, 20]
+    - [11, 21]
+    - [11, 22]
+    - [12, 12]
+    - [12, 13]
+    - [12, 14]
+    - [12, 15]
+    - [12, 16]
+    - [12, 17]
+    - [12, 18]
+    - [12, 19]
+    games: [41, 42, 43]
+  54:
+    label: Trostu-Ruinen
+    cells:
+    - [26, 18]
+    games: [41, 42, 43]
+  60:
+    label: Erzelingen-Tor
+    cells:
+    - [1, 8]
+    games: [41, 42, 43]
+  63:
+    label: Höhle der Umkehr
+    cells:
+    - [28, 6]
+    games: [41, 42, 43]
+  69:
+    label: Trophäengarten
+    cells:
+    - [3, 15]
+    games: [41, 42, 43]
+  72:
+    label: Wahrheitsufer
+    cells:
+    - [1, 25]
+    - [1, 26]
+    - [2, 25]
+    - [2, 26]
+    games: [41, 42, 43]
+  73:
+    label: Wahrheitsufer
+    cells:
+    - [21, 23]
+    - [21, 24]
+    - [22, 23]
+    - [22, 24]
+    games: [41, 42, 43]
+  74:
+    label: Kühnheitsufer
+    cells:
+    - [9, 6]
+    - [9, 7]
+    - [10, 6]
+    - [10, 7]
+    games: [41, 42, 43]
+  75:
+    label: Stärkeufer
+    cells:
+    - [23, 21]
+    - [23, 22]
+    - [24, 21]
+    - [24, 22]
+    games: [41, 42, 43]
+  79:
+    label: See der Stärke
+    cells:
+    - [4, 8]
+    games: [41, 42, 43]
+  81:
+    label: Kampfareal
+    cells:
+    - [19, 13]
+    - [20, 13]
+    games: [41, 42, 43]
+  82:
+    label: Überlebensareal
+    cells:
+    - [20, 10]
+    games: [41, 42, 43]
+  83:
+    label: Erholungsgebiet
+    cells:
+    - [25, 14]
+    games: [41, 42, 43]
+  84:
+    label: Kahlberg
+    cells:
+    - [23, 7]
+    games: [41, 42, 43]
+  85:
+    label: Kahlberg
+    cells:
+    - [28, 7]
+    - [28, 8]
+    - [28, 9]
+    - [28, 10]
+    - [28, 11]
+    - [28, 12]
+    - [28, 13]
+    - [28, 14]
+    games: [41, 42, 43]
+  112:
+    label: Kampfzone
+    cells:
+    - [20, 12]
+    games: [41, 42, 43]

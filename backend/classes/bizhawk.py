@@ -1410,7 +1410,26 @@ class Bizhawk:
                         map_header = int.from_bytes(map_bytes, "little")
 
                 if route == 0 and map_header is not None and map_header != 0:
-                    route = map_header
+                    # Gen 4: met_location des Gegners ist im Kampf 0 (wird erst
+                    # beim Fang gesetzt, pokeplatinum battle_lib.c:6251), live
+                    # bestaetigt auf DE-Perl. Die rohe map_id ist ein anderer
+                    # Namespace als met_location/DB-route -> ueber die Decomp-
+                    # LUT auf die Section umrechnen (wie Gen 3 MAPSEC).
+                    # Gen 5 (mapidpointer) bleibt unverändert beim map_id-Fallback.
+                    # Section 0 (Mystery Zone = Nicht-Overworld) wie unbekannt
+                    # behandeln, sonst teilen sich alle solchen Maps route=0.
+                    section = (bh_pointers.get_map_section(edition, map_header)
+                               if 40 < edition < 50 else None)
+                    if section:
+                        route = section
+                    else:
+                        if 40 < edition < 50:
+                            self.logger.warning(
+                                f"Encounter: client={client_id} player={player} "
+                                f"map_id={map_header} edition={edition} ohne Section "
+                                f"(section={section}) — route=map_id (Fallback)"
+                            )
+                        route = map_header
 
             self._last_battle_pv[client_id] = opp["personality"]
             if map_header is not None:

@@ -59,6 +59,11 @@ def _load_mapid_sections() -> dict[int, dict[int, int]]:
 _MAPID_SECTIONS: dict[int, dict[int, int]] = _load_mapid_sections()
 
 
+def has_map_sections(gameversion: int) -> bool:
+    """True, wenn für die ``gameversion`` eine map_id→Section-Tabelle geladen ist."""
+    return bool(_MAPID_SECTIONS.get(gameversion))
+
+
 def get_map_section(gameversion: int, map_id: int) -> int | None:
     """Übersetzt eine Gen-4-``map_id`` in die Region-Map-Section (met_location).
 

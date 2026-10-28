@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import yaml
 
+from backend import bh_pointers
 from backend.logging_setup import get_logger
 
 # Sentinel-Route fuer virtuellen Starter-Encounter. DB schema hat route als
@@ -451,6 +452,16 @@ class EncounterTracker:
         # den Gift-Pfad gefallen sind, wurden bei map_header=5 als weiterer
         # "Starter" eingebucht.
         effective_route = int(map_header_id) if route in (0, None) else int(route)
+        legacy_route = None
+        if route in (0, None) and self._edition_to_gen(edition) == 4:
+            # Gen 4: map_id ist ein anderer Namespace als met_location/route
+            # → auf die Section umrechnen (Ei ohne met_location etc.).
+            # Bis 2026-10-28 stand hier die map_id → Dedupe prüft beide Werte,
+            # damit alte Zeilen nach dem Update nicht doppelt eingebucht werden.
+            section = bh_pointers.get_map_section(int(edition), int(map_header_id))
+            if section:
+                effective_route = section
+                legacy_route = int(map_header_id)
 
         # Non-repeatable Gift-Dedupe: pro (owner, edition, map, method) nur
         # EIN Encounter. Verhindert, dass durchfallende Wild-PVs an derselben
@@ -460,6 +471,10 @@ class EncounterTracker:
                 already_exists = self.pokedex_db.has_encounter_with_method_at_route(
                     owner, int(edition), effective_route, method
                 )
+                if not already_exists and legacy_route is not None:
+                    already_exists = self.pokedex_db.has_encounter_with_method_at_route(
+                        owner, int(edition), legacy_route, method
+                    )
             except Exception as err:
                 self.logger.warning(
                     f"Gift-Dedupe-Check fehlgeschlagen: {type(err).__name__},{err}"

@@ -23,7 +23,14 @@
 #   Fruehlingspfad, Maniac-Tunnel = Maniac-Hoehle, Trophaeengarten = Villa-Landmark,
 #   Zerrwelt = Hoehle der Umkehr. Ueberlappende Zellen -> Sammel-Legende im MapMenu.
 # pokemon: Quellen laut pret/pokeplatinum (wild = map_headers wildEncountersArchiveID,
-#   static/gift/trade = Field-Scripts); leer = dort nichts fang-/erhaltbar. Nur Platin geprueft.
+#   static/gift/trade = Field-Scripts); leer = dort nichts fang-/erhaltbar.
+#   D/P gegen pret/pokediamond geprueft: Wild-Orte identisch zu Platin. Static/Geschenk/
+#   Tausch fuer D/P per eigenem Disassembler der Binaer-Scripts (scr_seq_release,
+#   Opcode-Tabelle gScriptCmdTable aus dem pokediamond-Decomp, 538 Dateien ohne Desync)
+#   ermittelt; Abweichungen zu Platin stehen in pokemon_by_game {edition: [...]}.
+#   Bewusst nicht erfasst (User-Entscheid 2026-10-28): Wanderer (Vesprit/Cresselia,
+#   klassischer Nuzlocke = Postgame) und Honigbaeume (liegen auf Routen mit Wild-
+#   Encounter).
 # px_rects (native Bildpixel) ueberschreibt cells: Voll-/Neumondinsel auf die Inseln NO
 #   der Eiseninsel (West = Vollmond, Ost = Neumond, Reihenfolge wie Decomp x 1 < 4).
 # Layout aus PLATIN; D/P teilen dasselbe Sinnoh-Layout (games-Feld pro Eintrag aus
@@ -93,6 +100,8 @@ entries:
   9:
     label: Ewigenau
     pokemon: [wild, gift, trade]
+    # Togepi-Ei (Cynthia) nur Platin
+    pokemon_by_game: {41: [wild, trade], 42: [wild, trade]}
     cells:
     - [9, 16]
     - [9, 17]
@@ -119,6 +128,7 @@ entries:
   12:
     label: Schleiede
     pokemon: [gift]
+    pokemon_by_game: {41: [], 42: []}
     cells:
     - [21, 18]
     - [21, 19]
@@ -150,6 +160,8 @@ entries:
   16:
     label: Route 201
     pokemon: [wild, gift]
+    # D/P: Starter-Skript liegt auf MAP_LAKE_VERITY (Section 76)
+    pokemon_by_game: {41: [wild], 42: [wild]}
     cells:
     - [3, 26]
     - [4, 26]
@@ -437,7 +449,7 @@ entries:
     pokemon: [static]
     cells:
     - [11, 19]
-    games: [43]
+    games: [41, 42, 43]
   52:
     label: Großmoor
     pokemon: [wild]
@@ -504,7 +516,7 @@ entries:
     games: [41, 42, 43]
   63:
     label: Blumenparadies
-    pokemon: []
+    pokemon: [static]  # Shaymin (Event, Eichs Brief)
     cells:
     - [28, 6]
     games: [41, 42, 43]
@@ -589,6 +601,7 @@ entries:
   76:
     label: See der Wahrheit
     pokemon: [wild]
+    pokemon_by_game: {41: [wild, gift], 42: [wild, gift]}  # D/P-Starterwahl
     cells:
     - [1, 25]
     - [1, 26]
@@ -670,3 +683,45 @@ entries:
     cells:
     - [23, 22]
     games: [43]
+  # Orte ohne eigene Town-Map-Zelle -> auf Elternort gelegt (Sammel-Legende).
+  86:
+    label: Halle d. Beginns
+    pokemon: [static]  # Arceus
+    cells:
+    - [11, 19]  # = Speersäule
+    games: [41, 42, 43]
+  87:
+    label: Wahrheitsgrotte
+    pokemon: []  # Vesprit-Begegnung -> Wanderer, hier nicht fangbar
+    cells:
+    - [1, 25]  # = See der Wahrheit
+    - [1, 26]
+    - [2, 25]
+    - [2, 26]
+    games: [41, 42, 43]
+  88:
+    label: Kühnheitsgrotte
+    pokemon: [static]  # Tobutz
+    cells:
+    - [21, 23]  # = See der Kühnheit
+    - [21, 24]
+    - [22, 23]
+    - [22, 24]
+    games: [41, 42, 43]
+  89:
+    label: Stärkegrotte
+    pokemon: [static]  # Selfe
+    cells:
+    - [9, 6]  # = See der Stärke
+    - [9, 7]
+    - [10, 6]
+    - [10, 7]
+    games: [41, 42, 43]
+  94:
+    label: Bergbaumuseum
+    pokemon: [gift]  # Fossil-Wiederbelebung
+    cells:
+    - [8, 23]  # = Erzelingen
+    - [9, 23]
+    - [9, 24]
+    games: [41, 42, 43]

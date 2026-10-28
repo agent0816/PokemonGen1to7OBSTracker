@@ -28,6 +28,13 @@
   badgepointer: 0xB70
   badgeoffset: 0x292
   mapidoffset: 0x144C
+  # Spieler-Position (Live), relativ zu base2 (gleiche Chain wie Platin).
+  # Location-Struct aus 4x u32: map_id (mapidoffset), warp (-1), x, y.
+  # Verifiziert 2026-10-28 auf DE-Diamant via ghidra-bizhawk-MCP Differential
+  # (Wahrheitsufer, map_id 334; Down -> y+1, Right -> x+1, base2 stabil).
+  # Globale Matrix-Koordinaten wie bei Platin.
+  playerxoffset: 0x1454
+  playeryoffset: 0x1458
   bag_items: 0x0026DD78
   bag_keyitems: 0x0026E00C
   bag_tmvm: 0x0026E0D4
@@ -47,6 +54,11 @@
   badgepointer: 0xB70
   badgeoffset: 0x292
   mapidoffset: 0x144C
+  # Spieler-Position: identisch zu Diamant (41). Verifiziert 2026-10-28 auf
+  # DE-Perl (Wahrheitsufer, map_id 334; Down -> y+1, Right -> x+1, base2
+  # identisch 0x26D540).
+  playerxoffset: 0x1454
+  playeryoffset: 0x1458
   bag_items: 0x0026DD78
   bag_keyitems: 0x0026E00C
   bag_tmvm: 0x0026E0D4
@@ -108,6 +120,14 @@
   badgepointer: 0xBA8
   badgeoffset: 0x8E
   mapidoffset: 0x25FE4
+  # Spieler-Position (Live), u16 relativ zu base2 (gleiche Chain wie Platin),
+  # x und y direkt hintereinander. Verifiziert 2026-10-28 auf DE-HeartGold via
+  # ghidra-bizhawk-MCP Differential (Route 29, map_id 33; Left -> x-1,
+  # Down -> y+1, base2 stabil). Globale Matrix-Koordinaten wie bei Platin.
+  # ACHTUNG: base2+0x25F04/+0x25F0C (u32 x / u32 y) ist das Begleit-Pokemon,
+  # es steht immer auf der VORIGEN Spielerposition — nicht verwechseln.
+  playerxoffset: 0x25F88
+  playeryoffset: 0x25F8A
   bag_items: 0x0027C8BC
   bag_keyitems: 0x0027CB50
   bag_tmvm: 0x0027CC18
@@ -127,6 +147,11 @@
   badgepointer: 0xBA8
   badgeoffset: 0x8E
   mapidoffset: 0x25FE4
+  # Spieler-Position: identisch zu HeartGold (44). Verifiziert 2026-10-28 auf
+  # DE-SoulSilver (Route 29, map_id 33; Right -> x+1, Down -> y+1, base2
+  # identisch 0x27C268).
+  playerxoffset: 0x25F88
+  playeryoffset: 0x25F8A
   bag_items: 0x0027C8BC
   bag_keyitems: 0x0027CB50
   bag_tmvm: 0x0027CC18

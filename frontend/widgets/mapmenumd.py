@@ -39,18 +39,20 @@ logger = get_logger(__name__, 'logs/mapmenu.log')
 
 # Edition → Hotspot-YAML. Section-Key je Region = der Live-Place-ID-Raum:
 # Gen 3 = regionMapSectionId (MAPSEC), Gen 4 Sinnoh = met_location (== mapLabelTextID,
-# via mapid_section_gen4.yml). Gen 4 Sinnoh: nur Diamant/Perl/Platin (41–43); die
-# Karte ist aus Platin gerendert, Position live aber nur für Platin (ed 43). HGSS
-# (44/45) hat zwei Regionen (Johto+Kanto) und fehlt bewusst (Schritt F). ORAS
-# (63/64) nutzt ein anderes Zonen-System und ist ebenfalls NICHT dabei.
+# via mapid_section_gen4.yml). Gen 4 Sinnoh: Diamant/Perl/Platin (41–43), eine
+# gemeinsame Karte; D/P-Abweichungen der Fangquellen über pokemon_by_game. HGSS
+# (44/45): eine Pokégear-Karte Johto+Kanto. Live-Position für alle Gen-4-
+# Editionen (Offsets in pointer_gen4.yml). ORAS (63/64) nutzt ein anderes
+# Zonen-System und ist NICHT dabei.
 EDITION_REGION = {
     31: "hoenn_rse.yml", 32: "hoenn_rse.yml", 33: "hoenn_rse.yml",
     34: "kanto_frlg.yml", 35: "kanto_frlg.yml",
     41: "sinnoh_dppt.yml", 42: "sinnoh_dppt.yml", 43: "sinnoh_dppt.yml",
+    44: "johto_kanto_hgss.yml", 45: "johto_kanto_hgss.yml",
 }
 EDITION_LUT = {
     "Rubin": 31, "Saphir": 32, "Smaragd": 33, "Feuerrot": 34, "Blattgrün": 35,
-    "Diamant": 41, "Perl": 42, "Platin": 43,
+    "Diamant": 41, "Perl": 42, "Platin": 43, "Herzgold": 44, "Seelensilber": 45,
 }
 MAPS_DATA_DIR = os.path.join("backend", "data", "maps")
 # Zusätzliche Teilkarten je Edition (neben EDITION_REGION = Standardkarte). Das
@@ -471,14 +473,14 @@ class MapMenu(MDScreen):
             self.title_label.text = "Karte"
             self.legend_title.text = (
                 "Für dieses Spiel gibt es noch keine Regionskarte "
-                "(aktuell Gen 3: Kanto/Hoenn und Sinnoh: Diamant/Perl/Platin)."
+                "(aktuell Gen 3: Kanto/Hoenn/Sevii, Gen 4: Sinnoh und Johto/Kanto)."
             )
             return
         try:
             yaml_path = resource_path(os.path.join(MAPS_DATA_DIR, region_file))
             with open(yaml_path, encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)
-            hotspots = self._build_hotspots(data)
+            hotspots = self._build_hotspots(data, edition)
             _REGION_SECTIONS[region_file] = set(hotspots)
             image_rel = data.get("image", "")
             image_path = resource_path(
@@ -500,7 +502,7 @@ class MapMenu(MDScreen):
             self.legend_title.text = "Karte konnte nicht geladen werden."
 
     @staticmethod
-    def _build_hotspots(data: dict) -> dict[int, dict]:
+    def _build_hotspots(data: dict, edition: int | None = None) -> dict[int, dict]:
         """Wandelt ein Hotspot-YAML in das Pixel-Rect-Modell der MapCanvas.
 
         Unterstützt zwei Formate:
@@ -515,6 +517,9 @@ class MapMenu(MDScreen):
           (``tile_px``/``x_offset``/``y_offset`` auf Datei-Ebene).
         - Override ``{px_rects: [[x, y, w, h], ...]}``: direkt native Bild-Pixel,
           für Orte, die nicht aufs Zellen-Raster fallen (z.B. Voll-/Neumondinsel).
+
+        ``pokemon_by_game: {edition: [...]}`` ersetzt ``pokemon`` für die
+        genannten Editionen (z.B. D/P-Skripte weichen von Platin ab).
         """
         tile_px = int(data.get("tile_px", 8))
         x_off = int(data.get("x_offset", 0))
@@ -532,13 +537,15 @@ class MapMenu(MDScreen):
                           int(e["y"]) * tile_px + y_off,
                           int(e.get("width", 1)) * tile_px,
                           int(e.get("height", 1)) * tile_px)]
+            by_game = e.get("pokemon_by_game") or {}
+            pokemon = by_game[edition] if edition in by_game else e.get("pokemon")
             hotspots[sec] = {
                 "label": e.get("label"),
                 "rects": rects,
                 "games": e.get("games"),
                 # Quellen laut Decomp (land/surf/…); [] = nichts fangbar,
                 # None = unbekannt (Feld fehlt) → wie fangbar behandeln.
-                "pokemon": e.get("pokemon"),
+                "pokemon": pokemon,
             }
         return hotspots
 

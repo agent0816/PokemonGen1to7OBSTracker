@@ -1263,7 +1263,7 @@ class Bizhawk:
         pos-Dict zurück (Kartenfeature, Phase 1 Section-Highlight).
 
         Gibt ``None`` zurück, wenn kein Spieler bekannt ist oder die Edition
-        keine Positions-Offsets hat (nur Platin ed 43 in pointer_gen4.yml).
+        keine Positions-Offsets hat (pointer_gen4.yml, alle Gen-4-Editionen).
         Publiziert NICHT selbst — der Aufrufer prüft erst den Torn-State-Guard
         (base2 stabil?) und ruft dann ``_publish_position``.
 
@@ -1274,8 +1274,8 @@ class Bizhawk:
         kommt aus der statischen LUT ``bh_pointers.get_map_section(edition,
         map_id)``, weil Gen 4 live nur die ``map_id`` liefert. Section ``None``
         (unbekannte/Nicht-Overworld-Map) → kein ``map_section`` im Payload →
-        Screen zeigt keinen Marker. Verifiziert auf DE-Platin (ed 43); andere
-        Gen-4-Editionen brauchen eigene Offsets + LUT-Tabelle (Schritt F)."""
+        Screen zeigt keinen Marker. Verifiziert auf DE-Diamant/Perl (ed 41/42),
+        DE-Platin (ed 43) und DE-HeartGold/SoulSilver (ed 44/45)."""
         px_off = pointers.get("playerxoffset")
         py_off = pointers.get("playeryoffset")
         if px_off is None or py_off is None or player is None:

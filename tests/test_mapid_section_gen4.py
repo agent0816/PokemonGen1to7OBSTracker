@@ -35,6 +35,18 @@ def test_keys_sind_int():
 
 
 def test_unbekannte_edition_und_mapid():
-    # Keine Tabelle für HGSS (44) bzw. unbekannte map_id → None, kein Marker.
-    assert bh_pointers.get_map_section(44, 411) is None
+    # Keine Tabelle für Gen 3 (31) bzw. unbekannte map_id → None, kein Marker.
+    assert bh_pointers.get_map_section(31, 411) is None
     assert bh_pointers.get_map_section(43, 99999) is None
+
+
+def test_diamant_perl_twinleaf():
+    # pokediamond sMapHeaders: map_id 411 == MAP_TWINLEAF_TOWN → Section 1.
+    assert bh_pointers.get_map_section(41, 411) == 1
+    assert bh_pointers.get_map_section(42, 411) == 1
+
+
+def test_hgss_new_bark():
+    # pokeheartgold: MAP_NEW_BARK == 60, .mapsec MAPSEC_NEW_BARK_TOWN == 126.
+    assert bh_pointers.get_map_section(44, 60) == 126
+    assert bh_pointers.get_map_section(45, 60) == 126

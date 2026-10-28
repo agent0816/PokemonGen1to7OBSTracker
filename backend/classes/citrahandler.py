@@ -91,10 +91,27 @@ class CitraHandler:
     
     def check_connection(self):
         try:
-            self.citra_instance.read_memory(0,1)
-            self.is_connected = True
+            if self.citra_instance.negotiate_version():
+                self.is_connected = True
+                self.logger.info(
+                    f"Citra/Azahar verbunden (RPC-Protokoll-Version "
+                    f"{self.citra_instance.request_version})."
+                )
+            else:
+                self.is_connected = False
+                self.logger.warning(
+                    "Citra/Azahar RPC-Server antwortet nicht. Bei Azahar "
+                    "2121.2+ ist der RPC-Server standardmaessig deaktiviert: "
+                    "Emulation -> Konfiguration -> Debug -> 'Enable RPC "
+                    "server' aktivieren und Azahar neu starten."
+                )
         except ConnectionResetError:
             self.is_connected = False
+        except Exception as err:
+            self.is_connected = False
+            self.logger.warning(
+                f"Citra check_connection fehlgeschlagen: {type(err)},{err}"
+            )
 
     def _select_game_process(self):
         """Waehlt den Spielprozess in Azahars RPC-Server aus.
@@ -162,7 +179,8 @@ class CitraHandler:
                                     or self.bag_request_queue
                                     or self.bag_write_queue)
                 await asyncio.sleep(0.05 if have_pending else 1)
-            except ConnectionResetError:
+            except ConnectionResetError as err:
+                self.logger.warning(f"Citra Player {self.player_number}: Verbindung verloren ({err})")
                 self.is_connected = False
             except Exception as err:
                 self.logger.error(f"handle_citra abgebrochen: {type(err)},{err}")
@@ -297,18 +315,34 @@ class CitraHandler:
         result = b''
         # Teamreihenfolge auslesen:
         team_pointer = self.citra_instance.read_memory(self.pointer["team_reihenfolge"], 25)
+        # Leere RPC-Antwort (None) als sauberen Disconnect behandeln, statt beim
+        # Subscript in einen NoneType-TypeError zu laufen. Ursachen: Emu-Crash
+        # (Azahar 2126.0/.1 Render-Race) oder nicht ausgehandelte RPC-Version.
+        if team_pointer is None:
+            raise ConnectionResetError(
+                "Keine RPC-Antwort von Azahar beim Team-Read (team_reihenfolge)."
+            )
         self.logger.debug(f"read_team: team_count={int.from_bytes(team_pointer[24:],'little')}, addr=0x{self.pointer['team_reihenfolge']:08X}")
         self.number_of_team_pokemon = int.from_bytes(team_pointer[24:],'little')
         for i in range(6):
             read_address = int.from_bytes(team_pointer[i*4:i*4 + 4], 'little') + 0x40
             pokemon = self.citra_instance.read_memory(read_address, SLOT_DATA_SIZE)
             battle_stats = self.citra_instance.read_memory(read_address + SLOT_DATA_SIZE + STAT_DATA_OFFSET, STAT_DATA_SIZE)
+            if pokemon is None or battle_stats is None:
+                raise ConnectionResetError(
+                    "Unvollstaendige RPC-Antwort von Azahar (Team-Slot)."
+                )
             result += pokemon + battle_stats
         return result
     
     def read_in_battle_stats(self):
         result = {}
-        battle_kind = int.from_bytes(self.citra_instance.read_memory(self.pointer["battle_kind"], 2), 'little')
+        battle_kind_bytes = self.citra_instance.read_memory(self.pointer["battle_kind"], 2)
+        if battle_kind_bytes is None:
+            raise ConnectionResetError(
+                "Keine RPC-Antwort von Azahar beim Lesen von battle_kind."
+            )
+        battle_kind = int.from_bytes(battle_kind_bytes, 'little')
         self._current_battle_kind = battle_kind
         self.logger.debug(f"battle_kind=0x{battle_kind:04X} (trainer=0x{self.pointer['trainer_value']:04X}, wild=0x{self.pointer['wild_value']:04X})")
         if battle_kind == self.pointer["trainer_value"]:
@@ -325,6 +359,8 @@ class CitraHandler:
             for index in range(self.number_of_team_pokemon):
                 stats_dict = {}
                 stat_bytes = self.citra_instance.read_memory(read_address + index * offset, 20)
+                if stat_bytes is None:
+                    continue
                 stats_dict['lvl'] = int.from_bytes(stat_bytes[16:17], 'little')
                 stats_dict['max_hp'] = int.from_bytes(stat_bytes[6:8], 'little')
                 stats_dict['cur_hp'] = int.from_bytes(stat_bytes[8:10], 'little')
@@ -341,7 +377,11 @@ class CitraHandler:
         result = b'\x00'
         read_address = self.pointer["badges"]
         if read_address:
-            result = self.citra_instance.read_memory(read_address, 1)
+            badge_bytes = self.citra_instance.read_memory(read_address, 1)
+            # Bei None (keine RPC-Antwort) Default b'\x00' behalten, damit das
+            # Concat in read_team-Resultat nicht am NoneType scheitert.
+            if badge_bytes is not None:
+                result = badge_bytes
         return result
 
     async def read_and_decode_boxes(self) -> list[list]:
@@ -672,6 +712,8 @@ class CitraHandler:
         if not zone_ptr:
             return 0
         zone_bytes = self.citra_instance.read_memory(zone_ptr, 2)
+        if not zone_bytes:
+            return 0  # keine RPC-Antwort, wie unbekannte Zone behandeln
         return int.from_bytes(zone_bytes, "little")
 
     def _read_zone_index(self) -> int | None:
@@ -737,6 +779,9 @@ class CitraHandler:
                 return
 
             enc_data = self.citra_instance.read_memory(enc_ptr, SLOT_DATA_SIZE)
+            if enc_data is None:
+                self.logger.warning("Encounter-Read: keine RPC-Antwort von Azahar")
+                return
             opp = pokedecoder.decode_opponent_gen67(enc_data)
             if opp is None:
                 self.logger.debug("Gegner-Slot leer oder ungültig")
@@ -959,17 +1004,20 @@ class CitraHandler:
             if dexnr == 0 or dexnr == "egg":
                 continue
 
+            # Route im Loop-Thread bestimmen: _met_for_index kann den Citra-
+            # Socket lesen, der nicht thread-safe ist (kein Read im Executor).
+            gift_route = getattr(pokemon, "route", 0) or self._met_for_index(zone_idx, has_idx_ptr)
             try:
                 result = await loop.run_in_executor(
                     None,
-                    lambda pv=pv, pokemon=pokemon, dexnr=dexnr: self._encounter_tracker.process_gift_encounter(
+                    lambda pv=pv, pokemon=pokemon, dexnr=dexnr, gift_route=gift_route: self._encounter_tracker.process_gift_encounter(
                         owner=owner,
                         edition=int(self.edition),
                         personality=pv,
                         dexnr=int(dexnr) if isinstance(dexnr, (int, str)) and str(dexnr).isdigit() else 0,
                         lvl=pokemon.lvl or 1,
                         shiny=bool(pokemon.shiny),
-                        route=getattr(pokemon, "route", 0) or self._met_for_index(zone_idx, has_idx_ptr),
+                        route=gift_route,
                         map_header_id=map_header_id,
                     ),
                 )

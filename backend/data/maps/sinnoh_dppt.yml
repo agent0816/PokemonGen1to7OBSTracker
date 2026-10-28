@@ -9,50 +9,66 @@
 #   126->107, Weideburg 154->135 usw.). Der Roh-Decomp-Render traf den In-Game-
 #   Look nicht (Extended-Palettes, nur 32 Decomp-Farben) -> echtes In-Game-Bild.
 # Transform Zelle->Pixel: px = x*tile_px + x_offset, py = z*tile_px + y_offset
-#   (TOWN_MAP_GRID spacing 7; x_offset = 25-19 = 6, y_offset -36). y um 2px von
-#   -34 auf -36 nachjustiert: Hotspots sassen 2px zu tief (Staedte/Routen am
-#   oberen Box-Rand statt zentriert; an Dach-Markern + City-/Route-Pixel-Coverage
-#   vermessen, visuell im Startgebiet gegengeprueft). x bleibt 6 (vertikale
-#   Routen zentriert). Gen 3 nutzt jetzt ebenfalls Offset (Cursor-Origin 8,16).
+#   (TOWN_MAP_GRID spacing 7; x_offset 1, y_offset -38). Per Offset-Suche
+#   kalibriert: Anteil Routen-/Stadt-Pixel (orange/rot/blau) unter allen Zellen
+#   maximiert -> (1,-38) ~74 % vs. alt (6,-36) ~49 % (Hotspots sassen ~5px zu
+#   weit rechts, ~2px zu tief = "nach Suedosten"). Visuell am Overlay ueber die
+#   ganze Karte gegengeprueft (Staedte 2x2, Routen, Hoehlen). Gen 3 nutzt
+#   ebenfalls Offset (Cursor-Origin 8,16).
 # cells = Liste [x,z] aller Town-Map-Blocks der Section (Routen = mehrere Zellen).
-# Labels deutsch (encounter_locations_gen4.yml -> locations_gen4.yml Staedte).
+# Labels deutsch = PKHeX gen4/text_hgss_00000_de.txt[met] (2026-10-28 neu gesetzt; das
+#   alte encounter_locations_gen4.yml war ab met 46 um +1 verrutscht).
+# Zusatz-Hotspots ohne eigene Area (Dungeons/Seen/Landmarks) aus town_map_data.json
+#   'landmark'-Bloecken bzw. der Ufer-Area: Seen 76-78 = Ufer-Zellen 72-74, Scheidequelle =
+#   Fruehlingspfad, Maniac-Tunnel = Maniac-Hoehle, Trophaeengarten = Villa-Landmark,
+#   Zerrwelt = Hoehle der Umkehr. Ueberlappende Zellen -> Sammel-Legende im MapMenu.
+# pokemon: Quellen laut pret/pokeplatinum (wild = map_headers wildEncountersArchiveID,
+#   static/gift/trade = Field-Scripts); leer = dort nichts fang-/erhaltbar. Nur Platin geprueft.
+# px_rects (native Bildpixel) ueberschreibt cells: Voll-/Neumondinsel auf die Inseln NO
+#   der Eiseninsel (West = Vollmond, Ost = Neumond, Reihenfolge wie Decomp x 1 < 4).
 # Layout aus PLATIN; D/P teilen dasselbe Sinnoh-Layout (games-Feld pro Eintrag aus
 # encounter-yml, sonst [41,42,43]) — DP nicht gegengeprueft (Schritt F).
 region: sinnoh
 image: sinnoh.png
 tile_px: 7
-x_offset: 6
-y_offset: -36
+x_offset: 1
+y_offset: -38
 entries:
   1:
     label: Zweiblattdorf
+    pokemon: [wild]
     cells:
     - [3, 27]
     games: [41, 42, 43]
   2:
     label: Sandgemme
+    pokemon: []
     cells:
     - [5, 26]
     games: [41, 42, 43]
   3:
     label: Flori
+    pokemon: []
     cells:
     - [5, 19]
     - [5, 20]
     games: [41, 42, 43]
   4:
     label: Trostu
+    pokemon: []
     cells:
     - [17, 20]
     - [18, 20]
     games: [41, 42, 43]
   5:
     label: Elyses
+    pokemon: [wild]
     cells:
     - [14, 16]
     games: [41, 42, 43]
   6:
     label: Jubelstadt
+    pokemon: []
     cells:
     - [4, 23]
     - [4, 24]
@@ -61,12 +77,14 @@ entries:
     games: [41, 42, 43]
   7:
     label: Fleetburg
+    pokemon: [wild]
     cells:
     - [1, 22]
     - [1, 23]
     games: [41, 42, 43]
   8:
     label: Erzelingen
+    pokemon: [trade]
     cells:
     - [8, 23]
     - [9, 23]
@@ -74,6 +92,7 @@ entries:
     games: [41, 42, 43]
   9:
     label: Ewigenau
+    pokemon: [wild, gift, trade]
     cells:
     - [9, 16]
     - [9, 17]
@@ -81,6 +100,7 @@ entries:
     games: [41, 42, 43]
   10:
     label: Herzhofen
+    pokemon: [gift]
     cells:
     - [14, 21]
     - [14, 22]
@@ -89,6 +109,7 @@ entries:
     games: [41, 42, 43]
   11:
     label: Weideburg
+    pokemon: [wild]
     cells:
     - [18, 25]
     - [18, 26]
@@ -97,6 +118,7 @@ entries:
     games: [41, 42, 43]
   12:
     label: Schleiede
+    pokemon: [gift]
     cells:
     - [21, 18]
     - [21, 19]
@@ -105,6 +127,7 @@ entries:
     games: [41, 42, 43]
   13:
     label: Sonnewik
+    pokemon: [wild]
     cells:
     - [26, 23]
     - [26, 24]
@@ -113,40 +136,47 @@ entries:
     games: [41, 42, 43]
   14:
     label: Blizzach
+    pokemon: [trade]
     cells:
     - [11, 6]
     - [11, 7]
     games: [41, 42, 43]
   15:
     label: Pokémon Liga
+    pokemon: [wild]
     cells:
     - [26, 17]
     games: [41, 42, 43]
   16:
     label: Route 201
+    pokemon: [wild, gift]
     cells:
     - [3, 26]
     - [4, 26]
     games: [41, 42, 43]
   17:
     label: Route 202
+    pokemon: [wild]
     cells:
     - [5, 25]
     games: [41, 42, 43]
   18:
     label: Route 203
+    pokemon: [wild]
     cells:
     - [6, 23]
     - [7, 23]
     games: [41, 42, 43]
   19:
     label: Route 204
+    pokemon: [wild]
     cells:
     - [5, 21]
     - [5, 22]
     games: [41, 42, 43]
   20:
     label: Route 205
+    pokemon: [wild]
     cells:
     - [6, 18]
     - [6, 19]
@@ -155,6 +185,7 @@ entries:
     games: [41, 42, 43]
   21:
     label: Route 206
+    pokemon: [wild]
     cells:
     - [9, 18]
     - [9, 19]
@@ -163,18 +194,21 @@ entries:
     games: [41, 42, 43]
   22:
     label: Route 207
+    pokemon: [wild]
     cells:
     - [9, 22]
     - [10, 22]
     games: [41, 42, 43]
   23:
     label: Route 208
+    pokemon: [wild]
     cells:
     - [12, 22]
     - [13, 22]
     games: [41, 42, 43]
   24:
     label: Route 209
+    pokemon: [wild, static]
     cells:
     - [16, 22]
     - [17, 21]
@@ -182,6 +216,7 @@ entries:
     games: [41, 42, 43]
   25:
     label: Route 210
+    pokemon: [wild]
     cells:
     - [15, 16]
     - [16, 16]
@@ -192,12 +227,14 @@ entries:
     games: [41, 42, 43]
   26:
     label: Route 211
+    pokemon: [wild]
     cells:
     - [11, 16]
     - [13, 16]
     games: [41, 42, 43]
   27:
     label: Route 212
+    pokemon: [wild]
     cells:
     - [14, 23]
     - [14, 24]
@@ -209,6 +246,7 @@ entries:
     games: [41, 42, 43]
   28:
     label: Route 213
+    pokemon: [wild]
     cells:
     - [20, 25]
     - [20, 26]
@@ -219,6 +257,7 @@ entries:
     games: [41, 42, 43]
   29:
     label: Route 214
+    pokemon: [wild]
     cells:
     - [22, 20]
     - [22, 21]
@@ -226,6 +265,7 @@ entries:
     games: [41, 42, 43]
   30:
     label: Route 215
+    pokemon: [wild]
     cells:
     - [18, 18]
     - [19, 18]
@@ -233,6 +273,7 @@ entries:
     games: [41, 42, 43]
   31:
     label: Route 216
+    pokemon: [wild]
     cells:
     - [9, 12]
     - [10, 12]
@@ -240,6 +281,7 @@ entries:
     games: [41, 42, 43]
   32:
     label: Route 217
+    pokemon: [wild]
     cells:
     - [9, 8]
     - [9, 9]
@@ -248,23 +290,27 @@ entries:
     games: [41, 42, 43]
   33:
     label: Route 218
+    pokemon: [wild]
     cells:
     - [2, 23]
     - [3, 23]
     games: [41, 42, 43]
   34:
     label: Route 219
+    pokemon: [wild]
     cells:
     - [5, 27]
     games: [41, 42, 43]
   35:
     label: Route 220
+    pokemon: [wild]
     cells:
     - [5, 28]
     - [6, 28]
     games: [41, 42, 43]
   36:
     label: Route 221
+    pokemon: [wild]
     cells:
     - [7, 28]
     - [8, 28]
@@ -272,6 +318,7 @@ entries:
     games: [41, 42, 43]
   37:
     label: Route 222
+    pokemon: [wild]
     cells:
     - [23, 24]
     - [24, 24]
@@ -279,6 +326,7 @@ entries:
     games: [41, 42, 43]
   38:
     label: Route 223
+    pokemon: [wild]
     cells:
     - [26, 19]
     - [26, 20]
@@ -287,6 +335,7 @@ entries:
     games: [41, 42, 43]
   39:
     label: Route 224
+    pokemon: [wild]
     cells:
     - [27, 16]
     - [27, 17]
@@ -295,6 +344,7 @@ entries:
     games: [41, 42, 43]
   40:
     label: Route 225
+    pokemon: [wild]
     cells:
     - [19, 10]
     - [19, 11]
@@ -302,6 +352,7 @@ entries:
     games: [41, 42, 43]
   41:
     label: Route 226
+    pokemon: [wild, trade]
     cells:
     - [21, 10]
     - [22, 10]
@@ -309,12 +360,14 @@ entries:
     games: [41, 42, 43]
   42:
     label: Route 227
+    pokemon: [wild]
     cells:
     - [23, 8]
     - [23, 9]
     games: [41, 42, 43]
   43:
     label: Route 228
+    pokemon: [wild]
     cells:
     - [24, 10]
     - [24, 11]
@@ -322,24 +375,34 @@ entries:
     games: [41, 42, 43]
   44:
     label: Route 229
+    pokemon: [wild]
     cells:
     - [24, 13]
     - [25, 13]
     games: [41, 42, 43]
   45:
     label: Route 230
+    pokemon: [wild]
     cells:
     - [21, 13]
     - [22, 13]
     - [23, 13]
     games: [41, 42, 43]
-  47:
+  46:
     label: Erzelingen-Mine
+    pokemon: [wild]
+    cells:
+    - [9, 24]
+    games: [41, 42, 43]
+  47:
+    label: Windkraftwerk
+    pokemon: [wild, static]
     cells:
     - [7, 20]
     games: [41, 42, 43]
   48:
-    label: Windkraftwerk
+    label: Ewigwald
+    pokemon: [wild]
     cells:
     - [6, 16]
     - [6, 17]
@@ -347,12 +410,14 @@ entries:
     - [7, 17]
     games: [41, 42, 43]
   49:
-    label: Ewigwald
+    label: Feuriohütte
+    pokemon: [wild]
     cells:
     - [5, 18]
     games: [41, 42, 43]
   50:
-    label: Feuriohütte
+    label: Kraterberg
+    pokemon: [wild]
     cells:
     - [11, 19]
     - [11, 20]
@@ -367,28 +432,127 @@ entries:
     - [12, 18]
     - [12, 19]
     games: [41, 42, 43]
-  54:
+  51:
+    label: Speersäule
+    pokemon: [static]
+    cells:
+    - [11, 19]
+    games: [43]
+  52:
+    label: Großmoor
+    pokemon: [wild]
+    cells:
+    - [19, 25]
+    games: [41, 42, 43]
+  53:
     label: Trostu-Ruinen
+    pokemon: [wild]
+    cells:
+    - [18, 20]
+    games: [41, 42, 43]
+  54:
+    label: Siegesstraße
+    pokemon: [wild]
     cells:
     - [26, 18]
     games: [41, 42, 43]
-  60:
-    label: Erzelingen-Tor
+  56:
+    label: Platz der Treue
+    pokemon: []
     cells:
-    - [1, 8]
+    - [14, 21]
+    games: [41, 42, 43]
+  57:
+    label: Verwüsteter Pfad
+    pokemon: [wild]
+    cells:
+    - [5, 22]
+    games: [41, 42, 43]
+  58:
+    label: Auen von Flori
+    pokemon: []
+    cells:
+    - [5, 19]
+    games: [41, 42, 43]
+  59:
+    label: Erzelingen-Tor
+    pokemon: [wild]
+    cells:
+    - [7, 23]
+    games: [41, 42, 43]
+  60:
+    label: Vollmond-Insel
+    pokemon: []
+    # Decomp-Zelle [1, 8] liegt im Kartenbild im Meer -> Insel-Pixel NO der Eiseninsel
+    px_rects:
+    - [30, 44, 7, 7]
+    games: [41, 42, 43]
+  61:
+    label: Scheidequelle
+    pokemon: [wild]
+    cells:
+    - [23, 21]
+    - [23, 22]
+    - [24, 21]
+    - [24, 22]
+    games: [41, 42, 43]
+  62:
+    label: Höhle der Umkehr
+    pokemon: [wild, static]
+    cells:
+    - [23, 22]
     games: [41, 42, 43]
   63:
-    label: Höhle der Umkehr
+    label: Blumenparadies
+    pokemon: []
     cells:
     - [28, 6]
     games: [41, 42, 43]
-  69:
+  64:
+    label: Blizzach-Tempel
+    pokemon: [wild, static]
+    cells:
+    - [11, 6]
+    games: [41, 42, 43]
+  65:
+    label: Bizarre Höhle
+    pokemon: [wild]
+    cells:
+    - [9, 19]
+    games: [41, 42, 43]
+  66:
+    label: Maniac-Höhle
+    pokemon: [wild]
+    cells:
+    - [22, 20]
+    games: [41, 42, 43]
+  67:
+    label: Maniac-Tunnel
+    pokemon: [wild]
+    cells:
+    - [22, 20]
+    games: [41, 42, 43]
+  68:
     label: Trophäengarten
+    pokemon: [wild]
+    cells:
+    - [14, 24]
+    games: [41, 42, 43]
+  69:
+    label: Eiseninsel
+    pokemon: [wild, gift]
     cells:
     - [3, 15]
     games: [41, 42, 43]
+  70:
+    label: Alte Villa
+    pokemon: [wild, static]
+    cells:
+    - [7, 16]
+    games: [41, 42, 43]
   72:
     label: Wahrheitsufer
+    pokemon: []
     cells:
     - [1, 25]
     - [1, 26]
@@ -396,7 +560,8 @@ entries:
     - [2, 26]
     games: [41, 42, 43]
   73:
-    label: Wahrheitsufer
+    label: Kühnheitsufer
+    pokemon: [wild]
     cells:
     - [21, 23]
     - [21, 24]
@@ -404,7 +569,8 @@ entries:
     - [22, 24]
     games: [41, 42, 43]
   74:
-    label: Kühnheitsufer
+    label: Stärkeufer
+    pokemon: [wild]
     cells:
     - [9, 6]
     - [9, 7]
@@ -412,41 +578,76 @@ entries:
     - [10, 7]
     games: [41, 42, 43]
   75:
-    label: Stärkeufer
+    label: Frühlingspfad
+    pokemon: []
     cells:
     - [23, 21]
     - [23, 22]
     - [24, 21]
     - [24, 22]
     games: [41, 42, 43]
-  79:
-    label: See der Stärke
+  76:
+    label: See der Wahrheit
+    pokemon: [wild]
     cells:
-    - [4, 8]
+    - [1, 25]
+    - [1, 26]
+    - [2, 25]
+    - [2, 26]
+    games: [41, 42, 43]
+  77:
+    label: See der Kühnheit
+    pokemon: [wild]
+    cells:
+    - [21, 23]
+    - [21, 24]
+    - [22, 23]
+    - [22, 24]
+    games: [41, 42, 43]
+  78:
+    label: See der Stärke
+    pokemon: [wild]
+    cells:
+    - [9, 6]
+    - [9, 7]
+    - [10, 6]
+    - [10, 7]
+    games: [41, 42, 43]
+  79:
+    label: Neumond-Insel
+    pokemon: [static]
+    # Decomp-Zelle [4, 8] liegt im Kartenbild im Meer -> Insel-Pixel NO der Eiseninsel
+    px_rects:
+    - [40, 42, 7, 7]
     games: [41, 42, 43]
   81:
     label: Kampfareal
+    pokemon: []
     cells:
     - [19, 13]
     - [20, 13]
     games: [41, 42, 43]
   82:
     label: Überlebensareal
+    pokemon: []
     cells:
     - [20, 10]
     games: [41, 42, 43]
   83:
     label: Erholungsgebiet
+    pokemon: [wild]
     cells:
     - [25, 14]
     games: [41, 42, 43]
   84:
     label: Kahlberg
+    pokemon: [wild, static]
     cells:
     - [23, 7]
     games: [41, 42, 43]
   85:
-    label: Kahlberg
+    label: Buhnen-Pfad
+    pokemon: []
     cells:
     - [28, 7]
     - [28, 8]
@@ -459,6 +660,13 @@ entries:
     games: [41, 42, 43]
   112:
     label: Kampfzone
+    pokemon: []
     cells:
     - [20, 12]
     games: [41, 42, 43]
+  117:
+    label: Zerrwelt
+    pokemon: [static]
+    cells:
+    - [23, 22]
+    games: [43]

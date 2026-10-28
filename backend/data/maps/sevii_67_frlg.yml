@@ -1,0 +1,211 @@
+# Hotspot-Daten Sevii-Teilkarte Eiland 6–7 (FRLG, Kartenfeature).
+# Key = MAPSEC (= live regionMapSectionId). Zellen aus pret/pokefirered
+#   src/data/region_map/region_map_layout_sevii_67.h (LAYER_MAP + LAYER_DUNGEON), selber
+#   Grid-Raum/Offset wie Kanto (Cursor-Origin 8,16; am Overlay aller Teilkarten bestaetigt).
+# Bild sevii_67.png (192x144) = echte In-Game FRBG-Sevii-Karte (User-Screenshot
+#   FRBG-Map_Sevii_Eilande_6–7.png). Das MapMenu wechselt automatisch auf diese
+#   Teilkarte, sobald die Live-map_section hier liegt.
+# Innenraeume ohne eigene Zelle auf Eltern-Zellen: Rocket-Lager=Fuenfinsel-Wiese,
+#   Trainerturm-Innen=Trainerturm, Tri-Eiland-Pfad=Eiland Drei, Tanibo-Schluessel=
+#   Sevault-Canyon, Gluttherme=Glühweg, die 7 Tanibo-Kammern=Tanibo-Kammer-Zelle.
+#   Prototyp-MAPSECs SEVII_ISLE_6-9/22-24 (keine echte Map) fehlen bewusst.
+# Labels = encounter_locations_gen3.yml, sonst PKHeX text_rsefrlg_00000_de.txt.
+# pokemon: Quellen laut pret/pokefirered (wild_encounters.json + Map-Scripts).
+region: sevii
+title: Sevii-Inseln Eiland 6–7
+image: sevii_67.png
+tile_px: 8
+x_offset: 8
+y_offset: 16
+entries:
+  148:
+    label: Eiland Sieben
+    pokemon: []
+    id: MAPSEC_SEVEN_ISLAND
+    cells:
+    - [5, 8]
+    games: [34, 35]
+  149:
+    label: Eiland Sechs
+    pokemon: []
+    id: MAPSEC_SIX_ISLAND
+    cells:
+    - [17, 5]
+    games: [34, 35]
+  163:
+    label: Fern-Eiland
+    pokemon: [surf, fish]
+    id: MAPSEC_OUTCAST_ISLAND
+    cells:
+    - [15, 0]
+    - [15, 1]
+    - [15, 2]
+    games: [34, 35]
+  164:
+    label: Grüner Pfad
+    pokemon: [surf, fish]
+    id: MAPSEC_GREEN_PATH
+    cells:
+    - [15, 3]
+    - [16, 3]
+    - [17, 3]
+    games: [34, 35]
+  165:
+    label: Wasserweg
+    pokemon: [land, surf, fish]
+    id: MAPSEC_WATER_PATH
+    cells:
+    - [18, 3]
+    - [18, 4]
+    - [18, 5]
+    - [18, 6]
+    - [18, 7]
+    games: [34, 35]
+  166:
+    label: Ruinental
+    pokemon: [land, surf, fish]
+    id: MAPSEC_RUIN_VALLEY
+    cells:
+    - [16, 7]
+    - [17, 7]
+    - [16, 8]
+    - [17, 8]
+    games: [34, 35]
+  167:
+    label: Trainerturm (Außenbereich)
+    pokemon: [surf, fish]
+    id: MAPSEC_TRAINER_TOWER
+    cells:
+    - [5, 6]
+    - [5, 7]
+    games: [34, 35]
+  168:
+    label: Schluchteingang
+    pokemon: [land]
+    id: MAPSEC_CANYON_ENTRANCE
+    cells:
+    - [5, 9]
+    games: [34, 35]
+  169:
+    label: 7-Schatzschlucht
+    pokemon: [land, rock_smash]
+    id: MAPSEC_SEVAULT_CANYON
+    cells:
+    - [6, 9]
+    - [6, 10]
+    - [6, 11]
+    games: [34, 35]
+  170:
+    label: Tanibo-Ruinen
+    pokemon: [surf, fish]
+    id: MAPSEC_TANOBY_RUINS
+    cells:
+    - [3, 12]
+    - [4, 12]
+    - [5, 12]
+    - [6, 12]
+    - [7, 12]
+    - [8, 12]
+    - [9, 12]
+    games: [34, 35]
+  179:
+    label: Trainerturm
+    pokemon: []
+    id: MAPSEC_TRAINER_TOWER_2
+    cells:
+    - [5, 6]
+    - [5, 7]
+    games: [34, 35]
+  180:
+    label: Punktloch
+    pokemon: []
+    id: MAPSEC_DOTTED_HOLE
+    cells:
+    - [16, 8]
+    games: [34, 35]
+  182:
+    label: Musterbuschwald
+    pokemon: [land]
+    id: MAPSEC_PATTERN_BUSH
+    cells:
+    - [17, 3]
+    games: [34, 35]
+  183:
+    label: Wandelhöhle
+    pokemon: [land]
+    id: MAPSEC_ALTERING_CAVE
+    cells:
+    - [15, 0]
+    games: [34, 35]
+  184:
+    label: Tanibo-Kammer
+    pokemon: []
+    id: MAPSEC_TANOBY_CHAMBERS
+    cells:
+    - [9, 12]
+    games: [34, 35]
+  186:
+    label: Tanibo-Schlüssel
+    pokemon: []
+    id: MAPSEC_TANOBY_KEY
+    cells:
+    - [6, 9]
+    - [6, 10]
+    - [6, 11]
+    games: [34, 35]
+  187:
+    label: Entstehungsinsel
+    pokemon: [static]
+    id: MAPSEC_BIRTH_ISLAND
+    cells:
+    - [18, 13]
+    games: [34, 35]
+  188:
+    label: Einamon-Kammer
+    pokemon: [land]
+    id: MAPSEC_MONEAN_CHAMBER
+    cells:
+    - [9, 12]
+    games: [34, 35]
+  189:
+    label: Pezwulp-Kammer
+    pokemon: [land]
+    id: MAPSEC_LIPTOO_CHAMBER
+    cells:
+    - [9, 12]
+    games: [34, 35]
+  190:
+    label: Dreicke-Kammer
+    pokemon: [land]
+    id: MAPSEC_WEEPTH_CHAMBER
+    cells:
+    - [9, 12]
+    games: [34, 35]
+  191:
+    label: Vierzisse-Kammer
+    pokemon: [land]
+    id: MAPSEC_DILFORD_CHAMBER
+    cells:
+    - [9, 12]
+    games: [34, 35]
+  192:
+    label: Fünibisku-Kammer
+    pokemon: [land]
+    id: MAPSEC_SCUFIB_CHAMBER
+    cells:
+    - [9, 12]
+    games: [34, 35]
+  193:
+    label: Lilechs-Kammer
+    pokemon: [land]
+    id: MAPSEC_RIXY_CHAMBER
+    cells:
+    - [9, 12]
+    games: [34, 35]
+  194:
+    label: Sieborbia-Kammer
+    pokemon: [land]
+    id: MAPSEC_VIAPOIS_CHAMBER
+    cells:
+    - [9, 12]
+    games: [34, 35]

@@ -96,21 +96,44 @@ class _DriveApp(MDApp):
                    self.menu.map_canvas.current_section)
         self.check("zweiblatt_hotspot", 1 in hs and hs[1].get("label") == "Zweiblattdorf",
                    hs.get(1))
-        # Offset-Modus: Zweiblattdorf-Rect muss px = x*7+6 / z*7-36 sein
-        # (cell 3,27 -> (27,153)); x_offset 6 = decomp 25 minus 19px In-Game-Crop,
-        # y_offset -36 (von -34 um 2px nachjustiert, Hotspots sassen zu tief).
-        self.check("offset_rect", hs.get(1, {}).get("rects") == [(27, 153, 7, 7)],
+        # Offset-Modus: Zweiblattdorf-Rect muss px = x*7+1 / z*7-38 sein
+        # (cell 3,27 -> (22,151)); Offset per Routen-Pixel-Coverage kalibriert
+        # (alt 6/-36 sass ~5px rechts, ~2px tief).
+        self.check("offset_rect", hs.get(1, {}).get("rects") == [(22, 151, 7, 7)],
                    hs.get(1, {}).get("rects"))
         self.shot("03_map_sinnoh")
         self._next(self.s_click)
 
     def s_click(self):
         self.menu._on_section_selected(16)  # Route 201
-        self.check("legende_titel", self.menu.legend_title.text == "Route 201",
+        self.check("legende_titel", self.menu.legend_title.text.startswith("Route 201")
+                   and "Wild" in self.menu.legend_title.text,
                    self.menu.legend_title.text)
         self.check("legende_befuellt", len(self.menu.legend_box.children) >= 1,
                    len(self.menu.legend_box.children))
         self.shot("04_legend_sinnoh")
+        self._next(self.s_overlap)
+
+    def s_overlap(self):
+        # See der Wahrheit (76) teilt die Zellen mit dem Wahrheitsufer (72):
+        # Sammel-Legende zeigt beide mit Zwischenüberschrift.
+        hs = self.menu.map_canvas.hotspots
+        self.check("see_auf_ufer", 76 in hs and hs[76]["rects"] == hs[72]["rects"],
+                   (hs.get(72), hs.get(76)))
+        self.menu._on_section_selected([72, 76])
+        self.check("sammel_titel",
+                   self.menu.legend_title.text == "Wahrheitsufer / See der Wahrheit",
+                   self.menu.legend_title.text)
+        # 2 Überschriften + je 1 "Route frei"-Zeile.
+        self.check("sammel_zeilen", len(self.menu.legend_box.children) == 4,
+                   len(self.menu.legend_box.children))
+        # pokemon-Feld: Ufer ohne Wilde, See mit Wilden; Neumondinsel per
+        # px_rects auf der Insel-Grafik (nicht auf der Decomp-Zelle im Meer).
+        self.check("pokemon_feld", hs[72]["pokemon"] == [] and "wild" in hs[76]["pokemon"],
+                   (hs[72].get("pokemon"), hs[76].get("pokemon")))
+        self.check("neumond_px_rect", hs.get(79, {}).get("rects") == [(40, 42, 7, 7)],
+                   hs.get(79, {}).get("rects"))
+        self.shot("05_legend_sammel")
         self._next(self.s_finish, 0.8)
 
     def s_finish(self):
@@ -119,7 +142,8 @@ class _DriveApp(MDApp):
 
 _EXPECTED = {"hotspots_geladen", "bild_geladen", "bildgroesse", "region_titel",
              "position_zweiblatt", "zweiblatt_hotspot", "offset_rect",
-             "legende_titel", "legende_befuellt"}
+             "legende_titel", "legende_befuellt", "see_auf_ufer", "sammel_titel",
+             "sammel_zeilen", "pokemon_feld", "neumond_px_rect"}
 
 
 @pytest.mark.gui

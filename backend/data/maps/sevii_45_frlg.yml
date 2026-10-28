@@ -1,0 +1,98 @@
+# Hotspot-Daten Sevii-Teilkarte Eiland 4–5 (FRLG, Kartenfeature).
+# Key = MAPSEC (= live regionMapSectionId). Zellen aus pret/pokefirered
+#   src/data/region_map/region_map_layout_sevii_45.h (LAYER_MAP + LAYER_DUNGEON), selber
+#   Grid-Raum/Offset wie Kanto (Cursor-Origin 8,16; am Overlay aller Teilkarten bestaetigt).
+# Bild sevii_45.png (192x144) = echte In-Game FRBG-Sevii-Karte (User-Screenshot
+#   FRBG-Map_Sevii_Eilande_4–5.png). Das MapMenu wechselt automatisch auf diese
+#   Teilkarte, sobald die Live-map_section hier liegt.
+# Innenraeume ohne eigene Zelle auf Eltern-Zellen: Rocket-Lager=Fuenfinsel-Wiese,
+#   Trainerturm-Innen=Trainerturm, Tri-Eiland-Pfad=Eiland Drei, Tanibo-Schluessel=
+#   Sevault-Canyon, Gluttherme=Glühweg, die 7 Tanibo-Kammern=Tanibo-Kammer-Zelle.
+#   Prototyp-MAPSECs SEVII_ISLE_6-9/22-24 (keine echte Map) fehlen bewusst.
+# Labels = encounter_locations_gen3.yml, sonst PKHeX text_rsefrlg_00000_de.txt.
+# pokemon: Quellen laut pret/pokefirered (wild_encounters.json + Map-Scripts).
+region: sevii
+title: Sevii-Inseln Eiland 4–5
+image: sevii_45.png
+tile_px: 8
+x_offset: 8
+y_offset: 16
+entries:
+  146:
+    label: Eiland Vier
+    pokemon: [surf, fish]
+    id: MAPSEC_FOUR_ISLAND
+    cells:
+    - [3, 4]
+    games: [34, 35]
+  147:
+    label: Eiland Fünf
+    pokemon: [surf, fish]
+    id: MAPSEC_FIVE_ISLAND
+    cells:
+    - [16, 11]
+    games: [34, 35]
+  159:
+    label: Ferienparadies
+    pokemon: [surf, fish]
+    id: MAPSEC_RESORT_GORGEOUS
+    cells:
+    - [16, 9]
+    - [17, 9]
+    - [18, 9]
+    games: [34, 35]
+  160:
+    label: Wasserirrgarten
+    pokemon: [surf, fish, gift]
+    id: MAPSEC_WATER_LABYRINTH
+    cells:
+    - [14, 10]
+    - [15, 10]
+    - [16, 10]
+    games: [34, 35]
+  161:
+    label: Eiland 5-Weide
+    pokemon: [land, surf, fish]
+    id: MAPSEC_FIVE_ISLE_MEADOW
+    cells:
+    - [17, 11]
+    - [17, 12]
+    games: [34, 35]
+  162:
+    label: Gedenksäule
+    pokemon: [land, surf, fish]
+    id: MAPSEC_MEMORIAL_PILLAR
+    cells:
+    - [18, 12]
+    - [18, 13]
+    - [18, 14]
+    games: [34, 35]
+  174:
+    label: Nabelfels
+    pokemon: [static]
+    id: MAPSEC_NAVEL_ROCK
+    cells:
+    - [10, 8]
+    games: [34, 35]
+  177:
+    label: Eiskaskadenhöhle
+    pokemon: [land, surf, fish]
+    id: MAPSEC_ICEFALL_CAVE
+    cells:
+    - [3, 4]
+    games: [34, 35]
+  178:
+    label: Rocket-Lager
+    pokemon: []
+    id: MAPSEC_ROCKET_WAREHOUSE
+    cells:
+    - [17, 11]
+    - [17, 12]
+    games: [34, 35]
+  181:
+    label: Verlorene Höhle
+    pokemon: [land]
+    id: MAPSEC_LOST_CAVE
+    cells:
+    - [18, 9]
+    games: [34, 35]

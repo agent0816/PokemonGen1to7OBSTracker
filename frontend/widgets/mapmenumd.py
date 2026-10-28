@@ -53,6 +53,19 @@ EDITION_LUT = {
     "Diamant": 41, "Perl": 42, "Platin": 43,
 }
 MAPS_DATA_DIR = os.path.join("backend", "data", "maps")
+# Zusätzliche Teilkarten je Edition (neben EDITION_REGION = Standardkarte). Das
+# MapMenu wechselt automatisch dorthin, sobald die Live-map_section in einer
+# Teilkarte liegt (FRLG: Sevii-Inseln 1–3 / 4–5 / 6–7, eigene In-Game-Karten).
+_SEVII = ["sevii_123_frlg.yml", "sevii_45_frlg.yml", "sevii_67_frlg.yml"]
+EDITION_SUBREGIONS = {34: _SEVII, 35: _SEVII}
+# Region-Datei → Section-Keys (lazy, für den Teilkarten-Wechsel per Position).
+_REGION_SECTIONS: dict[str, set[int]] = {}
+# Hotspot-Feld ``pokemon`` (Quellen laut Decomp) → Anzeige in der Legende.
+SOURCE_LABELS = {
+    "land": "Wild", "wild": "Wild", "surf": "Surfer", "fish": "Angeln",
+    "rock_smash": "Zertrümmerer", "static": "Statisch", "gift": "Geschenk",
+    "trade": "Tausch",
+}
 
 
 class MapCanvas(Widget):
@@ -74,7 +87,7 @@ class MapCanvas(Widget):
         self.img_w = 1
         self.img_h = 1
         self.current_section: int | None = None
-        self.selected_section: int | None = None
+        self.selected_sections: list[int] = []
         self.on_select = on_select
         self._img_rect = (0, 0, 0, 0)  # ix, iy, iw, ih (letterbox-Rect)
         self.bind(size=self._redraw, pos=self._redraw)
@@ -82,7 +95,7 @@ class MapCanvas(Widget):
     def load_map(self, image_path: str, hotspots: dict):
         self.hotspots = hotspots or {}
         self.current_section = None
-        self.selected_section = None
+        self.selected_sections = []
         self._texture = None
         self.img_w = 1
         self.img_h = 1
@@ -114,7 +127,7 @@ class MapCanvas(Widget):
         self.img_w = 1
         self.img_h = 1
         self.current_section = None
-        self.selected_section = None
+        self.selected_sections = []
         self._redraw()
 
     # --- Rendering ------------------------------------------------------------
@@ -171,16 +184,20 @@ class MapCanvas(Widget):
                 return
             Color(1, 1, 1, 1)
             Rectangle(texture=self._texture, pos=(ix, iy), size=(iw, ih))
-            # Hotspot-Umrisse (dezent) über alle Zellen jeder Section.
-            Color(1, 1, 1, 0.18)
-            for ms, e in self.hotspots.items():
-                for (x, y, w, h) in e["rects"]:
-                    sx, sy, sw, sh = self._px_rect(x, y, w, h)
-                    Line(rectangle=(sx, sy, sw, sh), width=1)
-            # Ausgewählte Section (Gold).
-            if self.selected_section in self.hotspots:
-                Color(1, 0.85, 0.2, 1)
-                for (x, y, w, h) in self.hotspots[self.selected_section]["rects"]:
+            # Hotspot-Umrisse (dezent) über alle Zellen jeder Section; Orte ohne
+            # fang-/erhaltbare Pokemon (pokemon: []) noch schwächer.
+            for empty, alpha in ((True, 0.07), (False, 0.18)):
+                Color(1, 1, 1, alpha)
+                for ms, e in self.hotspots.items():
+                    if (e.get("pokemon") == []) != empty:
+                        continue
+                    for (x, y, w, h) in e["rects"]:
+                        sx, sy, sw, sh = self._px_rect(x, y, w, h)
+                        Line(rectangle=(sx, sy, sw, sh), width=1)
+            # Ausgewählte Section(s) (Gold) — bei überlappenden Zellen alle.
+            Color(1, 0.85, 0.2, 1)
+            for ms in self.selected_sections:
+                for (x, y, w, h) in self.hotspots.get(ms, {}).get("rects", ()):
                     sx, sy, sw, sh = self._px_rect(x, y, w, h)
                     Line(rectangle=(sx, sy, sw, sh), width=1.6)
             # Positions-Marker auf der aktuellen map_section: Zellen füllen +
@@ -206,28 +223,32 @@ class MapCanvas(Widget):
             self.current_section = section
             self._redraw()
 
-    def _section_at(self, px, py):
+    def _sections_at(self, px, py) -> list[int]:
+        """Alle Sections unter dem Screen-Punkt (YAML-Reihenfolge). Mehrere,
+        wenn Dungeons/Seen/Landmarks die Zelle mit Stadt/Route teilen."""
         ix, iy, iw, ih = self._img_rect
         if iw <= 0 or not (ix <= px <= ix + iw and iy <= py <= iy + ih):
-            return None
+            return []
         # Screen → Bild-Pixel.
         img_x = (px - ix) / (iw / self.img_w)
         img_y = (iy + ih - py) / (ih / self.img_h)  # von oben gezählt
+        hits = []
         for ms, e in self.hotspots.items():
             for (x, y, w, h) in e["rects"]:
                 if x <= img_x < x + w and y <= img_y < y + h:
-                    return ms
-        return None
+                    hits.append(ms)
+                    break
+        return hits
 
     def on_touch_down(self, touch):
         if not self.collide_point(*touch.pos):
             return super().on_touch_down(touch)
-        ms = self._section_at(*touch.pos)
-        if ms is not None:
-            self.selected_section = ms
+        hits = self._sections_at(*touch.pos)
+        if hits:
+            self.selected_sections = hits
             self._redraw()
             if self.on_select:
-                self.on_select(ms)
+                self.on_select(hits)
             return True
         return super().on_touch_down(touch)
 
@@ -394,16 +415,29 @@ class MapMenu(MDScreen):
             return True  # Solo/kein Netz → als lokal behandeln
 
     @perf_span("map._load_region")
-    def _load_region(self, edition: int | None = None):
-        if edition is None:
+    def _load_region(self, edition: int | None = None, region_file: str | None = None):
+        """Lädt die Karte der Edition. Ohne ``region_file``: die Karte, auf der
+        die Live-Position liegt (Teilkarte aus EDITION_SUBREGIONS), sonst die
+        Standardkarte. Mit ``region_file`` (reiner Teilkarten-Wechsel, gleiche
+        Edition): Encounter-Daten bleiben erhalten, kein DB-Reload nötig."""
+        if region_file is not None:
+            source = "teilkarte"
+        elif edition is None:
             edition, source = self._edition_with_source()
         else:
             source = "poll_payload"
+        same_edition = region_file is not None and edition == self._loaded_edition
         self._loaded_edition = edition
         # Alt-Daten verwerfen, damit ein Klick direkt nach dem Wechsel nicht
         # kurz die Encounter des vorigen Spielers/Spiels zeigt.
-        self._route_catches = {}
-        region_file = EDITION_REGION.get(edition)
+        if not same_edition:
+            self._route_catches = {}
+        if region_file is None:
+            # Direkt die Teilkarte der Live-Position wählen (kein Kanto-Flash,
+            # wenn der Spieler beim Betreten des Screens auf Sevii steht).
+            live = self._live_section()
+            region_file = ((self._region_for_section(edition, live) if live is not None
+                            else None) or EDITION_REGION.get(edition))
         self._region_file = region_file
         # Diagnose-Logging (Kartenfeature, alpha-Debug): festhalten, WIE die
         # Edition aufgelöst wurde und ob es überhaupt eine Regionskarte gibt.
@@ -445,6 +479,7 @@ class MapMenu(MDScreen):
             with open(yaml_path, encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)
             hotspots = self._build_hotspots(data)
+            _REGION_SECTIONS[region_file] = set(hotspots)
             image_rel = data.get("image", "")
             image_path = resource_path(
                 os.path.join("backend", "ressources", "maps", image_rel))
@@ -455,7 +490,8 @@ class MapMenu(MDScreen):
                 f"hotspots={len(hotspots)}"
             )
             self.map_canvas.load_map(image_path, hotspots)
-            self.title_label.text = f"Karte — {data.get('region', '').title()}"
+            title = data.get("title") or data.get("region", "").title()
+            self.title_label.text = f"Karte — {title}"
             self.legend_title.text = "Route anklicken für Details"
         except Exception as err:
             logger.error(f"Region {region_file} laden gescheitert: {err}")
@@ -477,6 +513,8 @@ class MapMenu(MDScreen):
         - Gen 4 Sinnoh (cells + Offset): Eintrag ``{cells: [[x, z], ...]}``;
           Pixel = ``x*tile_px + x_offset`` / ``z*tile_px + y_offset`` je Zelle
           (``tile_px``/``x_offset``/``y_offset`` auf Datei-Ebene).
+        - Override ``{px_rects: [[x, y, w, h], ...]}``: direkt native Bild-Pixel,
+          für Orte, die nicht aufs Zellen-Raster fallen (z.B. Voll-/Neumondinsel).
         """
         tile_px = int(data.get("tile_px", 8))
         x_off = int(data.get("x_offset", 0))
@@ -484,7 +522,9 @@ class MapMenu(MDScreen):
         hotspots: dict[int, dict] = {}
         for k, e in (data.get("entries") or {}).items():
             sec = int(k)
-            if "cells" in e:
+            if "px_rects" in e:
+                rects = [tuple(int(v) for v in r) for r in e["px_rects"]]
+            elif "cells" in e:
                 rects = [(int(cx) * tile_px + x_off, int(cz) * tile_px + y_off,
                           tile_px, tile_px) for cx, cz in e["cells"]]
             else:
@@ -496,8 +536,44 @@ class MapMenu(MDScreen):
                 "label": e.get("label"),
                 "rects": rects,
                 "games": e.get("games"),
+                # Quellen laut Decomp (land/surf/…); [] = nichts fangbar,
+                # None = unbekannt (Feld fehlt) → wie fangbar behandeln.
+                "pokemon": e.get("pokemon"),
             }
         return hotspots
+
+    @staticmethod
+    def _region_sections(region_file: str) -> set[int]:
+        """Section-Keys einer Region-Datei. Gecacht (auch aus _load_region
+        befüllt); ein Lesefehler wird NICHT gecacht, damit ein transienter
+        Fehler den Teilkarten-Wechsel nicht bis zum Neustart abschaltet."""
+        if region_file not in _REGION_SECTIONS:
+            try:
+                path = resource_path(os.path.join(MAPS_DATA_DIR, region_file))
+                with open(path, encoding="utf-8") as fh:
+                    data = yaml.safe_load(fh) or {}
+                _REGION_SECTIONS[region_file] = {int(k) for k in (data.get("entries") or {})}
+            except Exception as err:
+                logger.error(f"_region_sections({region_file}) gescheitert: {err}")
+                logger.error(traceback.format_exc())
+                return set()
+        return _REGION_SECTIONS[region_file]
+
+    def _live_section(self) -> int | None:
+        """Aktuelle map_section des gewählten Spielers (None = unbekannt)."""
+        try:
+            pos = self.munchlax.snapshot_positions().get(self.current_player)
+        except Exception:
+            return None
+        return pos.get("map_section") if isinstance(pos, dict) else None
+
+    def _region_for_section(self, edition: int | None, section: int) -> str | None:
+        """Karte der Edition (Standard + Teilkarten), die ``section`` enthält."""
+        candidates = [EDITION_REGION.get(edition)] + EDITION_SUBREGIONS.get(edition, [])
+        for region_file in candidates:
+            if region_file and section in self._region_sections(region_file):
+                return region_file
+        return None
 
     # --- Position -------------------------------------------------------------
 
@@ -521,6 +597,16 @@ class MapMenu(MDScreen):
                 self._load_region(ed)
                 self._schedule_catch_load()
         section = pos.get("map_section") if isinstance(pos, dict) else None
+        # Teilkarten-Wechsel (FRLG Kanto ↔ Sevii): liegt die Live-Section nicht
+        # auf der geladenen Karte, aber auf einer anderen Karte der Edition,
+        # dorthin umschalten. Unbekannte Sections (Innenraum/MAPSEC_NONE) lassen
+        # die aktuelle Karte stehen.
+        if section is not None and section not in self.map_canvas.hotspots:
+            target = self._region_for_section(self._loaded_edition, section)
+            if target is not None and target != self._region_file:
+                logger.info(f"_poll_position: section={section} → Teilkarte {target}")
+                # Gleiche Edition + Slot → Encounter-Daten bleiben, kein Reload.
+                self._load_region(self._loaded_edition, region_file=target)
         # Nur bei Wechsel loggen (sonst 2×/s Spam): zeigt, ob überhaupt eine
         # map_section ankommt. Fehlt sie trotz Position (z.B. FR/LG-Innenraum =
         # MAPSEC_NONE, oder kein mapheaderpointer), bleibt der Marker aus.
@@ -580,8 +666,8 @@ class MapMenu(MDScreen):
         self._route_catches = grouped
         # Legende nachziehen, falls schon eine Route gewählt war, bevor die
         # Daten da waren (sonst bliebe sie fälschlich auf "Route frei").
-        sel = self.map_canvas.selected_section
-        if sel is not None:
+        sel = self.map_canvas.selected_sections
+        if sel:
             self._on_section_selected(sel)
 
     @staticmethod
@@ -611,26 +697,53 @@ class MapMenu(MDScreen):
             except Exception:
                 pass
 
-    def _on_section_selected(self, mapsec: int):
-        entry = self.map_canvas.hotspots.get(mapsec, {})
-        label = entry.get("label") or f"MAPSEC {mapsec}"
-        self.legend_title.text = label
+    def _on_section_selected(self, mapsecs: int | list[int]):
+        """Legende für die angeklickte(n) Section(s). Teilen sich mehrere
+        Sections die Zelle (Dungeon auf Route, See am Ufer), zeigt die
+        Sammel-Legende jede mit eigener Zwischenüberschrift."""
+        if isinstance(mapsecs, int):
+            mapsecs = [mapsecs]
+        hotspots = self.map_canvas.hotspots
+        labels = [hotspots.get(ms, {}).get("label") or f"MAPSEC {ms}" for ms in mapsecs]
+        self.legend_title.text = " / ".join(labels)
         self.legend_box.clear_widgets()
-        rows = self._route_catches.get(mapsec, [])
-        # Nur echte Wild-Erstencounter als "hier gefangen" zeigen.
-        caught = [r for r in rows if r.get("outcome") in ("caught", "obtained")]
-        if not caught:
-            self.legend_box.add_widget(self._legend_line(
-                None, "Route frei — noch kein Pokemon gefangen", self._edition()))
-            return
         edition = self._edition()
-        for r in caught:
-            nick = r.get("nickname") or ""
-            lvl = r.get("lvl")
-            txt = nick or f"Dex #{r.get('dexnr')}"
-            if lvl:
-                txt += f"  Lv {lvl}"
-            self.legend_box.add_widget(self._legend_line(r, txt, edition))
+        multi = len(mapsecs) > 1
+        for ms, label in zip(mapsecs, labels):
+            sources = hotspots.get(ms, {}).get("pokemon")
+            src_txt = self._sources_text(sources)
+            if multi:
+                head_txt = f"{label}  ·  {src_txt}" if src_txt else label
+                head = MDLabel(text=head_txt, size_hint_y=None, height="22dp",
+                               valign="center", bold=True)
+                head.role = "small"
+                self.legend_box.add_widget(head)
+            elif src_txt:
+                self.legend_title.text = f"{label}  ·  {src_txt}"
+            rows = self._route_catches.get(ms, [])
+            # Nur echte Wild-Erstencounter als "hier gefangen" zeigen.
+            caught = [r for r in rows if r.get("outcome") in ("caught", "obtained")]
+            if not caught:
+                text = ("Hier gibt es keine Pokemon" if sources == []
+                        else "Route frei — noch kein Pokemon gefangen")
+                self.legend_box.add_widget(self._legend_line(None, text, edition))
+                continue
+            for r in caught:
+                nick = r.get("nickname") or ""
+                lvl = r.get("lvl")
+                txt = nick or f"Dex #{r.get('dexnr')}"
+                if lvl:
+                    txt += f"  Lv {lvl}"
+                self.legend_box.add_widget(self._legend_line(r, txt, edition))
+
+    @staticmethod
+    def _sources_text(sources: list[str] | None) -> str:
+        """Hotspot-Quellen (aus dem YAML-Feld ``pokemon``) als deutscher Kurztext."""
+        if not sources:
+            return ""
+        if isinstance(sources, str):  # Tippfehler-Schutz: "pokemon: wild"
+            sources = [sources]
+        return ", ".join(SOURCE_LABELS.get(s, s) for s in sources)
 
     def _legend_line(self, row, text: str, edition: int) -> MDBoxLayout:
         try:
@@ -666,4 +779,4 @@ class MapMenu(MDScreen):
     def _clear_legend(self, title: str):
         self.legend_title.text = title
         self.legend_box.clear_widgets()
-        self.map_canvas.selected_section = None
+        self.map_canvas.selected_sections = []

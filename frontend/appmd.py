@@ -9,6 +9,7 @@ nur UI. Screens werden schrittweise migriert.
 """
 
 import asyncio
+import time
 import traceback
 
 from kivy.clock import Clock
@@ -19,7 +20,9 @@ from kivymd.uix.boxlayout import MDBoxLayout
 
 from backend import app_state
 from backend.logging_setup import get_logger
+from backend.perf_probe import ENABLED as PERF_ENABLED, perf_log, perf_span
 from frontend.app_core import TrackerCoreMixin
+from frontend.perf_hooks import count_widgets, install_frame_watchdog, log_on_next_frame
 from frontend.widgets.md_common import show_snackbar
 from frontend.widgets.navrail import TrackerNavigationRail
 from frontend.widgets.splashmd import SplashScreen
@@ -48,93 +51,138 @@ class Screens(ScreenManager):
                  externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, session_list,
                  **kwargs) -> None:
         super().__init__(**kwargs)
-        # Lokale Imports (siehe Modul-Kopf): schwere Screen-Module erst hier
-        # laden, nach dem ersten Frame hinter dem Splash.
-        from frontend.widgets.bagmenumd import BagMenu
-        from frontend.widgets.boxmenumd import BoxMenu
-        from frontend.widgets.encountermenumd import EncounterMenu
-        from frontend.widgets.mainmenumd import MainMenu
-        from frontend.widgets.mapmenumd import MapMenu
-        from frontend.widgets.nuzlockemenu_md import NuzlockeMenu
-        from frontend.widgets.onboarding_md import OnboardingScreen
-        from frontend.widgets.pokedexmenumd import PokedexMenu
-        from frontend.widgets.pokemon_detailmd import PokemonDetailMD
-        from frontend.widgets.sessionsmenumd import SessionMenu
-        from frontend.widgets.settingsmenumd import SettingsMenu
-        from frontend.widgets.updatemenu import Update
+        with perf_span("build.Screens"):
+            # Lokale Imports (siehe Modul-Kopf): schwere Screen-Module erst hier
+            # laden, nach dem ersten Frame hinter dem Splash.
+            with perf_span("build.imports"):
+                from frontend.widgets.bagmenumd import BagMenu
+                from frontend.widgets.boxmenumd import BoxMenu
+                from frontend.widgets.encountermenumd import EncounterMenu
+                from frontend.widgets.mainmenumd import MainMenu
+                from frontend.widgets.mapmenumd import MapMenu
+                from frontend.widgets.nuzlockemenu_md import NuzlockeMenu
+                from frontend.widgets.onboarding_md import OnboardingScreen
+                from frontend.widgets.pokedexmenumd import PokedexMenu
+                from frontend.widgets.pokemon_detailmd import PokemonDetailMD
+                from frontend.widgets.sessionsmenumd import SessionMenu
+                from frontend.widgets.settingsmenumd import SettingsMenu
+                from frontend.widgets.updatemenu import Update
 
-        self.transition = FadeTransition()
-        # ScreenManager ist ein FloatLayout und positioniert Screens ohne
-        # pos_hint nur beim current-Wechsel (real_add_widget: screen.pos =
-        # self.pos). Hier wird SessionMenu schon in __init__ current, bevor der
-        # Manager seine Position bekommt (eingebettet rechts neben der Rail) —
-        # der Screen bliebe sonst bei (0,0) und renderte über der Rail. Daher
-        # den aktiven Screen an die Manager-Position koppeln.
-        self.bind(pos=self._align_active_screen)
+            self.transition = FadeTransition()
+            # ScreenManager ist ein FloatLayout und positioniert Screens ohne
+            # pos_hint nur beim current-Wechsel (real_add_widget: screen.pos =
+            # self.pos). Hier wird SessionMenu schon in __init__ current, bevor der
+            # Manager seine Position bekommt (eingebettet rechts neben der Rail) —
+            # der Screen bliebe sonst bei (0,0) und renderte über der Rail. Daher
+            # den aktiven Screen an die Manager-Position koppeln.
+            self.bind(pos=self._align_active_screen)
 
-        # Ladescreen (Phase F3): sofort sichtbar, während die Boot-Sequenz die
-        # blockierenden Schritte (öffentliche IPs, Update-Check) im Executor
-        # abarbeitet. Zuerst hinzugefügt, damit er der Start-Screen sein kann.
-        self.splash = SplashScreen()
-        self.add_widget(self.splash)
+            # Ladescreen (Phase F3): sofort sichtbar, während die Boot-Sequenz die
+            # blockierenden Schritte (öffentliche IPs, Update-Check) im Executor
+            # abarbeitet. Zuerst hinzugefügt, damit er der Start-Screen sein kann.
+            with perf_span("build.SplashScreen"):
+                self.splash = SplashScreen()
+                self.add_widget(self.splash)
 
-        self.update_menu = Update(APP_NAME, APP_VERSION)
-        self.add_widget(self.update_menu)
-        # Strong-Refs auf laufende Boot-Tasks (sonst GC-Risiko, siehe
-        # feedback_async_task_strong_ref).
-        self._boot_tasks: set = set()
+            with perf_span("build.Update"):
+                self.update_menu = Update(APP_NAME, APP_VERSION)
+                self.add_widget(self.update_menu)
+            # Strong-Refs auf laufende Boot-Tasks (sonst GC-Risiko, siehe
+            # feedback_async_task_strong_ref).
+            self._boot_tasks: set = set()
 
-        # Als Attribut halten: der Session-Gate im Nav-Guard fragt
-        # selected_card ab (keine Session gewählt → andere Screens gesperrt).
-        self.session_menu = SessionMenu(
-            session_list, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, APP_VERSION,
-            on_session_changed=self._on_session_changed,
-        )
-        self.add_widget(self.session_menu)
-        # MainMenu-MD voll verdrahtet (Phase C), SettingsMenu-MD (Phase D).
-        self.main_menu = MainMenu(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket,
-                                  overlay_server, configsave, sp, rem, obs, bh, pl, rnd, ov, APP_VERSION)
-        self.add_widget(self.main_menu)
-        self.settings_menu = SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, overlay_server,
-                                          externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl,
-                                          rnd, ov, nuz, APP_VERSION)
-        self.add_widget(self.settings_menu)
-        self.pokedex_menu = PokedexMenu(configsave, obs_websocket, APP_VERSION, pl)
-        self.add_widget(self.pokedex_menu)
-        self.encounter_menu = EncounterMenu(configsave, pl, nuz, APP_VERSION)
-        self.add_widget(self.encounter_menu)
-        self.box_menu = BoxMenu(bizhawk, citra, munchlax, obs_websocket, pl)
-        self.add_widget(self.box_menu)
-        self.bag_menu = BagMenu(configsave, pl, sp, bizhawk, citra, APP_VERSION)
-        self.add_widget(self.bag_menu)
-        self.map_menu = MapMenu(munchlax, obs_websocket, pl, configsave)
-        self.add_widget(self.map_menu)
-        self.nuzlocke_menu = NuzlockeMenu(munchlax, configsave, nuz, rem, bh, bizhawk, rnd)
-        self.add_widget(self.nuzlocke_menu)
-        # Detail-Drilldown (kein Rail-Ziel): aus Pokedex per Karten-Klick erreicht,
-        # navigiert über return_screen zurück. Box/Main nutzen ihn später mit.
-        self.pokemon_detail = PokemonDetailMD(obs_websocket)
-        self.add_widget(self.pokemon_detail)
+            # Als Attribut halten: der Session-Gate im Nav-Guard fragt
+            # selected_card ab (keine Session gewählt → andere Screens gesperrt).
+            with perf_span("build.SessionMenu"):
+                self.session_menu = SessionMenu(
+                    session_list, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, APP_VERSION,
+                    on_session_changed=self._on_session_changed,
+                )
+                self.add_widget(self.session_menu)
+            # MainMenu-MD voll verdrahtet (Phase C), SettingsMenu-MD (Phase D).
+            with perf_span("build.MainMenu"):
+                self.main_menu = MainMenu(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket,
+                                          overlay_server, configsave, sp, rem, obs, bh, pl, rnd, ov, APP_VERSION)
+                self.add_widget(self.main_menu)
+            with perf_span("build.SettingsMenu"):
+                self.settings_menu = SettingsMenu(arceus, bizhawk, munchlax, obs_websocket, overlay_server,
+                                                  externalIPv4, externalIPv6, configsave, sp, rem, obs, bh, pl,
+                                                  rnd, ov, nuz, APP_VERSION)
+                self.add_widget(self.settings_menu)
+            with perf_span("build.PokedexMenu"):
+                self.pokedex_menu = PokedexMenu(configsave, obs_websocket, APP_VERSION, pl)
+                self.add_widget(self.pokedex_menu)
+            with perf_span("build.EncounterMenu"):
+                self.encounter_menu = EncounterMenu(configsave, pl, nuz, APP_VERSION)
+                self.add_widget(self.encounter_menu)
+            with perf_span("build.BoxMenu"):
+                self.box_menu = BoxMenu(bizhawk, citra, munchlax, obs_websocket, pl)
+                self.add_widget(self.box_menu)
+            with perf_span("build.BagMenu"):
+                self.bag_menu = BagMenu(configsave, pl, sp, bizhawk, citra, APP_VERSION)
+                self.add_widget(self.bag_menu)
+            with perf_span("build.MapMenu"):
+                self.map_menu = MapMenu(munchlax, obs_websocket, pl, configsave)
+                self.add_widget(self.map_menu)
+            with perf_span("build.NuzlockeMenu"):
+                self.nuzlocke_menu = NuzlockeMenu(munchlax, configsave, nuz, rem, bh, bizhawk, rnd)
+                self.add_widget(self.nuzlocke_menu)
+            # Detail-Drilldown (kein Rail-Ziel): aus Pokedex per Karten-Klick erreicht,
+            # navigiert über return_screen zurück. Box/Main nutzen ihn später mit.
+            with perf_span("build.PokemonDetailMD"):
+                self.pokemon_detail = PokemonDetailMD(obs_websocket)
+                self.add_widget(self.pokemon_detail)
 
-        # First-Startup-Walkthrough (Phase F4, kein Rail-Ziel). Wird nur beim
-        # allerersten Start angesteuert (app_state.onboarding_done), schreibt in
-        # die Standard-Session und setzt am Ende den Marker.
-        self.onboarding = OnboardingScreen(configsave, sp, pl, bh, obs, APP_VERSION,
-                                           on_complete=self._finish_onboarding)
-        self.add_widget(self.onboarding)
+            # First-Startup-Walkthrough (Phase F4, kein Rail-Ziel). Wird nur beim
+            # allerersten Start angesteuert (app_state.onboarding_done), schreibt in
+            # die Standard-Session und setzt am Ende den Marker.
+            with perf_span("build.OnboardingScreen"):
+                self.onboarding = OnboardingScreen(configsave, sp, pl, bh, obs, APP_VERSION,
+                                                   on_complete=self._finish_onboarding)
+                self.add_widget(self.onboarding)
 
-        # Sicherheits-Callbacks (Total-Wipe, Wipe-Dismissed, Slot-Kollision) wie
-        # in der klassischen UI verdrahten. Banner + Slot-Kollision sind seit
-        # Phase E MDDialog (wipe_banner_md / md_common.confirm_dialog).
-        self._active_wipe_banner = None
-        self._wire_safety_callbacks(munchlax, configsave, bh, bizhawk, rnd, pl, rem)
+            # Sicherheits-Callbacks (Total-Wipe, Wipe-Dismissed, Slot-Kollision) wie
+            # in der klassischen UI verdrahten. Banner + Slot-Kollision sind seit
+            # Phase E MDDialog (wipe_banner_md / md_common.confirm_dialog).
+            self._active_wipe_banner = None
+            self._wire_safety_callbacks(munchlax, configsave, bh, bizhawk, rnd, pl, rem)
 
-        # Start auf dem Ladescreen; die Boot-Sequenz lädt IPs + Update-Check
-        # nicht-blockierend und navigiert danach weiter (Update-Popup bzw.
-        # SessionMenu/MainMenu). Erst nach erstem Frame starten (Clock,0), damit
-        # der Splash garantiert sichtbar ist, bevor die Arbeit losläuft.
-        self.current = "Splash"
-        Clock.schedule_once(lambda dt: self._start_boot_sequence(), 0)
+            # Start auf dem Ladescreen; die Boot-Sequenz lädt IPs + Update-Check
+            # nicht-blockierend und navigiert danach weiter (Update-Popup bzw.
+            # SessionMenu/MainMenu). Erst nach erstem Frame starten (Clock,0), damit
+            # der Splash garantiert sichtbar ist, bevor die Arbeit losläuft.
+            self.current = "Splash"
+            Clock.schedule_once(lambda dt: self._start_boot_sequence(), 0)
+
+        # Frame-Watchdog (nur mit TRACKER_PERF=1)
+        install_frame_watchdog(self)
+
+    def on_current(self, instance, value):
+        # Navigation messen (nur mit TRACKER_PERF=1); on_pre_enter läuft in super() synchron.
+        if not PERF_ENABLED:
+            return super().on_current(instance, value)
+        t0 = time.perf_counter()
+        screen = self.get_screen(value) if value is not None and self.has_screen(value) else None
+        if screen is not None and screen is not self.current_screen:
+            # Hängengebliebenen Handler einer abgebrochenen Transition lösen,
+            # sonst stapeln sich Closures und liefern falsche enter_ms.
+            stale = getattr(screen, '_perf_enter_cb', None)
+            if stale is not None:
+                screen.unbind(on_enter=stale)
+
+            def _on_enter(*_args) -> None:
+                screen.unbind(on_enter=_on_enter)
+                screen._perf_enter_cb = None
+                perf_log(
+                    f"nav.{value}.enter_ms={(time.perf_counter() - t0) * 1000.0:.1f} "
+                    f"widgets={count_widgets(screen)}"
+                )
+            screen._perf_enter_cb = _on_enter
+            screen.bind(on_enter=_on_enter)
+        result = super().on_current(instance, value)
+        perf_log(f"nav target={value} pre_enter_sync_ms={(time.perf_counter() - t0) * 1000.0:.1f}")
+        log_on_next_frame(f"nav.{value}", t0)
+        return result
 
     def _start_boot_sequence(self) -> None:
         task = asyncio.create_task(self._boot_sequence())
@@ -307,6 +355,7 @@ class Screens(ScreenManager):
             )
         )
 
+    @perf_span("session_changed")
     def _on_session_changed(self, session_name: str | None) -> None:
         # Screens, die Session-Werte anzeigen, hier nachladen (siehe Skill
         # menu-session-wechsel-refresh). MainMenu-/SettingsMenu-MD zeigen
@@ -315,42 +364,50 @@ class Screens(ScreenManager):
         if app is not None:
             app.title = _window_title(session_name)
         try:
-            self.main_menu.load_from_session()
+            with perf_span("session_changed.main"):
+                self.main_menu.load_from_session()
         except Exception as err:
             logger.error(f"MainMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
         try:
-            self.pokedex_menu.load_from_session()
+            with perf_span("session_changed.pokedex"):
+                self.pokedex_menu.load_from_session()
         except Exception as err:
             logger.error(f"PokedexMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
         try:
-            self.encounter_menu.load_from_session()
+            with perf_span("session_changed.encounter"):
+                self.encounter_menu.load_from_session()
         except Exception as err:
             logger.error(f"EncounterMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
         try:
-            self.box_menu.load_from_session()
+            with perf_span("session_changed.box"):
+                self.box_menu.load_from_session()
         except Exception as err:
             logger.error(f"BoxMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
         try:
-            self.bag_menu.load_from_session()
+            with perf_span("session_changed.bag"):
+                self.bag_menu.load_from_session()
         except Exception as err:
             logger.error(f"BagMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
         try:
-            self.map_menu.load_from_session()
+            with perf_span("session_changed.map"):
+                self.map_menu.load_from_session()
         except Exception as err:
             logger.error(f"MapMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
         try:
-            self.settings_menu.load_from_session()
+            with perf_span("session_changed.settings"):
+                self.settings_menu.load_from_session()
         except Exception as err:
             logger.error(f"SettingsMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
         try:
-            self.nuzlocke_menu.load_from_session()
+            with perf_span("session_changed.nuzlocke"):
+                self.nuzlocke_menu.load_from_session()
         except Exception as err:
             logger.error(f"NuzlockeMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())

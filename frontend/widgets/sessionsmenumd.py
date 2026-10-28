@@ -1,4 +1,5 @@
 import asyncio
+import time
 import traceback
 from typing import Callable
 
@@ -38,6 +39,8 @@ from kivy.uix.widget import Widget
 
 from backend import session_store
 from backend.logging_setup import get_logger
+from backend.perf_probe import perf_span
+from frontend.perf_hooks import log_on_next_frame
 from backend.pokemon_detail_view import resource_path
 from frontend.widgets.md_common import show_snackbar
 
@@ -585,6 +588,7 @@ class SessionMenu(MDScreen):
         else:
             self.activate_session(session_card)
 
+    @perf_span("session.activate")
     def activate_session(self, session_card: SessionCard | None) -> None:
         """Session wechseln (``None`` = Standard-Einstellungen)."""
         if session_card is None:
@@ -592,10 +596,12 @@ class SessionMenu(MDScreen):
         else:
             new_path = session_store.session_path(self.default_config, session_card.session_name)
         old_path = self.configsave.text
+        t0 = time.perf_counter()
         try:
             # Probelesen in frische Dicts: ist eine YAML kaputt/fehlt, bleiben
             # die Live-Dicts der bisherigen Session unangetastet.
-            session_store.read_session(new_path)
+            with perf_span("session.read"):
+                session_store.read_session(new_path)
         except Exception as err:
             logger.error(f"Session '{new_path}' nicht lesbar, Wechsel abgebrochen: {err}")
             logger.error(traceback.format_exc())
@@ -605,7 +611,8 @@ class SessionMenu(MDScreen):
             # Ungespeicherte Änderungen der bisherigen Session sichern, bevor
             # die Dicts überschrieben werden. Schlägt das fehl, NICHT wechseln —
             # sonst wären die Änderungen verloren.
-            session_store.write_session_files(old_path, self.configs)
+            with perf_span("session.write"):
+                session_store.write_session_files(old_path, self.configs)
         except Exception as err:
             logger.error(f"Speichern von '{old_path}' vor Session-Wechsel fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
@@ -613,7 +620,8 @@ class SessionMenu(MDScreen):
                           level='error', duration=6.0)
             return
         try:
-            session_store.load_session_into(new_path, self.configs)
+            with perf_span("session.load_into"):
+                session_store.load_session_into(new_path, self.configs)
         except Exception as err:
             logger.error(f"Session-Wechsel nach '{new_path}' fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
@@ -637,9 +645,11 @@ class SessionMenu(MDScreen):
         name = self.active_session_name
         logger.info(f"Session gewechselt: {name or 'Standard-Einstellungen'} ({new_path})")
         show_snackbar(f"Session: {name}" if name else "Standard-Einstellungen aktiv", level='success')
+        log_on_next_frame("session.click_to_snackbar_frame", t0)
         if self.on_session_changed is not None:
             try:
-                self.on_session_changed(name)
+                with perf_span("session.on_changed"):
+                    self.on_session_changed(name)
             except Exception as err:
                 logger.error(f"on_session_changed-Callback fehlgeschlagen: {err}")
                 logger.error(traceback.format_exc())

@@ -42,6 +42,8 @@ from backend.rando_sync import apply_rando_to_munchlax
 from backend.logging_setup import (get_logger, get_console_level, set_console_level,
                                     list_known_modules, get_module_level, set_module_level)
 from backend.dev_mode import is_developer
+from backend.perf_probe import perf_log, perf_span
+from frontend.perf_hooks import count_widgets
 from frontend.widgets.md_common import show_snackbar, confirm_dialog
 from frontend.widgets.settings_widgets import (LABEL_W, DropdownField, browse_row,
                                                labeled_row, make_textfield)
@@ -110,6 +112,14 @@ class SettingsMenu(MDScreen):
         # bei Fokus-Verlust ohne Änderung bzw. Dropdown-Reopen mit gleichem Wert.
         # Klassik bündelt per Button; MD speichert pro Feld, daher Change-Guard.
         self._last_saved: dict[str, dict] = {}
+        # Session-Wechsel bei unsichtbarem Screen: init_config wird erst im
+        # nächsten on_pre_enter nachgeholt (spart 0,3–1,5 s im Session-Klick).
+        # Solange True zeigen die Widgets Werte der vorigen Session → _save sperrt.
+        self._config_dirty = False
+        # True, während init_config die Sprite-Switches programmatisch setzt
+        self._loading_switches = False
+        # (runs_root, list_runs-Ergebnis) der aktuell angezeigten Run-Zeilen
+        self._run_rows_key: tuple | None = None
         # Per-Game-/2-PC-Ausklapp-Zustand (ersetzt ToggleButton-States der Klassik)
         self._game_sprites_expanded = False      # lokale Per-Game-Sprites an (→ single_path_check)
         self._obs_sprites_expanded = False        # 2-PC-Setup an (→ obs_2_pc)
@@ -373,6 +383,7 @@ class SettingsMenu(MDScreen):
         self._save("overlay")
         self._rebuild_overlay_links()
 
+    @perf_span("settings._rebuild_overlay_links")
     def _rebuild_overlay_links(self) -> None:
         box = self._overlay_links_box
         box.clear_widgets()
@@ -483,6 +494,9 @@ class SettingsMenu(MDScreen):
         return f"{noun} anzeigen" if collapsed else f"{noun} ausblenden"
 
     def _on_game_switch(self, _inst, active: bool) -> None:
+        if self._loading_switches:
+            # init_config setzt Flags selbst und baut danach einmal neu.
+            return
         self._game_sprites_expanded = active
         self._rebuild_game_expand()
         # Solange OBS gekoppelt ist (Flag False, obs_single_path_check=None), folgt
@@ -496,6 +510,7 @@ class SettingsMenu(MDScreen):
         if not self._suspend_save:
             self._save("sprites")
 
+    @perf_span("settings._rebuild_game_expand")
     def _rebuild_game_expand(self) -> None:
         box = self._game_expand
         box.clear_widgets()
@@ -533,12 +548,16 @@ class SettingsMenu(MDScreen):
             self._game_list_collapsed, "Spiel-Liste")
 
     def _on_obs2pc_switch(self, _inst, active: bool) -> None:
+        if self._loading_switches:
+            # init_config setzt Flags selbst und baut danach einmal neu.
+            return
         self._obs_sprites_expanded = active
         self._rebuild_obs_expand()
         self._rebuild_overlay_links()
         if not self._suspend_save:
             self._save("sprites")
 
+    @perf_span("settings._rebuild_obs_expand")
     def _rebuild_obs_expand(self) -> None:
         box = self._obs_expand
         box.clear_widgets()
@@ -589,6 +608,7 @@ class SettingsMenu(MDScreen):
         if not self._suspend_save:
             self._save("sprites")
 
+    @perf_span("settings._rebuild_obs_game_expand")
     def _rebuild_obs_game_expand(self) -> None:
         box = self._obs_game_expand
         box.clear_widgets()
@@ -749,6 +769,7 @@ class SettingsMenu(MDScreen):
             logger.error(traceback.format_exc())
         self._rebuild_overlay_links()
 
+    @perf_span("settings._rebuild_player_expand")
     def _rebuild_player_expand(self) -> None:
         box = self._player_expand
         box.clear_widgets()
@@ -874,10 +895,12 @@ class SettingsMenu(MDScreen):
             logger.error(f"RunManager-Init im Settings-UI fehlgeschlagen: {err}")
             return None
 
+    @perf_span("settings._refresh_run_history")
     def _refresh_run_history(self) -> None:
         rm = self._get_run_manager()
-        self._run_list_box.clear_widgets()
         if rm is None:
+            self._run_list_box.clear_widgets()
+            self._run_rows_key = None
             self._active_run_label.text = "(Session-Pfad fehlt)"
             self._end_run_button.disabled = True
             return
@@ -892,11 +915,24 @@ class SettingsMenu(MDScreen):
                     f"Aktiv: {active.get('run_id', '?')} — Slots {','.join(slots) or '-'} "
                     f"— seit {active.get('start_ts', '?')}")
                 self._end_run_button.disabled = False
-            for entry in reversed(rm.list_runs()):
+            with perf_span("settings.list_runs"):
+                runs = rm.list_runs()
+            # Zeilen nur neu bauen, wenn sich Session oder Run-Metadaten geändert
+            # haben — der Neubau kostet ~23 ms pro Zeile, list_runs nur ~20 ms gesamt.
+            key = (str(rm.runs_root), runs)
+            if key == self._run_rows_key:
+                perf_log(f"settings.run_rows unverändert n={len(runs)}")
+                return
+            self._run_list_box.clear_widgets()
+            for entry in reversed(runs):
                 self._run_list_box.add_widget(self._build_run_row(entry))
+            self._run_rows_key = key
+            perf_log(f"settings.run_rows n={len(runs)}")
         except Exception as err:
             logger.error(f"_refresh_run_history fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
+            self._run_list_box.clear_widgets()
+            self._run_rows_key = None
             self._active_run_label.text = "(Fehler beim Laden der Run-Historie)"
 
     def _build_run_row(self, entry: dict) -> MDBoxLayout:
@@ -1171,6 +1207,7 @@ class SettingsMenu(MDScreen):
         task.add_done_callback(self._tasks.discard)
 
     # ------------------------------------------------------------- Save/Load
+    @perf_span("settings._collect_for_save")
     def _collect_for_save(self, section: str) -> dict | None:
         """Sammelt die Werte einer Sektion. Gibt None zurück, wenn ein Pflicht-
         Port leer ist — dann wird NICHT gespeichert (alter Wert bleibt erhalten),
@@ -1209,6 +1246,10 @@ class SettingsMenu(MDScreen):
 
     def _save(self, section: str) -> None:
         if self._suspend_save:
+            return
+        if self._config_dirty:
+            # Widgets halten noch Werte der vorigen Session — nicht in die neue schreiben.
+            logger.warning(f"Settings _save('{section}') übersprungen: Config nach Session-Wechsel noch nicht geladen")
             return
         try:
             values = self._collect_for_save(section)
@@ -1277,6 +1318,7 @@ class SettingsMenu(MDScreen):
                 values[f"obs_{i}"] = bool(o.active)
         return values
 
+    @perf_span("settings.init_config")
     def init_config(self) -> None:
         """Lädt alle Werte aus dem Controller in die Widgets. Läuft im __init__
         und bei jedem Session-Wechsel. Setzt Switches/Dropdowns programmatisch →
@@ -1303,8 +1345,14 @@ class SettingsMenu(MDScreen):
             if obs_single is None:
                 obs_single = sp.get('single_path_check', True)
             self._obs_game_sprites_expanded = not obs_single
-            self._game_switch.active = self._game_sprites_expanded
-            self._obs2pc_switch.active = self._obs_sprites_expanded
+            # Programmatisches active= feuert die Switch-Handler, die selbst neu
+            # bauen — Flag unterdrückt das, der Neubau folgt hier genau einmal.
+            self._loading_switches = True
+            try:
+                self._game_switch.active = self._game_sprites_expanded
+                self._obs2pc_switch.active = self._obs_sprites_expanded
+            finally:
+                self._loading_switches = False
             self._rebuild_game_expand()
             self._rebuild_obs_expand()
 
@@ -1369,29 +1417,53 @@ class SettingsMenu(MDScreen):
         except Exception:
             return "default"
 
+    @perf_span("settings.load_from_session")
     def load_from_session(self) -> None:
-        """Session-Wechsel-Hook (von Screens._on_session_changed)."""
+        """Session-Wechsel-Hook (von Screens._on_session_changed).
+
+        Ist der Screen gerade nicht sichtbar, wird nur markiert und init_config
+        lazy im nächsten on_pre_enter nachgeholt — der komplette Widget-Neubau
+        lief sonst synchron im Session-Klick."""
+        manager = self.manager
+        if manager is not None and manager.current_screen is not self:
+            self._config_dirty = True
+            logger.debug("Settings load_from_session: Screen nicht sichtbar, init_config verzögert")
+            return
         try:
             self.init_config()
+            self._config_dirty = False
         except Exception as err:
             logger.error(f"Settings load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
 
+    @perf_span("settings.on_pre_enter")
     def on_pre_enter(self, *args) -> None:
-        # Sprite-Pfade neu aus sp laden — sp kann extern geändert worden sein
-        # (z.B. durch den Erst-Start-SpriteSetupPopupMD, der die Pfade in-place
-        # setzt). Ohne das würde der nächste Fokus-Verlust eines Sprite-Felds die
-        # frisch geklonten Pfade mit den alten (leeren) Widget-Werten überschreiben.
-        try:
-            self._reload_sprite_paths()
-        except Exception as err:
-            logger.debug(f"reload_sprite_paths on_pre_enter failed: {err}")
+        if self._config_dirty:
+            # Verzögertes init_config nach Session-Wechsel; lädt sp ohnehin neu,
+            # _reload_sprite_paths entfällt dann.
+            try:
+                self.init_config()
+                self._config_dirty = False
+            except Exception as err:
+                logger.error(f"Settings init_config on_pre_enter fehlgeschlagen: {err}")
+                logger.error(traceback.format_exc())
+        else:
+            # Sprite-Pfade neu aus sp laden — sp kann extern geändert worden sein
+            # (z.B. durch den Erst-Start-SpriteSetupPopupMD, der die Pfade in-place
+            # setzt). Ohne das würde der nächste Fokus-Verlust eines Sprite-Felds die
+            # frisch geklonten Pfade mit den alten (leeren) Widget-Werten überschreiben.
+            try:
+                self._reload_sprite_paths()
+            except Exception as err:
+                logger.debug(f"reload_sprite_paths on_pre_enter failed: {err}")
         # Run-Historie beim Öffnen neu einlesen (wie Klassik on_enter).
         try:
             self._refresh_run_history()
         except Exception as err:
             logger.debug(f"refresh_run_history on_pre_enter failed: {err}")
+        perf_log(f"settings.widgets={count_widgets(self)}")
 
+    @perf_span("settings._reload_sprite_paths")
     def _reload_sprite_paths(self) -> None:
         sp = self.controller.load_sprites()
         prev = self._suspend_save
@@ -1400,12 +1472,26 @@ class SettingsMenu(MDScreen):
             self._common_path.text = sp.get('common_path', '')
             self._items_path.text = sp.get('items_path', '')
             self._badges_path.text = sp.get('badges_path', '')
-            # Auch Per-Game- und OBS-Felder aus sp neu aufbauen (apply_sprite_paths
+            # Auch Per-Game- und OBS-Felder aus sp auffrischen (apply_sprite_paths
             # setzt Edition-/OBS-Keys), sonst stale Werte + Clobber beim nächsten Save.
-            self._rebuild_game_expand()
-            self._rebuild_obs_expand()
+            # Nur Texte setzen statt Neubau: die Ausklapp-Flags ändern sich hier nicht
+            # (nur init_config/Switches), der Neubau kostete bis ~1 s pro Betreten.
+            self._refresh_sprite_field_texts(sp)
         finally:
             self._suspend_save = prev
         baseline = self._collect_for_save('sprites')
         if baseline is not None:
             self._last_saved['sprites'] = baseline
+
+    @perf_span("settings._refresh_sprite_field_texts")
+    def _refresh_sprite_field_texts(self, sp: dict) -> None:
+        """Bestehende Per-Game-/OBS-Sprite-Felder mit Werten aus sp füllen —
+        gleiche Quellen/Fallbacks wie _rebuild_game_expand/_rebuild_obs_expand."""
+        for game_id, field in self._game_fields.items():
+            field.text = sp.get(game_id.split('_', 1)[1], "")
+        if self._obs_sprites_expanded and hasattr(self, "_common_obs_path"):
+            self._common_obs_path.text = sp.get('common_obs_path', '') or sp.get('common_path', '')
+            self._items_obs_path.text = sp.get('items_obs_path', '') or sp.get('items_path', '')
+            self._badges_obs_path.text = sp.get('badges_obs_path', '') or sp.get('badges_path', '')
+        for game_id, field in self._obs_game_fields.items():
+            field.text = sp.get(game_id.split('_', 1)[1] + '_obs', "")

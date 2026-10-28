@@ -1,0 +1,7105 @@
+[
+ {
+  "op": 0,
+  "name": "ScrCmd_Nop",
+  "src": "arm9\\src\\scrcmd.c:413",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 1,
+  "name": "ScrCmd_Dummy",
+  "src": "arm9\\src\\scrcmd.c:419",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 2,
+  "name": "ScrCmd_End",
+  "src": "arm9\\src\\scrcmd.c:425",
+  "args": [],
+  "flags": [
+   "helper:StopScript"
+  ]
+ },
+ {
+  "op": 3,
+  "name": "ScrCmd_Wait",
+  "src": "arm9\\src\\scrcmd.c:431",
+  "args": [
+   "h",
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 4,
+  "name": "ScrCmd_LoadByte",
+  "src": "arm9\\src\\scrcmd.c:455",
+  "args": [
+   "b",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 5,
+  "name": "ScrCmd_LoadWord",
+  "src": "arm9\\src\\scrcmd.c:462",
+  "args": [
+   "b",
+   "w"
+  ],
+  "flags": []
+ },
+ {
+  "op": 6,
+  "name": "ScrCmd_LoadByteFromAddr",
+  "src": "arm9\\src\\scrcmd.c:469",
+  "args": [
+   "b",
+   "w"
+  ],
+  "flags": []
+ },
+ {
+  "op": 7,
+  "name": "ScrCmd_WriteByteToAddr",
+  "src": "arm9\\src\\scrcmd.c:476",
+  "args": [
+   "w",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 8,
+  "name": "ScrCmd_SetPtrByte",
+  "src": "arm9\\src\\scrcmd.c:483",
+  "args": [
+   "w",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 9,
+  "name": "ScrCmd_CopyLocal",
+  "src": "arm9\\src\\scrcmd.c:490",
+  "args": [
+   "b",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 10,
+  "name": "ScrCmd_CopyByte",
+  "src": "arm9\\src\\scrcmd.c:498",
+  "args": [
+   "w",
+   "w"
+  ],
+  "flags": []
+ },
+ {
+  "op": 11,
+  "name": "ScrCmd_CompareLocalToLocal",
+  "src": "arm9\\src\\scrcmd.c:516",
+  "args": [
+   "b",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 12,
+  "name": "ScrCmd_CompareLocalToValue",
+  "src": "arm9\\src\\scrcmd.c:524",
+  "args": [
+   "b",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 13,
+  "name": "ScrCmd_CompareLocalToAddr",
+  "src": "arm9\\src\\scrcmd.c:532",
+  "args": [
+   "b",
+   "w"
+  ],
+  "flags": []
+ },
+ {
+  "op": 14,
+  "name": "ScrCmd_CompareAddrToLocal",
+  "src": "arm9\\src\\scrcmd.c:540",
+  "args": [
+   "w",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 15,
+  "name": "ScrCmd_CompareAddrToValue",
+  "src": "arm9\\src\\scrcmd.c:548",
+  "args": [
+   "w",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 16,
+  "name": "ScrCmd_CompareAddrToAddr",
+  "src": "arm9\\src\\scrcmd.c:556",
+  "args": [
+   "w",
+   "w"
+  ],
+  "flags": []
+ },
+ {
+  "op": 17,
+  "name": "ScrCmd_CompareVarToValue",
+  "src": "arm9\\src\\scrcmd.c:564",
+  "args": [
+   "vp",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 18,
+  "name": "ScrCmd_CompareVarToVar",
+  "src": "arm9\\src\\scrcmd.c:572",
+  "args": [
+   "vp",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 19,
+  "name": "ScrCmd_RunScript",
+  "src": "arm9\\src\\scrcmd.c:580",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 20,
+  "name": "ScrCmd_RunScriptWait",
+  "src": "arm9\\src\\scrcmd.c:592",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 21,
+  "name": "ScrCmd_RestartCurrentScript",
+  "src": "arm9\\src\\scrcmd.c:617",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 22,
+  "name": "ScrCmd_GoTo",
+  "src": "arm9\\src\\scrcmd.c:625",
+  "args": [
+   "w"
+  ],
+  "flags": [
+   "helper:ScriptJump",
+   "scriptPtr"
+  ]
+ },
+ {
+  "op": 23,
+  "name": "ScrCmd_ObjectGoTo",
+  "src": "arm9\\src\\scrcmd.c:632",
+  "args": [
+   "b",
+   "w"
+  ],
+  "flags": [
+   "cond",
+   "helper:ScriptJump",
+   "scriptPtr"
+  ]
+ },
+ {
+  "op": 24,
+  "name": "ScrCmd_BgGoTo",
+  "src": "arm9\\src\\scrcmd.c:643",
+  "args": [
+   "b",
+   "w"
+  ],
+  "flags": [
+   "cond",
+   "helper:ScriptJump",
+   "scriptPtr"
+  ]
+ },
+ {
+  "op": 25,
+  "name": "ScrCmd_DirectionGoTo",
+  "src": "arm9\\src\\scrcmd.c:655",
+  "args": [
+   "b",
+   "w"
+  ],
+  "flags": [
+   "cond",
+   "helper:ScriptJump",
+   "scriptPtr"
+  ]
+ },
+ {
+  "op": 26,
+  "name": "ScrCmd_Call",
+  "src": "arm9\\src\\scrcmd.c:667",
+  "args": [
+   "w"
+  ],
+  "flags": [
+   "helper:ScriptCall",
+   "scriptPtr"
+  ]
+ },
+ {
+  "op": 27,
+  "name": "ScrCmd_Return",
+  "src": "arm9\\src\\scrcmd.c:674",
+  "args": [],
+  "flags": [
+   "helper:ScriptReturn"
+  ]
+ },
+ {
+  "op": 28,
+  "name": "ScrCmd_GoToIf",
+  "src": "arm9\\src\\scrcmd.c:680",
+  "args": [
+   "b",
+   "w"
+  ],
+  "flags": [
+   "cond",
+   "helper:ScriptJump",
+   "scriptPtr"
+  ]
+ },
+ {
+  "op": 29,
+  "name": "ScrCmd_CallIf",
+  "src": "arm9\\src\\scrcmd.c:691",
+  "args": [
+   "b",
+   "w"
+  ],
+  "flags": [
+   "cond",
+   "helper:ScriptCall",
+   "scriptPtr"
+  ]
+ },
+ {
+  "op": 30,
+  "name": "ScrCmd_SetFlag",
+  "src": "arm9\\src\\scrcmd.c:702",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 31,
+  "name": "ScrCmd_ClearFlag",
+  "src": "arm9\\src\\scrcmd.c:710",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 32,
+  "name": "ScrCmd_CheckFlag",
+  "src": "arm9\\src\\scrcmd.c:718",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 33,
+  "name": "ScrCmd_CheckFlagVar",
+  "src": "arm9\\src\\scrcmd.c:726",
+  "args": [
+   "vp",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 34,
+  "name": "ScrCmd_SetFlagVar",
+  "src": "arm9\\src\\scrcmd.c:735",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 35,
+  "name": "ScrCmd_SetTrainerFlag",
+  "src": "arm9\\src\\scrcmd.c:743",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 36,
+  "name": "ScrCmd_ClearTrainerFlag",
+  "src": "arm9\\src\\scrcmd.c:751",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 37,
+  "name": "ScrCmd_CheckTrainerFlag",
+  "src": "arm9\\src\\scrcmd.c:759",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 38,
+  "name": "ScrCmd_AddVar",
+  "src": "arm9\\src\\scrcmd.c:767",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 39,
+  "name": "ScrCmd_SubVar",
+  "src": "arm9\\src\\scrcmd.c:775",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 40,
+  "name": "ScrCmd_SetVar",
+  "src": "arm9\\src\\scrcmd.c:783",
+  "args": [
+   "vp",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 41,
+  "name": "ScrCmd_CopyVar",
+  "src": "arm9\\src\\scrcmd.c:790",
+  "args": [
+   "vp",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 42,
+  "name": "ScrCmd_SetOrCopyVar",
+  "src": "arm9\\src\\scrcmd.c:798",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 43,
+  "name": "ScrCmd_Message",
+  "src": "arm9\\src\\scrcmd.c:806",
+  "args": [
+   "b"
+  ],
+  "flags": [
+   "helper:ov05_ShowMessageInField"
+  ]
+ },
+ {
+  "op": 44,
+  "name": "ScrCmd_Unk002C",
+  "src": "arm9\\src\\scrcmd.c:908",
+  "args": [
+   "b"
+  ],
+  "flags": [
+   "helper:ov05_021E2BD0",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 45,
+  "name": "ScrCmd_Unk002D",
+  "src": "arm9\\src\\scrcmd.c:921",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:ov05_021E2BD0",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 46,
+  "name": "ScrCmd_Unk002E",
+  "src": "arm9\\src\\scrcmd.c:943",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:ov05_021E2BD0",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 47,
+  "name": "ScrCmd_Unk002F",
+  "src": "arm9\\src\\scrcmd.c:960",
+  "args": [
+   "b"
+  ],
+  "flags": [
+   "cond",
+   "helper:ov05_021E2BD0",
+   "helper:ov05_021E2BD0",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 48,
+  "name": "ScrCmd_WaitButtonAB",
+  "src": "arm9\\src\\scrcmd.c:978",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 49,
+  "name": "ScrCmd_WaitButton",
+  "src": "arm9\\src\\scrcmd.c:1011",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 50,
+  "name": "ScrCmd_WaitButtonABPad",
+  "src": "arm9\\src\\scrcmd.c:1036",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 51,
+  "name": "ScrCmd_Unk0033",
+  "src": "arm9\\src\\scrcmd.c:1052",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 52,
+  "name": "ScrCmd_CloseMessageBox",
+  "src": "arm9\\src\\scrcmd.c:1062",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 53,
+  "name": "ScrCmd_Unk0035",
+  "src": "arm9\\src\\scrcmd.c:1073",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 54,
+  "name": "ScrCmd_CreateMessageBox",
+  "src": "arm9\\src\\scrcmd.c:1144",
+  "args": [
+   "b",
+   "b",
+   "h",
+   "h"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 55,
+  "name": "ScrCmd_Unk0037",
+  "src": "arm9\\src\\scrcmd.c:1173",
+  "args": [
+   "b",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 56,
+  "name": "ScrCmd_Unk0038",
+  "src": "arm9\\src\\scrcmd.c:1185",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 57,
+  "name": "ScrCmd_Unk0039",
+  "src": "arm9\\src\\scrcmd.c:1192",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 58,
+  "name": "ScrCmd_Unk003A",
+  "src": "arm9\\src\\scrcmd.c:1209",
+  "args": [
+   "b",
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 59,
+  "name": "ScrCmd_Unk003B",
+  "src": "arm9\\src\\scrcmd.c:1265",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 60,
+  "name": "ScrCmd_Menu",
+  "src": "arm9\\src\\scrcmd.c:1303",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 61,
+  "name": "ScrCmd_ScrollBg",
+  "src": "arm9\\src\\scrcmd.c:1083",
+  "args": [
+   "b",
+   "b",
+   "b",
+   "b",
+   "b",
+   "b"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 62,
+  "name": "ScrCmd_YesNoMenu",
+  "src": "arm9\\src\\scrcmd.c:1308",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 63,
+  "name": "ScrCmd_Unk003F",
+  "src": "arm9\\src\\scrcmd.c:3433",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 64,
+  "name": "ScrCmd_Unk0040",
+  "src": "arm9\\src\\scrcmd.c:1350",
+  "args": [
+   "b",
+   "b",
+   "b",
+   "b",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 65,
+  "name": "ScrCmd_Unk0041",
+  "src": "arm9\\src\\scrcmd.c:1366",
+  "args": [
+   "b",
+   "b",
+   "b",
+   "b",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 66,
+  "name": "ScrCmd_Unk0042",
+  "src": "arm9\\src\\scrcmd.c:1382",
+  "args": [
+   "b",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 67,
+  "name": "ScrCmd_Unk0043",
+  "src": "arm9\\src\\scrcmd.c:1399",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 68,
+  "name": "ScrCmd_Unk0044",
+  "src": "arm9\\src\\scrcmd.c:1440",
+  "args": [
+   "b",
+   "b",
+   "b",
+   "b",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 69,
+  "name": "ScrCmd_Unk0045",
+  "src": "arm9\\src\\scrcmd.c:1457",
+  "args": [
+   "b",
+   "b",
+   "b",
+   "b",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 70,
+  "name": "ScrCmd_Unk0046",
+  "src": "arm9\\src\\scrcmd.c:1474",
+  "args": [
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 71,
+  "name": "ScrCmd_Unk0047",
+  "src": "arm9\\src\\scrcmd.c:1483",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 72,
+  "name": "ScrCmd_Unk0048",
+  "src": "arm9\\src\\scrcmd.c:1490",
+  "args": [
+   "b"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 73,
+  "name": "ScrCmd_PlayFanfare",
+  "src": "arm9\\src\\scrcmd_sound.c:110",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 74,
+  "name": "ScrCmd_StopFanfare",
+  "src": "arm9\\src\\scrcmd_sound.c:117",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 75,
+  "name": "ScrCmd_PlayFanfareWait",
+  "src": "arm9\\src\\scrcmd_sound.c:124",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 76,
+  "name": "ScrCmd_PlayCry",
+  "src": "arm9\\src\\scrcmd_sound.c:142",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 77,
+  "name": "ScrCmd_PlayCryWait",
+  "src": "arm9\\src\\scrcmd_sound.c:150",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 78,
+  "name": "ScrCmd_PlaySound",
+  "src": "arm9\\src\\scrcmd_sound.c:166",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 79,
+  "name": "ScrCmd_PlaySoundWait",
+  "src": "arm9\\src\\scrcmd_sound.c:174",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 80,
+  "name": "ScrCmd_PlayBgm",
+  "src": "arm9\\src\\scrcmd_sound.c:28",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 81,
+  "name": "ScrCmd_StopBgm",
+  "src": "arm9\\src\\scrcmd_sound.c:34",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 82,
+  "name": "ScrCmd_PlayDefaultBgm",
+  "src": "arm9\\src\\scrcmd_sound.c:42",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 83,
+  "name": "ScrCmd_Unk0053",
+  "src": "arm9\\src\\scrcmd_sound.c:49",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 84,
+  "name": "ScrCmd_FadeOutBgm",
+  "src": "arm9\\src\\scrcmd_sound.c:55",
+  "args": [
+   "h",
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 85,
+  "name": "ScrCmd_FadeInBgm",
+  "src": "arm9\\src\\scrcmd_sound.c:76",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 86,
+  "name": "ScrCmd_Unk0056",
+  "src": "arm9\\src\\scrcmd_sound.c:86",
+  "args": [
+   "b",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 87,
+  "name": "ScrCmd_Unk0057",
+  "src": "arm9\\src\\scrcmd_sound.c:97",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 88,
+  "name": "ScrCmd_Unk0058",
+  "src": "arm9\\src\\scrcmd_sound.c:103",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 89,
+  "name": "ScrCmd_CheckChatotCry",
+  "src": "arm9\\src\\scrcmd_sound.c:189",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 90,
+  "name": "ScrCmd_StartChatotRecord",
+  "src": "arm9\\src\\scrcmd_sound.c:203",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 91,
+  "name": "ScrCmd_StopChatotRecord",
+  "src": "arm9\\src\\scrcmd_sound.c:216",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 92,
+  "name": "ScrCmd_SaveChatotCry",
+  "src": "arm9\\src\\scrcmd_sound.c:223",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 93,
+  "name": "ScrCmd_Unk005D",
+  "src": "arm9\\src\\scrcmd_sound.c:231",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 94,
+  "name": "ScrCmd_Unk005E",
+  "src": "arm9\\src\\scrcmd.c:1509",
+  "args": [
+   "v",
+   "w"
+  ],
+  "flags": [
+   "scriptPtr"
+  ]
+ },
+ {
+  "op": 95,
+  "name": "ScrCmd_WaitForMovement",
+  "src": "arm9\\src\\scrcmd.c:1583",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 96,
+  "name": "ScrCmd_LockAllEvents",
+  "src": "arm9\\src\\scrcmd.c:1629",
+  "args": [],
+  "flags": [
+   "helper:ScrCmd_LockAllEvents2"
+  ]
+ },
+ {
+  "op": 97,
+  "name": "ScrCmd_ReleaseAllEvents",
+  "src": "arm9\\src\\scrcmd.c:1715",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 98,
+  "name": "ScrCmd_LockEvent",
+  "src": "arm9\\src\\scrcmd.c:1720",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 99,
+  "name": "ScrCmd_ReleaseEvent",
+  "src": "arm9\\src\\scrcmd.c:1727",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 100,
+  "name": "ScrCmd_AddEvent",
+  "src": "arm9\\src\\scrcmd.c:1734",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 101,
+  "name": "ScrCmd_RemoveEvent",
+  "src": "arm9\\src\\scrcmd.c:1745",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 102,
+  "name": "ScrCmd_LockCamera",
+  "src": "arm9\\src\\scrcmd.c:1752",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 103,
+  "name": "ScrCmd_ReleaseCamera",
+  "src": "arm9\\src\\scrcmd.c:1766",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 104,
+  "name": "ScrCmd_FacePlayer",
+  "src": "arm9\\src\\scrcmd.c:1775",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 105,
+  "name": "ScrCmd_GetPlayerPosition",
+  "src": "arm9\\src\\scrcmd.c:1788",
+  "args": [
+   "vp",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 106,
+  "name": "ScrCmd_GetEventPosition",
+  "src": "arm9\\src\\scrcmd.c:1800",
+  "args": [
+   "v",
+   "vp",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 107,
+  "name": "ScrCmd_Unk006B",
+  "src": "arm9\\src\\scrcmd.c:1820",
+  "args": [
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 108,
+  "name": "ScrCmd_KeepEvent",
+  "src": "arm9\\src\\scrcmd.c:1835",
+  "args": [
+   "v",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 109,
+  "name": "ScrCmd_SetEventMovement",
+  "src": "arm9\\src\\scrcmd.c:1842",
+  "args": [
+   "v",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 110,
+  "name": "ScrCmd_EventStopFollowing",
+  "src": "arm9\\src\\scrcmd.c:1862",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 111,
+  "name": "ScrCmd_GiveMoney",
+  "src": "arm9\\src\\scrcmd_money.c:12",
+  "args": [
+   "w"
+  ],
+  "flags": []
+ },
+ {
+  "op": 112,
+  "name": "ScrCmd_TakeMoneyImmediate",
+  "src": "arm9\\src\\scrcmd_money.c:23",
+  "args": [
+   "w"
+  ],
+  "flags": []
+ },
+ {
+  "op": 113,
+  "name": "ScrCmd_HasEnoughMoneyImmediate",
+  "src": "arm9\\src\\scrcmd_money.c:45",
+  "args": [
+   "vp",
+   "w"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 114,
+  "name": "ScrCmd_ShowMoneyBox",
+  "src": "arm9\\src\\scrcmd_money.c:81",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 115,
+  "name": "ScrCmd_HideMoneyBox",
+  "src": "arm9\\src\\scrcmd_money.c:93",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 116,
+  "name": "ScrCmd_UpdateMoneyBox",
+  "src": "arm9\\src\\scrcmd_money.c:101",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 117,
+  "name": "ScrCmd_ShowCoinBox",
+  "src": "arm9\\src\\scrcmd_coins.c:12",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 118,
+  "name": "ScrCmd_HideCoinBox",
+  "src": "arm9\\src\\scrcmd_coins.c:25",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 119,
+  "name": "ScrCmd_UpdateCoinBox",
+  "src": "arm9\\src\\scrcmd_coins.c:33",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 120,
+  "name": "ScrCmd_GetCoins",
+  "src": "arm9\\src\\scrcmd_coins.c:41",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 121,
+  "name": "ScrCmd_GiveCoins",
+  "src": "arm9\\src\\scrcmd_coins.c:51",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 122,
+  "name": "ScrCmd_TakeCoinsImmediate",
+  "src": "arm9\\src\\scrcmd_coins.c:61",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 123,
+  "name": "ScrCmd_GiveItem",
+  "src": "arm9\\src\\scrcmd_items.c:8",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 124,
+  "name": "ScrCmd_TakeItem",
+  "src": "arm9\\src\\scrcmd_items.c:22",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 125,
+  "name": "ScrCmd_HasSpaceForItem",
+  "src": "arm9\\src\\scrcmd_items.c:36",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 126,
+  "name": "ScrCmd_HasItem",
+  "src": "arm9\\src\\scrcmd_items.c:50",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 127,
+  "name": "ScrCmd_ItemIdIsTMOrHM",
+  "src": "arm9\\src\\scrcmd_items.c:64",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 128,
+  "name": "ScrCmd_GetItemPocketId",
+  "src": "arm9\\src\\scrcmd_items.c:76",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 129,
+  "name": "ScrCmd_Unk0081",
+  "src": "arm9\\src\\scrcmd_items.c:88",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 130,
+  "name": "ScrCmd_Unk0082",
+  "src": "arm9\\src\\scrcmd_items.c:94",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 131,
+  "name": "ScrCmd_GiveSecretBaseDecoration",
+  "src": "arm9\\src\\scrcmd_underground.c:13",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 132,
+  "name": "ScrCmd_TakeSecretBaseDecoration",
+  "src": "arm9\\src\\scrcmd_underground.c:26",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 133,
+  "name": "ScrCmd_HasSpaceForDecoration",
+  "src": "arm9\\src\\scrcmd_underground.c:35",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 134,
+  "name": "ScrCmd_GetDecorationCount",
+  "src": "arm9\\src\\scrcmd_underground.c:48",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 135,
+  "name": "ScrCmd_GiveUndergroundTrap",
+  "src": "arm9\\src\\scrcmd_underground.c:57",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 136,
+  "name": "ScrCmd_TakeUndergroundTrap",
+  "src": "arm9\\src\\scrcmd_underground.c:70",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 137,
+  "name": "ScrCmd_HasSpaceForTrap",
+  "src": "arm9\\src\\scrcmd_underground.c:79",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 138,
+  "name": "ScrCmd_GetTrapCount",
+  "src": "arm9\\src\\scrcmd_underground.c:88",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 139,
+  "name": "ScrCmd_GiveTreasure",
+  "src": "arm9\\src\\scrcmd_underground.c:97",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 140,
+  "name": "ScrCmd_TakeTreasure",
+  "src": "arm9\\src\\scrcmd_underground.c:108",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 141,
+  "name": "ScrCmd_HasSpaceForTreasure",
+  "src": "arm9\\src\\scrcmd_underground.c:117",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 142,
+  "name": "ScrCmd_GetTreasureCount",
+  "src": "arm9\\src\\scrcmd_underground.c:126",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 143,
+  "name": "ScrCmd_GiveUndergroundSphere",
+  "src": "arm9\\src\\scrcmd_underground.c:135",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 144,
+  "name": "ScrCmd_TakeUndergroundSphere",
+  "src": "arm9\\src\\scrcmd_underground.c:148",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 145,
+  "name": "ScrCmd_HasSpaceForSphere",
+  "src": "arm9\\src\\scrcmd_underground.c:157",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 146,
+  "name": "ScrCmd_GetSphereCount",
+  "src": "arm9\\src\\scrcmd_underground.c:166",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 147,
+  "name": "ScrCmd_GetSealCountFromId",
+  "src": "arm9\\src\\scrcmd.c:1875",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 148,
+  "name": "ScrCmd_GiveSeals",
+  "src": "arm9\\src\\scrcmd.c:1883",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 149,
+  "name": "ScrCmd_GetPokemonForm",
+  "src": "arm9\\src\\scrcmd.c:1892",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 150,
+  "name": "ScrCmd_GiveMon",
+  "src": "arm9\\src\\scrcmd_party.c:19",
+  "args": [
+   "v",
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 151,
+  "name": "ScrCmd_GiveEgg",
+  "src": "arm9\\src\\scrcmd_party.c:77",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 152,
+  "name": "ScrCmd_SetPartyMonMove",
+  "src": "arm9\\src\\scrcmd_party.c:100",
+  "args": [
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 153,
+  "name": "ScrCmd_PartyMonHasMove",
+  "src": "arm9\\src\\scrcmd_party.c:112",
+  "args": [
+   "vp",
+   "v",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 154,
+  "name": "ScrCmd_FindPartyMonWithMove",
+  "src": "arm9\\src\\scrcmd_party.c:135",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 155,
+  "name": "ScrCmd_Unk009B",
+  "src": "arm9\\src\\scrcmd.c:1991",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 156,
+  "name": "ScrCmd_DummySetWeather",
+  "src": "arm9\\src\\scrcmd.c:2000",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 157,
+  "name": "ScrCmd_DummyInitWeather",
+  "src": "arm9\\src\\scrcmd.c:2005",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 158,
+  "name": "ScrCmd_DummyUpdateWeather",
+  "src": "arm9\\src\\scrcmd.c:2010",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 159,
+  "name": "ScrCmd_DummyGetMapPosition",
+  "src": "arm9\\src\\scrcmd.c:2015",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 160,
+  "name": "ScrCmd_Unk00A0",
+  "src": "arm9\\src\\scrcmd_party.c:747",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 161,
+  "name": "ScrCmd_RestoreOverworld",
+  "src": "arm9\\src\\scrcmd.c:2051",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 162,
+  "name": "ScrCmd_Unk00A2",
+  "src": "arm9\\src\\scrcmd.c:2088",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 163,
+  "name": "ScrCmd_Unk00A3",
+  "src": "arm9\\src\\scrcmd.c:2093",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 164,
+  "name": "ScrCmd_GetDressupPortraitSlot",
+  "src": "arm9\\src\\scrcmd.c:2098",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 165,
+  "name": "ScrCmd_Unk00A5",
+  "src": "arm9\\src\\scrcmd.c:2173",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 166,
+  "name": "ScrCmd_DressupPokemon",
+  "src": "arm9\\src\\scrcmd.c:2178",
+  "args": [
+   "v",
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 167,
+  "name": "ScrCmd_ShowDressedPokemon",
+  "src": "arm9\\src\\scrcmd.c:2186",
+  "args": [
+   "h",
+   "vp"
+  ],
+  "flags": [
+   "cond",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 168,
+  "name": "ScrCmd_ShowContestPokemon",
+  "src": "arm9\\src\\scrcmd.c:2201",
+  "args": [
+   "h",
+   "vp"
+  ],
+  "flags": [
+   "cond",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 169,
+  "name": "ScrCmd_ShowSealCapsuleEditor",
+  "src": "arm9\\src\\scrcmd.c:2251",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 170,
+  "name": "ScrCmd_ShowTownMapScreen",
+  "src": "arm9\\src\\scrcmd.c:2256",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 171,
+  "name": "ScrCmd_ShowPCBoxScreen",
+  "src": "arm9\\src\\scrcmd.c:2302",
+  "args": [
+   "b"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 172,
+  "name": "ScrCmd_Unk00AC",
+  "src": "arm9\\src\\scrcmd.c:2313",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 173,
+  "name": "ScrCmd_Unk00AD",
+  "src": "arm9\\src\\scrcmd.c:2319",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 174,
+  "name": "ScrCmd_Unk00AE",
+  "src": "arm9\\src\\scrcmd.c:2324",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 175,
+  "name": "ScrCmd_Unk00AF",
+  "src": "arm9\\src\\scrcmd.c:2329",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 176,
+  "name": "ScrCmd_ShowEndGameScreen",
+  "src": "arm9\\src\\scrcmd.c:2336",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 177,
+  "name": "ScrCmd_InitHallOfFame",
+  "src": "arm9\\src\\scrcmd.c:2341",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 178,
+  "name": "ScrCmd_Unk00B2",
+  "src": "arm9\\src\\scrcmd.c:2348",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": [
+   "cond",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 179,
+  "name": "ScrCmd_Unk00B3",
+  "src": "arm9\\src\\scrcmd.c:2361",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 180,
+  "name": "ScrCmd_StarterSelectionScreen",
+  "src": "arm9\\src\\scrcmd.c:2367",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 181,
+  "name": "ScrCmd_EndStarterSelectionScreen",
+  "src": "arm9\\src\\scrcmd.c:2377",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 182,
+  "name": "ScrCmd_Unk00B6",
+  "src": "arm9\\src\\scrcmd_7.c:27",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 183,
+  "name": "ScrCmd_Unk00B7",
+  "src": "arm9\\src\\scrcmd_7.c:61",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 184,
+  "name": "ScrCmd_Unk00B8",
+  "src": "arm9\\src\\scrcmd_7.c:83",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 185,
+  "name": "ScrCmd_Unk00B9",
+  "src": "arm9\\src\\scrcmd_7.c:92",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 186,
+  "name": "ScrCmd_NamePlayerScreen",
+  "src": "arm9\\src\\scrcmd.c:2407",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 187,
+  "name": "ScrCmd_NamePokemonScreen",
+  "src": "arm9\\src\\scrcmd.c:2413",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 188,
+  "name": "ScrCmd_FadeScreen",
+  "src": "arm9\\src\\scrcmd.c:2465",
+  "args": [
+   "h",
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 189,
+  "name": "ScrCmd_WaitFadeScreen",
+  "src": "arm9\\src\\scrcmd.c:2476",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 190,
+  "name": "ScrCmd_Warp",
+  "src": "arm9\\src\\scrcmd.c:2485",
+  "args": [
+   "h",
+   "h",
+   "v",
+   "v",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 191,
+  "name": "ScrCmd_RockClimb",
+  "src": "arm9\\src\\scrcmd.c:2523",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 192,
+  "name": "ScrCmd_Surf",
+  "src": "arm9\\src\\scrcmd.c:2530",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 193,
+  "name": "ScrCmd_Waterfall",
+  "src": "arm9\\src\\scrcmd.c:2538",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 194,
+  "name": "ScrCmd_Fly",
+  "src": "arm9\\src\\scrcmd.c:2545",
+  "args": [
+   "h",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 195,
+  "name": "ScrCmd_Flash",
+  "src": "arm9\\src\\scrcmd.c:2553",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 196,
+  "name": "ScrCmd_Defog",
+  "src": "arm9\\src\\scrcmd.c:2560",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 197,
+  "name": "ScrCmd_Cut",
+  "src": "arm9\\src\\scrcmd.c:2567",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 198,
+  "name": "ScrCmd_ApplyContestDress",
+  "src": "arm9\\src\\scrcmd.c:2586",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 199,
+  "name": "ScrCmd_CheckBike",
+  "src": "arm9\\src\\scrcmd.c:2591",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 200,
+  "name": "ScrCmd_RideBike",
+  "src": "arm9\\src\\scrcmd.c:2601",
+  "args": [
+   "b"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 201,
+  "name": "ScrCmd_CyclingRoad",
+  "src": "arm9\\src\\scrcmd.c:2623",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 202,
+  "name": "ScrCmd_GetPlayerState",
+  "src": "arm9\\src\\scrcmd.c:2629",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 203,
+  "name": "ScrCmd_SetPlayerState",
+  "src": "arm9\\src\\scrcmd.c:2635",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 204,
+  "name": "ScrCmd_ApplyPlayerState",
+  "src": "arm9\\src\\scrcmd.c:2641",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 205,
+  "name": "ScrCmd_GetPlayerName",
+  "src": "arm9\\src\\scrcmd_names.c:29",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 206,
+  "name": "ScrCmd_GetRivalName",
+  "src": "arm9\\src\\scrcmd_names.c:42",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 207,
+  "name": "ScrCmd_GetFriendName",
+  "src": "arm9\\src\\scrcmd_names.c:53",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 208,
+  "name": "ScrCmd_GetPokemonName",
+  "src": "arm9\\src\\scrcmd_names.c:64",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 209,
+  "name": "ScrCmd_GetItemName",
+  "src": "arm9\\src\\scrcmd_names.c:78",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 210,
+  "name": "ScrCmd_GetPocketName",
+  "src": "arm9\\src\\scrcmd_names.c:90",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 211,
+  "name": "ScrCmd_GetTMHMMoveName",
+  "src": "arm9\\src\\scrcmd_names.c:102",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 212,
+  "name": "ScrCmd_GetMoveName",
+  "src": "arm9\\src\\scrcmd_names.c:115",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 213,
+  "name": "ScrCmd_Unk00D5",
+  "src": "arm9\\src\\scrcmd_names.c:127",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 214,
+  "name": "ScrCmd_GetPokemonNickname",
+  "src": "arm9\\src\\scrcmd_names.c:155",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 215,
+  "name": "ScrCmd_GetPoketchAppName",
+  "src": "arm9\\src\\scrcmd_names.c:185",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 216,
+  "name": "ScrCmd_GetTrainerClassName",
+  "src": "arm9\\src\\scrcmd_names.c:196",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 217,
+  "name": "ScrCmd_Unk00D9",
+  "src": "arm9\\src\\scrcmd_names.c:207",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 218,
+  "name": "ScrCmd_Unk00DA",
+  "src": "arm9\\src\\scrcmd_names.c:223",
+  "args": [
+   "b",
+   "v",
+   "h",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 219,
+  "name": "ScrCmd_GetPlayerStarterName",
+  "src": "arm9\\src\\scrcmd_names.c:247",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 220,
+  "name": "ScrCmd_GetRivalStarterName",
+  "src": "arm9\\src\\scrcmd_names.c:261",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 221,
+  "name": "ScrCmd_GetCounterpartStarterName",
+  "src": "arm9\\src\\scrcmd_names.c:275",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 222,
+  "name": "ScrCmd_GetStarter",
+  "src": "arm9\\src\\scrcmd.c:2654",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 223,
+  "name": "ScrCmd_GetDecorationName",
+  "src": "arm9\\src\\scrcmd_names.c:289",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 224,
+  "name": "ScrCmd_GetUndergroundTrapName",
+  "src": "arm9\\src\\scrcmd_names.c:300",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 225,
+  "name": "ScrCmd_GetUndergroundItemName",
+  "src": "arm9\\src\\scrcmd_names.c:311",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 226,
+  "name": "ScrCmd_GetMapName",
+  "src": "arm9\\src\\scrcmd_names.c:322",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 227,
+  "name": "ScrCmd_GetSwarmInfo",
+  "src": "arm9\\src\\scrcmd.c:2646",
+  "args": [
+   "vp",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 228,
+  "name": "ScrCmd_Unk00E4",
+  "src": "arm9\\src\\scrcmd_7.c:104",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 229,
+  "name": "ScrCmd_Unk00E5",
+  "src": "arm9\\src\\scrcmd_7.c:113",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 230,
+  "name": "ScrCmd_TrainerMessage",
+  "src": "arm9\\src\\scrcmd.c:2660",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 231,
+  "name": "ScrCmd_Unk00E7",
+  "src": "arm9\\src\\scrcmd_7.c:142",
+  "args": [
+   "vp",
+   "vp",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 232,
+  "name": "ScrCmd_Unk00E8",
+  "src": "arm9\\src\\scrcmd_7.c:173",
+  "args": [
+   "vp",
+   "vp",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 233,
+  "name": "ScrCmd_Unk00E9",
+  "src": "arm9\\src\\scrcmd_7.c:204",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 234,
+  "name": "ScrCmd_Unk00EA",
+  "src": "arm9\\src\\scrcmd_7.c:214",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 235,
+  "name": "ScrCmd_Unk00EB",
+  "src": "arm9\\src\\scrcmd_7.c:220",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 236,
+  "name": "ScrCmd_Unk00EC",
+  "src": "arm9\\src\\scrcmd_7.c:226",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 237,
+  "name": "ScrCmd_Unk00ED",
+  "src": "arm9\\src\\scrcmd_7.c:236",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 238,
+  "name": "ScrCmd_Unk00EE",
+  "src": "arm9\\src\\scrcmd_7.c:256",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 239,
+  "name": "ScrCmd_Unk00EF",
+  "src": "arm9\\src\\scrcmd_7.c:265",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 240,
+  "name": "ScrCmd_Unk00F0",
+  "src": "arm9\\src\\scrcmd_7.c:274",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 241,
+  "name": "ScrCmd_Unk00F1",
+  "src": "arm9\\src\\scrcmd_7.c:283",
+  "args": [
+   "w"
+  ],
+  "flags": [
+   "cond",
+   "helper:ScriptJump",
+   "scriptPtr"
+  ]
+ },
+ {
+  "op": 242,
+  "name": "ScrCmd_Unk00F2",
+  "src": "arm9\\src\\scrcmd.c:2677",
+  "args": [
+   "v",
+   "v",
+   "v",
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 243,
+  "name": "ScrCmd_Unk00F3",
+  "src": "arm9\\src\\scrcmd.c:2700",
+  "args": [
+   "v",
+   "v",
+   "v",
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 244,
+  "name": "ScrCmd_Unk00F4",
+  "src": "arm9\\src\\scrcmd.c:2723",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 245,
+  "name": "ScrCmd_Unk00F5",
+  "src": "arm9\\src\\scrcmd.c:2728",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 246,
+  "name": "ScrCmd_Unk00F6",
+  "src": "arm9\\src\\scrcmd.c:2733",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 247,
+  "name": "ScrCmd_Unk00F7",
+  "src": "arm9\\src\\scrcmd.c:2742",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 248,
+  "name": "ScrCmd_Unk00F8",
+  "src": "arm9\\src\\scrcmd_3.c:58",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 249,
+  "name": "ScrCmd_Unk00F9",
+  "src": "arm9\\src\\scrcmd_3.c:66",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 250,
+  "name": "ScrCmd_Unk00FA",
+  "src": "arm9\\src\\scrcmd_3.c:82",
+  "args": [
+   "v",
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 251,
+  "name": "ScrCmd_Unk00FB",
+  "src": "arm9\\src\\scrcmd_3.c:118",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 252,
+  "name": "ScrCmd_Unk00FC",
+  "src": "arm9\\src\\scrcmd_3.c:131",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 253,
+  "name": "ScrCmd_Unk00FD",
+  "src": "arm9\\src\\scrcmd_3.c:142",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 254,
+  "name": "ScrCmd_Unk00FE",
+  "src": "arm9\\src\\scrcmd_3.c:153",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 255,
+  "name": "ScrCmd_Unk00FF",
+  "src": "arm9\\src\\scrcmd_3.c:164",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 256,
+  "name": "ScrCmd_Unk0100",
+  "src": "arm9\\src\\scrcmd_3.c:175",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 257,
+  "name": "ScrCmd_Unk0101",
+  "src": "arm9\\src\\scrcmd_3.c:191",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 258,
+  "name": "ScrCmd_Unk0102",
+  "src": "arm9\\src\\scrcmd_3.c:199",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 259,
+  "name": "ScrCmd_Unk0103",
+  "src": "arm9\\src\\scrcmd_3.c:209",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 260,
+  "name": "ScrCmd_Unk0104",
+  "src": "arm9\\src\\scrcmd_3.c:219",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 261,
+  "name": "ScrCmd_Unk0105",
+  "src": "arm9\\src\\scrcmd_3.c:229",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 262,
+  "name": "ScrCmd_Unk0106",
+  "src": "arm9\\src\\scrcmd_3.c:238",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 263,
+  "name": "ScrCmd_Unk0107",
+  "src": "arm9\\src\\scrcmd_3.c:248",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 264,
+  "name": "ScrCmd_Unk0108",
+  "src": "arm9\\src\\scrcmd_3.c:257",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 265,
+  "name": "ScrCmd_Unk0109",
+  "src": "arm9\\src\\scrcmd_3.c:265",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 266,
+  "name": "ScrCmd_Unk010A",
+  "src": "arm9\\src\\scrcmd_3.c:274",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 267,
+  "name": "ScrCmd_Unk010B",
+  "src": "arm9\\src\\scrcmd_3.c:284",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 268,
+  "name": "ScrCmd_Unk010C",
+  "src": "arm9\\src\\scrcmd_3.c:294",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 269,
+  "name": "ScrCmd_Unk010D",
+  "src": "arm9\\src\\scrcmd_3.c:315",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 270,
+  "name": "ScrCmd_Unk010E",
+  "src": "arm9\\src\\scrcmd_3.c:324",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 271,
+  "name": "ScrCmd_Unk010F",
+  "src": "arm9\\src\\scrcmd_3.c:334",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 272,
+  "name": "ScrCmd_Unk0110",
+  "src": "arm9\\src\\scrcmd_3.c:303",
+  "args": [
+   "vp",
+   "vp",
+   "vp",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 273,
+  "name": "ScrCmd_Unk0111",
+  "src": "arm9\\src\\scrcmd_3.c:359",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 274,
+  "name": "ScrCmd_Unk0112",
+  "src": "arm9\\src\\scrcmd_3.c:368",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 275,
+  "name": "ScrCmd_Unk0113",
+  "src": "arm9\\src\\scrcmd_3.c:382",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 276,
+  "name": "ScrCmd_Unk0114",
+  "src": "arm9\\src\\scrcmd_3.c:388",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 277,
+  "name": "ScrCmd_Unk0115",
+  "src": "arm9\\src\\scrcmd_3.c:394",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 278,
+  "name": "ScrCmd_Unk0116",
+  "src": "arm9\\src\\scrcmd_3.c:414",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 279,
+  "name": "ScrCmd_Unk0117",
+  "src": "arm9\\src\\scrcmd_3.c:343",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 280,
+  "name": "ScrCmd_Unk0118",
+  "src": "arm9\\src\\scrcmd_3.c:351",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 281,
+  "name": "ScrCmd_CheckPartyForPokerus",
+  "src": "arm9\\src\\scrcmd_party.c:488",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 282,
+  "name": "ScrCmd_GetPartyMonGender",
+  "src": "arm9\\src\\scrcmd_party.c:511",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 283,
+  "name": "ScrCmd_SetDynamicWarp",
+  "src": "arm9\\src\\scrcmd.c:2747",
+  "args": [
+   "v",
+   "v",
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 284,
+  "name": "ScrCmd_GetDynamicWarpFloorNumber",
+  "src": "arm9\\src\\scrcmd.c:2758",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 285,
+  "name": "ScrCmd_ShowCurrentFloorNumber",
+  "src": "arm9\\src\\scrcmd.c:2765",
+  "args": [
+   "b",
+   "b",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 286,
+  "name": "ScrCmd_CountSinnohDexSeen",
+  "src": "arm9\\src\\scrcmd.c:2775",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 287,
+  "name": "ScrCmd_CountSinnohDexOwned",
+  "src": "arm9\\src\\scrcmd.c:2782",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 288,
+  "name": "ScrCmd_CountNationalDexSeen",
+  "src": "arm9\\src\\scrcmd.c:2789",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 289,
+  "name": "ScrCmd_CountNationalDexOwned",
+  "src": "arm9\\src\\scrcmd.c:2796",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 290,
+  "name": "ScrCmd_DummyDexCheck",
+  "src": "arm9\\src\\scrcmd.c:2803",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 291,
+  "name": "ScrCmd_GetDexEvaluationMessage",
+  "src": "arm9\\src\\scrcmd.c:2807",
+  "args": [
+   "b",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 292,
+  "name": "ScrCmd_WildBattle",
+  "src": "arm9\\src\\scrcmd.c:2820",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 293,
+  "name": "ScrCmd_FirstBattle",
+  "src": "arm9\\src\\scrcmd.c:2836",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 294,
+  "name": "ScrCmd_CatchTutorial",
+  "src": "arm9\\src\\scrcmd.c:2843",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 295,
+  "name": "ScrCmd_UpdateHoneyTree",
+  "src": "arm9\\src\\scrcmd.c:2848",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 296,
+  "name": "ScrCmd_CheckHoneyTree",
+  "src": "arm9\\src\\scrcmd.c:2853",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 297,
+  "name": "ScrCmd_HoneyTreeBattle",
+  "src": "arm9\\src\\scrcmd.c:2860",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 298,
+  "name": "ScrCmd_StopHoneyTreeAnimation",
+  "src": "arm9\\src\\scrcmd.c:2866",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 299,
+  "name": "ScrCmd_ShowSignatureScreen",
+  "src": "arm9\\src\\scrcmd.c:2871",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 300,
+  "name": "ScrCmd_CheckSaveStatus",
+  "src": "arm9\\src\\scrcmd.c:2877",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 301,
+  "name": "ScrCmd_SaveGame",
+  "src": "arm9\\src\\scrcmd.c:2893",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 302,
+  "name": "ScrCmd_CheckPortraitSlot",
+  "src": "arm9\\src\\scrcmd.c:2216",
+  "args": [
+   "h",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 303,
+  "name": "ScrCmd_CheckContestPortraitSlot",
+  "src": "arm9\\src\\scrcmd.c:2227",
+  "args": [
+   "h",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 304,
+  "name": "ScrCmd_Unk0130",
+  "src": "arm9\\src\\scrcmd.c:2238",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 305,
+  "name": "ScrCmd_GivePoketch",
+  "src": "arm9\\src\\scrcmd.c:2900",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 306,
+  "name": "ScrCmd_CheckPoketch",
+  "src": "arm9\\src\\scrcmd.c:2905",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 307,
+  "name": "ScrCmd_UnlockPoketchApp",
+  "src": "arm9\\src\\scrcmd.c:2912",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 308,
+  "name": "ScrCmd_CheckPoketchApp",
+  "src": "arm9\\src\\scrcmd.c:2920",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 309,
+  "name": "ScrCmd_Unk0135",
+  "src": "arm9\\src\\scrcmd.c:2929",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 310,
+  "name": "ScrCmd_Unk0136",
+  "src": "arm9\\src\\scrcmd.c:2944",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 311,
+  "name": "ScrCmd_Unk0137",
+  "src": "arm9\\src\\scrcmd.c:2949",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 312,
+  "name": "ScrCmd_Unk0138",
+  "src": "arm9\\src\\scrcmd.c:2956",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 313,
+  "name": "ScrCmd_Unk0139",
+  "src": "arm9\\src\\scrcmd.c:2963",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 314,
+  "name": "ScrCmd_Unk013A",
+  "src": "arm9\\src\\scrcmd.c:3069",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 315,
+  "name": "ScrCmd_Unk013B",
+  "src": "arm9\\src\\scrcmd.c:3075",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 316,
+  "name": "ScrCmd_Unk013C",
+  "src": "arm9\\src\\scrcmd.c:2977",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 317,
+  "name": "ScrCmd_Unk013D",
+  "src": "arm9\\src\\scrcmd.c:2994",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 318,
+  "name": "ScrCmd_Unk013E",
+  "src": "arm9\\src\\scrcmd.c:2999",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 319,
+  "name": "ScrCmd_Unk013F",
+  "src": "arm9\\src\\scrcmd.c:3010",
+  "args": [
+   "h",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 320,
+  "name": "ScrCmd_Unk0140",
+  "src": "arm9\\src\\scrcmd.c:3029",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 321,
+  "name": "ScrCmd_Unk0141",
+  "src": "arm9\\src\\scrcmd.c:3046",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 322,
+  "name": "ScrCmd_Unk0142",
+  "src": "arm9\\src\\scrcmd.c:3064",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 323,
+  "name": "ScrCmd_Unk0143",
+  "src": "arm9\\src\\scrcmd.c:3082",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 324,
+  "name": "ScrCmd_Unk0144",
+  "src": "arm9\\src\\scrcmd.c:3090",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 325,
+  "name": "ScrCmd_Unk0145",
+  "src": "arm9\\src\\scrcmd.c:3108",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 326,
+  "name": "ScrCmd_Unk0146",
+  "src": "arm9\\src\\scrcmd.c:3037",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 327,
+  "name": "ScrCmd_NormalMart",
+  "src": "arm9\\src\\scrcmd_mart.c:349",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 328,
+  "name": "ScrCmd_SpecialMart",
+  "src": "arm9\\src\\scrcmd_mart.c:400",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 329,
+  "name": "ScrCmd_GoodsMart",
+  "src": "arm9\\src\\scrcmd_mart.c:416",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 330,
+  "name": "ScrCmd_SealsMart",
+  "src": "arm9\\src\\scrcmd_mart.c:431",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 331,
+  "name": "ScrCmd_DummyBlackout",
+  "src": "arm9\\src\\scrcmd.c:3163",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 332,
+  "name": "ScrCmd_SetSpawn",
+  "src": "arm9\\src\\scrcmd.c:3168",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 333,
+  "name": "ScrCmd_GetPlayerGender",
+  "src": "arm9\\src\\scrcmd.c:3175",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 334,
+  "name": "ScrCmd_HealParty",
+  "src": "arm9\\src\\scrcmd.c:3182",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 335,
+  "name": "ScrCmd_Unk014F",
+  "src": "arm9\\src\\scrcmd.c:3188",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 336,
+  "name": "ScrCmd_Unk0150",
+  "src": "arm9\\src\\scrcmd.c:3192",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 337,
+  "name": "ScrCmd_Unk0151",
+  "src": "arm9\\src\\scrcmd.c:3211",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 338,
+  "name": "ScrCmd_Unk0152",
+  "src": "arm9\\src\\scrcmd.c:3216",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 339,
+  "name": "ScrCmd_Unk0153",
+  "src": "arm9\\src\\scrcmd.c:3127",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 340,
+  "name": "ScrCmd_Unk0154",
+  "src": "arm9\\src\\scrcmd.c:3132",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 341,
+  "name": "ScrCmd_Unk0155",
+  "src": "arm9\\src\\scrcmd.c:3139",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 342,
+  "name": "ScrCmd_SetPlayerAvatar",
+  "src": "arm9\\src\\scrcmd.c:3156",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 343,
+  "name": "ScrCmd_HasSinnohDex",
+  "src": "arm9\\src\\scrcmd_flags.c:38",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 344,
+  "name": "ScrCmd_GiveSinnohDex",
+  "src": "arm9\\src\\scrcmd_flags.c:48",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 345,
+  "name": "ScrCmd_HasRunningShoes",
+  "src": "arm9\\src\\scrcmd_flags.c:57",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 346,
+  "name": "ScrCmd_GiveRunningShoes",
+  "src": "arm9\\src\\scrcmd_flags.c:68",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 347,
+  "name": "ScrCmd_HasBadge",
+  "src": "arm9\\src\\scrcmd_flags.c:78",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 348,
+  "name": "ScrCmd_GiveBadge",
+  "src": "arm9\\src\\scrcmd_flags.c:90",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 349,
+  "name": "ScrCmd_GetTotalEarnedBadges",
+  "src": "arm9\\src\\scrcmd_flags.c:111",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 350,
+  "name": "ScrCmd_HasBag",
+  "src": "arm9\\src\\scrcmd_flags.c:101",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 351,
+  "name": "ScrCmd_GiveBag",
+  "src": "arm9\\src\\scrcmd_flags.c:129",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 352,
+  "name": "ScrCmd_Unk0160",
+  "src": "arm9\\src\\scrcmd_flags.c:138",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 353,
+  "name": "ScrCmd_Unk0161",
+  "src": "arm9\\src\\scrcmd_flags.c:148",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 354,
+  "name": "ScrCmd_Unk0162",
+  "src": "arm9\\src\\scrcmd_flags.c:157",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 355,
+  "name": "ScrCmd_Unk0163",
+  "src": "arm9\\src\\scrcmd_flags.c:166",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 356,
+  "name": "ScrCmd_Unk0164",
+  "src": "arm9\\src\\scrcmd_flags.c:176",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 357,
+  "name": "ScrCmd_Unk0165",
+  "src": "arm9\\src\\scrcmd_flags.c:185",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 358,
+  "name": "ScrCmd_CheckGameCompleted",
+  "src": "arm9\\src\\scrcmd_flags.c:194",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 359,
+  "name": "ScrCmd_SetGameCompleted",
+  "src": "arm9\\src\\scrcmd_flags.c:204",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 360,
+  "name": "ScrCmd_PrepareDoorAnimation",
+  "src": "arm9\\src\\scrcmd.c:3298",
+  "args": [
+   "h",
+   "h",
+   "v",
+   "v",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 361,
+  "name": "ScrCmd_WaitDoorAnimation",
+  "src": "arm9\\src\\scrcmd.c:3308",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 362,
+  "name": "ScrCmd_FreeDoorAnimation",
+  "src": "arm9\\src\\scrcmd.c:3314",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 363,
+  "name": "ScrCmd_OpenDoorAnimation",
+  "src": "arm9\\src\\scrcmd.c:3320",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 364,
+  "name": "ScrCmd_CloseDoorAnimation",
+  "src": "arm9\\src\\scrcmd.c:3326",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 365,
+  "name": "ScrCmd_GetDaycarePokemonNames",
+  "src": "arm9\\src\\scrcmd_daycare.c:22",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 366,
+  "name": "ScrCmd_GetDaycareStatus",
+  "src": "arm9\\src\\scrcmd_daycare.c:33",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 367,
+  "name": "ScrCmd_InitPastoriaGym",
+  "src": "arm9\\src\\scrcmd.c:3332",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 368,
+  "name": "ScrCmd_CheckPastoriaGymButton",
+  "src": "arm9\\src\\scrcmd.c:3337",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 369,
+  "name": "ScrCmd_InitHearthomeGym",
+  "src": "arm9\\src\\scrcmd.c:3342",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 370,
+  "name": "ScrCmd_MoveHearthomeGymElevator",
+  "src": "arm9\\src\\scrcmd.c:3347",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 371,
+  "name": "ScrCmd_InitCanalaveGym",
+  "src": "arm9\\src\\scrcmd.c:3352",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 372,
+  "name": "ScrCmd_InitVeilstoneGym",
+  "src": "arm9\\src\\scrcmd.c:3357",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 373,
+  "name": "ScrCmd_InitSunyshoreGym",
+  "src": "arm9\\src\\scrcmd.c:3362",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 374,
+  "name": "ScrCmd_RotateSunyshoreGymGear",
+  "src": "arm9\\src\\scrcmd.c:3369",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 375,
+  "name": "ScrCmd_CountPartyMons",
+  "src": "arm9\\src\\scrcmd_party.c:371",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 376,
+  "name": "ScrCmd_ShowBagScreen",
+  "src": "arm9\\src\\scrcmd.c:2385",
+  "args": [
+   "b"
+  ],
+  "flags": [
+   "cond",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 377,
+  "name": "ScrCmd_GetBagScreenSelection",
+  "src": "arm9\\src\\scrcmd.c:2396",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 378,
+  "name": "ScrCmd_CheckPocketNotEmpty",
+  "src": "arm9\\src\\scrcmd.c:3222",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 379,
+  "name": "ScrCmd_GetBerryName",
+  "src": "arm9\\src\\scrcmd_names.c:336",
+  "args": [
+   "b",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 380,
+  "name": "ScrCmd_GetNatureName",
+  "src": "arm9\\src\\scrcmd_names.c:350",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 381,
+  "name": "ScrCmd_GetBerryTreeGrowth",
+  "src": "arm9\\src\\scrcmd_berry_trees.c:19",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 382,
+  "name": "ScrCmd_GetBerryTreeType",
+  "src": "arm9\\src\\scrcmd_berry_trees.c:28",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 383,
+  "name": "ScrCmd_GetBerryTreeMulch",
+  "src": "arm9\\src\\scrcmd_berry_trees.c:37",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 384,
+  "name": "ScrCmd_GetBerryTreeWater",
+  "src": "arm9\\src\\scrcmd_berry_trees.c:46",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 385,
+  "name": "ScrCmd_GetBerryTreeAmount",
+  "src": "arm9\\src\\scrcmd_berry_trees.c:55",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 386,
+  "name": "ScrCmd_SetBerryTreeMulch",
+  "src": "arm9\\src\\scrcmd_berry_trees.c:64",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 387,
+  "name": "ScrCmd_SetBerryTreeType",
+  "src": "arm9\\src\\scrcmd_berry_trees.c:73",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 388,
+  "name": "ScrCmd_Unk0184",
+  "src": "arm9\\src\\scrcmd_berry_trees.c:85",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 389,
+  "name": "ScrCmd_TakeBerryTreeBerries",
+  "src": "arm9\\src\\scrcmd_berry_trees.c:104",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 390,
+  "name": "ScrCmd_SetEventDefaultPosition",
+  "src": "arm9\\src\\scrcmd.c:3230",
+  "args": [
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 391,
+  "name": "ScrCmd_SetEventPosition",
+  "src": "arm9\\src\\scrcmd.c:3238",
+  "args": [
+   "v",
+   "v",
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 392,
+  "name": "ScrCmd_SetEventDefaultMovement",
+  "src": "arm9\\src\\scrcmd.c:3250",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 393,
+  "name": "ScrCmd_SetEventDefaultDirection",
+  "src": "arm9\\src\\scrcmd.c:3257",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 394,
+  "name": "ScrCmd_SetWarpPosition",
+  "src": "arm9\\src\\scrcmd.c:3264",
+  "args": [
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 395,
+  "name": "ScrCmd_SetBgEventPosition",
+  "src": "arm9\\src\\scrcmd.c:3272",
+  "args": [
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 396,
+  "name": "ScrCmd_SetEventDirection",
+  "src": "arm9\\src\\scrcmd.c:3280",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 397,
+  "name": "ScrCmd_ShowWaitingIcon",
+  "src": "arm9\\src\\scrcmd.c:1337",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 398,
+  "name": "ScrCmd_HideWaitingIcon",
+  "src": "arm9\\src\\scrcmd.c:1344",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 399,
+  "name": "ScrCmd_Unk018F",
+  "src": "arm9\\src\\scrcmd.c:3289",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 400,
+  "name": "ScrCmd_WaitButtonABTime",
+  "src": "arm9\\src\\scrcmd.c:992",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 401,
+  "name": "ScrCmd_ChoosePokemonMenu",
+  "src": "arm9\\src\\scrcmd.c:1902",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 402,
+  "name": "ScrCmd_UnionChoosePokemonMenu",
+  "src": "arm9\\src\\scrcmd.c:1916",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 403,
+  "name": "ScrCmd_GetSelectedPartySlot",
+  "src": "arm9\\src\\scrcmd.c:1922",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 404,
+  "name": "ScrCmd_Unk0194",
+  "src": "arm9\\src\\scrcmd.c:1937",
+  "args": [
+   "v",
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 405,
+  "name": "ScrCmd_Unk0195",
+  "src": "arm9\\src\\scrcmd.c:1949",
+  "args": [
+   "vp",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 406,
+  "name": "ScrCmd_Unk0196",
+  "src": "arm9\\src\\scrcmd.c:1969",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 407,
+  "name": "ScrCmd_Unk0197",
+  "src": "arm9\\src\\scrcmd.c:1978",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 408,
+  "name": "ScrCmd_GetPartyMonSpecies",
+  "src": "arm9\\src\\scrcmd_party.c:32",
+  "args": [
+   "h",
+   "h"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 409,
+  "name": "ScrCmd_CheckPartyMonOTID",
+  "src": "arm9\\src\\scrcmd_party.c:54",
+  "args": [
+   "vp",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 410,
+  "name": "ScrCmd_CountPartyMons_OmitEggs",
+  "src": "arm9\\src\\scrcmd_party.c:381",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 411,
+  "name": "ScrCmd_CountAvailablePartyMons_IgnoreSlot",
+  "src": "arm9\\src\\scrcmd_party.c:404",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 412,
+  "name": "ScrCmd_CountAvailablePartyAndPCMons",
+  "src": "arm9\\src\\scrcmd_party.c:435",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 413,
+  "name": "ScrCmd_GetPartyEggCount",
+  "src": "arm9\\src\\scrcmd_party.c:464",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 414,
+  "name": "ScrCmd_Unk019E",
+  "src": "arm9\\src\\scrcmd.c:3381",
+  "args": [
+   "v",
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 415,
+  "name": "ScrCmd_Unk019F",
+  "src": "arm9\\src\\scrcmd.c:3401",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 416,
+  "name": "ScrCmd_Unk01A0",
+  "src": "arm9\\src\\scrcmd.c:3414",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 417,
+  "name": "ScrCmd_Unk01A1",
+  "src": "arm9\\src\\scrcmd.c:3419",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 418,
+  "name": "ScrCmd_Unk01A2",
+  "src": "arm9\\src\\scrcmd.c:3426",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 419,
+  "name": "ScrCmd_TakeMoneyAddress",
+  "src": "arm9\\src\\scrcmd_money.c:34",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 420,
+  "name": "ScrCmd_Unk01A4",
+  "src": "arm9\\src\\scrcmd_daycare.c:66",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 421,
+  "name": "ScrCmd_Unk01A5",
+  "src": "arm9\\src\\scrcmd_daycare.c:172",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 422,
+  "name": "ScrCmd_Unk01A6",
+  "src": "arm9\\src\\scrcmd_daycare.c:178",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 423,
+  "name": "ScrCmd_Unk01A7",
+  "src": "arm9\\src\\scrcmd_daycare.c:184",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 424,
+  "name": "ScrCmd_DeleteDaycareEgg",
+  "src": "arm9\\src\\scrcmd_daycare.c:45",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 425,
+  "name": "ScrCmd_GiveDaycareEgg",
+  "src": "arm9\\src\\scrcmd_daycare.c:53",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 426,
+  "name": "ScrCmd_Unk01AA",
+  "src": "arm9\\src\\scrcmd_daycare.c:81",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 427,
+  "name": "ScrCmd_HasEnoughMoneyAddress",
+  "src": "arm9\\src\\scrcmd_money.c:63",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 428,
+  "name": "ScrCmd_HatchEgg",
+  "src": "arm9\\src\\scrcmd.c:3376",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 429,
+  "name": "ScrCmd_Unk01AD",
+  "src": "arm9\\src\\scrcmd_daycare.c:190",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 430,
+  "name": "ScrCmd_GetDaycareLevel",
+  "src": "arm9\\src\\scrcmd_daycare.c:95",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 431,
+  "name": "ScrCmd_Unk01AF",
+  "src": "arm9\\src\\scrcmd_daycare.c:108",
+  "args": [
+   "h",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 432,
+  "name": "ScrCmd_Unk01B0",
+  "src": "arm9\\src\\scrcmd_daycare.c:122",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 433,
+  "name": "ScrCmd_HideEvent",
+  "src": "arm9\\src\\scrcmd.c:3438",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 434,
+  "name": "ScrCmd_ShowEvent",
+  "src": "arm9\\src\\scrcmd.c:3447",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 435,
+  "name": "ScrCmd_ShowMailbox",
+  "src": "arm9\\src\\scrcmd.c:3456",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 436,
+  "name": "ScrCmd_CountMail",
+  "src": "arm9\\src\\scrcmd.c:3461",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 437,
+  "name": "ScrCmd_Unk01B5",
+  "src": "arm9\\src\\scrcmd.c:3469",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 438,
+  "name": "ScrCmd_GetTimeOfDay",
+  "src": "arm9\\src\\scrcmd.c:3475",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 439,
+  "name": "ScrCmd_Random",
+  "src": "arm9\\src\\scrcmd.c:3481",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 440,
+  "name": "ScrCmd_DummyRandom",
+  "src": "arm9\\src\\scrcmd.c:3488",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 441,
+  "name": "ScrCmd_GetPartyMonFriendship",
+  "src": "arm9\\src\\scrcmd_party.c:266",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 442,
+  "name": "ScrCmd_AddPartyMonFriendship",
+  "src": "arm9\\src\\scrcmd_party.c:278",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 443,
+  "name": "ScrCmd_SubtractPartyMonFriendship",
+  "src": "arm9\\src\\scrcmd_party.c:317",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 444,
+  "name": "ScrCmd_Unk01BC",
+  "src": "arm9\\src\\scrcmd_daycare.c:135",
+  "args": [
+   "v",
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 445,
+  "name": "ScrCmd_GetPlayerDirection",
+  "src": "arm9\\src\\scrcmd.c:1813",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 446,
+  "name": "ScrCmd_Unk01BE",
+  "src": "arm9\\src\\scrcmd_daycare.c:150",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 447,
+  "name": "ScrCmd_Unk01BF",
+  "src": "arm9\\src\\scrcmd_daycare.c:161",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 448,
+  "name": "ScrCmd_CheckPartyForSpecies",
+  "src": "arm9\\src\\scrcmd_party.c:616",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 449,
+  "name": "ScrCmd_CheckPokemonSizeRecord",
+  "src": "arm9\\src\\scrcmd.c:3495",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 450,
+  "name": "ScrCmd_SetPokemonSizeRecord",
+  "src": "arm9\\src\\scrcmd.c:3503",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 451,
+  "name": "ScrCmd_BufferPartyPokemonSize",
+  "src": "arm9\\src\\scrcmd.c:3510",
+  "args": [
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 452,
+  "name": "ScrCmd_BufferPokemonRecordSize",
+  "src": "arm9\\src\\scrcmd.c:3519",
+  "args": [
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 453,
+  "name": "ScrCmd_InitPokemonRecordSize",
+  "src": "arm9\\src\\scrcmd.c:3528",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 454,
+  "name": "ScrCmd_Unk01C6",
+  "src": "arm9\\src\\scrcmd_move_relearner.c:16",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 455,
+  "name": "ScrCmd_Unk01C7",
+  "src": "arm9\\src\\scrcmd_move_relearner.c:25",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 456,
+  "name": "ScrCmd_CountPartyMonMoves",
+  "src": "arm9\\src\\scrcmd_party.c:522",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 457,
+  "name": "ScrCmd_ForgetPartyMonMove",
+  "src": "arm9\\src\\scrcmd_party.c:565",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 458,
+  "name": "ScrCmd_GetPartyMonMove",
+  "src": "arm9\\src\\scrcmd_party.c:578",
+  "args": [
+   "vp",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 459,
+  "name": "ScrCmd_GetPokemonMoveName",
+  "src": "arm9\\src\\scrcmd_names.c:387",
+  "args": [
+   "b",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 460,
+  "name": "ScrCmd_Unk01CC",
+  "src": "arm9\\src\\scrcmd.c:3534",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 461,
+  "name": "ScrCmd_Unk01CD",
+  "src": "arm9\\src\\scrcmd.c:3545",
+  "args": [
+   "v",
+   "v",
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 462,
+  "name": "ScrCmd_Unk01CE",
+  "src": "arm9\\src\\scrcmd.c:3583",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 463,
+  "name": "ScrCmd_GetSetStrength",
+  "src": "arm9\\src\\scrcmd_flags.c:213",
+  "args": [
+   "b",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 464,
+  "name": "ScrCmd_GetSetFlash",
+  "src": "arm9\\src\\scrcmd_flags.c:238",
+  "args": [
+   "b",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 465,
+  "name": "ScrCmd_GetSetDefog",
+  "src": "arm9\\src\\scrcmd_flags.c:263",
+  "args": [
+   "b",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 466,
+  "name": "ScrCmd_Unk01D2",
+  "src": "arm9\\src\\scrcmd.c:3587",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 467,
+  "name": "ScrCmd_Unk01D3",
+  "src": "arm9\\src\\scrcmd.c:3594",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 468,
+  "name": "ScrCmd_Unk01D4",
+  "src": "arm9\\src\\scrcmd.c:3602",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 469,
+  "name": "ScrCmd_Unk01D5",
+  "src": "arm9\\src\\scrcmd.c:3610",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 470,
+  "name": "ScrCmd_Unk01D6",
+  "src": "arm9\\src\\scrcmd.c:3616",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 471,
+  "name": "ScrCmd_Unk01D7",
+  "src": "arm9\\src\\scrcmd.c:2265",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 472,
+  "name": "ScrCmd_Unk01D8",
+  "src": "arm9\\src\\scrcmd.c:2273",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 473,
+  "name": "ScrCmd_Unk01D9",
+  "src": "arm9\\src\\scrcmd.c:2287",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 474,
+  "name": "ScrCmd_Unk01DA",
+  "src": "arm9\\asm\\scrcmd_10.s:30",
+  "args": [],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 475,
+  "name": "ScrCmd_Unk01DB",
+  "src": "arm9\\asm\\scrcmd_10.s:40",
+  "args": [
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 476,
+  "name": "ScrCmd_Unk01DC",
+  "src": "arm9\\asm\\scrcmd_10.s:63",
+  "args": [],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 477,
+  "name": "ScrCmd_Unk01DD",
+  "src": "arm9\\asm\\scrcmd_10.s:79",
+  "args": [
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm",
+   "branch"
+  ]
+ },
+ {
+  "op": 478,
+  "name": "ScrCmd_Unk01DE",
+  "src": "arm9\\asm\\scrcmd_10.s:505",
+  "args": [
+   "h",
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 479,
+  "name": "ScrCmd_Unk01DF",
+  "src": "arm9\\asm\\scrcmd_10.s:564",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 480,
+  "name": "ScrCmd_Unk01E0",
+  "src": "arm9\\asm\\scrcmd_10.s:584",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 481,
+  "name": "ScrCmd_Unk01E1",
+  "src": "arm9\\asm\\scrcmd_10.s:604",
+  "args": [
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm",
+   "branch"
+  ]
+ },
+ {
+  "op": 482,
+  "name": "ScrCmd_Unk01E2",
+  "src": "arm9\\asm\\scrcmd_10.s:674",
+  "args": [
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 483,
+  "name": "ScrCmd_Unk01E3",
+  "src": "arm9\\asm\\scrcmd_10.s:697",
+  "args": [
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 484,
+  "name": "ScrCmd_Unk01E4",
+  "src": "arm9\\asm\\scrcmd_10.s:732",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 485,
+  "name": "ScrCmd_IncrementGameStat",
+  "src": "arm9\\src\\scrcmd.c:3673",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 486,
+  "name": "ScrCmd_GetGameStat",
+  "src": "arm9\\src\\scrcmd.c:3680",
+  "args": [
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 487,
+  "name": "ScrCmd_SetGameStat",
+  "src": "arm9\\src\\scrcmd.c:3692",
+  "args": [
+   "h",
+   "h",
+   "h",
+   "b"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 488,
+  "name": "ScrCmd_CheckSinnohDexComplete",
+  "src": "arm9\\src\\scrcmd.c:3623",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 489,
+  "name": "ScrCmd_CheckNationalDexComplete",
+  "src": "arm9\\src\\scrcmd.c:3633",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 490,
+  "name": "ScrCmd_RegisterSinnohPokedex",
+  "src": "arm9\\src\\scrcmd.c:3643",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 491,
+  "name": "ScrCmd_RegisterNationalPokedex",
+  "src": "arm9\\src\\scrcmd.c:3650",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 492,
+  "name": "ScrCmd_Unk01EC",
+  "src": "arm9\\src\\scrcmd.c:3657",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 493,
+  "name": "ScrCmd_Unk01ED",
+  "src": "arm9\\src\\scrcmd.c:3662",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 494,
+  "name": "ScrCmd_GetPartyMonHeldItem",
+  "src": "arm9\\src\\scrcmd_party.c:591",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 495,
+  "name": "ScrCmd_Unk01EF",
+  "src": "arm9\\src\\scrcmd.c:3668",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 496,
+  "name": "ScrCmd_ResetPartyMonHeldItem",
+  "src": "arm9\\src\\scrcmd_party.c:603",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 497,
+  "name": "ScrCmd_CountFossils",
+  "src": "arm9\\src\\scrcmd_fossils.c:16",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 498,
+  "name": "ScrCmd_Unk01F2",
+  "src": "arm9\\src\\scrcmd_fossils.c:73",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 499,
+  "name": "ScrCmd_Unk01F3",
+  "src": "arm9\\src\\scrcmd_fossils.c:79",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 500,
+  "name": "ScrCmd_GetFossilPokemon",
+  "src": "arm9\\src\\scrcmd_fossils.c:32",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 501,
+  "name": "ScrCmd_GetFossilMinimumAmount",
+  "src": "arm9\\src\\scrcmd_fossils.c:49",
+  "args": [
+   "vp",
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 502,
+  "name": "ScrCmd_CountPartyMonsAtOrBelowLevel",
+  "src": "arm9\\src\\scrcmd_party.c:170",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 503,
+  "name": "ScrCmd_SurvivePsn",
+  "src": "arm9\\src\\scrcmd_party.c:159",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 504,
+  "name": "ScrCmd_TerminateOverworldProcess",
+  "src": "arm9\\src\\scrcmd.c:2056",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 505,
+  "name": "ScrCmd_DebugWatch",
+  "src": "arm9\\src\\scrcmd.c:449",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 506,
+  "name": "ScrCmd_MessageFrom",
+  "src": "arm9\\src\\scrcmd.c:813",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": [
+   "helper:ov05_ShowMessageInField"
+  ]
+ },
+ {
+  "op": 507,
+  "name": "ScrCmd_MessageFrom2",
+  "src": "arm9\\src\\scrcmd.c:823",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": [
+   "helper:ov05_021E2BD0",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 508,
+  "name": "ScrCmd_Unk01FC",
+  "src": "arm9\\src\\scrcmd.c:834",
+  "args": [
+   "h",
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": [
+   "helper:ov05_021E2C58"
+  ]
+ },
+ {
+  "op": 509,
+  "name": "ScrCmd_Unk01FD",
+  "src": "arm9\\src\\scrcmd.c:845",
+  "args": [
+   "h",
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": [
+   "helper:ov05_021E2C58",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 510,
+  "name": "ScrCmd_Unk01FE",
+  "src": "arm9\\src\\scrcmd.c:857",
+  "args": [
+   "b"
+  ],
+  "flags": [
+   "cond",
+   "helper:ov05_021E2BD0",
+   "helper:ov05_021E2C58",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 511,
+  "name": "ScrCmd_Unk01FF",
+  "src": "arm9\\src\\scrcmd.c:877",
+  "args": [
+   "b",
+   "v",
+   "h",
+   "b"
+  ],
+  "flags": [
+   "helper:ov05_021E2CBC",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 512,
+  "name": "ScrCmd_GetPreviousMapID",
+  "src": "arm9\\src\\scrcmd.c:2510",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 513,
+  "name": "ScrCmd_GetCurrentMapID",
+  "src": "arm9\\src\\scrcmd.c:2517",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 514,
+  "name": "ScrCmd_EnableDisableSafariZone",
+  "src": "arm9\\src\\scrcmd.c:3713",
+  "args": [
+   "b"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 515,
+  "name": "ScrCmd_BattleRoomWarp",
+  "src": "arm9\\src\\scrcmd.c:2495",
+  "args": [
+   "h",
+   "h",
+   "v",
+   "v",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 516,
+  "name": "ScrCmd_ExitBattleRoom",
+  "src": "arm9\\src\\scrcmd.c:2505",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 517,
+  "name": "ScrCmd_ShowGeonetScreen",
+  "src": "arm9\\src\\scrcmd.c:2245",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 518,
+  "name": "ScrCmd_UseGreatMarshBinoculars",
+  "src": "arm9\\src\\scrcmd.c:3738",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 519,
+  "name": "ScrCmd_Unk0207",
+  "src": "arm9\\src\\scrcmd.c:2106",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 520,
+  "name": "ScrCmd_ShowPokemonPic",
+  "src": "arm9\\src\\scrcmd.c:2112",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 521,
+  "name": "ScrCmd_Unk0209",
+  "src": "arm9\\src\\scrcmd.c:2133",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 522,
+  "name": "ScrCmd_Unk020A",
+  "src": "arm9\\src\\scrcmd.c:2157",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 523,
+  "name": "ScrCmd_Unk020B",
+  "src": "arm9\\src\\scrcmd.c:2165",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 524,
+  "name": "ScrCmd_Unk020C",
+  "src": "arm9\\src\\scrcmd.c:951",
+  "args": [],
+  "flags": [
+   "helper:ov05_021E2BD0",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 525,
+  "name": "ScrCmd_SpearPillarSequence",
+  "src": "arm9\\src\\scrcmd.c:3743",
+  "args": [
+   "b",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 526,
+  "name": "ScrCmd_KeepSafariTrain",
+  "src": "arm9\\src\\scrcmd.c:3750",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 527,
+  "name": "ScrCmd_MoveSafariTrain",
+  "src": "arm9\\src\\scrcmd.c:3755",
+  "args": [
+   "vp",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 528,
+  "name": "ScrCmd_CheckSafariTrainPosition",
+  "src": "arm9\\src\\scrcmd.c:3763",
+  "args": [
+   "h",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 529,
+  "name": "ScrCmd_IgnoreHeights",
+  "src": "arm9\\src\\scrcmd.c:3770",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 530,
+  "name": "ScrCmd_GetPartyMonNature",
+  "src": "arm9\\src\\scrcmd_party.c:216",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 531,
+  "name": "ScrCmd_FindPartyMonWithNature",
+  "src": "arm9\\src\\scrcmd_party.c:241",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 532,
+  "name": "ScrCmd_GetSpiritombTalkCounter",
+  "src": "arm9\\src\\scrcmd.c:3776",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 533,
+  "name": "ScrCmd_ClearAmitySquareSteps",
+  "src": "arm9\\src\\scrcmd_amity_square.c:98",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 534,
+  "name": "ScrCmd_CheckAmitySquareSteps",
+  "src": "arm9\\src\\scrcmd_amity_square.c:107",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 535,
+  "name": "ScrCmd_GetAmitySquareAccessory",
+  "src": "arm9\\src\\scrcmd_amity_square.c:116",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 536,
+  "name": "ScrCmd_Unk0218",
+  "src": "arm9\\src\\scrcmd.c:3783",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 537,
+  "name": "ScrCmd_Unk0219",
+  "src": "arm9\\src\\scrcmd.c:3804",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 538,
+  "name": "ScrCmd_Unk021A",
+  "src": "arm9\\src\\scrcmd.c:3811",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 539,
+  "name": "ScrCmd_Unk021B",
+  "src": "arm9\\src\\scrcmd.c:3817",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 540,
+  "name": "ScrCmd_CreateRoamer",
+  "src": "arm9\\src\\scrcmd.c:3822",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 541,
+  "name": "ScrCmd_UnionGroup",
+  "src": "arm9\\src\\scrcmd_union.c:14",
+  "args": [
+   "h",
+   "v",
+   "vp",
+   "v",
+   "vp",
+   "v",
+   "v",
+   "v",
+   "v",
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 542,
+  "name": "ScrCmd_Unk021E",
+  "src": "arm9\\src\\scrcmd_move_relearner.c:40",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 543,
+  "name": "ScrCmd_Unk021F",
+  "src": "arm9\\src\\scrcmd_move_relearner.c:46",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 544,
+  "name": "ScrCmd_Unk0220",
+  "src": "arm9\\src\\scrcmd_move_relearner.c:78",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 545,
+  "name": "ScrCmd_Unk0221",
+  "src": "arm9\\src\\scrcmd_move_relearner.c:84",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:sub_02045E74"
+  ]
+ },
+ {
+  "op": 546,
+  "name": "ScrCmd_Unk0222",
+  "src": "arm9\\src\\scrcmd_move_relearner.c:110",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 547,
+  "name": "ScrCmd_Unk0223",
+  "src": "arm9\\src\\scrcmd_move_relearner.c:116",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 548,
+  "name": "ScrCmd_Unk0224",
+  "src": "arm9\\src\\scrcmd_move_relearner.c:95",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": [
+   "helper:sub_02045E74"
+  ]
+ },
+ {
+  "op": 549,
+  "name": "ScrCmd_Unk0225",
+  "src": "arm9\\src\\scrcmd_move_relearner.c:134",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 550,
+  "name": "ScrCmd_NPCTradeInit",
+  "src": "arm9\\src\\scrcmd.c:3828",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 551,
+  "name": "ScrCmd_NPCTradeGetOfferedSpecies",
+  "src": "arm9\\src\\scrcmd.c:3835",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 552,
+  "name": "ScrCmd_NPCTradeGetRequestedSpecies",
+  "src": "arm9\\src\\scrcmd.c:3842",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 553,
+  "name": "ScrCmd_NPCTradeExecute",
+  "src": "arm9\\src\\scrcmd.c:3849",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 554,
+  "name": "ScrCmd_NPCTradeEnd",
+  "src": "arm9\\src\\scrcmd.c:3856",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 555,
+  "name": "ScrCmd_UnlockForeignEntries",
+  "src": "arm9\\src\\scrcmd.c:3862",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 556,
+  "name": "ScrCmd_UnlockGenderEntries",
+  "src": "arm9\\src\\scrcmd.c:3867",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 557,
+  "name": "ScrCmd_NationalDex",
+  "src": "arm9\\src\\scrcmd.c:3872",
+  "args": [
+   "b",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 558,
+  "name": "ScrCmd_CountPartyMonRibbons",
+  "src": "arm9\\src\\scrcmd_party.c:641",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 559,
+  "name": "ScrCmd_CountTotalPartyRibbons",
+  "src": "arm9\\src\\scrcmd_party.c:661",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 560,
+  "name": "ScrCmd_PartyMonHasRibbon",
+  "src": "arm9\\src\\scrcmd_party.c:694",
+  "args": [
+   "vp",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 561,
+  "name": "ScrCmd_GivePartyMonRibbon",
+  "src": "arm9\\src\\scrcmd_party.c:706",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 562,
+  "name": "ScrCmd_GetRibbonName",
+  "src": "arm9\\src\\scrcmd_names.c:403",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 563,
+  "name": "ScrCmd_GetTotalPokemonEVs",
+  "src": "arm9\\src\\scrcmd.c:3887",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 564,
+  "name": "ScrCmd_GetDayOfWeek",
+  "src": "arm9\\src\\scrcmd.c:3903",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 565,
+  "name": "ScrCmd_Unk0235",
+  "src": "arm9\\asm\\scrcmd_9.s:36",
+  "args": [
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm",
+   "branch"
+  ]
+ },
+ {
+  "op": 566,
+  "name": "ScrCmd_Unk0236",
+  "src": "arm9\\asm\\scrcmd_9.s:220",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 567,
+  "name": "ScrCmd_Unk0237",
+  "src": "arm9\\asm\\scrcmd_9.s:264",
+  "args": [
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm",
+   "branch"
+  ]
+ },
+ {
+  "op": 568,
+  "name": "ScrCmd_Unk0238",
+  "src": "arm9\\asm\\scrcmd_9.s:359",
+  "args": [
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 569,
+  "name": "ScrCmd_Unk0239",
+  "src": "arm9\\src\\scrcmd.c:3911",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 570,
+  "name": "ScrCmd_GetPokemonFootprint",
+  "src": "arm9\\src\\scrcmd.c:3917",
+  "args": [
+   "vp",
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 571,
+  "name": "ScrCmd_PokecenterHealAnimation",
+  "src": "arm9\\src\\scrcmd.c:3928",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 572,
+  "name": "ScrCmd_ElevatorAnimation",
+  "src": "arm9\\src\\scrcmd.c:3934",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 573,
+  "name": "ScrCmd_ShipAnimation",
+  "src": "arm9\\src\\scrcmd.c:3941",
+  "args": [
+   "b",
+   "b",
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 574,
+  "name": "ScrCmd_Unk023E",
+  "src": "arm9\\asm\\scrcmd_12.s:50",
+  "args": [
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm",
+   "branch"
+  ]
+ },
+ {
+  "op": 575,
+  "name": "ScrCmd_Unk023F",
+  "src": "arm9\\src\\scrcmd_25.c:5",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 576,
+  "name": "ScrCmd_Unk0240",
+  "src": "arm9\\src\\scrcmd_25.c:12",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 577,
+  "name": "ScrCmd_Unk0241",
+  "src": "arm9\\src\\scrcmd_25.c:19",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 578,
+  "name": "ScrCmd_Unk0242",
+  "src": "arm9\\src\\scrcmd_25.c:25",
+  "args": [],
+  "flags": [
+   "helper:unused"
+  ]
+ },
+ {
+  "op": 579,
+  "name": "ScrCmd_Unk0243",
+  "src": "arm9\\src\\scrcmd.c:2437",
+  "args": [
+   "v",
+   "vp",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 580,
+  "name": "ScrCmd_Unk0244",
+  "src": "arm9\\src\\scrcmd.c:2446",
+  "args": [
+   "v",
+   "vp",
+   "vp",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 581,
+  "name": "ScrCmd_Unk0245",
+  "src": "arm9\\src\\scrcmd.c:2457",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 582,
+  "name": "ScrCmd_GetGameVersion",
+  "src": "arm9\\src\\scrcmd.c:3952",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 583,
+  "name": "ScrCmd_GetLeadingPartyMonSlot",
+  "src": "arm9\\src\\scrcmd_party.c:349",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 584,
+  "name": "ScrCmd_GetPartyMonTypes",
+  "src": "arm9\\src\\scrcmd_party.c:357",
+  "args": [
+   "vp",
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 585,
+  "name": "ScrCmd_GiveWallpaper",
+  "src": "arm9\\src\\scrcmd.c:3958",
+  "args": [
+   "vp",
+   "v",
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 586,
+  "name": "ScrCmd_Unk024A",
+  "src": "arm9\\src\\scrcmd.c:3983",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 587,
+  "name": "ScrCmd_Unk024B",
+  "src": "arm9\\src\\scrcmd.c:3991",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 588,
+  "name": "ScrCmd_Unk024C",
+  "src": "arm9\\src\\scrcmd.c:3998",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 589,
+  "name": "ScrCmd_Unk024D",
+  "src": "arm9\\src\\scrcmd.c:4005",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 590,
+  "name": "ScrCmd_Unk024E",
+  "src": "arm9\\asm\\scrcmd_5.s:12",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 591,
+  "name": "ScrCmd_Unk024F",
+  "src": "arm9\\asm\\scrcmd_5.s:35",
+  "args": [
+   "h",
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm",
+   "branch",
+   "ptrwrite?"
+  ]
+ },
+ {
+  "op": 592,
+  "name": "ScrCmd_Unk0250",
+  "src": "arm9\\asm\\scrcmd_5.s:216",
+  "args": [],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 593,
+  "name": "ScrCmd_Unk0251",
+  "src": "arm9\\src\\scrcmd_names.c:169",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 594,
+  "name": "ScrCmd_CountPCFreeSpace",
+  "src": "arm9\\src\\scrcmd.c:4021",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 595,
+  "name": "ScrCmd_Unk0253",
+  "src": "arm9\\src\\scrcmd_13.c:24",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 596,
+  "name": "ScrCmd_Unk0254",
+  "src": "arm9\\src\\scrcmd_13.c:42",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 597,
+  "name": "ScrCmd_Unk0255",
+  "src": "arm9\\src\\scrcmd_13.c:60",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 598,
+  "name": "ScrCmd_Unk0256",
+  "src": "arm9\\src\\scrcmd_13.c:84",
+  "args": [
+   "v",
+   "h"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 599,
+  "name": "ScrCmd_AccessoriesShop",
+  "src": "arm9\\src\\scrcmd_mart.c:439",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 600,
+  "name": "ScrCmd_Unk0258",
+  "src": "arm9\\src\\scrcmd.c:4028",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 601,
+  "name": "ScrCmd_Unk0259",
+  "src": "arm9\\src\\scrcmd.c:4035",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 602,
+  "name": "ScrCmd_Unk025A",
+  "src": "arm9\\src\\scrcmd.c:4041",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 603,
+  "name": "ScrCmd_Unk025B",
+  "src": "arm9\\src\\scrcmd.c:4047",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 604,
+  "name": "ScrCmd_Unk025C",
+  "src": "arm9\\src\\scrcmd.c:4052",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 605,
+  "name": "ScrCmd_Unk025D",
+  "src": "arm9\\src\\scrcmd.c:4057",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 606,
+  "name": "ScrCmd_Unk025E",
+  "src": "arm9\\src\\scrcmd.c:4067",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 607,
+  "name": "ScrCmd_Unk025F",
+  "src": "arm9\\src\\scrcmd.c:4072",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 608,
+  "name": "ScrCmd_AddSpecialGameStat",
+  "src": "arm9\\src\\scrcmd.c:4077",
+  "args": [
+   "h"
+  ],
+  "flags": []
+ },
+ {
+  "op": 609,
+  "name": "ScrCmd_GetFashionName",
+  "src": "arm9\\src\\scrcmd_names.c:361",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 610,
+  "name": "ScrCmd_CheckPokemonInParty",
+  "src": "arm9\\src\\scrcmd.c:4083",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 611,
+  "name": "ScrCmd_SetDeoxysForm",
+  "src": "arm9\\src\\scrcmd.c:4090",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 612,
+  "name": "ScrCmd_CheckBurmyForms",
+  "src": "arm9\\src\\scrcmd.c:4108",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 613,
+  "name": "ScrCmd_Unk0265",
+  "src": "arm9\\src\\scrcmd.c:4233",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 614,
+  "name": "ScrCmd_Unk0266",
+  "src": "arm9\\src\\scrcmd.c:4238",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 615,
+  "name": "ScrCmd_SlotMachine",
+  "src": "arm9\\src\\scrcmd.c:4243",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 616,
+  "name": "ScrCmd_GetHour",
+  "src": "arm9\\src\\scrcmd.c:4249",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 617,
+  "name": "ScrCmd_ShakeEvent",
+  "src": "arm9\\src\\scrcmd.c:4255",
+  "args": [
+   "v",
+   "v",
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 618,
+  "name": "ScrCmd_BlinkEvent",
+  "src": "arm9\\src\\scrcmd.c:4267",
+  "args": [
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 619,
+  "name": "ScrCmd_CheckRegis",
+  "src": "arm9\\src\\scrcmd.c:4277",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 620,
+  "name": "ScrCmd_Unk026C",
+  "src": "arm9\\src\\scrcmd.c:4283",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 621,
+  "name": "ScrCmd_MessageUnown",
+  "src": "arm9\\src\\scrcmd.c:894",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "helper:ov05_021E2BD0",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 622,
+  "name": "ScrCmd_CheckGBACartridge",
+  "src": "arm9\\src\\scrcmd.c:4314",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 623,
+  "name": "ScrCmd_ResetSpiritombTalkCounter",
+  "src": "arm9\\src\\scrcmd.c:4320",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 624,
+  "name": "ScrCmd_Unk0270",
+  "src": "arm9\\src\\scrcmd.c:4325",
+  "args": [
+   "v",
+   "b"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 625,
+  "name": "ScrCmd_WriteWhiteRockInscription",
+  "src": "arm9\\src\\scrcmd.c:2431",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 626,
+  "name": "ScrCmd_GetWhiteRockInscription",
+  "src": "arm9\\src\\scrcmd_names.c:372",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 627,
+  "name": "ScrCmd_BufferContestBackgroundName",
+  "src": "arm9\\src\\scrcmd.c:4338",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 628,
+  "name": "ScrCmd_HasEnoughCoinsImmediate",
+  "src": "arm9\\src\\scrcmd_coins.c:81",
+  "args": [
+   "vp",
+   "w"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 629,
+  "name": "ScrCmd_Unk0275",
+  "src": "arm9\\src\\scrcmd.c:4346",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 630,
+  "name": "ScrCmd_CanGiveCoins",
+  "src": "arm9\\src\\scrcmd_coins.c:123",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 631,
+  "name": "ScrCmd_Unk0277",
+  "src": "arm9\\src\\scrcmd.c:4357",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 632,
+  "name": "ScrCmd_GetPartyMonLevel",
+  "src": "arm9\\src\\scrcmd_party.c:198",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 633,
+  "name": "ScrCmd_Unk0279",
+  "src": "arm9\\src\\scrcmd.c:4363",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 634,
+  "name": "ScrCmd_UseSunyshoreBinoculars",
+  "src": "arm9\\src\\scrcmd.c:4370",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 635,
+  "name": "ScrCmd_Unk027B",
+  "src": "arm9\\src\\scrcmd.c:4375",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 636,
+  "name": "ScrCmd_Unk027C",
+  "src": "arm9\\asm\\scrcmd_9.s:387",
+  "args": [
+   "h",
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm",
+   "branch"
+  ]
+ },
+ {
+  "op": 637,
+  "name": "ScrCmd_BufferRandomTrendySaying",
+  "src": "arm9\\src\\scrcmd.c:4380",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 638,
+  "name": "ScrCmd_Unk027E",
+  "src": "arm9\\src\\scrcmd.c:4400",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 639,
+  "name": "ScrCmd_Unk027F",
+  "src": "arm9\\src\\scrcmd.c:4394",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 640,
+  "name": "ScrCmd_Unk0280",
+  "src": "arm9\\src\\scrcmd_names.c:139",
+  "args": [
+   "b",
+   "v",
+   "b",
+   "b"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 641,
+  "name": "ScrCmd_GetPartyMonContestCondition",
+  "src": "arm9\\src\\scrcmd_party.c:337",
+  "args": [
+   "v",
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 642,
+  "name": "ScrCmd_CheckBirthday",
+  "src": "arm9\\src\\scrcmd.c:4407",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 643,
+  "name": "ScrCmd_SetVolume",
+  "src": "arm9\\src\\scrcmd_sound.c:238",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 644,
+  "name": "ScrCmd_CountSeenUnown",
+  "src": "arm9\\src\\scrcmd.c:4419",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 645,
+  "name": "ScrCmd_Unk0285",
+  "src": "arm9\\src\\scrcmd.c:4426",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 646,
+  "name": "ScrCmd_Unk0286",
+  "src": "arm9\\src\\scrcmd.c:4471",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 647,
+  "name": "ScrCmd_Unk0287",
+  "src": "arm9\\src\\scrcmd.c:4478",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 648,
+  "name": "ScrCmd_Unk0288",
+  "src": "arm9\\src\\scrcmd.c:4485",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 649,
+  "name": "ScrCmd_Unk0289",
+  "src": "arm9\\src\\scrcmd.c:4492",
+  "args": [
+   "vp",
+   "b",
+   "b"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 650,
+  "name": "ScrCmd_Unk028A",
+  "src": "arm9\\src\\scrcmd.c:4514",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 651,
+  "name": "ScrCmd_CheckEventValidity",
+  "src": "arm9\\src\\scrcmd.c:4524",
+  "args": [
+   "b",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 652,
+  "name": "ScrCmd_ShowPartyPokemonPic",
+  "src": "arm9\\src\\scrcmd.c:2122",
+  "args": [
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 653,
+  "name": "ScrCmd_Unk028D",
+  "src": "arm9\\src\\scrcmd.c:2139",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 654,
+  "name": "ScrCmd_Unk028E",
+  "src": "arm9\\src\\scrcmd.c:2145",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 655,
+  "name": "ScrCmd_Unk028F",
+  "src": "arm9\\src\\scrcmd.c:4533",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 656,
+  "name": "ScrCmd_Unk0290",
+  "src": "arm9\\src\\scrcmd.c:4554",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 657,
+  "name": "ScrCmd_Unk0291",
+  "src": "arm9\\src\\scrcmd.c:4562",
+  "args": [
+   "vp",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 658,
+  "name": "ScrCmd_Unk0292",
+  "src": "arm9\\src\\scrcmd.c:4578",
+  "args": [
+   "b",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 659,
+  "name": "ScrCmd_Unk0293",
+  "src": "arm9\\src\\scrcmd.c:4610",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 660,
+  "name": "ScrCmd_Unk0294",
+  "src": "arm9\\asm\\scrcmd_10.s:795",
+  "args": [],
+  "flags": [
+   "asm",
+   "ptrwrite?"
+  ]
+ },
+ {
+  "op": 661,
+  "name": "ScrCmd_Unk0295",
+  "src": "arm9\\asm\\scrcmd_10.s:820",
+  "args": [],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 662,
+  "name": "ScrCmd_Unk0296",
+  "src": "arm9\\asm\\scrcmd_10.s:833",
+  "args": [],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 663,
+  "name": "ScrCmd_Unk0297",
+  "src": "arm9\\asm\\scrcmd_10.s:850",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 664,
+  "name": "ScrCmd_Unk0298",
+  "src": "arm9\\asm\\scrcmd_10.s:873",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 665,
+  "name": "ScrCmd_Unk0299",
+  "src": "arm9\\asm\\scrcmd_10.s:896",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 666,
+  "name": "ScrCmd_Unk029A",
+  "src": "arm9\\asm\\scrcmd_10.s:919",
+  "args": [
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm",
+   "branch"
+  ]
+ },
+ {
+  "op": 667,
+  "name": "ScrCmd_Unk029B",
+  "src": "arm9\\asm\\scrcmd_10.s:958",
+  "args": [
+   "h",
+   "h",
+   "h",
+   "h"
+  ],
+  "flags": [
+   "asm",
+   "branch"
+  ]
+ },
+ {
+  "op": 668,
+  "name": "ScrCmd_Unk029C",
+  "src": "arm9\\src\\scrcmd.c:3148",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 669,
+  "name": "ScrCmd_Unk029D",
+  "src": "arm9\\src\\scrcmd.c:1390",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 670,
+  "name": "ScrCmd_Unk029E",
+  "src": "arm9\\src\\scrcmd.c:4589",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 671,
+  "name": "ScrCmd_ShakeCamera",
+  "src": "arm9\\src\\scrcmd.c:4617",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 672,
+  "name": "ScrCmd_Unk02A0",
+  "src": "arm9\\src\\scrcmd_7.c:130",
+  "args": [
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 673,
+  "name": "ScrCmd_Unk02A1",
+  "src": "arm9\\src\\scrcmd.c:1524",
+  "args": [
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 674,
+  "name": "ScrCmd_Unk02A2",
+  "src": "arm9\\src\\scrcmd.c:4639",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 675,
+  "name": "ScrCmd_Unk02A3",
+  "src": "arm9\\src\\scrcmd.c:4627",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 676,
+  "name": "ScrCmd_Unk02A4",
+  "src": "arm9\\src\\scrcmd.c:4633",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 677,
+  "name": "ScrCmd_OpenTradeScreen",
+  "src": "arm9\\src\\scrcmd.c:1909",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 678,
+  "name": "ScrCmd_GetPrizeItemIdAndCost",
+  "src": "arm9\\src\\scrcmd_prizes.c:29",
+  "args": [
+   "v",
+   "vp",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 679,
+  "name": "ScrCmd_Unk02A7",
+  "src": "arm9\\src\\scrcmd.c:4649",
+  "args": [
+   "v",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 680,
+  "name": "ScrCmd_TakeCoinsAddress",
+  "src": "arm9\\src\\scrcmd_coins.c:71",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 681,
+  "name": "ScrCmd_HasEnoughCoinsAddress",
+  "src": "arm9\\src\\scrcmd_coins.c:102",
+  "args": [
+   "vp",
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 682,
+  "name": "ScrCmd_CompareMysteryGiftEasyChatInput",
+  "src": "arm9\\src\\scrcmd.c:4659",
+  "args": [
+   "vp",
+   "v",
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 683,
+  "name": "ScrCmd_Unk02AB",
+  "src": "arm9\\src\\scrcmd.c:1868",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 684,
+  "name": "ScrCmd_ActivateMysteryGift",
+  "src": "arm9\\src\\scrcmd.c:4681",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 685,
+  "name": "ScrCmd_GetEventMovement",
+  "src": "arm9\\src\\scrcmd.c:1850",
+  "args": [
+   "vp",
+   "v"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 686,
+  "name": "ScrCmd_Unk02AE",
+  "src": "arm9\\src\\scrcmd_sound.c:18",
+  "args": [
+   "h",
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 687,
+  "name": "ScrCmd_Unk02AF",
+  "src": "arm9\\src\\scrcmd.c:4686",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 688,
+  "name": "ScrCmd_Unk02B0",
+  "src": "arm9\\src\\scrcmd.c:4694",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 689,
+  "name": "ScrCmd_Unk02B1",
+  "src": "arm9\\src\\scrcmd.c:4699",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 690,
+  "name": "ScrCmd_Unk02B2",
+  "src": "arm9\\src\\scrcmd.c:4704",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 691,
+  "name": "ScrCmd_GetSealName",
+  "src": "arm9\\src\\scrcmd_names.c:415",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 692,
+  "name": "ScrCmd_LockAllEvents2",
+  "src": "arm9\\src\\scrcmd.c:1678",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 693,
+  "name": "ScrCmd_Unk02B5",
+  "src": "arm9\\src\\scrcmd.c:4709",
+  "args": [
+   "v",
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 694,
+  "name": "ScrCmd_Unk02B6",
+  "src": "arm9\\src\\scrcmd.c:4722",
+  "args": [
+   "v",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 695,
+  "name": "ScrCmd_CheckPartyForBadEgg",
+  "src": "arm9\\src\\scrcmd_party.c:719",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 696,
+  "name": "ScrCmd_Unk02B8",
+  "src": "arm9\\asm\\scrcmd_9.s:238",
+  "args": [
+   "h"
+  ],
+  "flags": [
+   "asm"
+  ]
+ },
+ {
+  "op": 697,
+  "name": "ScrCmd_Unk02B9",
+  "src": "arm9\\src\\scrcmd.c:1415",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 698,
+  "name": "ScrCmd_Unk02BA",
+  "src": "arm9\\src\\scrcmd.c:3019",
+  "args": [
+   "vp"
+  ],
+  "flags": [
+   "cond"
+  ]
+ },
+ {
+  "op": 699,
+  "name": "ScrCmd_Unk02BB",
+  "src": "arm9\\src\\scrcmd.c:3205",
+  "args": [],
+  "flags": [
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 700,
+  "name": "ScrCmd_Unk02BC",
+  "src": "arm9\\src\\scrcmd_7.c:246",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 701,
+  "name": "ScrCmd_LegendaryBattle",
+  "src": "arm9\\src\\scrcmd.c:2828",
+  "args": [
+   "v",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 702,
+  "name": "ScrCmd_GetTrainerCardLevel",
+  "src": "arm9\\src\\scrcmd.c:4731",
+  "args": [
+   "vp"
+  ],
+  "flags": []
+ },
+ {
+  "op": 703,
+  "name": "ScrCmd_DummyRideBike",
+  "src": "arm9\\src\\scrcmd.c:2617",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 704,
+  "name": "ScrCmd_Unk02C0",
+  "src": "arm9\\src\\scrcmd.c:929",
+  "args": [
+   "v"
+  ],
+  "flags": [
+   "helper:ov05_021E2BD0",
+   "helper:SetupNativeScript"
+  ]
+ },
+ {
+  "op": 705,
+  "name": "ScrCmd_ShowSaveStats",
+  "src": "arm9\\src\\scrcmd.c:4738",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 706,
+  "name": "ScrCmd_HideSaveStats",
+  "src": "arm9\\src\\scrcmd.c:4748",
+  "args": [],
+  "flags": []
+ },
+ {
+  "op": 707,
+  "name": "ScrCmd_ScopeMode",
+  "src": "arm9\\src\\scrcmd.c:4758",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 708,
+  "name": "ScrCmd_GetItemNameWithIndefArticle",
+  "src": "arm9\\src\\scrcmd_names.c:426",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 709,
+  "name": "ScrCmd_GetItemNamePlural",
+  "src": "arm9\\src\\scrcmd_names.c:437",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 710,
+  "name": "ScrCmd_GetDecorationNameWithArticle",
+  "src": "arm9\\src\\scrcmd_names.c:448",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 711,
+  "name": "ScrCmd_GetUndergroundTrapNameWithArticle",
+  "src": "arm9\\src\\scrcmd_names.c:459",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 712,
+  "name": "ScrCmd_GetUndergroundItemNameWithArticle",
+  "src": "arm9\\src\\scrcmd_names.c:470",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 713,
+  "name": "ScrCmd_Unk02C9",
+  "src": "arm9\\src\\scrcmd_names.c:481",
+  "args": [
+   "b",
+   "v",
+   "h",
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 714,
+  "name": "ScrCmd_Unk02CA",
+  "src": "arm9\\src\\scrcmd_names.c:494",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 715,
+  "name": "ScrCmd_GetFashionNameWithArticle",
+  "src": "arm9\\src\\scrcmd_names.c:506",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 716,
+  "name": "ScrCmd_Unk02CC",
+  "src": "arm9\\src\\scrcmd_names.c:517",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 717,
+  "name": "ScrCmd_GetSealNamePlural",
+  "src": "arm9\\src\\scrcmd_names.c:528",
+  "args": [
+   "b",
+   "v"
+  ],
+  "flags": []
+ },
+ {
+  "op": 718,
+  "name": "ScrCmd_CapitalizeFirstChar",
+  "src": "arm9\\src\\scrcmd_names.c:539",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 719,
+  "name": "ScrCmd_Unk02CF",
+  "src": "arm9\\src\\scrcmd.c:1497",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ },
+ {
+  "op": 720,
+  "name": "ScrCmd_Unk02D0",
+  "src": "arm9\\src\\scrcmd.c:1503",
+  "args": [
+   "b"
+  ],
+  "flags": []
+ }
+]

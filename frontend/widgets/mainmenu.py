@@ -24,13 +24,14 @@ from frontend.widgets.connectionstatus import ObjectConnectionStatusCircle
 from frontend.widgets.connectionstatus import ValueConnectionStatusCircle
 from frontend.widgets.trainerbox import TrainerBox
 from frontend.widgets.toast import show_toast, show_pending_toast
-from backend import pokedecoder
 from backend.classes.obs import OBS
+from backend.rando_sync import apply_rando_to_munchlax, local_player_slots
 from backend.controller.connection_controller import ConnectionController
 from backend.controller.randomizer_controller import RandomizerController
 from backend.controller.settings_controller import SettingsController
 import frontend.UIFactory as UI
 from backend.logging_setup import get_logger
+from backend.player_colors import PLAYER_COLORS
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
@@ -220,7 +221,7 @@ class CrashReportPopup(Popup):
         # oder Prozess-Kill waehrend offenem Popup den Re-Popup-Bug nicht
         # triggert. Zusaetzlich entkoppelt es den Bundle-Worker vom
         # Dismiss-Timing (os.replace waehrend zipfile liest = Windows-Fehler).
-        self._archived_path = self._archive_log(crash_log_path)
+        self._archived_path = CrashReportPopup._archive_log(crash_log_path)
         display_path = self._archived_path or os.path.abspath(crash_log_path)
 
         # Session-Pfad entscheidet, ob der Bundle-Button nutzbar ist.
@@ -252,8 +253,14 @@ class CrashReportPopup(Popup):
     def _on_close(self, _instance):
         self.dismiss()
 
-    def _archive_log(self, path: str) -> str | None:
+    @staticmethod
+    def _archive_log(path: str) -> str | None:
         """Verschiebt crash_report.log → crash_report_<ts>_<hex>.log.
+
+        ``@staticmethod``, damit die MD-Variante (`crash_popup_md.py`) die
+        exakt gleiche, 8-Runden-reviewte Archivierung ohne Popup-Instanz
+        wiederverwenden kann. Nutzt nur ``path`` (und die statische
+        ``_prune_old_archives``), kein Instanz-State.
 
         Returns den archivierten Pfad oder None, wenn Datei bereits weg war
         oder weder Rename noch Copy funktioniert haben. WICHTIG: Truncate
@@ -304,7 +311,7 @@ class CrashReportPopup(Popup):
                 # auch wenn Prune oder Marker-Loeschen scheitert.
                 try:
                     _remove_ack_marker(abs_path)
-                    self._prune_old_archives(base_dir, exclude=archived)
+                    CrashReportPopup._prune_old_archives(base_dir, exclude=archived)
                 except Exception as post_err:
                     logger.warning(f"Post-Rename-Nachbereitung fehlgeschlagen: {post_err}")
                     logger.warning(traceback.format_exc())
@@ -341,7 +348,7 @@ class CrashReportPopup(Popup):
                 )
                 # Kein Marker: unklarer Zustand → Popup soll beim naechsten
                 # Start erneut erscheinen und sauber archivieren.
-                self._prune_old_archives(base_dir, exclude=archived)
+                CrashReportPopup._prune_old_archives(base_dir, exclude=archived)
                 return archived
 
             # Flag + captured_stat unterscheiden drei Faelle:
@@ -366,7 +373,7 @@ class CrashReportPopup(Popup):
                         # Original hat Zuwachs → KEIN Marker. Popup
                         # erscheint beim naechsten Start erneut und
                         # archiviert vollstaendig.
-                        self._prune_old_archives(base_dir, exclude=archived)
+                        CrashReportPopup._prune_old_archives(base_dir, exclude=archived)
                         return archived
                     size_check_passed = True
                     captured_mtime_ns = st.st_mtime_ns
@@ -393,7 +400,7 @@ class CrashReportPopup(Popup):
                         # Sonst: Datei groesser → neuer Content, kein Marker.
                     except OSError as fb_err:
                         logger.warning(f"Fallback-Stat fehlgeschlagen: {fb_err}")
-            self._prune_old_archives(base_dir, exclude=archived)
+            CrashReportPopup._prune_old_archives(base_dir, exclude=archived)
             return archived
         except Exception as err:
             logger.error(f"_archive_log unerwarteter Fehler: {err}")
@@ -873,15 +880,13 @@ class MainMenu(Screen):
         )
         box.bind(minimum_width=box.setter("width"))  # type: ignore
 
-        color_lut = {1: "1a4d9a7f", 2: "9a671a7f", 3: "9a9a1a7f", 4: "1a9a1a7f"}
-
         for player in range(1, self.pl["player_count"] + 1):
             trainer = TrainerBox(
                 player,
                 self.munchlax,
                 self.obs_websocket,
                 self,
-                color_lut[player],
+                PLAYER_COLORS[player],
                 orientation="vertical",
                 size_hint=(None, 1),
                 size=("140dp", 0),
@@ -1428,78 +1433,17 @@ class MainMenu(Screen):
 
     def _sync_rando_to_munchlax(self):
         """Nach erfolgreicher Randomisierung die TM/HM-Zuordnung in Munchlax
-        schreiben und an den Server pushen. Jedes lokale Player-Slot bekommt
-        denselben rando_data-Snapshot (gleiche Settings → gleiche Seeds →
-        selbe TM-Zuordnung pro ROM). Phänomen 3 (Logs 2026-09-30): ohne
-        diesen Push wusste das Overlay anderer Hosts die TM-Mappings dieses
-        Clients nicht und zeigte Vanilla-Icons.
-
-        Kein is_connected-Guard — send_rando_moves_sync queued den Payload
-        intern in _pending_rando_moves wenn offline und flusht beim nächsten
-        Connect. Guard würde den Offline-Puffer umgehen (R1 KRITISCH sync).
-        """
-        rando_data = self.randomizer.get_log_data()
-        local_slots = self._local_player_slots()
-        if rando_data:
-            tm_moves = rando_data.tm_moves or {}
-            hm_moves = rando_data.hm_moves or {}
-            for slot in local_slots:
-                self.munchlax.rando_tm_moves[slot] = dict(tm_moves)
-                self.munchlax.rando_hm_moves[slot] = dict(hm_moves)
-                self._schedule_rando_sync(slot, tm_moves, hm_moves)
-            self._sync_rando_abilities(rando_data)
-            logger.info(
-                f"_sync_rando_to_munchlax: slots={local_slots}, "
-                f"tms={len(tm_moves)}, hms={len(hm_moves)}, "
-                f"connected={self.munchlax.is_connected}"
-            )
-        else:
-            for slot in local_slots:
-                self.munchlax.rando_tm_moves.pop(slot, None)
-                self.munchlax.rando_hm_moves.pop(slot, None)
-                self._schedule_rando_sync(slot, {}, {})
-            pokedecoder.set_gen3_abilities(None)
-            logger.info(
-                f"_sync_rando_to_munchlax: keine rando_data, slots geleert={local_slots}"
-            )
-
-    def _schedule_rando_sync(self, slot: int,
-                              tm_moves: dict, hm_moves: dict) -> None:
-        """Munchlax auf eigenem Thread seit Phase 3 → cross-thread dispatch.
-        `dispatch_cross_thread` haelt das Future ueber `submit_coro_logged`
-        selbst stark (Thread-interne queue), die alte Strong-Ref in
-        `self.connectors` ist nicht mehr noetig.
-        """
-        self.munchlax.dispatch_cross_thread(
-            self.munchlax.send_rando_moves_sync(slot, tm_moves, hm_moves),
-            name="send_rando_moves_sync",
-        )
+        schreiben und an den Server pushen (Delegation an
+        ``backend.rando_sync.apply_rando_to_munchlax`` — gemeinsame Quelle mit
+        der KivyMD-UI, kein Code-Duplikat). Externer Caller:
+        settingsmenu.py."""
+        apply_rando_to_munchlax(self.munchlax, self.randomizer, self.pl, logger)
 
     def _local_player_slots(self) -> list[int]:
-        """Spiegelt randomizer_controller._local_player_slots — lokale
-        Player-Slot-Indizes (1..player_count exkl. remote_i=True)."""
-        try:
-            count = int(self.pl.get('player_count', 1) or 1)
-        except (TypeError, ValueError):
-            count = 1
-        slots: list[int] = []
-        for slot in range(1, count + 1):
-            if self.pl.get(f'remote_{slot}', False):
-                continue
-            slots.append(slot)
-        return slots or [1]
-
-    def _sync_rando_abilities(self, rando_data):
-        lut: dict[int, list[int]] = {}
-        for dexnr, poke in rando_data.pokemon.items():
-            ids = []
-            for name in poke.abilities:
-                aid = pokedecoder.resolve_ability_name(name)
-                if aid is not None:
-                    ids.append(aid)
-            if ids:
-                lut[dexnr] = ids
-        pokedecoder.set_gen3_abilities(lut if lut else None)
+        """Lokale Spieler-Slots (1..player_count exkl. remote_i=True), Delegation
+        an backend.rando_sync.local_player_slots. Externe Caller: bagmenu.py /
+        bagmenumd.py (getattr(main_menu, "_local_player_slots", ...))."""
+        return local_player_slots(self.pl, logger)
 
     def toggle_server_client(self, instance, button, initializing=False):
         if instance.state == "down":

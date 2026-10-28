@@ -114,6 +114,12 @@ class Arceus:
         # ALLER Spieler kennen (sonst zeigt Browser-Source Vanilla-TM-Icons
         # fuer Remote-Spieler).
         self.rando_moves: dict[int, dict] = {}
+        # Live-Spielerpositionen pro player_id (Kartenfeature, Phase 2b):
+        # {pid: {x, y, map_section, map_layout, edition, ...}}. Vom ownenden
+        # Client via position_sync gepusht, an andere Clients gebroadcastet,
+        # beim Connect eines neuen Clients nachgeliefert. Im Gegensatz zu
+        # rando_moves ist das LIVE-State und wird bei Session-Reset geleert.
+        self.positions: dict[int, dict] = {}
         # Soullink-State (rein server-authoritativ, keine DB-Persistenz auf Server-Seite).
         # Config wird vom Host-Client per "soullink_config" gesetzt und beim Connect
         # neuer Clients einmalig ausgeliefert.
@@ -662,6 +668,33 @@ class Arceus:
                             f"rando_moves_sync ohne gueltige player_id: {pid!r} "
                             f"(client={client_id})"
                         )
+                elif isinstance(data, dict) and data.get("type") == "position_sync":
+                    pid = data.get("player_id")
+                    pos = data.get("pos")
+                    if isinstance(pid, int) and isinstance(pos, dict):
+                        # Ownership-Check wie bei rando_moves_sync: nur der
+                        # Client, der pid beansprucht, darf dessen Position
+                        # pushen. Vereinigung aus declarierten und dynamischen
+                        # (Team-)Slots.
+                        owned_ids = (
+                            self.declared_player_ids_by_client.get(client_id, set())
+                            | self.client_player_ids.get(client_id, set())
+                        )
+                        if pid not in owned_ids:
+                            self.logger.warning(
+                                f"position_sync verworfen: client={client_id} "
+                                f"nicht owner von pid={pid} (owned={sorted(owned_ids)})"
+                            )
+                        else:
+                            self.positions[pid] = dict(pos)
+                            asyncio.create_task(
+                                self.broadcast_position_sync(client_id, pid)
+                            )
+                    else:
+                        self.logger.debug(
+                            f"position_sync ungueltig: pid={pid!r} "
+                            f"pos={type(pos).__name__} (client={client_id})"
+                        )
                 elif isinstance(data, dict) and data.get("type") == "log_bundle_chunk":
                     await self._handle_log_bundle_chunk(client_id, data, writer)
                 elif isinstance(data, dict) and data.get("type") == "log_bundle_response":
@@ -948,6 +981,16 @@ class Arceus:
                     "player_id": int(pid),
                     "tm_moves": moves.get("tm_moves", {}),
                     "hm_moves": moves.get("hm_moves", {}),
+                })
+
+            # Live-Positionen aller Spieler nachliefern (Kartenfeature) — ohne
+            # diese Zeile saehe ein spaeter Joiner die anderen Spieler erst bei
+            # deren naechster Bewegung auf der Karte.
+            for pid, pos in list(self.positions.items()):
+                await self.send_to_client(client_id, {
+                    "type": "position_sync",
+                    "player_id": int(pid),
+                    "pos": dict(pos),
                 })
         except Exception as exc:
             self.logger.error(f"update_all_clients Onboarding an {client_id} abgebrochen: {type(exc)},{exc}")
@@ -1338,6 +1381,10 @@ class Arceus:
         self.boxes = {}
         self.encounters = {}
         self.bags = {}
+        # Positionen sind Live-State (anders als rando_moves) → leeren. Die
+        # Clients pushen nach Reset bei der naechsten Bewegung neu, und der
+        # resume_ack-Flush schickt die aktuellen eigenen Positionen nach.
+        self.positions = {}
         # rando_moves bewusst NICHT clearen: die ROMs der Clients sind nach
         # Session-Reset immer noch randomisiert, aber die Clients pushen
         # das Mapping nicht erneut — Overlays wuerden sonst bis zum
@@ -2323,6 +2370,51 @@ class Arceus:
                     f"broadcast_rando_moves_sync an {client_id} failed: {type(exc)},{exc}"
                 )
 
+    async def broadcast_position_sync(self, sender_id, player_id: int):
+        """Verteilt die Live-Position eines Spielers an alle anderen Clients
+        (Kartenfeature). Der Sender hat die Daten bereits lokal, deshalb skip.
+        """
+        pos = self.positions.get(player_id)
+        if not pos:
+            return
+        message = {
+            "type": "position_sync",
+            "player_id": int(player_id),
+            "pos": dict(pos),
+        }
+        for client_id in list(self.munchlaxes.keys()):
+            if client_id == sender_id:
+                continue
+            try:
+                await self.send_to_client(client_id, message)
+            except Exception as exc:
+                self.logger.error(
+                    f"broadcast_position_sync an {client_id} failed: {type(exc)},{exc}"
+                )
+
+    async def _broadcast_position_clear(self, pids, sender_id):
+        """Teilt den verbleibenden Clients mit, dass die Positionen eines
+        getrennten Clients weg sind (Kartenfeature): leeres position_sync je
+        pid → map_section fehlt → Marker verschwindet. Nutzt den bestehenden
+        position_sync-Typ (kein neuer Message-Typ); das Capability-Gate greift
+        clientseitig beim Senden, der Server verteilt wie bei jedem
+        position_sync an alle Clients außer dem Sender."""
+        for pid in pids:
+            # Stale-Guard: hat ein schneller Reconnect die Position inzwischen
+            # neu gesetzt, den Clear NICHT senden — sonst überholt er die frische
+            # Position bei den anderen Clients und löscht sie fälschlich.
+            if self.positions.get(pid):
+                continue
+            message = {"type": "position_sync", "player_id": int(pid), "pos": {}}
+            for client_id in list(self.munchlaxes.keys()):
+                if client_id == sender_id:
+                    continue
+                try:
+                    await self.send_to_client(client_id, message)
+                except Exception as exc:
+                    self.logger.error(
+                        f"position_clear an {client_id} failed: {type(exc)},{exc}")
+
     async def disconnect_client(self, client_id,
                                  writer: asyncio.StreamWriter | None = None,
                                  reason: str = "unknown"):
@@ -2435,6 +2527,22 @@ class Arceus:
                 self.munchlax_heartbeats.pop(client_id, None)
                 self.heartbeat_counts.pop(client_id, None)
                 self.writer_locks.pop(client_id, None)
+                # Ghost-Positionen des getrennten Clients aus dem Cache nehmen
+                # (Kartenfeature), sonst repliziert update_all_clients sie als
+                # vermeintlich live an jeden spaeteren Joiner. Slots dieses
+                # Clients = declared ∪ dynamische Team-Slots — vor dem Poppen
+                # der beiden Maps auswerten.
+                departed_pids = (self.declared_player_ids_by_client.get(client_id, set())
+                                 | self.client_player_ids.get(client_id, set()))
+                for _pid in departed_pids:
+                    self.positions.pop(_pid, None)
+                if departed_pids:
+                    # Verbleibende Clients aktiv benachrichtigen, dass diese
+                    # Positionen weg sind (leeres position_sync → map_section
+                    # None → Marker verschwindet). Ohne das bliebe die letzte
+                    # Position als Geister-Marker auf deren Karte stehen.
+                    asyncio.create_task(
+                        self._broadcast_position_clear(list(departed_pids), client_id))
                 self.client_player_ids.pop(client_id, None)
                 self.declared_player_ids_by_client.pop(client_id, None)
                 self._client_sessions.pop(client_id, None)

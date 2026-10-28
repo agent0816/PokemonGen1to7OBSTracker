@@ -1,0 +1,727 @@
+# Hotspot-Daten Regionskarte Johto + Kanto (HGSS, Kartenfeature).
+# Key = MAPSEC = met_location (pret/pokeheartgold include/constants/map_sections.h;
+#   == PKHeX gen4/text_hgss_00000_de.txt-Index, z.B. 126 Neuborkia, 177 Route 29).
+# Bild johto_kanto.png (362x145) = echte In-Game HGSS-Pokegear-Karte Johto+Kanto
+#   (User-Screenshot Map_Kanto-Johto.png).
+# Geometrie: Pokegear-Tabelle sLocationSpecs (src/application/pokegear/map/
+#   pokegear_map.c: x/y/width/height in 8px-Tiles). Orte ohne eigenen Eintrag
+#   (Dungeons/Innenraeume) ueber map_headers.h worldMapX/worldMapY, die im selben
+#   Raster liegen, nur y um 2 versetzt (Glockenturm 7->9, Einheitstunnel 13->15).
+#   Pixel = x*8-7 / y*8-8 (Offset am Overlay gefittet + visuell geprueft) -> px_rects.
+# Labels = PKHeX gen4 DE. pokemon: Quellen laut pokeheartgold (gs_enc_data.json via
+#   wildEncounterBank; WildBattle/GiveMon/GiveEgg/ChooseStarter/NPCTradeExec in den
+#   Map-Scripts). Live-Position fuer HGSS steht noch aus (player x/y-Offsets).
+region: johto_kanto
+title: Johto + Kanto
+image: johto_kanto.png
+tile_px: 8
+x_offset: -7
+y_offset: -8
+entries:
+  15:
+    label: Pokémon Liga
+    pokemon: []
+    px_rects:
+    - [217, 56, 8, 8]
+    games: [44, 45]
+  55:
+    label: Park der Freunde
+    pokemon: []
+    px_rects:
+    - [289, 104, 8, 8]
+    games: [44, 45]
+  80:
+    label: Duellturm
+    pokemon: []
+    px_rects:
+    - [49, 64, 8, 8]
+    games: [44, 45]
+  112:
+    label: Kampfzone
+    pokemon: []
+    px_rects:
+    - [41, 56, 16, 16]
+    games: [44, 45]
+  113:
+    label: Kampffabrik
+    pokemon: []
+    px_rects:
+    - [49, 64, 8, 8]
+    games: [44, 45]
+  114:
+    label: Kampfpalais
+    pokemon: []
+    px_rects:
+    - [49, 64, 8, 8]
+    games: [44, 45]
+  115:
+    label: Kampfarkaden
+    pokemon: []
+    px_rects:
+    - [49, 64, 8, 8]
+    games: [44, 45]
+  116:
+    label: Kampfsaal
+    pokemon: []
+    px_rects:
+    - [49, 64, 8, 8]
+    games: [44, 45]
+  118:
+    label: Global. Terminal
+    pokemon: []
+    px_rects:
+    - [65, 88, 8, 8]
+    games: [44, 45]
+  121:
+    label: Raum von ROTOM
+    pokemon: []
+    px_rects:
+    - [313, 64, 8, 8]
+    games: [44, 45]
+  126:
+    label: Neuborkia
+    pokemon: [surf, fish, gift]
+    px_rects:
+    - [161, 104, 8, 8]
+    games: [44, 45]
+  127:
+    label: Rosalia City
+    pokemon: [surf, fish]
+    px_rects:
+    - [121, 104, 16, 8]
+    games: [44, 45]
+  128:
+    label: Viola City
+    pokemon: [surf, fish, gift, trade]
+    px_rects:
+    - [105, 64, 16, 16]
+    games: [44, 45]
+  129:
+    label: Azalea City
+    pokemon: []
+    px_rects:
+    - [89, 120, 8, 8]
+    games: [44, 45]
+  130:
+    label: Anemonia City
+    pokemon: [surf, fish, rock_smash, gift]
+    px_rects:
+    - [33, 88, 8, 16]
+    games: [44, 45]
+  131:
+    label: Dukatia City
+    pokemon: [gift, trade]
+    px_rects:
+    - [65, 88, 24, 16]
+    games: [44, 45]
+  132:
+    label: Oliviana City
+    pokemon: [surf, fish, trade]
+    px_rects:
+    - [57, 64, 16, 16]
+    games: [44, 45]
+  133:
+    label: Teak City
+    pokemon: [surf, fish]
+    px_rects:
+    - [81, 40, 16, 16]
+    games: [44, 45]
+  134:
+    label: Mahagonia City
+    pokemon: []
+    px_rects:
+    - [121, 48, 8, 8]
+    games: [44, 45]
+  135:
+    label: See des Zorns
+    pokemon: [surf, fish, static]
+    px_rects:
+    - [113, 16, 24, 16]
+    games: [44, 45]
+  136:
+    label: Ebenholz City
+    pokemon: [surf, fish, trade]
+    px_rects:
+    - [153, 40, 16, 16]
+    games: [44, 45]
+  137:
+    label: Silberberg
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [193, 72, 8, 8]
+    games: [44, 45]
+  138:
+    label: Alabastia
+    pokemon: [surf, fish, gift]
+    px_rects:
+    - [249, 96, 8, 8]
+    games: [44, 45]
+  139:
+    label: Vertania City
+    pokemon: [surf, fish]
+    px_rects:
+    - [241, 64, 16, 16]
+    games: [44, 45]
+  140:
+    label: Marmoria City
+    pokemon: [static, gift, trade]
+    px_rects:
+    - [249, 24, 16, 16]
+    games: [44, 45]
+  141:
+    label: Azuria City
+    pokemon: [surf, fish]
+    px_rects:
+    - [313, 32, 16, 16]
+    games: [44, 45]
+  142:
+    label: Lavandia
+    pokemon: []
+    px_rects:
+    - [345, 64, 8, 8]
+    games: [44, 45]
+  143:
+    label: Orania City
+    pokemon: [surf, fish, rock_smash]
+    px_rects:
+    - [313, 80, 16, 16]
+    games: [44, 45]
+  144:
+    label: Prismania City
+    pokemon: [surf, gift]
+    px_rects:
+    - [289, 64, 16, 16]
+    games: [44, 45]
+  145:
+    label: Fuchsania City
+    pokemon: [surf, fish]
+    px_rects:
+    - [289, 104, 16, 16]
+    games: [44, 45]
+  146:
+    label: Zinnoberinsel
+    pokemon: [surf, fish]
+    px_rects:
+    - [249, 128, 8, 8]
+    games: [44, 45]
+  147:
+    label: Indigo Plateau
+    pokemon: []
+    px_rects:
+    - [217, 56, 8, 8]
+    games: [44, 45]
+  148:
+    label: Saffronia City
+    pokemon: [gift, trade]
+    px_rects:
+    - [313, 56, 16, 16]
+    games: [44, 45]
+  149:
+    label: Route 1
+    pokemon: [land]
+    px_rects:
+    - [249, 80, 8, 16]
+    games: [44, 45]
+  150:
+    label: Route 2
+    pokemon: [land]
+    px_rects:
+    - [249, 56, 8, 8]
+    games: [44, 45]
+  151:
+    label: Route 3
+    pokemon: [land]
+    px_rects:
+    - [265, 32, 16, 8]
+    games: [44, 45]
+  152:
+    label: Route 4
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [289, 32, 24, 8]
+    games: [44, 45]
+  153:
+    label: Route 5
+    pokemon: [land]
+    px_rects:
+    - [313, 48, 8, 8]
+    games: [44, 45]
+  154:
+    label: Route 6
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [313, 72, 8, 8]
+    games: [44, 45]
+  155:
+    label: Route 7
+    pokemon: [land]
+    px_rects:
+    - [305, 64, 8, 8]
+    games: [44, 45]
+  156:
+    label: Route 8
+    pokemon: [land]
+    px_rects:
+    - [329, 64, 16, 8]
+    games: [44, 45]
+  157:
+    label: Route 9
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [329, 40, 16, 8]
+    games: [44, 45]
+  158:
+    label: Route 10
+    pokemon: [land, surf, fish, static]
+    px_rects:
+    - [345, 56, 8, 8]
+    games: [44, 45]
+  159:
+    label: Route 11
+    pokemon: [land, static]
+    px_rects:
+    - [337, 80, 8, 8]
+    games: [44, 45]
+  160:
+    label: Route 12
+    pokemon: [surf, fish, static]
+    px_rects:
+    - [345, 72, 8, 24]
+    games: [44, 45]
+  161:
+    label: Route 13
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [329, 96, 24, 8]
+    games: [44, 45]
+  162:
+    label: Route 14
+    pokemon: [land]
+    px_rects:
+    - [329, 104, 8, 16]
+    games: [44, 45]
+  163:
+    label: Route 15
+    pokemon: [land]
+    px_rects:
+    - [305, 112, 24, 8]
+    games: [44, 45]
+  164:
+    label: Route 16
+    pokemon: [land]
+    px_rects:
+    - [273, 72, 16, 8]
+    games: [44, 45]
+  165:
+    label: Route 17
+    pokemon: [land]
+    px_rects:
+    - [273, 80, 8, 32]
+    games: [44, 45]
+  166:
+    label: Route 18
+    pokemon: [land]
+    px_rects:
+    - [273, 112, 16, 8]
+    games: [44, 45]
+  167:
+    label: Route 19
+    pokemon: [surf, fish, rock_smash]
+    px_rects:
+    - [289, 120, 8, 16]
+    games: [44, 45]
+  168:
+    label: Route 20
+    pokemon: [surf, fish]
+    px_rects:
+    - [257, 128, 32, 8]
+    games: [44, 45]
+  169:
+    label: Route 21
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [249, 104, 8, 24]
+    games: [44, 45]
+  170:
+    label: Route 22
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [225, 72, 16, 8]
+    games: [44, 45]
+  172:
+    label: Route 24
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [321, 24, 8, 8]
+    games: [44, 45]
+  173:
+    label: Route 25
+    pokemon: [land, surf, fish, static]
+    px_rects:
+    - [321, 16, 32, 8]
+    games: [44, 45]
+  174:
+    label: Route 26
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [217, 80, 8, 32]
+    games: [44, 45]
+  175:
+    label: Route 27
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [169, 104, 48, 8]
+    games: [44, 45]
+  176:
+    label: Route 28
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [201, 72, 16, 8]
+    games: [44, 45]
+  177:
+    label: Route 29
+    pokemon: [land]
+    px_rects:
+    - [137, 104, 24, 8]
+    games: [44, 45]
+  178:
+    label: Route 30
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [129, 80, 8, 24]
+    games: [44, 45]
+  179:
+    label: Route 31
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [121, 72, 16, 8]
+    games: [44, 45]
+  180:
+    label: Route 32
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [105, 80, 8, 32]
+    games: [44, 45]
+  181:
+    label: Route 33
+    pokemon: [land]
+    px_rects:
+    - [105, 120, 8, 8]
+    games: [44, 45]
+  182:
+    label: Route 34
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [81, 104, 8, 24]
+    games: [44, 45]
+  183:
+    label: Route 35
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [81, 72, 8, 16]
+    games: [44, 45]
+  184:
+    label: Route 36
+    pokemon: [land, static]
+    px_rects:
+    - [81, 64, 24, 8]
+    games: [44, 45]
+  185:
+    label: Route 37
+    pokemon: [land]
+    px_rects:
+    - [89, 56, 8, 8]
+    games: [44, 45]
+  186:
+    label: Route 38
+    pokemon: [land]
+    px_rects:
+    - [65, 48, 16, 8]
+    games: [44, 45]
+  187:
+    label: Route 39
+    pokemon: [land]
+    px_rects:
+    - [57, 48, 8, 16]
+    games: [44, 45]
+  188:
+    label: Route 40
+    pokemon: [surf, fish]
+    px_rects:
+    - [49, 72, 8, 16]
+    games: [44, 45]
+  189:
+    label: Route 41
+    pokemon: [surf, fish]
+    px_rects:
+    - [41, 88, 16, 16]
+    games: [44, 45]
+  190:
+    label: Route 42
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [97, 48, 24, 8]
+    games: [44, 45]
+  191:
+    label: Route 43
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [121, 32, 8, 16]
+    games: [44, 45]
+  192:
+    label: Route 44
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [129, 48, 24, 8]
+    games: [44, 45]
+  193:
+    label: Route 45
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [153, 64, 8, 32]
+    games: [44, 45]
+  194:
+    label: Route 46
+    pokemon: [land]
+    px_rects:
+    - [145, 96, 8, 16]
+    games: [44, 45]
+  195:
+    label: Route 47
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [9, 96, 24, 16]
+    games: [44, 45]
+  196:
+    label: Route 48
+    pokemon: [land]
+    px_rects:
+    - [9, 88, 16, 8]
+    games: [44, 45]
+  197:
+    label: DIGDAs Höhle
+    pokemon: [land, trade]
+    px_rects:
+    - [249, 40, 8, 8]
+    - [329, 80, 8, 8]
+    games: [44, 45]
+  198:
+    label: Mondberg
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [281, 32, 8, 8]
+    games: [44, 45]
+  199:
+    label: Azuria-Höhle
+    pokemon: [land, surf, fish, rock_smash, static]
+    px_rects:
+    - [313, 32, 8, 8]
+    games: [44, 45]
+  200:
+    label: Felstunnel
+    pokemon: [land, rock_smash]
+    px_rects:
+    - [345, 40, 8, 8]
+    games: [44, 45]
+  201:
+    label: Kraftwerk
+    pokemon: [trade]
+    px_rects:
+    - [345, 48, 8, 8]
+    games: [44, 45]
+  202:
+    label: Safari-Zone
+    # keine eigene Karten-Zelle -> Route 48 (Safari-Tor)
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [9, 88, 16, 8]
+    games: [44, 45]
+  203:
+    label: Seeschauminseln
+    pokemon: [land, surf, fish, static]
+    px_rects:
+    - [273, 128, 8, 8]
+    games: [44, 45]
+  204:
+    label: KNOFENSA-Turm
+    pokemon: [land]
+    px_rects:
+    - [113, 64, 8, 8]
+    games: [44, 45]
+  205:
+    label: Glockenturm
+    pokemon: [land, static]
+    px_rects:
+    - [89, 40, 8, 8]
+    games: [44, 45]
+  206:
+    label: Turmruine
+    pokemon: [land, static]
+    px_rects:
+    - [81, 40, 8, 8]
+    games: [44, 45]
+  207:
+    label: Nationalpark
+    pokemon: [land]
+    px_rects:
+    - [73, 56, 16, 16]
+    games: [44, 45]
+  208:
+    label: Radioturm
+    pokemon: []
+    px_rects:
+    - [73, 88, 8, 8]
+    games: [44, 45]
+  209:
+    label: Alph-Ruinen
+    pokemon: [land, surf, fish, rock_smash]
+    px_rects:
+    - [97, 72, 8, 16]
+    games: [44, 45]
+  210:
+    label: Einheitstunnel
+    pokemon: [land, surf, fish, static]
+    px_rects:
+    - [105, 112, 8, 8]
+    games: [44, 45]
+  211:
+    label: FLEGMON-Brunnen
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [97, 120, 8, 8]
+    games: [44, 45]
+  212:
+    label: Leuchtturm
+    pokemon: []
+    px_rects:
+    - [65, 72, 8, 8]
+    games: [44, 45]
+  213:
+    label: Rocket-Versteck
+    pokemon: [static]
+    px_rects:
+    - [121, 48, 8, 8]
+    games: [44, 45]
+  214:
+    label: Steineichenwald
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [81, 120, 8, 8]
+    games: [44, 45]
+  215:
+    label: Dukatia-Passage
+    pokemon: []
+    px_rects:
+    - [73, 96, 8, 8]
+    games: [44, 45]
+  216:
+    label: Kesselberg
+    pokemon: [land, surf, fish, gift]
+    px_rects:
+    - [105, 48, 8, 8]
+    games: [44, 45]
+  217:
+    label: Eispfad
+    pokemon: [land]
+    px_rects:
+    - [161, 40, 8, 8]
+    games: [44, 45]
+  218:
+    label: Strudelinseln
+    pokemon: [land, surf, fish, static]
+    px_rects:
+    - [49, 96, 8, 8]
+    games: [44, 45]
+  219:
+    label: Silberberghöhle
+    pokemon: [land, surf, fish, static]
+    px_rects:
+    - [193, 72, 8, 8]
+    games: [44, 45]
+  220:
+    label: Dunkelhöhle
+    pokemon: [land, surf, fish, rock_smash]
+    px_rects:
+    - [129, 72, 8, 8]
+    - [145, 88, 8, 8]
+    - [153, 56, 8, 8]
+    games: [44, 45]
+  221:
+    label: Siegesstraße
+    pokemon: [land, rock_smash]
+    px_rects:
+    - [217, 64, 8, 16]
+    games: [44, 45]
+  222:
+    label: Drachenhöhle
+    pokemon: [surf, fish, gift]
+    px_rects:
+    - [153, 40, 8, 8]
+    games: [44, 45]
+  223:
+    label: Tohjo-Fälle
+    pokemon: [land, surf, fish]
+    px_rects:
+    - [177, 104, 8, 8]
+    games: [44, 45]
+  224:
+    label: Vertania-Wald
+    pokemon: [land]
+    px_rects:
+    - [249, 48, 8, 8]
+    games: [44, 45]
+  225:
+    label: Pokéathlonhallen
+    pokemon: []
+    px_rects:
+    - [73, 56, 8, 8]
+    - [81, 64, 8, 8]
+    games: [44, 45]
+  226:
+    label: M.S. Aqua
+    pokemon: []
+    px_rects:
+    - [185, 120, 24, 24]
+    games: [44, 45]
+  227:
+    label: Safari-Eingang
+    pokemon: []
+    px_rects:
+    - [9, 72, 16, 16]
+    games: [44, 45]
+  228:
+    label: Felsschlundhöhle
+    pokemon: [land, rock_smash]
+    px_rects:
+    - [25, 104, 8, 8]
+    games: [44, 45]
+  229:
+    label: Kampfzonenzugang
+    pokemon: []
+    px_rects:
+    - [49, 64, 8, 8]
+    games: [44, 45]
+  230:
+    label: Glockenklangpfad
+    pokemon: []
+    px_rects:
+    - [89, 40, 8, 8]
+    games: [44, 45]
+  231:
+    label: Sinjoh-Ruinen
+    pokemon: [gift]
+    px_rects:
+    - [145, 8, 24, 24]
+    games: [44, 45]
+  232:
+    label: Felsenherzturm
+    pokemon: [static]
+    px_rects:
+    - [9, 104, 8, 8]
+    games: [44, 45]
+  234:
+    label: Felsklippentor
+    pokemon: [surf, fish]
+    px_rects:
+    - [33, 88, 8, 8]
+    games: [44, 45]

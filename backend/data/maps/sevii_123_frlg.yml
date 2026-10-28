@@ -1,0 +1,120 @@
+# Hotspot-Daten Sevii-Teilkarte Eiland 1–3 (FRLG, Kartenfeature).
+# Key = MAPSEC (= live regionMapSectionId). Zellen aus pret/pokefirered
+#   src/data/region_map/region_map_layout_sevii_123.h (LAYER_MAP + LAYER_DUNGEON), selber
+#   Grid-Raum/Offset wie Kanto (Cursor-Origin 8,16; am Overlay aller Teilkarten bestaetigt).
+# Bild sevii_123.png (192x144) = echte In-Game FRBG-Sevii-Karte (User-Screenshot
+#   FRBG-Map_Sevii_Eilande_1–3.png). Das MapMenu wechselt automatisch auf diese
+#   Teilkarte, sobald die Live-map_section hier liegt.
+# Innenraeume ohne eigene Zelle auf Eltern-Zellen: Rocket-Lager=Fuenfinsel-Wiese,
+#   Trainerturm-Innen=Trainerturm, Tri-Eiland-Pfad=Eiland Drei, Tanibo-Schluessel=
+#   Sevault-Canyon, Gluttherme=Glühweg, die 7 Tanibo-Kammern=Tanibo-Kammer-Zelle.
+#   Prototyp-MAPSECs SEVII_ISLE_6-9/22-24 (keine echte Map) fehlen bewusst.
+# Labels = encounter_locations_gen3.yml, sonst PKHeX text_rsefrlg_00000_de.txt.
+# pokemon: Quellen laut pret/pokefirered (wild_encounters.json + Map-Scripts).
+region: sevii
+title: Sevii-Inseln Eiland 1–3
+image: sevii_123.png
+tile_px: 8
+x_offset: 8
+y_offset: 16
+entries:
+  143:
+    label: Eiland Eins
+    pokemon: [surf, fish]
+    id: MAPSEC_ONE_ISLAND
+    cells:
+    - [1, 8]
+    games: [34, 35]
+  144:
+    label: Eiland Zwei
+    pokemon: []
+    id: MAPSEC_TWO_ISLAND
+    cells:
+    - [9, 9]
+    games: [34, 35]
+  145:
+    label: Eiland Drei
+    pokemon: []
+    id: MAPSEC_THREE_ISLAND
+    cells:
+    - [18, 12]
+    games: [34, 35]
+  150:
+    label: Glühweg
+    pokemon: [land, surf, fish, rock_smash]
+    id: MAPSEC_KINDLE_ROAD
+    cells:
+    - [2, 3]
+    - [2, 4]
+    - [2, 5]
+    - [2, 6]
+    - [2, 7]
+    - [2, 8]
+    games: [34, 35]
+  151:
+    label: Schatzgestade
+    pokemon: [land, surf, fish]
+    id: MAPSEC_TREASURE_BEACH
+    cells:
+    - [1, 9]
+    - [1, 10]
+    games: [34, 35]
+  152:
+    label: Kap Kante
+    pokemon: [land, surf, fish]
+    id: MAPSEC_CAPE_BRINK
+    cells:
+    - [9, 7]
+    - [9, 8]
+    games: [34, 35]
+  153:
+    label: Bundbrücke
+    pokemon: [land, surf, fish]
+    id: MAPSEC_BOND_BRIDGE
+    cells:
+    - [14, 12]
+    - [15, 12]
+    - [16, 12]
+    - [17, 12]
+    games: [34, 35]
+  154:
+    label: Tri-Eiland Hafen
+    pokemon: [land]
+    id: MAPSEC_THREE_ISLE_PORT
+    cells:
+    - [18, 13]
+    - [19, 13]
+    games: [34, 35]
+  175:
+    label: Glutberg
+    pokemon: [land, rock_smash, static]
+    id: MAPSEC_MT_EMBER
+    cells:
+    - [2, 3]
+    games: [34, 35]
+  176:
+    label: Beerenforst
+    pokemon: [land, surf, fish, static]
+    id: MAPSEC_BERRY_FOREST
+    cells:
+    - [14, 12]
+    games: [34, 35]
+  185:
+    label: Tri-Eiland-Pfad
+    pokemon: []
+    id: MAPSEC_THREE_ISLE_PATH
+    cells:
+    - [18, 12]
+    games: [34, 35]
+  195:
+    label: Gluttherme
+    pokemon: []
+    id: MAPSEC_EMBER_SPA
+    cells:
+    - [2, 3]
+    - [2, 4]
+    - [2, 5]
+    - [2, 6]
+    - [2, 7]
+    - [2, 8]
+    games: [34, 35]

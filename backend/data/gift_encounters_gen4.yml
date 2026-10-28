@@ -8,8 +8,9 @@
 # edition: [41=D, 42=P, 43=Pt, 44=HG, 45=SS] — wenn leer, gilt für alle DPPt/HGSS
 # condition: optionale Bedingung (event_transfer, post_game, national_dex)
 #
-# Map-Header-IDs aus NDS-Ironmon-Tracker LocationData.lua
-# HINWEIS: IDs noch nicht gegen BizHawk verifiziert — bei Fehlern bitte melden
+# Map-Header-IDs aus NDS-Ironmon-Tracker LocationData.lua; 2026-10-28 alle Keys
+# gegen mapid_section_gen4.yml (Decomp-Tabellen) geprueft, Evoli/Happiny-Ei/
+# Felsenherzturm korrigiert.
 
 # ============================================================
 # DPPt
@@ -29,9 +30,9 @@
     count: 1
     edition: [41, 42, 43]
 
-# Ewigenau — Eevee von Heidi
-# (Heidi/Bebe wohnt im Haus neben dem Pokémon Center)
-81:
+# Herzhofen — Evoli von Bebe (DP: MAP_HEARTHOME_BEBE_HOUSE, Pt:
+# HEARTHOME_CITY_NORTHWEST_HOUSE; beide map_id 115, per Decomp 2026-10-28)
+115:
   - type: gift
     name: Evoli
     count: 1
@@ -44,12 +45,13 @@
     count: 1
     edition: [41, 42, 43]
 
-# Trostu — Happiny-Ei (vom Wanderer)
-437:
+# Herzhofen — Happiny-Ei (nur DP; pokediamond-Skript 90, MAP_HEARTHOME = 86).
+# Platin hat kein Happiny-Ei (pokeplatinum-Skripte geprueft).
+86:
   - type: egg
     name: Happiny-Ei
     count: 1
-    edition: [41, 42, 43]
+    edition: [41, 42]
 
 # Ewigenau — Togepi-Ei von Cynthia (nur Platin)
 69:
@@ -86,24 +88,24 @@
     count: 1
     edition: [43]
 
-# Wahrheitsgrotte — Uxie
+# Wahrheitsgrotte — Vesprit (Roamer nach Interaktion)
 313:
   - type: static
-    name: Uxie
+    name: Vesprit
     count: 1
     edition: [41, 42, 43]
 
-# Kühnheitsgrotte — Azelf
+# Kühnheitsgrotte — Tobutz
 316:
   - type: static
-    name: Azelf
+    name: Tobutz
     count: 1
     edition: [41, 42, 43]
 
-# Stärkegrotte — Mesprit (Roamer nach Interaktion)
+# Stärkegrotte — Selfe
 319:
   - type: static
-    name: Mesprit
+    name: Selfe
     count: 1
     edition: [41, 42, 43]
 
@@ -227,10 +229,23 @@
     count: 1
     edition: [44, 45]
 
-# Felsenherzturm — Groudon (HG) / Kyogre (SS) / Rayquaza
-233:
+# Felsenherzturm — Groudon (HG) / Kyogre (SS) / Rayquaza; je Raum eine map_id
+# (pokeheartgold maps.h: MAP_EMBEDDED_TOWER_{GROUDON,KYOGRE,RAYQUAZA}_ROOM)
+524:
   - type: static
-    name: Groudon/Kyogre/Rayquaza
+    name: Groudon
+    count: 1
+    edition: [44]
+    condition: post_game
+525:
+  - type: static
+    name: Kyogre
+    count: 1
+    edition: [45]
+    condition: post_game
+526:
+  - type: static
+    name: Rayquaza
     count: 1
     edition: [44, 45]
     condition: post_game

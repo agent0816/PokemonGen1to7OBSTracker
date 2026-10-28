@@ -1,3 +1,4 @@
+# VERALTET — basiert auf 0x08CEC568 (encounter_zone_pointer), ersetzt durch zone_index_met_*.yml. Nur noch Fallback.
 # Runtime zone_id -> met_location_id Mapping für Pokemon ORAS
 # zone_id wird aus 0x08D0646C gelesen (u16, ändert sich bei Routenwechsel)
 # met_location_id = PKHeX text_xy_00000_de.txt Zeilenindex (0-basiert)

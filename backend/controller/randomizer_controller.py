@@ -12,7 +12,7 @@ class RandomizerController:
     def __init__(self, rnd: dict, pl: dict, configsave=None):
         self.rnd = rnd
         self.pl = pl
-        # configsave ist eine langlebige Referenz (MutableString aus frontend.app),
+        # configsave ist eine langlebige Referenz (MutableString aus frontend.app_core),
         # deren .text bei Session-Wechsel in-place mutiert wird. Nicht einfrieren
         # (`Path(configsave)` schlägt sonst mit TypeError fehl UND würde alte
         # Session-Pfade festhalten). Immer lazy in `_get_run_manager` auflösen.
@@ -44,19 +44,12 @@ class RandomizerController:
         return args, jar_dir, None
 
     def _local_player_slots(self) -> list[int]:
-        """Liest lokale Spieler-Slots aus pl: 1..player_count, exkl. remote_i=True."""
-        count = int(self.pl.get("player_count", 1) or 1)
-        slots: list[int] = []
-        for slot in range(1, count + 1):
-            if self.pl.get(f"remote_{slot}", False):
-                continue
-            slots.append(slot)
-        if not slots:
-            # Alle Slots remote → trotzdem mindestens Slot 1 vorsehen, damit ein
-            # ROM erzeugt wird (Host kann später verteilen).
-            self.logger.info("Alle player_count-Slots sind remote — nutze Slot 1 als Fallback")
-            slots = [1]
-        return slots
+        """Liest lokale Spieler-Slots aus pl: 1..player_count, exkl. remote_i=True.
+
+        Delegiert an ``backend.rando_sync.local_player_slots`` (gemeinsame Quelle
+        mit MainMenu/MD-UI, kein Duplikat)."""
+        from backend.rando_sync import local_player_slots
+        return local_player_slots(self.pl, self.logger)
 
     def _get_run_manager(self) -> RunManager | None:
         if self.configsave is None:

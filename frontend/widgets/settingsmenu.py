@@ -18,6 +18,7 @@ from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.togglebutton import ToggleButton
+from backend import app_state
 from backend.classes.obs import OBS
 from backend.classes.pokedex_db import PokedexDB
 from backend.controller.settings_controller import SettingsController
@@ -566,11 +567,48 @@ class ScrollSettings(ScrollView):
 
         box.add_widget(logging_box)
 
+        # Darstellung / UI-Modus (Phase F2) — Minimal-Ausweg aus der Klassik:
+        # ein Button, der auf die neue MD-Oberfläche umstellt. MD ist seit
+        # Phase F der Standard; diese Klassik-UI ist im Feature-Freeze. Damit
+        # niemand ohne TRACKER_UI-Env hier gefangen ist, reicht ein Umschalter
+        # auf app_state. Der Wechsel greift beim nächsten Start (main.py liest
+        # den Modus vor dem Kivy-Import) — kein Auto-Relaunch in der Klassik.
+        darstellung_box = BoxLayout(orientation='vertical', size_hint_y=None, spacing="10dp")
+        darstellung_box.bind(minimum_height=darstellung_box.setter('height'))
+        darstellung_box.add_widget(Label(text="Darstellung", size_hint=(1, None),
+                                         size=(0, "20dp"), font_size="20sp"))
+        self._ui_switch_hint = Label(
+            text="Du nutzt die klassische Oberfläche.",
+            size_hint=(1, None), size=(0, "30dp"), font_size="12sp")
+        darstellung_box.add_widget(self._ui_switch_hint)
+        ui_switch_row = BoxLayout(orientation='horizontal', size_hint_y=None,
+                                  size=(0, "30dp"), padding=("5dp", 0))
+        ui_switch_btn = Button(text="Zur neuen Oberfläche (MD) wechseln", size_hint=(1, 1),
+                               on_press=lambda inst: self._switch_to_md_ui())
+        ui_switch_row.add_widget(ui_switch_btn)
+        darstellung_box.add_widget(ui_switch_row)
+        box.add_widget(darstellung_box)
+
         self.add_widget(box)
 
         self.obs_2_pcs_setup(obs_sprites_checkbox, initializing=True)
 
         self.load_config()
+
+    def _switch_to_md_ui(self):
+        """UI-Präferenz auf MD stellen (Phase F2, Klassik-Ausweg).
+
+        Greift beim nächsten Start — main.py liest den Modus vor dem
+        Kivy-Import, ein Laufzeitwechsel ist nicht möglich.
+        """
+        try:
+            app_state.set_ui_preference(app_state.UI_MD)
+        except Exception as err:
+            logger.error(f"UI-Modus auf MD setzen fehlgeschlagen: {err}\n{traceback.format_exc()}")
+            self._ui_switch_hint.text = "Wechsel fehlgeschlagen — siehe Log."
+            return
+        self._ui_switch_hint.text = ("Umgestellt auf Material (MD). Beim nächsten "
+                                     "Start der App aktiv.")
 
     def _refresh_dev_module_log_levels(self):
         """Baut die per-Modul Log-Level-Zeilen unter der Dev-Sektion neu.
@@ -874,7 +912,7 @@ class ScrollSettings(ScrollView):
         if self.configsave is None:
             return None
         try:
-            # str() nötig: configsave ist MutableString (frontend.app), Path()
+            # str() nötig: configsave ist MutableString (frontend.app_core), Path()
             # akzeptiert das nicht direkt. Kein Caching — Session-Wechsel
             # mutiert configsave in-place.
             return RunManager(str(self.configsave))

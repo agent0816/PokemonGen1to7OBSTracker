@@ -10,6 +10,11 @@ _root_initialized = False
 # der GUI, alle bekannten Module aufzulisten und deren Level live umzustellen.
 # Wert: der zugehoerige RotatingFileHandler (fuer .setLevel-Live-Apply).
 _module_handlers: dict[str, RotatingFileHandler] = {}
+# Log-Dateien, die in diesem Prozess schon beim Start rotiert wurden. Mehrere
+# Module teilen sich eine Datei (z.B. logs/frontend.log) — ein spaeter (lazy)
+# importiertes Modul darf die Datei nicht erneut rotieren, waehrend andere
+# Handler sie offen halten (Windows: WinError 32 beim os.rename).
+_rolled_over_files: set[str] = set()
 
 LEVEL_MAP = {
     'DEBUG': logging.DEBUG,
@@ -70,12 +75,59 @@ def _module_key(logger_name: str) -> str:
     return logger_name.rsplit('.', 1)[-1]
 
 
+class _FastRotatingFileHandler(RotatingFileHandler):
+    """RotatingFileHandler ohne Dateisystem-Abfrage pro Log-Zeile.
+
+    Die Stdlib prüft in ``shouldRollover`` bei JEDEM Record per
+    ``os.path.exists`` + ``os.path.isfile``, ob die Logdatei eine reguläre
+    Datei ist (bpo-45401). Unter Windows kostete das in langsamen UI-Frames
+    16–55 % der Zeit (Perf-Messung 2026-10-28). Die Datei-Art ändert sich zur
+    Laufzeit nicht, daher wird sie hier einmal geprüft und gecacht; der
+    Größen-Check bleibt unverändert.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        self._regular_file: bool | None = None
+        super().__init__(*args, **kwargs)
+
+    def shouldRollover(self, record: logging.LogRecord) -> bool:
+        if self._regular_file is None:
+            self._regular_file = not (os.path.exists(self.baseFilename)
+                                      and not os.path.isfile(self.baseFilename))
+        # Nie etwas anderes als reguläre Dateien rotieren (z.B. /dev/null, NUL)
+        if not self._regular_file:
+            return False
+        if self.stream is None:  # delay war gesetzt
+            self.stream = self._open()
+        if self.maxBytes > 0:
+            msg = f"{self.format(record)}\n"
+            self.stream.seek(0, 2)  # Windows: nicht POSIX-konformes Append-Verhalten
+            if self.stream.tell() + len(msg) >= self.maxBytes:
+                return True
+        return False
+
+
 def _create_rotating_handler(log_file: str, max_bytes: int, backup_count: int,
                               formatter: logging.Formatter) -> RotatingFileHandler:
-    fh = RotatingFileHandler(log_file, mode='a', maxBytes=max_bytes,
-                              backupCount=backup_count, encoding='utf-8')
-    if os.path.exists(log_file) and os.path.getsize(log_file) > 0:
-        fh.doRollover()
+    fh = _FastRotatingFileHandler(log_file, mode='a', maxBytes=max_bytes,
+                                  backupCount=backup_count, encoding='utf-8')
+    log_key = os.path.normcase(os.path.abspath(log_file))
+    if log_key not in _rolled_over_files:
+        _rolled_over_files.add(log_key)
+        if os.path.exists(log_file) and os.path.getsize(log_file) > 0:
+            # Rollover ist best-effort: der os.rename kann prozessübergreifend
+            # fehlschlagen (Windows WinError 32 — Datei von einer anderen
+            # Instanz/einem anderen Prozess offen; auch Antivirus). Ein
+            # Logging-Setup-Fehler darf NIEMALS den Aufrufer crashen — der
+            # Handler wurde bereits im Append-Modus geöffnet, also einfach
+            # ohne frische Rotation weiterschreiben (zuvor propagierte die
+            # Exception bis in PokedexDB.__init__ und killte den Reload-Task).
+            try:
+                fh.doRollover()
+            except OSError as err:
+                sys.stderr.write(
+                    f"[logging_setup] Rollover für {log_file} übersprungen: {err}\n"
+                )
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(formatter)
     return fh

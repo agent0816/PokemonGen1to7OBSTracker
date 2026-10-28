@@ -84,7 +84,7 @@ Konfiguration liegt pro Session unter `backend/config/<session_name>/` mit acht 
 
 ### UI
 
-- [ ] UI-Rewrite fortsetzen (KivyMD-Migration)
+- [ ] KivyMD-Migration abschließen (Phasen A–F fertig, MD ist Standard-UI mit Toggle/Onboarding; offen: F5 Paritäts-Check + Nuitka-Build + Alpha, Phase G = Klassik entfernen)
 - [ ] OBS-Settings: Standard-Localhost-Preset auf eigenem Screen
 - [ ] OBS-Settings: WebSocket-Konfig pro Spieler
 - [ ] Anzeige "aktueller Spieler" (Kontext ROM)

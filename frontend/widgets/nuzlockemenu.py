@@ -22,6 +22,14 @@ from kivy.uix.textinput import TextInput
 from backend.logging_setup import get_logger
 from backend.snapshot_manager import SnapshotManager
 from backend.soullink_presets import load_presets, apply_preset, preset_choices
+from backend.nuzlocke_view import (
+    TEAM_LETTERS,
+    MODE_LABELS,
+    MODE_LABEL_TO_VALUE,
+    CUSTOM_PRESET_LABEL,
+    CUSTOM_PRESET_ID,
+    normalize_mode,
+)
 from frontend.widgets.timer_widget import TimerWidget
 from frontend.widgets.mainmenu import BizhawkSavePopup
 from frontend.widgets.toast import show_toast, show_pending_toast
@@ -29,22 +37,10 @@ from frontend.widgets.toast import show_toast, show_pending_toast
 logger = get_logger(__name__, './logs/nuzlockemenu.log')
 
 
-TEAM_LETTERS = ["A", "B", "C", "D"]
-
-# Backend erwartet die Roh-Keys ("nuzlocke"/"coop"/"versus"/"versus_ffa"/"disabled").
-# Im UI zeigen wir Klartext-Labels und übersetzen an den Grenzen.
-# "nuzlocke" = Regeln aktiv, kein Soullink (Default); "versus_ffa" = jeder gegen
-# jeden (kein Soullink, Scoreboard pro Spieler); "disabled" = Tracker ohne
-# Nuzlocke-Regeln (für normale Runs). Legacy-Wert "off" aus alten Configs/Peers
-# entspricht "nuzlocke" (Migration in initialize_tree).
-MODE_LABELS = {
-    "nuzlocke": "Nuzlocke",
-    "coop": "Coop",
-    "versus": "Versus (Teams)",
-    "versus_ffa": "Versus (jeder gegen jeden)",
-    "disabled": "Aus",
-}
-MODE_LABEL_TO_VALUE = {v: k for k, v in MODE_LABELS.items()}
+# MODE_LABELS / MODE_LABEL_TO_VALUE / TEAM_LETTERS / normalize_mode / CUSTOM_PRESET_*
+# liegen jetzt in backend/nuzlocke_view.py (geteilt mit der KivyMD-UI) und werden
+# oben importiert. RULE_CHECKBOXES bleibt hier lokal: das Klassik-Widget nutzt die
+# 3-Tupel-Form (key, label, default) mit eigenen Fallback-Defaults.
 
 # Alle Preset-relevanten Regeln als (key, label, default). Reihenfolge = UI-
 # Reihenfolge in der 2-Spalten-Grid. Defaults dienen als Fallback wenn nuz-
@@ -64,17 +60,6 @@ RULE_CHECKBOXES: list[tuple[str, str, bool]] = [
     ("rule_first_type_clause_static_exception", "Ersttyp: Static-Ausnahme",      False),
     ("rule_single_type_per_team",             "Ersttyp-Dupes im Party-Team ausblenden", False),
 ]
-
-CUSTOM_PRESET_LABEL = "(Custom)"
-CUSTOM_PRESET_ID = "__custom__"
-
-
-def normalize_mode(value) -> str:
-    """Übersetzt Legacy-/Leer-Werte auf den heutigen Modus-Schlüssel."""
-    if not value or value == "off":
-        return "nuzlocke"
-    return value if value in MODE_LABELS else "nuzlocke"
-
 
 class OwnerRow(BoxLayout):
     """Eine Zeile: Owner-String (TextInput) + optionale Team-Auswahl."""

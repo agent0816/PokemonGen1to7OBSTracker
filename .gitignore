@@ -5,11 +5,15 @@ logs/
 testserver.py
 testmain.py
 tmp/
+scratchpad/
 dist/
 build/
 *.spec
 specs/
 *.png
+# Repo-Assets (Typ-/Status-/Editions-Bilder) trotz globalem *.png versionieren,
+# damit der Nuitka-Build sie mit --include-data-dir einbetten kann.
+!backend/ressources/**
 pyu-data/
 client_config.py
 .pyupdater/
@@ -31,8 +35,8 @@ version.py
 release_to_github.ps1
 release_alpha_to_github.ps1
 tools/
-tests/
 backup-saves/
 support_bundles/
 backend/lua/verify_battletypeflags.lua
 backend/lua/verify_bf_*.log
+spikes/

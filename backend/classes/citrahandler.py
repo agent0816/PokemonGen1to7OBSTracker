@@ -48,6 +48,8 @@ class CitraHandler:
         self._last_battle_pv: int | None = None
         self._last_team_pvs: set[int] = set()
         self._zone_id_mappings: dict[int, int] = {}
+        # Zonen-Index (Zonedata-Recordnummer) -> met_location, volle Tabelle inkl. 0
+        self._zone_index_met: dict[int, int] = {}
         # Serialisiert add_rare_candies-Aufrufe gegen sich selbst — verhindert,
         # dass schnelle Doppelklicks den selben leeren Slot doppelt allokieren.
         self._bag_io_lock: asyncio.Lock = asyncio.Lock()
@@ -604,11 +606,41 @@ class CitraHandler:
 
     def _load_zone_mappings(self):
         self._zone_id_mappings = {}
+        self._zone_index_met = {}
         if self.edition in (61, 62):
             path = "backend/data/zone_id_mapping_xy.yml"
+            index_path = "backend/data/zone_index_met_xy.yml"
         elif self.edition in (63, 64):
             path = "backend/data/zone_id_mapping_oras.yml"
+            index_path = "backend/data/zone_index_met_oras.yml"
+        elif self.edition in (71, 72):
+            # Gen 7 hat keine veraltete zone_id-Mapping-Datei, nur die Index-Tabelle.
+            path = None
+            index_path = "backend/data/zone_index_met_sm.yml"
+        elif self.edition in (73, 74):
+            path = None
+            index_path = "backend/data/zone_index_met_usum.yml"
         else:
+            return
+        try:
+            with open(index_path) as f:
+                raw_idx = yaml.safe_load(f) or {}
+            for idx, met_loc in raw_idx.items():
+                try:
+                    if isinstance(met_loc, int):
+                        self._zone_index_met[int(idx)] = met_loc
+                except (TypeError, ValueError):
+                    # Einzelnen unbrauchbaren Key ueberspringen statt die ganze
+                    # Tabelle zu verlieren.
+                    self.logger.debug(f"Zonen-Index-Eintrag uebersprungen: {idx!r}")
+            self.logger.info(f"Zonen-Index-Tabelle geladen: {index_path} ({len(self._zone_index_met)} Einträge)")
+        except FileNotFoundError:
+            # Gen 7 hat keinen zone_id-Fallback — fehlende Tabelle = met immer 0. Warnen.
+            self.logger.warning(f"Zonen-Index-Tabelle nicht gefunden: {index_path} — met_location bleibt 0")
+        except Exception as err:
+            self.logger.warning(f"Zonen-Index-Tabelle laden fehlgeschlagen: {index_path}: {err}")
+            self.logger.warning(traceback.format_exc())
+        if not path:
             return
         try:
             with open(path) as f:
@@ -642,6 +674,45 @@ class CitraHandler:
         zone_bytes = self.citra_instance.read_memory(zone_ptr, 2)
         return int.from_bytes(zone_bytes, "little")
 
+    def _read_zone_index(self) -> int | None:
+        """Liest den Zonen-Index (u16, Zonedata-Recordnummer); None wenn nicht verfuegbar."""
+        idx_ptr = self.pointer.get("encounter_zone_index", 0)
+        if not idx_ptr:
+            return None
+        idx_bytes = self.citra_instance.read_memory(idx_ptr, 2)
+        if not idx_bytes or len(idx_bytes) < 2:
+            return None
+        idx = int.from_bytes(idx_bytes[:2], "little")
+        if idx == 0xFFFF:
+            return None
+        return idx
+
+    def _has_zone_index_pointer(self) -> bool:
+        return bool(self.pointer.get("encounter_zone_index", 0))
+
+    def _met_for_index(self, zone_idx: int | None, has_index_pointer: bool) -> int:
+        """met_location aus dem Zonen-Index.
+
+        Ohne Index-Pointer (Gen 7 / Altconfig) faellt die Logik auf den alten
+        zone_id-Weg zurueck. MIT Index-Pointer wird der als unzuverlaessig
+        dokumentierte Pointer (0x08CEC568) NICHT mehr konsultiert — ein
+        transienter 0xFFFF/None-Read liefert dann 0 statt einer falschen
+        met_location aus der veralteten zone_id-Tabelle.
+        """
+        if not has_index_pointer:
+            return self._zone_id_mappings.get(self._read_zone_id(), 0)
+        if zone_idx is None:
+            return 0
+        met = self._zone_index_met.get(zone_idx)
+        if met is None:
+            self.logger.debug(f"Zonen-Index {zone_idx} nicht in Tabelle, met_location unbekannt")
+            return 0
+        return met
+
+    def _current_met_location(self) -> int:
+        """met_location der aktuellen Zone (Index-Tabelle, Fallback alter zone_id-Weg)."""
+        return self._met_for_index(self._read_zone_index(), self._has_zone_index_pointer())
+
     async def _process_encounter_tick(self):
         in_wild = self._current_battle_kind == self.pointer["wild_value"]
         in_battle = in_wild or self._current_battle_kind == self.pointer["trainer_value"]
@@ -672,9 +743,9 @@ class CitraHandler:
                 return
 
             zone_id = self._read_zone_id()
-            route = opp["met_location"]
-            if route == 0:
-                route = self._zone_id_mappings.get(zone_id, 0)
+            has_idx_ptr = self._has_zone_index_pointer()
+            zone_idx = self._read_zone_index()
+            route = opp["met_location"] or self._met_for_index(zone_idx, has_idx_ptr)
 
             self._last_battle_pv = opp["personality"]
 
@@ -701,6 +772,8 @@ class CitraHandler:
                 self.logger.debug(f"Encounter bereits geloggt (PV={opp['personality']:#x})")
             else:
                 zone_info = f" zone_id=0x{zone_id:04X}" if zone_id else ""
+                if zone_idx is not None:
+                    zone_info += f" zone_idx={zone_idx}"
                 self.logger.info(
                     f"Encounter: route={route}{zone_info} dex={opp['dexnr']} "
                     f"lv={opp['lvl']} shiny={opp['shiny']} first={result.is_first} "
@@ -786,7 +859,15 @@ class CitraHandler:
         if not new_pvs or not self._ensure_encounter_tracker():
             return
 
-        zone_id = self._read_zone_id()
+        has_idx_ptr = self._has_zone_index_pointer()
+        zone_idx = self._read_zone_index()
+        # map_header_id = Zonen-Index. Nur ohne Index-Pointer (Gen 7/Altconfig)
+        # faellt es auf den alten zone_id-Weg zurueck; bei Gen 6 mit transientem
+        # 0xFFFF-Read KEIN Rueckfall (sonst Namespace-Mix in der route-Spalte).
+        if has_idx_ptr:
+            map_header_id = zone_idx if zone_idx is not None else 0
+        else:
+            map_header_id = self._read_zone_id()
 
         from backend.classes.pokedex_db import PokedexDB
         owner = PokedexDB.build_owner(
@@ -888,8 +969,8 @@ class CitraHandler:
                         dexnr=int(dexnr) if isinstance(dexnr, (int, str)) and str(dexnr).isdigit() else 0,
                         lvl=pokemon.lvl or 1,
                         shiny=bool(pokemon.shiny),
-                        route=getattr(pokemon, "route", 0) or 0,
-                        map_header_id=zone_id,
+                        route=getattr(pokemon, "route", 0) or self._met_for_index(zone_idx, has_idx_ptr),
+                        map_header_id=map_header_id,
                     ),
                 )
             except Exception as err:
@@ -899,7 +980,7 @@ class CitraHandler:
             if result and not result.already_logged:
                 self.logger.info(
                     f"Gift erkannt: dex={dexnr} lv={pokemon.lvl} "
-                    f"method={result.method} zone_id=0x{zone_id:04X}"
+                    f"method={result.method} zone_idx={zone_idx} map_header_id={map_header_id}"
                 )
                 self.munchlax.dispatch_cross_thread(
                     self.munchlax.send_encounter_sync({

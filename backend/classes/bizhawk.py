@@ -387,7 +387,7 @@ class Bizhawk:
                         # das Lesen ist also safe.
                         tick_phase = "map_header"
                         asyncio.create_task(
-                            self._refresh_map_header(client_id, edition)
+                            self._refresh_map_header(client_id, edition, player)
                         )
                         # Echo an Lua, sonst haengt socketServerResponse() —
                         # ohne Response kein frameadvance und BizHawk friert ein.
@@ -1044,12 +1044,13 @@ class Bizhawk:
         finally:
             self._bag_refresh_inflight[client_id] = False
 
-    async def _resolve_gen4_pointer_chain(self, queue, pointers, offset: int) -> int:
-        """Löst die Gen-4-Pointer-Chain auf (identisch zur Badge-Lesung in Lua).
+    async def _resolve_gen4_base2(self, queue, loop, pointers) -> int:
+        """Löst die Gen-4-Pointer-Chain bis ``base2`` auf (ohne finalen Read).
 
-        Schritte: badgepointer → read u32, mask 24bit → +0x20 → read u32, mask 24bit → +offset → read u16
+        Schritte: badgepointer → u32 & 24bit → +0x20 → u32 & 24bit = base2.
+        Einmal aufgelöst können mehrere Offsets (mapid, x, y) direkt ab ``base2``
+        gelesen werden, statt die Chain pro Feld erneut aufzulösen.
         """
-        loop = asyncio.get_event_loop()
         badge_ptr = pointers.get("badgepointer", 0)
 
         fut1 = loop.create_future()
@@ -1058,14 +1059,26 @@ class Bizhawk:
 
         fut2 = loop.create_future()
         queue.append(("boxw", base1 + 0x20, 4, fut2, ""))
-        base2 = int.from_bytes(await fut2, "little") & 0xFFFFFF
+        return int.from_bytes(await fut2, "little") & 0xFFFFFF
+
+    async def _resolve_gen4_pointer_chain(self, queue, pointers, offset: int) -> int:
+        """Löst die Gen-4-Pointer-Chain auf (identisch zur Badge-Lesung in Lua).
+
+        Schritte: badgepointer → read u32, mask 24bit → +0x20 → read u32, mask 24bit → +offset → read u16
+        """
+        loop = asyncio.get_event_loop()
+        base2 = await self._resolve_gen4_base2(queue, loop, pointers)
 
         fut3 = loop.create_future()
         queue.append(("boxw", base2 + offset, 2, fut3, ""))
         return int.from_bytes(await fut3, "little")
 
-    async def _refresh_map_header(self, client_id: str, edition: int):
-        """Liest periodisch die aktuelle Map-Header-ID für Gift-Erkennung."""
+    async def _refresh_map_header(self, client_id: str, edition: int,
+                                  player: int | None = None):
+        """Liest periodisch die aktuelle Map-Header-ID für Gift-Erkennung.
+
+        Spiegelt zusätzlich die Live-Spielerposition nach ``munchlax.positions``,
+        wenn ``player`` bekannt ist (Kartenfeature, aktuell nur Gen 3 FR/LG)."""
         try:
             language = self.language_per_client.get(client_id)
             pointers = bh_pointers.get_pointers(edition, language)
@@ -1083,13 +1096,48 @@ class Bizhawk:
                 if edition in (31, 32) and layout_id > 107:
                     layout_id -= 1
                 self._last_map_header[client_id] = layout_id
+                await self._refresh_player_position(
+                    client_id, edition, player, pointers, queue, loop, layout_id
+                )
                 return
 
             mapid_offset = pointers.get("mapidoffset", 0)
             if mapid_offset:
-                self._last_map_header[client_id] = await self._resolve_gen4_pointer_chain(
-                    queue, pointers, mapid_offset
+                # Gen 4 (NDS): map_id + Spielerposition liegen im selben
+                # base2-Chain-Block → base2 einmal auflösen, dann mehrere
+                # Offsets lesen (mapid, playerx/y). Vermeidet drei volle
+                # Chain-Auflösungen pro Tick.
+                base2 = await self._resolve_gen4_base2(queue, loop, pointers)
+                fut = loop.create_future()
+                queue.append(("boxw", base2 + mapid_offset, 2, fut, ""))
+                map_id = int.from_bytes(await fut, "little")
+                pos = await self._read_player_position_gen4(
+                    edition, player, pointers, queue, loop, base2, map_id
                 )
+                if pos is None:
+                    # Edition ohne Positions-Offsets (alle Gen 4 außer Platin)
+                    # oder kein Spieler bekannt → nur map_id für die Gift-
+                    # Erkennung spiegeln, ohne den teureren Torn-Guard (die
+                    # map_id allein ist für Gift-Erkennung tolerant genug).
+                    self._last_map_header[client_id] = map_id
+                    return
+                # Torn-State-Guard (nur wenn Position gelesen wurde): base2 ist
+                # ein dynamischer Heap-Pointer; bei Kartenwechsel/Ladebildschirm
+                # kann die Chain zwischen den über mehrere Frames verteilten
+                # Reads wandern → base2 würde dann Müll liefern (map_id UND
+                # Position). base2 erneut auflösen; bei Abweichung den ganzen
+                # Tick verwerfen, der nächste korrigiert.
+                base2_recheck = await self._resolve_gen4_base2(
+                    queue, loop, pointers
+                )
+                if base2_recheck != base2:
+                    self.logger.debug(
+                        f"Gen4 base2 instabil (client={client_id}): "
+                        f"{base2:#x} -> {base2_recheck:#x}, Tick verworfen"
+                    )
+                    return
+                self._last_map_header[client_id] = map_id
+                self._publish_position(player, pos, map_id)
                 return
 
             map_ptr = pointers.get("mapidpointer", 0)
@@ -1100,7 +1148,159 @@ class Bizhawk:
             map_bytes = await fut
             self._last_map_header[client_id] = int.from_bytes(map_bytes, "little")
         except Exception:
-            pass
+            # Fehler im Map-Header-/Positions-Refresh dürfen den Tick-Loop nicht
+            # killen, aber lautlos zu schlucken nahm dem Gen-4-Zweig jede
+            # Log-Spur für den log-analyse-Skill. Auf debug mit Traceback loggen.
+            self.logger.debug(
+                f"_refresh_map_header fehlgeschlagen (client={client_id}): "
+                f"{traceback.format_exc()}"
+            )
+
+    async def _refresh_player_position(self, client_id: str, edition: int,
+                                       player: int | None, pointers: dict,
+                                       queue: list, loop, map_layout: int):
+        """Liest die Live-Spielerposition + aktuelle Map-Bank/Num und spiegelt
+        sie nach ``munchlax.positions[player]`` (Kartenfeature).
+
+        Quelle x/y: FR/LG + Smaragd lesen gObjectEvents[0].currentCoords
+        (Offset +7); Rubin/Saphir lesen SaveBlock1.pos (statisch, kein DMA,
+        Offset 0 via ``playercoordoffset``). Place-ID: gMapHeader.region-
+        MapSectionId — alles statisches EWRAM (kein Deref, kein DMA). Aktiv für
+        Gen-3-Editionen mit ``playerxpointer`` in pointer_gen3.yml (FR/LG +
+        Smaragd + Rubin live verifiziert); sonst No-op. Eigene Slots werden bei
+        Aenderung zusaetzlich via ``Munchlax.send_position_sync`` an die anderen
+        Clients gebroadcastet (Phase 2b). ``map_section`` ist die uniforme
+        Place-ID; FR/LG liefern zusätzlich map_bank/num (Innenraum → Elternkarte).
+        Nur lokal bediente Spieler — Remote-Broadcast via Arceus ist offen.
+
+        Hinweis: layout_id, x/y und section/bank werden über mehrere Emulator-Frames
+        gelesen (getrennte Queue-Ticks). Bei einem Kartenwechsel kann für <=1 s
+        ein Mischzustand (neue Bank, alte x/y) publiziert werden; der nächste
+        Messzyklus korrigiert das. Für eine Regionskarte vernachlässigbar."""
+        try:
+            px_ptr = pointers.get("playerxpointer", 0)
+            map_hdr_ptr = pointers.get("mapheaderpointer", 0)
+            if not px_ptr or player is None:
+                return
+            # x (u16) + y (u16) liegen direkt hintereinander → 4 Bytes am Stück.
+            xy_fut = loop.create_future()
+            queue.append(("boxw", px_ptr, 4, xy_fut, ""))
+            xy = await xy_fut
+            raw_x = int.from_bytes(xy[0:2], "little")
+            raw_y = int.from_bytes(xy[2:4], "little")
+            # Tile-Offset: gObjectEvents.currentCoords trägt +7 (MAP_OFFSET,
+            # FR/LG + Smaragd); SaveBlock1.pos (Rubin/Saphir) trägt keinen.
+            # Default 7 für den häufigen gObjectEvents-Fall.
+            off = pointers.get("playercoordoffset", 7)
+
+            pos = {
+                "x": raw_x - off,
+                "y": raw_y - off,
+                "map_layout": map_layout,
+                "edition": edition,
+            }
+
+            # Region-Map-Section (MAPSEC) aus gMapHeader+0x14 (u8) — uniform
+            # über ALLE Gen-3-Editionen (mapheaderpointer existiert überall) und
+            # identisch mit dem Encounter-Route-Key (met_location/MAPSEC, vgl.
+            # den MAPSEC-Fallback in _read_encounter_data). Primäre „Place"-ID
+            # der Regionskarte.
+            if map_hdr_ptr:
+                sec_fut = loop.create_future()
+                queue.append(("boxw", map_hdr_ptr + 0x14, 1, sec_fut, ""))
+                pos["map_section"] = (await sec_fut)[0]
+
+            # Optional (nur FR/LG, nur wenn mapbankpointer gesetzt): map_bank/num
+            # aus statischer EWRAM-Kopie. Liefert in Innenräumen die Außen-/
+            # Elternkarte (feiner als MAPSEC, das dort MAPSEC_NONE sein kann).
+            bank_ptr = pointers.get("mapbankpointer", 0)
+            if bank_ptr:
+                mb_fut = loop.create_future()
+                queue.append(("boxw", bank_ptr, 2, mb_fut, ""))
+                mb = await mb_fut
+                pos["map_bank"] = mb[0]
+                pos["map_num"] = mb[1]
+
+            self._publish_position(player, pos, map_layout)
+        except Exception as err:
+            self.logger.debug(f"_refresh_player_position fehlgeschlagen: {err}")
+
+    def _publish_position(self, player: int, pos: dict, layout_for_log) -> None:
+        """Schreibt eine frische Position delta-gated nach ``munchlax.positions``
+        und broadcastet sie bei Änderung an die anderen Clients.
+
+        Gemeinsam für Gen 3 (``_refresh_player_position``) und Gen 4
+        (``_read_player_position_gen4`` + Torn-Guard in ``_refresh_map_header``).
+        Delta-Gate direkt gegen
+        ``munchlax.positions`` unter ``state_lock``: reset-robust (nach
+        clear_everything/Session-Reset ist der Eintrag weg → wird neu
+        geschrieben, auch bei stehendem Spieler) und atomar (Check+Write unter
+        demselben Lock). Kein separater ``_last_position``-Cache — der liefe bei
+        Reset/Reconnect mit stehendem Spieler auf eine dauerhaft leere Position."""
+        changed = False
+        with self.munchlax.state_lock:
+            if self.munchlax.positions.get(player) != pos:
+                self.munchlax.positions[player] = pos
+                changed = True
+        if not changed:
+            return
+        self.logger.debug(
+            f"Position player={player} section={pos.get('map_section')} "
+            f"tile=({pos['x']},{pos['y']}) layout={layout_for_log}"
+        )
+        # Remote-Broadcast (Phase 2b): eigene Position an andere Clients.
+        # Munchlax ist capability-gated, der Server prueft Ownership.
+        # _dispatch_on_munchlax laeuft cross-thread auf dem Munchlax-Loop.
+        self._dispatch_on_munchlax(
+            self.munchlax.send_position_sync(player, pos)
+        )
+
+    async def _read_player_position_gen4(self, edition: int,
+                                         player: int | None, pointers: dict,
+                                         queue: list, loop, base2: int,
+                                         map_id: int) -> dict | None:
+        """Liest die Live-Spielerposition für Gen 4 (NDS) und gibt das
+        pos-Dict zurück (Kartenfeature, Phase 1 Section-Highlight).
+
+        Gibt ``None`` zurück, wenn kein Spieler bekannt ist oder die Edition
+        keine Positions-Offsets hat (pointer_gen4.yml, alle Gen-4-Editionen).
+        Publiziert NICHT selbst — der Aufrufer prüft erst den Torn-State-Guard
+        (base2 stabil?) und ruft dann ``_publish_position``.
+
+        x/y liegen als u16 relativ zu ``base2`` (``playerxoffset``/
+        ``playeryoffset`` in pointer_gen4.yml) — es sind GLOBALE Sinnoh-Matrix-
+        Koordinaten, nicht map-lokal; daher kein +7-Offset (``playercoordoffset``
+        default 0 für Gen 4). Die Region-Map-Section (= met_location = DB-route)
+        kommt aus der statischen LUT ``bh_pointers.get_map_section(edition,
+        map_id)``, weil Gen 4 live nur die ``map_id`` liefert. Section ``None``
+        (unbekannte/Nicht-Overworld-Map) → kein ``map_section`` im Payload →
+        Screen zeigt keinen Marker. Verifiziert auf DE-Diamant/Perl (ed 41/42),
+        DE-Platin (ed 43) und DE-HeartGold/SoulSilver (ed 44/45)."""
+        px_off = pointers.get("playerxoffset")
+        py_off = pointers.get("playeryoffset")
+        if px_off is None or py_off is None or player is None:
+            return None
+        # y liegt vor x und nicht lückenlos daneben → zwei getrennte Reads.
+        fx = loop.create_future()
+        queue.append(("boxw", base2 + px_off, 2, fx, ""))
+        fy = loop.create_future()
+        queue.append(("boxw", base2 + py_off, 2, fy, ""))
+        raw_x = int.from_bytes(await fx, "little")
+        raw_y = int.from_bytes(await fy, "little")
+        # Gen-4-Matrix-Koords tragen keinen Kamera-Offset (Default 0);
+        # playercoordoffset nur gesetzt, falls eine Edition doch einen braucht.
+        off = pointers.get("playercoordoffset", 0)
+
+        pos = {
+            "x": raw_x - off,
+            "y": raw_y - off,
+            "map_layout": map_id,
+            "edition": edition,
+        }
+        section = bh_pointers.get_map_section(edition, map_id)
+        if section is not None:
+            pos["map_section"] = section
+        return pos
 
     async def _read_encounter_data(self, client_id: str, player: int,
                                     edition: int):
@@ -1210,7 +1410,26 @@ class Bizhawk:
                         map_header = int.from_bytes(map_bytes, "little")
 
                 if route == 0 and map_header is not None and map_header != 0:
-                    route = map_header
+                    # Gen 4: met_location des Gegners ist im Kampf 0 (wird erst
+                    # beim Fang gesetzt, pokeplatinum battle_lib.c:6251), live
+                    # bestaetigt auf DE-Perl. Die rohe map_id ist ein anderer
+                    # Namespace als met_location/DB-route -> ueber die Decomp-
+                    # LUT auf die Section umrechnen (wie Gen 3 MAPSEC).
+                    # Gen 5 (mapidpointer) bleibt unverändert beim map_id-Fallback.
+                    # Section 0 (Mystery Zone = Nicht-Overworld) wie unbekannt
+                    # behandeln, sonst teilen sich alle solchen Maps route=0.
+                    section = (bh_pointers.get_map_section(edition, map_header)
+                               if 40 < edition < 50 else None)
+                    if section:
+                        route = section
+                    else:
+                        if 40 < edition < 50:
+                            self.logger.warning(
+                                f"Encounter: client={client_id} player={player} "
+                                f"map_id={map_header} edition={edition} ohne Section "
+                                f"(section={section}) — route=map_id (Fallback)"
+                            )
+                        route = map_header
 
             self._last_battle_pv[client_id] = opp["personality"]
             if map_header is not None:

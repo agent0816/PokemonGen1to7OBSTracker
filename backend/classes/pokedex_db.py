@@ -10,7 +10,7 @@ from backend.classes.Pokemon import Pokemon
 from backend.logging_setup import get_logger
 
 
-CURRENT_SCHEMA_VERSION = 7
+CURRENT_SCHEMA_VERSION = 8
 # Marker fuer Legacy-Gift/Fossil/Static/Egg/Token-Encounter aus Sessions vor
 # der Migration auf route=map_header_id. Diese Zeilen hatten alle route=0
 # und wuerden nach dem Fix sonst mit den frisch geloggten Wilds auf MAPSEC=0
@@ -96,6 +96,8 @@ class PokedexDB:
             self._apply_v6(cursor)
         if current_version < 7:
             self._apply_v7(cursor)
+        if current_version < 8:
+            self._apply_v8(cursor)
 
         self.connection.commit()
 
@@ -298,6 +300,52 @@ class PokedexDB:
         self.logger.info(
             f"PokedexDB Schema v7 angewendet (legacy plain-numeric bag-owner cleanup): "
             f"bag_inventory={inv_deleted}, bag_first_seen={fs_deleted}"
+        )
+
+    def _apply_v8(self, cursor):
+        # Gen-4-Wild-Encounter: route war bis 2026-10-28 die rohe map_id
+        # (met_location des Gegners ist im Kampf 0, bizhawk fiel auf die
+        # map_id zurueck). Richtig ist die Section (= met_location-Namespace)
+        # -> per Decomp-LUT umrechnen. Nur method='wild': Gifts tragen meist
+        # schon die met_location; Gift-Zeilen mit map_id-Fallback (route 0)
+        # sind davon nicht trennbar und bleiben — process_gift_encounter prueft
+        # beim Dedupe deshalb Section UND alte map_id. Einmalig ueber
+        # schema_version; unbekannte map_ids/Mystery Zone bleiben unveraendert.
+        from backend import bh_pointers
+        missing = [ed for ed in range(41, 46) if not bh_pointers.has_map_sections(ed)]
+        if missing:
+            # LUT nicht geladen (Datei fehlt/kaputt): v8 NICHT eintragen, damit
+            # der naechste Start erneut migriert statt dauerhaft zu ueberspringen.
+            self.logger.error(
+                f"PokedexDB Schema v8 uebersprungen: mapid_section_gen4.yml ohne "
+                f"Tabelle fuer edition={missing} — Retry beim naechsten Start"
+            )
+            return
+        cursor.execute(
+            "SELECT rowid, edition, route FROM encounters "
+            "WHERE edition BETWEEN 41 AND 45 AND method = 'wild'"
+        )
+        rows = cursor.fetchall()
+        migrated = 0
+        unknown = 0
+        for rowid, edition, route in rows:
+            section = bh_pointers.get_map_section(int(edition), int(route))
+            if not section:  # unbekannt oder Mystery Zone (0) wie bizhawk.py
+                unknown += 1
+                continue
+            if section != route:
+                cursor.execute(
+                    "UPDATE encounters SET route = ? WHERE rowid = ?",
+                    (section, rowid),
+                )
+                migrated += 1
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (8, datetime.now(timezone.utc).isoformat()),
+        )
+        self.logger.info(
+            f"PokedexDB Schema v8 angewendet (Gen-4-Wild-route map_id -> Section): "
+            f"{migrated} von {len(rows)} Zeilen umgeschrieben, {unknown} unbekannte map_id"
         )
 
     @_serialized

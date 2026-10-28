@@ -116,147 +116,147 @@
 # ============================================================
 # Hoenn — Unterwasser (RSE)
 # ============================================================
-51:
+50:
   name: Unterwasser (Route 124)
   games: [31, 32, 33]
-52:
+51:
   name: Unterwasser (Route 126)
   games: [31, 32, 33]
-53:
+52:
   name: Unterwasser (Route 127)
   games: [31, 32, 33]
-54:
+53:
   name: Unterwasser (Route 128)
   games: [31, 32, 33]
-55:
+54:
   name: Unterwasser (Prachtpolis City)
   games: [31, 32, 33]
 
 # ============================================================
 # Hoenn — Dungeons (RSE)
 # ============================================================
-56:
+55:
   name: Granithöhle
   games: [31, 32, 33]
-57:
+56:
   name: Schlotberg
   games: [31, 32, 33]
-58:
+57:
   name: Safari-Zone
   games: [31, 32, 33]
-60:
+59:
   name: Blütenburgwald
   games: [31, 32, 33]
-61:
+60:
   name: Metaflurtunnel
   games: [31, 32, 33]
-62:
+61:
   name: Schiffswrack
   games: [31, 32, 33]
-63:
+62:
   name: Neu Malvenfroh
   games: [31, 32, 33]
-64:
+63:
   name: Meteorfälle
   games: [31, 32, 33]
-66:
+65:
   name: Pyroberg
   games: [31, 32, 33]
-68:
+67:
   name: Küstenhöhle
   games: [31, 32, 33]
-69:
+68:
   name: Tiefseehöhle
   games: [31, 32, 33]
-70:
+69:
   name: Unterwasser (Tiefseehöhle)
   games: [31, 32, 33]
-71:
+70:
   name: Siegesstraße
   games: [31, 32, 33]
-72:
+71:
   name: Wundereiland
   games: [31, 32, 33]
-73:
+72:
   name: Urzeithöhle
   games: [31, 32, 33]
-74:
+73:
   name: Insel im Süden
   games: [31, 32, 33]
-75:
+74:
   name: Feuriger Pfad
   games: [31, 32, 33]
-77:
+76:
   name: Steilpass
   games: [31, 32, 33]
-79:
+78:
   name: Siegelkammer
   games: [31, 32, 33]
-80:
+79:
   name: Unterwasser (Route 134)
   games: [31, 32, 33]
-81:
+80:
   name: Sonnengrotte
   games: [31, 32, 33]
-82:
+81:
   name: Inselhöhle
   games: [31, 32, 33]
-83:
+82:
   name: Wüstenruine
   games: [31, 32, 33]
-84:
+83:
   name: Grabmal
   games: [31, 32, 33]
-86:
+85:
   name: Himmelturm
   games: [31, 32, 33]
 
 # ============================================================
 # Hoenn — Smaragd-exklusive Orte
 # ============================================================
-198:
+197:
   name: Aquas Versteck
   games: [33]
-199:
+198:
   name: Magmas Versteck
   games: [33]
-200:
+199:
   name: Wunderturm
   games: [33]
-201:
+200:
   name: Entstehungsinsel
   games: [33]
-203:
+202:
   name: Höhlenatelier
   games: [33]
-204:
+203:
   name: Ozeanhöhle
   games: [33]
-205:
+204:
   name: Unterwasser (Ozeanhöhle)
   games: [33]
-206:
+205:
   name: Terrahöhle
   games: [33]
-207:
+206:
   name: Unterwasser (Route 105)
   games: [33]
-208:
+207:
   name: Unterwasser (Route 125)
   games: [33]
-209:
+208:
   name: Unterwasser (Route 129)
   games: [33]
-210:
+209:
   name: Wüstentunnel
   games: [33]
-211:
+210:
   name: Wandelhöhle
   games: [33]
-212:
+211:
   name: Nabelfels
   games: [33]
-213:
+212:
   name: Trainerberg
   games: [33]
 

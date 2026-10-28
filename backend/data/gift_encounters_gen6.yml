@@ -1,5 +1,5 @@
 # Gift/Fossil/Static/Egg Encounter-Definitionen für Gen 6
-# Keyed by zone_id (u16 aus encounter_zone_pointer, Runtime-Wert)
+# Keyed by Zonen-Index (u16 aus encounter_zone_index = Zonedata-Recordnummer)
 # dexnr wird NICHT geprüft — Randomizer ändert Species
 #
 # type: gift | fossil | egg | static | trade
@@ -8,8 +8,9 @@
 # edition: [61=X, 62=Y, 63=OR, 64=AS] — wenn leer, gilt für alle XY bzw. ORAS
 # condition: optionale Bedingung (event_transfer, post_game)
 #
-# Zone-IDs aus zone_logger.py (nur Runtime-verifizierte Werte verwenden!)
-# HINWEIS: Viele Zone-IDs noch nicht verifiziert — mit zone_logger.py beim
+# Zonen-Indizes per Monitor-Tool (zone_logger.py --index-monitor) ermitteln
+# (nur Runtime-verifizierte Werte verwenden!)
+# HINWEIS: Indizes noch nicht verifiziert — mit dem Monitor-Tool beim
 #          Spielen ermitteln und hier eintragen.
 
 # ============================================================
@@ -17,7 +18,7 @@
 # ============================================================
 
 # Aquarellia — Kalos-Starter (Igamaro/Fynx/Froxy) von Nachbarn
-# TODO: zone_id mit zone_logger.py in der Starter-Szene ermitteln
+# TODO: Zonen-Index mit Monitor-Tool in der Starter-Szene ermitteln
 #       (indoor, wahrscheinlich NICHT 0x04A4 = Aquarellia outdoor)
 # ???:
 #   - type: gift
@@ -26,16 +27,16 @@
 #     edition: [61, 62]
 
 # Prof. Platans Labor — Kanto-Starter (Bisasam/Glumanda/Schiggy)
-# Verifiziert: Labor hat zone_ids 0x03E0 (EG), 0x031C (1F), 0x046C (2F)
-# TODO: verifizieren welches Stockwerk — vermutlich 2F (0x046C)
-0x046C:
-  - type: gift
-    name: Kanto-Starter
-    count: 1
-    edition: [61, 62]
+# TODO: Index für Platans Labor 2F live ermitteln (Monitor-Tool). Alter Wert 0x046C
+#       war zone_id, NICHT Zonen-Index.
+# ???:
+#   - type: gift
+#     name: Kanto-Starter
+#     count: 1
+#     edition: [61, 62]
 
 # Petrophia — Fossil-Wiederbelebung (Balgoras/Amarino)
-# TODO: zone_id für Petrophia Fossil-Labor mit zone_logger.py ermitteln
+# TODO: Zonen-Index für Petrophia Fossil-Labor mit Monitor-Tool / zone-monitor ermitteln
 # ???:
 #   - type: fossil
 #     name: Fossil-Wiederbelebung
@@ -43,7 +44,7 @@
 #     edition: [61, 62]
 
 # Turm der Erkenntnis — Lucario von Connie (mit Lucarionit)
-# TODO: zone_id für Turm der Erkenntnis mit zone_logger.py ermitteln
+# TODO: Zonen-Index für Turm der Erkenntnis mit Monitor-Tool / zone-monitor ermitteln
 # ???:
 #   - type: gift
 #     name: Lucario
@@ -51,8 +52,8 @@
 #     edition: [61, 62]
 
 # Route 12 — Lapras von NPC
-# TODO: zone_id für Route 12 mit zone_logger.py ermitteln
-#       (könnte gleiche zone_id wie Route-12-Encounter sein)
+# TODO: Zonen-Index für Route 12 mit Monitor-Tool / zone-monitor ermitteln
+#       (könnte gleicher Index wie Route-12-Encounter sein)
 # ???:
 #   - type: gift
 #     name: Lapras
@@ -64,7 +65,7 @@
 # ============================================================
 
 # Team-Flare-Geheimbasis — Xerneas (X) / Yveltal (Y)
-# TODO: zone_id für Flare-Geheimbasis mit zone_logger.py ermitteln
+# TODO: Zonen-Index für Flare-Geheimbasis mit Monitor-Tool / zone-monitor ermitteln
 # ???:
 #   - type: static
 #     name: Xerneas/Yveltal
@@ -72,7 +73,7 @@
 #     edition: [61, 62]
 
 # Omega-Höhle — Zygarde (Post-Game)
-# TODO: zone_id für Omega-Höhle mit zone_logger.py ermitteln
+# TODO: Zonen-Index für Omega-Höhle mit Monitor-Tool / zone-monitor ermitteln
 # ???:
 #   - type: static
 #     name: Zygarde
@@ -81,7 +82,7 @@
 #     condition: post_game
 
 # Pokémon-Dorf Höhle — Mewtu (Post-Game)
-# TODO: zone_id für die Höhle beim Pokémon-Dorf ermitteln
+# TODO: Zonen-Index für die Höhle beim Pokémon-Dorf ermitteln
 # ???:
 #   - type: static
 #     name: Mewtu
@@ -90,7 +91,7 @@
 #     condition: post_game
 
 # Meerestitanenhöhle — Arktos/Zapdos/Lavados (Post-Game, nach Roaming)
-# TODO: zone_id für Meerestitanenhöhle ermitteln
+# TODO: Zonen-Index für Meerestitanenhöhle ermitteln
 # ???:
 #   - type: static
 #     name: Legendärer Vogel
@@ -103,7 +104,7 @@
 # ============================================================
 
 # Route 101 / Wurzelheim — Hoenn-Starter (Geckarbor/Flemmli/Hydropi) von Prof. Birk
-# TODO: zone_id für die Starter-Szene auf Route 101 ermitteln
+# TODO: Zonen-Index für die Starter-Szene auf Route 101 ermitteln
 # ???:
 #   - type: gift
 #     name: Hoenn-Starter
@@ -111,7 +112,7 @@
 #     edition: [63, 64]
 
 # Wetterinstitut — Formeo
-# TODO: zone_id für Wetterinstitut ermitteln
+# TODO: Zonen-Index für Wetterinstitut ermitteln
 # ???:
 #   - type: gift
 #     name: Formeo
@@ -119,7 +120,7 @@
 #     edition: [63, 64]
 
 # Moosbach City — Tanhel von Troy (Post-Game, Stevens Haus)
-# TODO: zone_id für Stevens Haus in Moosbach ermitteln
+# TODO: Zonen-Index für Stevens Haus in Moosbach ermitteln
 # ???:
 #   - type: gift
 #     name: Tanhel
@@ -128,7 +129,7 @@
 #     condition: post_game
 
 # Bad Lavastadt — Isso-Ei (alte Frau)
-# TODO: zone_id für Bad Lavastadt Haus ermitteln
+# TODO: Zonen-Index für Bad Lavastadt Haus ermitteln
 # ???:
 #   - type: egg
 #     name: Isso-Ei
@@ -136,7 +137,7 @@
 #     edition: [63, 64]
 
 # Metarost City — Devon Corp Fossil-Wiederbelebung
-# TODO: zone_id für Devon Corp ermitteln
+# TODO: Zonen-Index für Devon Corp ermitteln
 # ???:
 #   - type: fossil
 #     name: Fossil-Wiederbelebung
@@ -144,7 +145,7 @@
 #     edition: [63, 64]
 
 # Malvenfroh City — Latias (AS) / Latios (OR) als Story-Gift
-# TODO: zone_id für Malvenfroh Cutscene ermitteln
+# TODO: Zonen-Index für Malvenfroh Cutscene ermitteln
 # ???:
 #   - type: gift
 #     name: Latias/Latios
@@ -152,7 +153,7 @@
 #     edition: [63, 64]
 
 # Graphitport City — Cosplay-Pikachu (Contest-Halle)
-# TODO: zone_id für Contest-Halle ermitteln
+# TODO: Zonen-Index für Contest-Halle ermitteln
 # ???:
 #   - type: gift
 #     name: Cosplay-Pikachu
@@ -164,7 +165,7 @@
 # ============================================================
 
 # Urzeithöhle — Groudon (OR) / Kyogre (AS)
-# TODO: zone_id für Urzeithöhle ermitteln
+# TODO: Zonen-Index für Urzeithöhle ermitteln
 # ???:
 #   - type: static
 #     name: Groudon/Kyogre
@@ -172,7 +173,7 @@
 #     edition: [63, 64]
 
 # Himmelturm — Rayquaza (Delta-Episode)
-# TODO: zone_id für Himmelturm ermitteln
+# TODO: Zonen-Index für Himmelturm ermitteln
 # ???:
 #   - type: static
 #     name: Rayquaza
@@ -180,7 +181,7 @@
 #     edition: [63, 64]
 
 # Luftraum — Deoxys (Delta-Episode)
-# TODO: zone_id für Luftraum-Kampf ermitteln
+# TODO: Zonen-Index für Luftraum-Kampf ermitteln
 # ???:
 #   - type: static
 #     name: Deoxys
@@ -188,7 +189,7 @@
 #     edition: [63, 64]
 
 # Inselhöhle — Regice
-# TODO: zone_id für Inselhöhle ermitteln
+# TODO: Zonen-Index für Inselhöhle ermitteln
 # ???:
 #   - type: static
 #     name: Regice
@@ -196,7 +197,7 @@
 #     edition: [63, 64]
 
 # Wüstenruine — Regirock
-# TODO: zone_id für Wüstenruine ermitteln
+# TODO: Zonen-Index für Wüstenruine ermitteln
 # ???:
 #   - type: static
 #     name: Regirock
@@ -204,7 +205,7 @@
 #     edition: [63, 64]
 
 # Grabmal — Registeel
-# TODO: zone_id für Grabmal ermitteln
+# TODO: Zonen-Index für Grabmal ermitteln
 # ???:
 #   - type: static
 #     name: Registeel
@@ -212,7 +213,7 @@
 #     edition: [63, 64]
 
 # Inselhöhle — Regigigas (alle 3 Regis + Nickname)
-# TODO: zone_id (evtl. gleich wie Regice-Inselhöhle)
+# TODO: Zonen-Index (evtl. gleich wie Regice-Inselhöhle)
 # ???:
 #   - type: static
 #     name: Regigigas
@@ -223,7 +224,7 @@
 # ORAS — Wunderorte (Soaring-Legendäre, Post-Game)
 # ============================================================
 # Alle Soaring-Legendären erscheinen in Wunderorten (Mirage Spots).
-# Die Zone-IDs sind unbekannt. Encounter-Locations:
+# Die Zonen-Indizes sind unbekannt. Encounter-Locations:
 #   326 = Wunderwald, 328 = Wunderhöhle, 330 = Wundereiland,
 #   332 = Wunderberg
 #
@@ -242,5 +243,5 @@
 # - Cobalion, Terrakion, Virizion — Sichelinsel
 # - Cresselia — Sichelinsel
 #
-# TODO: Zone-IDs für Wunderorte mit zone_logger.py ermitteln.
-#       Jeder Wunderort-Typ hat vermutlich eine eigene zone_id.
+# TODO: Zonen-Indizes für Wunderorte mit Monitor-Tool / zone-monitor ermitteln.
+#       Jeder Wunderort-Typ hat vermutlich eine eigenen Zonen-Index.

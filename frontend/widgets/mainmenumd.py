@@ -43,6 +43,7 @@ from backend.controller.connection_controller import ConnectionController
 from backend.controller.randomizer_controller import RandomizerController
 from backend.controller.settings_controller import SettingsController
 from backend.logging_setup import get_logger
+from backend.perf_probe import perf_span
 from backend.player_colors import PLAYER_COLORS
 from backend.rando_sync import apply_rando_to_munchlax
 from frontend.widgets.md_common import confirm_dialog, show_snackbar
@@ -142,6 +143,9 @@ class MainMenu(MDScreen):
             logger.warning(f"set_bundle_response_notify failed: {err}")
 
         self.trainer_boxes: dict[int, TrainerBoxMD] = {}
+        # Beim Schrumpfen der Spieleranzahl geparkte Boxen (Tick gestoppt, nicht
+        # im Grid) — beim Wachsen wiederverwendet statt neu gebaut.
+        self._parked_boxes: dict[int, TrainerBoxMD] = {}
         self._client_rows: dict = {}
 
         self._build_ui()
@@ -423,6 +427,54 @@ class MainMenu(MDScreen):
             self.trainer_boxes[player] = box
             self.trainer_grid.add_widget(box)
 
+    def _sync_trainer_boxes(self) -> None:
+        """Team-Boxen an pl['player_count'] angleichen und dabei bestehende Boxen
+        wiederverwenden (reset_for_session) statt sie neu zu bauen — der Neubau
+        kostete beim Session-Wechsel ~130 ms pro Box, Ausreißer bis ~800 ms.
+        Überzählige Boxen werden geparkt, nicht verworfen."""
+        count = self.pl["player_count"]
+        for player in sorted(p for p in self.trainer_boxes if p > count):
+            box = self.trainer_boxes.pop(player)
+            try:
+                box.cleanup()
+            except Exception:
+                logger.warning(f"TrainerBoxMD.cleanup fehlgeschlagen: {traceback.format_exc()}")
+            self.trainer_grid.remove_widget(box)
+            self._parked_boxes[player] = box
+        for player in range(1, count + 1):
+            box = self.trainer_boxes.get(player)
+            if box is None and player in self._parked_boxes:
+                # Geparkte Box zurückholen: Tick neu starten, an Spieler-Position einfügen
+                box = self._parked_boxes.pop(player)
+                try:
+                    box.resume()
+                except Exception:
+                    logger.error(f"TrainerBoxMD.resume (Spieler {player}) fehlgeschlagen: "
+                                 f"{traceback.format_exc()}")
+                self.trainer_boxes[player] = box
+                index = len(self.trainer_grid.children) - (player - 1)
+                self.trainer_grid.add_widget(box, index=max(0, index))
+            if box is not None:
+                try:
+                    box.reset_for_session()
+                    continue
+                except Exception:
+                    # Fallback: kaputte Box verwerfen und neu bauen
+                    logger.error(f"TrainerBoxMD.reset_for_session (Spieler {player}) "
+                                 f"fehlgeschlagen, baue neu: {traceback.format_exc()}")
+                    self.trainer_boxes.pop(player, None)
+                    try:
+                        box.cleanup()
+                    except Exception:
+                        logger.warning(f"TrainerBoxMD.cleanup fehlgeschlagen: {traceback.format_exc()}")
+                    self.trainer_grid.remove_widget(box)
+            # Neue Box an Spieler-Position einfügen (Grid-Reihenfolge = Spieler-ID)
+            box = TrainerBoxMD(player, self.munchlax, self.obs_websocket, self,
+                               PLAYER_COLORS.get(player, PLAYER_COLORS[1]))
+            self.trainer_boxes[player] = box
+            index = len(self.trainer_grid.children) - (player - 1)
+            self.trainer_grid.add_widget(box, index=max(0, index))
+
     def _clear_trainer_boxes(self) -> None:
         for box in self.trainer_boxes.values():
             try:
@@ -431,6 +483,8 @@ class MainMenu(MDScreen):
                 logger.warning(f"TrainerBoxMD.cleanup fehlgeschlagen: {traceback.format_exc()}")
         self.trainer_grid.clear_widgets()
         self.trainer_boxes.clear()
+        # Geparkte Boxen (Tick bereits gestoppt) verwerfen
+        self._parked_boxes.clear()
 
     def rebuild_trainer_boxes(self) -> None:
         """Team-Boxen für die aktuelle pl['player_count'] neu aufbauen.
@@ -488,12 +542,16 @@ class MainMenu(MDScreen):
                 or getattr(self.obs_websocket, "is_connected", False)
                 or getattr(self.overlay_server, "is_connected", False)
                 or getattr(self.bizhawk, "is_connected", False)):
-            self.disconnect_all()
-        self._clear_client_rows()
-        self._clear_trainer_boxes()
-        self._build_trainer_boxes()
-        self.init_config()
-        self.update_munchlax_connections()
+            with perf_span("main.disconnect_all"):
+                self.disconnect_all()
+        with perf_span("main.clear_client_rows"):
+            self._clear_client_rows()
+        with perf_span("main.sync_trainer_boxes"):
+            self._sync_trainer_boxes()
+        with perf_span("main.init_config"):
+            self.init_config()
+        with perf_span("main.update_munchlax_connections"):
+            self.update_munchlax_connections()
         Clock.schedule_once(lambda dt: self._apply_responsive(Window.width), 0)
 
     # -- Verbindung: Rolle -----------------------------------------------------

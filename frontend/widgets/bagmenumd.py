@@ -193,6 +193,19 @@ class BagMenu(MDScreen):
         self._candy_count_per_section.clear()
         self._all_rows = []
         self._rendered = False
+        manager = self.manager
+        if manager is not None and manager.current_screen is not self:
+            # Nicht sichtbar: nur Inhalt der alten Session verwerfen; on_pre_enter
+            # lädt ohnehin neu. Spart Kartenbau + GC-Nachruckler beim Session-Klick.
+            self._load_gen += 1  # Ergebnis eines laufenden Loads der alten Session verwerfen
+            # Kein Hintergrund-Rerun nach Abschluss; on_pre_enter lädt frisch
+            self._reload_pending = False
+            self._last_signature = None
+            self.content_box.clear_widgets()
+            self.count_label.text = ""
+            self._set_hint("")
+            logger.debug("BagMenu load_from_session: Screen nicht sichtbar, Laden verzögert")
+            return
         self._reload()
 
     def _reload(self) -> None:

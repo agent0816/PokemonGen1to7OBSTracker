@@ -128,6 +128,29 @@ class _DriveApp(MDApp):
         self.menu.load_from_session()
         m = self.menu
         self.check("zwei_trainerboxen", len(m.trainer_boxes) == 2, list(m.trainer_boxes))
+        # Session-Wechsel mit anderer Spieleranzahl: Boxen wiederverwenden,
+        # Grid-Reihenfolge = Spieler-ID, danach zurück auf 2.
+        box1 = m.trainer_boxes[1]
+        m.pl["player_count"] = 4
+        m.load_from_session()
+        order = [b.player_id for b in reversed(m.trainer_grid.children)]
+        self.check("vier_boxen_reihenfolge", order == [1, 2, 3, 4], order)
+        self.check("box1_wiederverwendet", m.trainer_boxes[1] is box1, None)
+        box3 = m.trainer_boxes[3]
+        m.pl["player_count"] = 2
+        m.load_from_session()
+        order = [b.player_id for b in reversed(m.trainer_grid.children)]
+        self.check("zurueck_auf_zwei", order == [1, 2] and len(m.trainer_boxes) == 2, order)
+        self.check("box3_geparkt_ohne_tick",
+                   m._parked_boxes.get(3) is box3 and box3._tick_event is None, None)
+        m.pl["player_count"] = 4
+        m.load_from_session()
+        order = [b.player_id for b in reversed(m.trainer_grid.children)]
+        self.check("box3_aus_park",
+                   m.trainer_boxes[3] is box3 and box3._tick_event is not None
+                   and order == [1, 2, 3, 4] and not m._parked_boxes, order)
+        m.pl["player_count"] = 2
+        m.load_from_session()
         self.check("acht_switches", len(m._switches) == 8, list(m._switches))
         self.check("server_segment_aktiv", m._seg_server.active and not m._seg_client.active,
                    (m._seg_server.active, m._seg_client.active))
@@ -183,7 +206,8 @@ class _DriveApp(MDApp):
         self.stop()
 
 
-_EXPECTED = {"zwei_trainerboxen", "acht_switches", "server_segment_aktiv", "sort_team_aktiv",
+_EXPECTED = {"zwei_trainerboxen", "vier_boxen_reihenfolge", "box1_wiederverwendet",
+             "zurueck_auf_zwei", "box3_geparkt_ohne_tick", "box3_aus_park", "acht_switches", "server_segment_aktiv", "sort_team_aktiv",
              "switch_states", "role_button_server", "clear_button_sichtbar", "munchlax_hostport",
              "toggle_speichert", "client_mode", "role_text_client", "clear_button_weg",
              "detail_nav", "detail_show_aufgerufen", "detail_live_source"}

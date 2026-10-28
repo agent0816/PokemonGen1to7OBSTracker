@@ -31,6 +31,7 @@ from kivymd.uix.screen import MDScreen
 from kivymd.uix.scrollview import MDScrollView
 
 from backend.logging_setup import get_logger
+from backend.perf_probe import perf_span
 from backend.pokemon_detail_view import resource_path
 from backend.classes.pokedex_db import PokedexDB
 
@@ -392,6 +393,7 @@ class MapMenu(MDScreen):
         except Exception:
             return True  # Solo/kein Netz → als lokal behandeln
 
+    @perf_span("map._load_region")
     def _load_region(self, edition: int | None = None):
         if edition is None:
             edition, source = self._edition_with_source()

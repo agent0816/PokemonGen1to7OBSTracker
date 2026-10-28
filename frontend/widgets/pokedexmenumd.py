@@ -284,10 +284,31 @@ class PokedexMenu(MDScreen):
         return reset
 
     def load_from_session(self) -> None:
-        """Session-Wechsel-Hook: Buttons für neue Spielerzahl + DB neu laden."""
+        """Session-Wechsel-Hook: Buttons für neue Spielerzahl + DB neu laden.
+
+        Ist der Screen nicht sichtbar, werden nur die Karten der alten Session
+        verworfen; Laden + Kartenbau holt on_pre_enter nach (_needs_reload).
+        Sonst liefen Batch-Render + anschließende GC (bis ~1 s) als Nachruckler
+        direkt nach dem Session-Klick."""
         self._active_slot = ""
         self._build_player_buttons()
         self._sprite_cache.clear()
+        manager = self.manager
+        if manager is not None and manager.current_screen is not self:
+            self._needs_reload = True
+            self._load_gen += 1  # Ergebnis eines laufenden Loads der alten Session verwerfen
+            # Kein Hintergrund-Rerun nach Abschluss; on_pre_enter lädt frisch
+            self._reload_pending = False
+            self._item_sprite_cache.clear()
+            if self._render_event is not None:
+                self._render_event.cancel()
+                self._render_event = None
+            self._pending_rows = []
+            self._all_rows = []
+            self.cards_grid.clear_widgets()
+            self.count_label.text = ""
+            logger.debug("PokedexMenu load_from_session: Screen nicht sichtbar, Laden verzögert")
+            return
         self._force_reload()
 
     def _force_reload(self) -> None:

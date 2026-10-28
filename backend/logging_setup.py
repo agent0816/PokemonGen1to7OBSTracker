@@ -75,10 +75,42 @@ def _module_key(logger_name: str) -> str:
     return logger_name.rsplit('.', 1)[-1]
 
 
+class _FastRotatingFileHandler(RotatingFileHandler):
+    """RotatingFileHandler ohne Dateisystem-Abfrage pro Log-Zeile.
+
+    Die Stdlib prüft in ``shouldRollover`` bei JEDEM Record per
+    ``os.path.exists`` + ``os.path.isfile``, ob die Logdatei eine reguläre
+    Datei ist (bpo-45401). Unter Windows kostete das in langsamen UI-Frames
+    16–55 % der Zeit (Perf-Messung 2026-10-28). Die Datei-Art ändert sich zur
+    Laufzeit nicht, daher wird sie hier einmal geprüft und gecacht; der
+    Größen-Check bleibt unverändert.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        self._regular_file: bool | None = None
+        super().__init__(*args, **kwargs)
+
+    def shouldRollover(self, record: logging.LogRecord) -> bool:
+        if self._regular_file is None:
+            self._regular_file = not (os.path.exists(self.baseFilename)
+                                      and not os.path.isfile(self.baseFilename))
+        # Nie etwas anderes als reguläre Dateien rotieren (z.B. /dev/null, NUL)
+        if not self._regular_file:
+            return False
+        if self.stream is None:  # delay war gesetzt
+            self.stream = self._open()
+        if self.maxBytes > 0:
+            msg = f"{self.format(record)}\n"
+            self.stream.seek(0, 2)  # Windows: nicht POSIX-konformes Append-Verhalten
+            if self.stream.tell() + len(msg) >= self.maxBytes:
+                return True
+        return False
+
+
 def _create_rotating_handler(log_file: str, max_bytes: int, backup_count: int,
                               formatter: logging.Formatter) -> RotatingFileHandler:
-    fh = RotatingFileHandler(log_file, mode='a', maxBytes=max_bytes,
-                              backupCount=backup_count, encoding='utf-8')
+    fh = _FastRotatingFileHandler(log_file, mode='a', maxBytes=max_bytes,
+                                  backupCount=backup_count, encoding='utf-8')
     log_key = os.path.normcase(os.path.abspath(log_file))
     if log_key not in _rolled_over_files:
         _rolled_over_files.add(log_key)

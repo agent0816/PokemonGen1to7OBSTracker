@@ -16,6 +16,7 @@ from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.label import MDLabel
 
 from backend.logging_setup import get_logger
+from backend.perf_probe import perf_span
 from backend.party_rules import first_type_dupe_slots
 from backend.player_colors import hex8_to_rgba, player_rgba
 from frontend.widgets.status_labels import STATUS_LABELS, STATUS_PRIORITY
@@ -134,6 +135,7 @@ class TrainerBoxMD(MDBoxLayout):
     Höhe folgt dem Inhalt (adaptive_height) statt fester dp-Höhe, sonst
     überläuft der Slot-Inhalt die Karte."""
 
+    @perf_span("main.TrainerBoxMD.__init__")
     def __init__(self, player_id, munchlax, obs_websocket, screen, color, **kwargs):
         kwargs.pop("height", None)  # Höhe kommt aus adaptive_height, nicht von aussen
         super().__init__(orientation="horizontal", padding=0, spacing=0,
@@ -200,6 +202,35 @@ class TrainerBoxMD(MDBoxLayout):
         self.add_widget(content)
 
         self._tick_event = Clock.schedule_interval(self.team_aktualisieren, 1)
+
+    def reset_for_session(self) -> None:
+        """Anzeige auf Ausgangszustand wie nach __init__ zurücksetzen (Session-
+        Wechsel). Ersetzt den teuren Neubau (~130 ms pro Box, KivyMD-Widget-Init);
+        Sprite-/Orden-Pfade kommen frisch aus der neuen Session-Config."""
+        self.name_label.text = f"Spieler {self.player_id}"
+        empty_sprite = self._empty_sprite()
+        empty_item = f"{self.obs_websocket.conf['items_path']}/0.png"
+        for slot_box in self.pokemon_boxes.values():
+            slot_box.nickname_label.text = "— leer —"
+            slot_box.level_label.text = "lvl. 0"
+            slot_box.item_label.text = "-"
+            slot_box.status_label.text = ""
+            if slot_box.sprite.source != empty_sprite:
+                slot_box.sprite.source = empty_sprite
+            if slot_box.item_image.source != empty_item:
+                slot_box.item_image.source = empty_item
+            slot_box.set_dimmed(False)
+            slot_box.set_hp(1, 1)
+        edition = self.edition_lut.get(self.munchlax.pl.get("session_game"), 11)
+        region = self.badge_lut.get(edition)
+        badges_path = self.obs_websocket.conf['badges_path']
+        for badge, badge_image in self.badges.items():
+            badge_image.source = f"{badges_path}/{region}{badge}empty.png"
+
+    def resume(self) -> None:
+        """Tick nach cleanup() wieder starten (geparkte Box wird wiederverwendet)."""
+        if self._tick_event is None:
+            self._tick_event = Clock.schedule_interval(self.team_aktualisieren, 1)
 
     def cleanup(self) -> None:
         """Tick stoppen (z.B. beim Entfernen des Widgets)."""

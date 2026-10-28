@@ -364,7 +364,7 @@ class TimerChip(MDBoxLayout):
         return super().on_touch_down(touch)
 
     def _navigate(self) -> None:
-        """Zum NuzlockeMenu springen (sobald dieser Screen existiert, Phase E3)."""
+        """Zum NuzlockeMenu springen (has_screen-Guard als Absicherung)."""
         try:
             root = getattr(self._app, "root", None)
             manager = getattr(root, "screen_manager", None)
@@ -427,7 +427,7 @@ class StatusBarMD(MDBoxLayout):
 
         # Spacer schiebt den Timer-Slot nach rechts
         self.add_widget(Widget())
-        # Race-/Countdown-Timer read-only; Klick → NuzlockeMenu (Phase E).
+        # Race-/Countdown-Timer read-only; Klick → NuzlockeMenu.
         self.timer_slot = MDBoxLayout(adaptive_width=True, spacing=dp(4))
         self.timer_chip = TimerChip(app)
         self.timer_slot.add_widget(self.timer_chip)

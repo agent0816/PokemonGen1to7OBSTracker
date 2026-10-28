@@ -10,7 +10,7 @@ Die Geschäftslogik liegt wie in der Klassik in den Controllern
 in ``backend.rando_sync`` — hier lebt nur UI + Button-State.
 
 Navigation zu Pokedex/Box/Tasche/Encounter/Settings/Sessions macht die
-NavigationRail (B1); daher keine Nav-Buttons hier. Nuzlocke folgt in Phase E.
+NavigationRail (B1); daher keine Nav-Buttons hier (auch Nuzlocke).
 """
 import asyncio
 import traceback
@@ -74,6 +74,27 @@ def _full_button(text: str, on_release) -> MDButton:
     """Vollbreiter MDButton (filled) mit Text-Callback."""
     return MDButton(MDButtonText(text=text), style="filled",
                     theme_width="Custom", size_hint_x=1, on_release=on_release)
+
+
+class _StaticCard(MDCard):
+    """MDCard nur als Container (Verbindung/Anzeige/Aktionen): kein Hover-/
+    Press-StateLayer und keine Elevation-Anhebung — Hover-Feedback bleibt den
+    Kind-Buttons. Look (Schatten, Theme-Farbe, Radius) bleibt erhalten.
+    Nicht über ``focus_behavior=False`` gelöst: dann setzt
+    ``MDCard.set_properties_widget`` beim Leave ``md_bg_color`` auf das nie
+    befüllte ``_bg_color`` (transparent)."""
+
+    def on_enter(self, *args):
+        pass
+
+    def on_leave(self, *args):
+        pass
+
+    def _on_press(self, *args):
+        pass
+
+    def _on_release(self, *args):
+        pass
 
 
 class MainMenu(MDScreen):
@@ -277,7 +298,7 @@ class MainMenu(MDScreen):
         Clock.schedule_once(lambda dt: self._update_cols(), 0)
 
     def _build_connection_card(self) -> MDCard:
-        card = MDCard(orientation="vertical", style="elevated", padding=dp(12),
+        card = _StaticCard(orientation="vertical", style="elevated", padding=dp(12),
                       spacing=dp(10), size_hint_y=None, adaptive_height=True,
                       radius=[dp(16)] * 4)
         card.add_widget(_section_title("VERBINDUNG"))
@@ -338,7 +359,7 @@ class MainMenu(MDScreen):
         return row
 
     def _build_display_card(self) -> MDCard:
-        card = MDCard(orientation="vertical", style="elevated", padding=dp(12),
+        card = _StaticCard(orientation="vertical", style="elevated", padding=dp(12),
                       spacing=dp(10), size_hint_y=None, adaptive_height=True,
                       radius=[dp(16)] * 4)
         card.add_widget(_section_title("ANZEIGE"))
@@ -384,7 +405,7 @@ class MainMenu(MDScreen):
         return card
 
     def _build_action_card(self) -> MDCard:
-        card = MDCard(orientation="vertical", style="elevated", padding=dp(12),
+        card = _StaticCard(orientation="vertical", style="elevated", padding=dp(12),
                       spacing=dp(8), size_hint_y=None, adaptive_height=True,
                       radius=[dp(16)] * 4)
         card.add_widget(_section_title("AKTIONEN"))
@@ -414,8 +435,6 @@ class MainMenu(MDScreen):
                                              size_hint_x=1, on_release=self._confirm_session_reset)
         card.add_widget(self.reset_session_button)
 
-        card.add_widget(MDLabel(text="Nuzlocke folgt in Phase E.", role="small",
-                                adaptive_height=True, size_hint_y=None))
         return card
 
     # -- Team ------------------------------------------------------------------

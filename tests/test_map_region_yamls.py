@@ -33,6 +33,9 @@ def test_bild_und_geometrie():
             for ed, srcs in (entry.get("pokemon_by_game") or {}).items():
                 assert isinstance(ed, int) and isinstance(srcs, list), \
                     f"{name}:{key} pokemon_by_game[{ed!r}] ungültig"
+            for linked in entry.get("linked") or ():
+                assert linked in data["entries"], \
+                    f"{name}:{key} linked {linked!r} ohne Eintrag"
 
 
 def test_pokemon_by_game_ueberschreibt():

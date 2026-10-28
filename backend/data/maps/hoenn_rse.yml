@@ -365,6 +365,9 @@ entries:
     width: 1
     height: 2
     games: [31, 32, 33]
+    # Pyroberg (65) liegt nur auf der oberen 1x1-Zelle und ist kaum zu
+    # treffen -> Klick irgendwo auf Route 122 zeigt Pyroberg mit an.
+    linked: [65]
   38:
     label: Route 123
     pokemon: [land, surf, fish]

@@ -246,6 +246,13 @@ class MapCanvas(Widget):
         if not self.collide_point(*touch.pos):
             return super().on_touch_down(touch)
         hits = self._sections_at(*touch.pos)
+        # ``linked``: kleine Orte (z.B. Pyroberg auf Route 122) beim Klick auf
+        # den Elternort mit anzeigen, damit sie nicht pixelgenau getroffen
+        # werden müssen.
+        for ms in list(hits):
+            for linked in self.hotspots[ms].get("linked") or ():
+                if linked in self.hotspots and linked not in hits:
+                    hits.append(linked)
         if hits:
             self.selected_sections = hits
             self._redraw()
@@ -520,6 +527,7 @@ class MapMenu(MDScreen):
 
         ``pokemon_by_game: {edition: [...]}`` ersetzt ``pokemon`` für die
         genannten Editionen (z.B. D/P-Skripte weichen von Platin ab).
+        ``linked: [section, ...]`` zeigt diese Orte beim Klick mit an.
         """
         tile_px = int(data.get("tile_px", 8))
         x_off = int(data.get("x_offset", 0))
@@ -546,6 +554,7 @@ class MapMenu(MDScreen):
                 # Quellen laut Decomp (land/surf/…); [] = nichts fangbar,
                 # None = unbekannt (Feld fehlt) → wie fangbar behandeln.
                 "pokemon": pokemon,
+                "linked": [int(s) for s in e.get("linked") or ()],
             }
         return hotspots
 

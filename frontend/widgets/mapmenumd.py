@@ -95,6 +95,13 @@ class MapCanvas(Widget):
                 self._texture = tex
                 self.img_w = max(1, tex.width)
                 self.img_h = max(1, tex.height)
+                logger.info(
+                    f"load_map: Textur {self.img_w}x{self.img_h} geladen "
+                    f"aus {image_path}")
+            else:
+                logger.warning(
+                    f"load_map: Kartenbild fehlt oder ist keine Datei: "
+                    f"{image_path!r} (hotspots={len(self.hotspots)})")
         except Exception as err:
             logger.error(f"Kartenbild laden gescheitert ({image_path}): {err}")
             logger.error(traceback.format_exc())
@@ -232,7 +239,9 @@ class MapMenu(MDScreen):
         self.obs_websocket = obs_websocket
         self.pl = pl
         self.configsave = configsave
-        self.current_player: int = 1
+        # Start-Slot = erster lokaler Slot (nicht hart 1): in kopierten
+        # Mehrspieler-Sessions ist Slot 1 oft remote (siehe _default_player).
+        self.current_player: int = self._default_player()
         self._poll_ev = None
         self._tasks: set = set()
         self._menus: list[MDDropdownMenu] = []
@@ -292,8 +301,8 @@ class MapMenu(MDScreen):
             self._poll_ev = None
 
     def load_from_session(self) -> None:
-        """Session-Wechsel-Hook: zurück auf Spieler 1, Region neu laden."""
-        self.current_player = 1
+        """Session-Wechsel-Hook: zurück auf den ersten lokalen Slot, Region neu laden."""
+        self.current_player = self._default_player()
         self._refresh_player_button()
         self._load_region()
         self._schedule_catch_load()
@@ -306,9 +315,23 @@ class MapMenu(MDScreen):
         except (TypeError, ValueError):
             return 1
 
+    def _default_player(self) -> int:
+        """Start-Slot der Karte: erster LOKAL bediente Slot, sonst 1. In einer
+        aus einer Mehrspieler-Session kopierten Config ist Slot 1 oft ein
+        Remote-Slot (remote_1=True) ohne Live-Daten — defaultete die Karte dann
+        hart auf 1, ließe sich die Edition offline nicht auflösen (edition=0 →
+        keine Regionskarte, obwohl das eigene Spiel korrekt angezeigt wird).
+        Der eigene Slot (z.B. Spieler 4) fällt dagegen auf session_game zurück."""
+        try:
+            owned = [p for p in self.munchlax._owned_player_ids()
+                     if 1 <= p <= self._player_count()]
+        except Exception:
+            owned = []
+        return owned[0] if owned else 1
+
     def _refresh_player_button(self):
         if self.current_player > self._player_count():
-            self.current_player = 1
+            self.current_player = self._default_player()
         self.player_button_text.text = f"Spieler: {self.current_player}"
         self.player_button.disabled = self._player_count() <= 1
 
@@ -333,8 +356,9 @@ class MapMenu(MDScreen):
 
     # --- Region/Edition -------------------------------------------------------
 
-    def _edition(self) -> int:
-        """Edition des gewählten Spielers. Priorität:
+    def _edition_with_source(self) -> tuple[int, str]:
+        """Edition des gewählten Spielers + Quelle (für Diagnose-Logging).
+        Priorität:
         1. edition aus dem Positions-Payload (zuverlässigste Live-Quelle, auch
            für Remote-Spieler — selber Tick wie map_section),
         2. snapshot_editions() (vom Team gemeldet),
@@ -346,7 +370,7 @@ class MapMenu(MDScreen):
             pos = None
         if isinstance(pos, dict) and pos.get("edition"):
             try:
-                return int(pos["edition"])
+                return int(pos["edition"]), "position_payload"
             except (TypeError, ValueError):
                 pass
         try:
@@ -354,10 +378,13 @@ class MapMenu(MDScreen):
         except (TypeError, ValueError, AttributeError):
             ed = 0
         if ed:
-            return ed
+            return ed, "snapshot_editions"
         if self._is_local_player(self.current_player):
-            return EDITION_LUT.get(self.pl.get("session_game"), 0)
-        return 0
+            return EDITION_LUT.get(self.pl.get("session_game"), 0), "session_game(local)"
+        return 0, "unaufgelöst(remote/keine-daten)"
+
+    def _edition(self) -> int:
+        return self._edition_with_source()[0]
 
     def _is_local_player(self, player: int) -> bool:
         try:
@@ -367,15 +394,43 @@ class MapMenu(MDScreen):
 
     def _load_region(self, edition: int | None = None):
         if edition is None:
-            edition = self._edition()
+            edition, source = self._edition_with_source()
+        else:
+            source = "poll_payload"
         self._loaded_edition = edition
         # Alt-Daten verwerfen, damit ein Klick direkt nach dem Wechsel nicht
         # kurz die Encounter des vorigen Spielers/Spiels zeigt.
         self._route_catches = {}
         region_file = EDITION_REGION.get(edition)
         self._region_file = region_file
+        # Diagnose-Logging (Kartenfeature, alpha-Debug): festhalten, WIE die
+        # Edition aufgelöst wurde und ob es überhaupt eine Regionskarte gibt.
+        # So wird "Karte lädt nicht, obwohl das Spiel korrekt angezeigt wird"
+        # nachvollziehbar (z.B. aus Munchlax kopierte Session mit Remote-Slots:
+        # Edition landet dann nur im Team-Display, nicht im Positions-/Editions-
+        # Snapshot des Karten-Slots → source=unaufgelöst, edition=0).
+        try:
+            pos_snap = self.munchlax.snapshot_positions().get(self.current_player)
+        except Exception:
+            pos_snap = None
+        try:
+            ed_snap = self.munchlax.snapshot_editions().get(self.current_player)
+        except Exception:
+            ed_snap = None
+        logger.info(
+            f"_load_region: player={self.current_player} "
+            f"local={self._is_local_player(self.current_player)} "
+            f"edition={edition} (source={source}) "
+            f"session_game={self.pl.get('session_game')!r} "
+            f"snapshot_editions[{self.current_player}]={ed_snap!r} "
+            f"position={pos_snap!r} region_file={region_file!r}"
+        )
         self._clear_legend("Route anklicken für Details")
         if region_file is None:
+            logger.warning(
+                f"_load_region: keine Regionskarte für edition={edition} "
+                f"(source={source}) — unterstützte Editionen: {sorted(EDITION_REGION)}"
+            )
             self.map_canvas.clear_map()
             self.title_label.text = "Karte"
             self.legend_title.text = (
@@ -384,12 +439,19 @@ class MapMenu(MDScreen):
             )
             return
         try:
-            with open(resource_path(os.path.join(MAPS_DATA_DIR, region_file)),
-                      encoding="utf-8") as fh:
+            yaml_path = resource_path(os.path.join(MAPS_DATA_DIR, region_file))
+            with open(yaml_path, encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)
             hotspots = self._build_hotspots(data)
+            image_rel = data.get("image", "")
             image_path = resource_path(
-                os.path.join("backend", "ressources", "maps", data.get("image", "")))
+                os.path.join("backend", "ressources", "maps", image_rel))
+            img_ok = bool(image_path) and os.path.isfile(image_path)
+            logger.info(
+                f"_load_region: region_file={region_file} geladen — "
+                f"image={image_rel!r} image_path={image_path!r} exists={img_ok} "
+                f"hotspots={len(hotspots)}"
+            )
             self.map_canvas.load_map(image_path, hotspots)
             self.title_label.text = f"Karte — {data.get('region', '').title()}"
             self.legend_title.text = "Route anklicken für Details"
@@ -457,6 +519,14 @@ class MapMenu(MDScreen):
                 self._load_region(ed)
                 self._schedule_catch_load()
         section = pos.get("map_section") if isinstance(pos, dict) else None
+        # Nur bei Wechsel loggen (sonst 2×/s Spam): zeigt, ob überhaupt eine
+        # map_section ankommt. Fehlt sie trotz Position (z.B. FR/LG-Innenraum =
+        # MAPSEC_NONE, oder kein mapheaderpointer), bleibt der Marker aus.
+        if section != self.map_canvas.current_section:
+            ed = pos.get("edition") if isinstance(pos, dict) else None
+            logger.debug(
+                f"_poll_position: player={self.current_player} "
+                f"section={section!r} edition={ed!r}")
         self.map_canvas.set_current_section(section)
 
     # --- Legende (Encounter pro Route) ---------------------------------------

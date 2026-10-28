@@ -84,10 +84,13 @@ class Screens(ScreenManager):
         # feedback_async_task_strong_ref).
         self._boot_tasks: set = set()
 
-        self.add_widget(SessionMenu(
+        # Als Attribut halten: der Session-Gate im Nav-Guard fragt
+        # selected_card ab (keine Session gewählt → andere Screens gesperrt).
+        self.session_menu = SessionMenu(
             session_list, configsave, sp, rem, obs, bh, pl, rnd, ov, nuz, APP_VERSION,
             on_session_changed=self._on_session_changed,
-        ))
+        )
+        self.add_widget(self.session_menu)
         # MainMenu-MD voll verdrahtet (Phase C), SettingsMenu-MD (Phase D).
         self.main_menu = MainMenu(arceus, bizhawk, citra, bizhawk_instances, munchlax, obs_websocket,
                                   overlay_server, configsave, sp, rem, obs, bh, pl, rnd, ov, APP_VERSION)
@@ -198,7 +201,11 @@ class Screens(ScreenManager):
         except Exception as err:
             logger.error(f"Session-Refresh nach Onboarding fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
-        self.current = "MainMenu"
+        # Nach dem Onboarding ins SessionMenu statt ins MainMenu: der frische
+        # User hat noch keine Session gewählt (nur Standard-Einstellungen), und
+        # der Session-Gate sperrt die übrigen Screens ohnehin. Hier soll er als
+        # Erstes eine eigene Session anlegen/wählen.
+        self.current = "SessionMenu"
 
     def _align_active_screen(self, _manager, pos) -> None:
         # Aktiven Screen an die (neue) Manager-Position heften. FloatLayout lässt
@@ -384,6 +391,21 @@ class MainWindow(MDBoxLayout):
         self.add_widget(body)
         self.add_widget(self.status_bar)
 
+    # Screens, die mit Standard-Einstellungen (keine Session gewählt) erreichbar
+    # bleiben: Session-Verwaltung (zum Wählen/Anlegen) und Settings (um die
+    # Standard-Einstellungen auf einen guten Default zu bringen). Alle anderen
+    # Screens sind gesperrt, bis eine Session gewählt wurde.
+    _SESSIONLESS_ALLOWED = ("SessionMenu", "SettingsMenu")
+
+    def _session_selected(self) -> bool:
+        """True, wenn im SessionMenu eine Session aktiv ist (nicht die
+        Standard-Einstellungen). Im Fehlerfall nicht sperren."""
+        try:
+            return self.screen_manager.session_menu.selected_card is not None
+        except Exception:
+            logger.error("Session-Status für Nav-Guard nicht lesbar", exc_info=True)
+            return True
+
     def _nav_guard(self, current: str, target: str) -> bool:
         """Rail-Navigations-Guard: ein Wechsel zum SessionMenu bei laufender
         Verbindung/BizHawk läuft über den sicheren Pfad von MainMenu
@@ -394,6 +416,11 @@ class MainWindow(MDBoxLayout):
         # Walkthrough soll über seine eigenen Buttons verlassen werden, damit
         # der onboarding_done-Marker gesetzt wird (sonst Dauer-Schleife).
         if current in ("Splash", "Onboarding"):
+            return False
+        # Session-Gate: ohne gewählte Session nur SessionMenu + Settings zulassen.
+        if target not in self._SESSIONLESS_ALLOWED and not self._session_selected():
+            show_snackbar("Bitte zuerst eine Session auswählen oder anlegen.",
+                          level='info', duration=4.0)
             return False
         if target == "SessionMenu" and current not in ("SessionMenu", "Update"):
             main_menu = getattr(self.screen_manager, "main_menu", None)

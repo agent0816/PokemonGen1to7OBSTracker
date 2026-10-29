@@ -25,14 +25,16 @@ from kivymd.uix.label import MDLabel, MDIcon
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.selectioncontrol import MDCheckbox
+from kivymd.uix.slider import MDSlider, MDSliderHandle, MDSliderValueLabel
 
 from backend.logging_setup import get_logger
 from backend.snapshot_manager import SnapshotManager
 from backend.soullink_presets import load_presets, apply_preset, preset_choices
 from backend.nuzlocke_view import (
     TEAM_LETTERS, MODE_LABELS, MODE_LABEL_TO_VALUE,
-    CUSTOM_PRESET_LABEL, CUSTOM_PRESET_ID, RULE_CHECKBOXES,
-    normalize_mode, rule_value, clamp_player_count, collect_config,
+    CUSTOM_PRESET_LABEL, CUSTOM_PRESET_ID, RULE_CHECKBOXES, RULE_DEFAULTS,
+    find_matching_preset, resolve_preset_id, normalize_mode,
+    DRAGON_RAGE_BADGE_MIN, DRAGON_RAGE_BADGE_MAX, dragon_rage_badge_limit, rule_value, clamp_player_count, collect_config,
     connected_owner_names, merge_owner_rows, client_verify_diff,
 )
 from frontend.widgets.settings_widgets import make_textfield, DropdownField, LABEL_W
@@ -237,8 +239,8 @@ class NuzlockeMenu(MDScreen):
         preset_row.add_widget(MDLabel(text="Regelwerk", size_hint_x=None, width=LABEL_W,
                                       role="small", valign="center"))
         labels = [label for _pid, label in self._preset_choices] or [CUSTOM_PRESET_LABEL]
-        initial_id = str(self.nuz.get("soullink_preset_id", "") or "")
-        initial_label = self._preset_id_to_label.get(initial_id, labels[0])
+        initial_id = resolve_preset_id(self.nuz, self._presets)
+        initial_label = self._preset_id_to_label.get(initial_id, CUSTOM_PRESET_LABEL)
         self._preset_dd = DropdownField(labels, initial_label, self._on_preset_select)
         preset_row.add_widget(self._preset_dd)
         self._preset_apply_btn = _action_button("Preset anwenden", self._apply_preset,
@@ -262,6 +264,20 @@ class NuzlockeMenu(MDScreen):
             cell.add_widget(lbl)
             grid.add_widget(cell)
         rules_card.add_widget(grid)
+        # Drachenwut-Klausel: Orden-Grenze (int, daher Slider statt Checkbox)
+        dr_row = _row(height=dp(56))
+        self._dragon_rage_label = MDLabel(size_hint_x=None, width=LABEL_W,
+                                          role="small", valign="center")
+        dr_row.add_widget(self._dragon_rage_label)
+        self._dragon_rage_slider = MDSlider(
+            MDSliderHandle(), MDSliderValueLabel(),
+            min=DRAGON_RAGE_BADGE_MIN, max=DRAGON_RAGE_BADGE_MAX, step=1,
+            value=dragon_rage_badge_limit(self.nuz),
+        )
+        self._dragon_rage_slider.bind(value=lambda _i, val: self._on_badge_limit_change(val))
+        dr_row.add_widget(self._dragon_rage_slider)
+        rules_card.add_widget(dr_row)
+        self._set_dragon_rage_label(dragon_rage_badge_limit(self.nuz))
         box.add_widget(rules_card)
 
         token_card = _card("Token-Regel")
@@ -287,9 +303,9 @@ class NuzlockeMenu(MDScreen):
         box = MDBoxLayout(orientation="vertical", size_hint_y=None, adaptive_height=True)
 
         mode_card = _card("Modus")
-        mode_val = normalize_mode(self.nuz.get("soullink_mode"))
+        mode_val = normalize_mode(self.nuz.get("run_mode"))
         mrow = _row(height=dp(56))
-        mrow.add_widget(MDLabel(text="Soullink-Modus", size_hint_x=None, width=LABEL_W,
+        mrow.add_widget(MDLabel(text="Spielmodus", size_hint_x=None, width=LABEL_W,
                                 role="small", valign="center"))
         self._mode_dd = DropdownField(list(MODE_LABELS.values()),
                                       MODE_LABELS[mode_val], self._on_mode_select)
@@ -413,6 +429,9 @@ class NuzlockeMenu(MDScreen):
                 w.disabled = not host
         for cb in self._rule_checkboxes.values():
             cb.disabled = not host
+        slider = getattr(self, "_dragon_rage_slider", None)
+        if slider is not None:
+            slider.disabled = not host
         for row in self._owner_rows:
             row.name_field.disabled = not host
             if row.team_dd.opacity > 0.5:
@@ -445,7 +464,7 @@ class NuzlockeMenu(MDScreen):
     def _mode_value(self) -> str:
         dd = getattr(self, "_mode_dd", None)
         if dd is None:
-            return normalize_mode(self.nuz.get("soullink_mode"))
+            return normalize_mode(self.nuz.get("run_mode"))
         return MODE_LABEL_TO_VALUE.get(dd.value, "nuzlocke")
 
     # --------------------------------------------------------------- Handler
@@ -465,7 +484,7 @@ class NuzlockeMenu(MDScreen):
             show_snackbar("Preset nicht gefunden.", level='error')
             return
         preset = self._presets[pid]
-        apply_preset(self.nuz, preset)
+        apply_preset(self.nuz, preset, RULE_DEFAULTS)
         self.nuz["soullink_preset_id"] = pid
         self._load_from_nuz()
         show_snackbar(f"Preset '{preset.get('label', pid)}' angewendet.", level='success')
@@ -477,10 +496,37 @@ class NuzlockeMenu(MDScreen):
         if not self._is_host():
             return
         self.nuz[rule_key] = bool(active)
-        if self._preset_dd.value != CUSTOM_PRESET_LABEL:
-            self._preset_dd.set_value(CUSTOM_PRESET_LABEL)
-        self.nuz["soullink_preset_id"] = CUSTOM_PRESET_ID
+        self._sync_preset_display()
         self._persist_structural_change(f"rule:{rule_key}")
+
+    def _set_dragon_rage_label(self, limit: int) -> None:
+        self._dragon_rage_label.text = f"Drachenwut bis Orden {limit}"
+
+    def _set_dragon_rage_slider(self, limit: int) -> None:
+        """Programmatisch setzen (Session-Load/Server-Sync), Caller hält _suspend."""
+        self._dragon_rage_slider.value = limit
+        self._set_dragon_rage_label(limit)
+
+    def _on_badge_limit_change(self, value: float) -> None:
+        limit = max(DRAGON_RAGE_BADGE_MIN, min(DRAGON_RAGE_BADGE_MAX, int(round(value))))
+        self._set_dragon_rage_label(limit)
+        if self._suspend or not self._is_host():
+            return
+        # Slider feuert beim Ziehen pro Frame — nur echte Orden-Wechsel speichern
+        if self.nuz.get("rule_dragon_rage_clause_badge_limit") == limit:
+            return
+        self.nuz["rule_dragon_rage_clause_badge_limit"] = limit
+        self._sync_preset_display()
+        self._persist_structural_change("rule:rule_dragon_rage_clause_badge_limit")
+
+    def _sync_preset_display(self) -> None:
+        """Preset-Dropdown nach manueller Änderung abgleichen: exakt passendes
+        Preset anzeigen, sonst Custom. Persistiert die ID in nuz."""
+        pid = find_matching_preset(self.nuz, self._presets) or CUSTOM_PRESET_ID
+        label = self._preset_id_to_label.get(pid, CUSTOM_PRESET_LABEL)
+        if self._preset_dd.value != label:
+            self._preset_dd.set_value(label)
+        self.nuz["soullink_preset_id"] = pid
 
     def _on_mode_select(self, _label: str) -> None:
         mode_value = self._mode_value()
@@ -490,9 +536,11 @@ class NuzlockeMenu(MDScreen):
         self._apply_edit_lock()
         if self._suspend or not self._is_host():
             return
-        if self.nuz.get("soullink_mode") == mode_value:
+        if self.nuz.get("run_mode") == mode_value:
             return
-        self.nuz["soullink_mode"] = mode_value
+        self.nuz["run_mode"] = mode_value
+        # Modus gehoert zum Preset — passendes Preset oder Custom (wie Regeln)
+        self._sync_preset_display()
         self._persist_structural_change("mode")
 
     def _on_count_select(self, _value: str) -> None:
@@ -505,6 +553,7 @@ class NuzlockeMenu(MDScreen):
         if self.nuz.get("soullink_player_count") == count_int:
             return
         self.nuz["soullink_player_count"] = count_int
+        self._sync_preset_display()
         self._persist_structural_change("player_count")
 
     # ------------------------------------------------------- Config persist/push
@@ -555,7 +604,7 @@ class NuzlockeMenu(MDScreen):
             show_snackbar("Nur Host darf Config speichern.", level='info')
             return
         cfg = self._collect_config()
-        self.nuz["soullink_mode"] = cfg["mode"]
+        self.nuz["run_mode"] = cfg["mode"]
         self.nuz["soullink_player_count"] = cfg["player_count"]
         self.nuz["soullink_link_strategy"] = cfg["link_strategy"]
         self.nuz["soullink_team_membership"] = cfg["team_membership"]
@@ -955,10 +1004,10 @@ class NuzlockeMenu(MDScreen):
         """Schreibt self.nuz zurück in alle Widgets (Session-Wechsel + Verwerfen)."""
         self._suspend = True
         try:
-            initial_id = str(self.nuz.get("soullink_preset_id", "") or "")
+            initial_id = resolve_preset_id(self.nuz, self._presets)
             self._preset_dd.set_value(self._preset_id_to_label.get(
-                initial_id, self._preset_dd.value))
-            mode_val = normalize_mode(self.nuz.get("soullink_mode"))
+                initial_id, CUSTOM_PRESET_LABEL))
+            mode_val = normalize_mode(self.nuz.get("run_mode"))
             self._mode_dd.set_value(MODE_LABELS[mode_val])
             self._count_dd.set_value(str(clamp_player_count(
                 self.nuz.get("soullink_player_count", 2))))
@@ -966,6 +1015,7 @@ class NuzlockeMenu(MDScreen):
                 cb = self._rule_checkboxes.get(rule_key)
                 if cb is not None:
                     cb.active = rule_value(self.nuz, rule_key)
+            self._set_dragon_rage_slider(dragon_rage_badge_limit(self.nuz))
             self._rebuild_owner_rows()
         finally:
             self._suspend = False
@@ -1006,6 +1056,8 @@ class NuzlockeMenu(MDScreen):
                     cb = self._rule_checkboxes.get(rule_key)
                     if cb is not None:
                         cb.active = bool(server_rules.get(rule_key, rule_value(self.nuz, rule_key)))
+                self._set_dragon_rage_slider(dragon_rage_badge_limit(
+                    {**self.nuz, **server_rules}))
         except Exception as err:
             logger.warning(f"_sync_from_server_state failed: {err}")
             logger.warning(traceback.format_exc())

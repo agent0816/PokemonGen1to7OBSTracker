@@ -67,9 +67,9 @@ class EncounterTracker:
         )
 
     def _nuzlocke_rules_active(self) -> bool:
-        """False bei soullink_mode 'disabled' — Tracker läuft dann ohne Nuzlocke-Regeln.
+        """False bei run_mode 'disabled' — Tracker läuft dann ohne Nuzlocke-Regeln.
         Legacy-Wert 'off' und fehlender Key bedeuten 'nuzlocke' (Regeln aktiv)."""
-        return (self.nuz.get("soullink_mode") or "nuzlocke") != "disabled"
+        return (self.nuz.get("run_mode") or "nuzlocke") != "disabled"
 
     def _run_started_for_owner(self, owner: str, edition: int) -> bool:
         """True wenn Nuzlocke-Run fuer diesen (owner, edition) bereits aktiv ist.
@@ -78,9 +78,9 @@ class EncounterTracker:
         - Modus 'disabled': True (kein Run-Konzept, immer loggen fuer Statistik)
         - rule_run_start_on_ball aus: True (User hat den Automatismus abgeschaltet)
         - Modus aktiv + Regel aktiv: True erst wenn mindestens ein Ball da ist
-          (has_catching_balls). Sonst Encounter komplett verwerfen — Starter
-          und Gift-Encounter, die per definitionem den Run starten koennen,
-          bekommen im Caller einen expliziten Bypass.
+          (has_catching_balls). Sonst Wild-Encounter komplett verwerfen.
+          Nur noch von process_wild_encounter genutzt — Starter, Gifts,
+          Fossilien, Statics und Eier zaehlen auch vor dem ersten Ball.
         """
         if not self._nuzlocke_rules_active():
             return True
@@ -183,8 +183,11 @@ class EncounterTracker:
             return True, is_first, False, False
 
         has_balls = self.pokedex_db.has_catching_balls(owner, edition)
-        if self.nuz.get("rule_run_start_on_ball", True) and not has_balls:
-            # Ohne Ball zählt nichts — is_first=False verhindert Link + DB-First-Marker
+        if (self.nuz.get("rule_run_start_on_ball", True) and not has_balls
+                and method == "wild"):
+            # Ohne Ball zählt kein Wild-Encounter — is_first=False verhindert
+            # Link + DB-First-Marker. Gifts/Fossilien/Statics/Eier brauchen
+            # keinen Ball und laufen regulär weiter.
             return has_balls, False, False, False
 
         gifts_additional = self.nuz.get("gifts_are_additional", True)
@@ -432,17 +435,9 @@ class EncounterTracker:
             return None
 
         method = matched_gift.get("type", "gift")
-        # Run-Gate: Gift-Encounter vor dem ersten Ball verwerfen, ausser
-        # es ist ein Starter (der DEN Run startet und deshalb nie geblockt
-        # werden darf). Starter kommen normalerweise via process_starter,
-        # aber der Sanity-Check hier schadet nicht.
-        if method != "starter" and not self._run_started_for_owner(owner, edition):
-            self.logger.info(
-                f"Gift-Encounter uebersprungen (Run nicht gestartet): "
-                f"owner={owner} edition={edition} method={method} "
-                f"gift='{matched_gift.get('name', '?')}' map={map_header_id}"
-            )
-            return None
+        # Kein Run-Gate: Gifts/Fossilien/Statics/Eier zaehlen auch vor dem
+        # ersten Ball als Encounter — ohne Ball-Bedarf erhalten und daher
+        # unabhaengig von rule_run_start_on_ball (siehe _check_nuzlocke_flags).
         # effective_route: für Gift-Encounter die map_header_id als route
         # persistieren, sonst kollidieren alle Gifts unter route=0 und die
         # (owner, edition, route, method)-Dedupe kann nicht trennen zwischen

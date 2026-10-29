@@ -67,7 +67,7 @@ class _DriveApp(MDApp):
         self.munchlax = _MockMunchlax()
         # Host-Session mit Versus-Modus + 3 Spielern.
         self.nuz = {
-            "soullink_mode": "versus",
+            "run_mode": "versus",
             "soullink_player_count": 3,
             "soullink_expected_owners": ["Alice", "Bob"],
             "soullink_team_membership": {},

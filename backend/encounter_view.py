@@ -63,7 +63,7 @@ def is_soullink(nuz: dict | None) -> bool:
     """True, wenn die Session in einem Linking-Modus (coop/versus) läuft."""
     if not nuz:
         return False
-    return (nuz.get("soullink_mode") or "nuzlocke") in SOULLINK_MODES
+    return (nuz.get("run_mode") or "nuzlocke") in SOULLINK_MODES
 
 
 def edition_label(edition: int) -> str:

@@ -1375,7 +1375,7 @@ class Munchlax:
                                         mirrored_count += 1
                             mode_val = self.soullink_config.get("mode")
                             if isinstance(mode_val, str) and mode_val:
-                                self.nuz["soullink_mode"] = mode_val
+                                self.nuz["run_mode"] = mode_val
                         log_raw = self.soullink_config.get('rules')
                         log_rules = (
                             list(log_raw.keys()) if isinstance(log_raw, dict) else "absent"
@@ -2076,7 +2076,7 @@ class Munchlax:
         """
         # Marker BEHALTEN — nicht poppen, siehe Docstring Punkt 1.
 
-        mode = str(self.nuz.get("soullink_mode", "")).strip().lower()
+        mode = str(self.nuz.get("run_mode", "")).strip().lower()
         if mode not in ("coop", "versus"):
             self.logger.debug(
                 f"dismiss_wipe: kein Broadcast (mode={mode!r}, nur coop/versus)"
@@ -2110,7 +2110,7 @@ class Munchlax:
                     im gleichen team_letter sein
           - andere: ignoriert (sollte nicht broadcastet worden sein)
         """
-        mode = str(self.nuz.get("soullink_mode", "")).strip().lower()
+        mode = str(self.nuz.get("run_mode", "")).strip().lower()
         share_team = False
         if mode == "coop":
             share_team = True
@@ -2372,9 +2372,9 @@ class Munchlax:
         return False
 
     def _nuzlocke_rules_active(self) -> bool:
-        """False bei soullink_mode 'disabled' — dann greifen keine Nuzlocke-Regeln.
+        """False bei run_mode 'disabled' — dann greifen keine Nuzlocke-Regeln.
         Legacy-Wert 'off' und fehlender Key bedeuten 'nuzlocke' (Regeln aktiv)."""
-        return (self.nuz.get("soullink_mode") or "nuzlocke") != "disabled"
+        return (self.nuz.get("run_mode") or "nuzlocke") != "disabled"
 
     def check_nickname_required(self, pokemon, edition, default_species_name) -> bool:
         """rule_nickname_required: prüft ob Nickname vom Default-Species-Namen abweicht."""

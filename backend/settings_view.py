@@ -57,7 +57,7 @@ def resolve_team_ids(nuz: dict, pl: dict | None, rem: dict | None) -> list[tuple
 
     Spiegelt arceus._effective_team_membership — bei Aenderung dort auch hier.
     """
-    mode = (nuz.get("soullink_mode") or "off").lower()
+    mode = (nuz.get("run_mode") or "off").lower()
     if mode == "coop":
         team_map = nuz.get("soullink_team_membership", {}) or {}
         if team_map:

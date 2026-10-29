@@ -299,10 +299,12 @@ def update_session(sessionpath, default=False):
         "shiny_clause": True,
         "dupes_clause": True,
         "encounter_methods_separate": False,
-        # Soullink-Modus + Struktur. Werte: "disabled" (Tracker ohne Nuzlocke-Regeln),
+        # Spielmodus (bis 2026-10 Key "soullink_mode") + Soullink-Struktur.
+        # Werte: "disabled" (Tracker ohne Nuzlocke-Regeln, nur Statistik),
         # "nuzlocke" (Regeln aktiv, kein Soullink, Default), "coop", "versus" (Teams),
         # "versus_ffa" (jeder gegen jeden, Scoreboard pro Spieler, kein Soullink).
-        "soullink_mode": "nuzlocke",
+        # Ein Soullink ist ein Nuzlocke, ein Nuzlocke aber nicht zwingend ein Soullink.
+        "run_mode": "nuzlocke",
         "soullink_player_count": 2,
         "soullink_link_strategy": "full_chain",
         "soullink_team_membership": {},
@@ -326,9 +328,6 @@ def update_session(sessionpath, default=False):
         "rule_single_type_per_team": False,
         "rule_species_clause_cross_players": False,
         "rule_shiny_clause_always_catchable": True,
-        "rule_doubles_only": False,
-        "rule_doubles_only_after_first_rival": False,
-        "rule_randomized_movesets": False,
         "rule_dragon_rage_clause": False,
         "rule_dragon_rage_clause_badge_limit": 2,
         "rule_token_rule": False,
@@ -347,8 +346,11 @@ def update_session(sessionpath, default=False):
         # "off" wird von der UI nicht mehr geschrieben, die Umbenennung ist daher stabil.
         with open(nuzlocke) as file:
             cur_nuz = yaml.safe_load(file) or {}
-        if cur_nuz.get("soullink_mode") == "off":
-            cur_nuz["soullink_mode"] = "nuzlocke"
+        changed = migrate_run_mode_key(cur_nuz)
+        if cur_nuz.get("run_mode") == "off":
+            cur_nuz["run_mode"] = "nuzlocke"
+            changed = True
+        if changed:
             save_config(nuzlocke, cur_nuz)
         if not default:
             load_config(nuzlocke, nuz)
@@ -359,6 +361,19 @@ def update_session(sessionpath, default=False):
     session_root = Path(f"{sessionpath}/default") if default else Path(sessionpath)
     ensure_runs_dir(session_root)
     detect_legacy_encounter_archives(session_root)
+
+def migrate_run_mode_key(nuz: dict) -> bool:
+    """Benennt den alten Key "soullink_mode" in "run_mode" um (in-place).
+
+    Ein bereits vorhandenes "run_mode" gewinnt, der Alt-Key fliegt trotzdem raus.
+    Gibt True zurueck, wenn das Dict geaendert wurde.
+    """
+    if "soullink_mode" not in nuz:
+        return False
+    old = nuz.pop("soullink_mode")
+    if "run_mode" not in nuz:
+        nuz["run_mode"] = old
+    return True
 
 def ensure_runs_dir(session_root: Path):
     runs = session_root / "runs"

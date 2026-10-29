@@ -21,10 +21,10 @@ TEAM_LETTERS = ["A", "B", "C", "D"]
 # "nuzlocke" (Migration in initialize_tree).
 MODE_LABELS = {
     "nuzlocke": "Nuzlocke",
-    "coop": "Coop",
-    "versus": "Versus (Teams)",
+    "coop": "Coop (Soullink)",
+    "versus": "Versus (Soullink)",
     "versus_ffa": "Versus (jeder gegen jeden)",
-    "disabled": "Aus",
+    "disabled": "Nur Statistik (keine Regeln)",
 }
 MODE_LABEL_TO_VALUE = {v: k for k, v in MODE_LABELS.items()}
 
@@ -50,7 +50,12 @@ RULE_CHECKBOXES: list[tuple[str, str]] = [
     ("rule_first_type_clause_linked",           "Ersttyp-Clause (verlinkt)"),
     ("rule_first_type_clause_static_exception", "Ersttyp: Static-Ausnahme"),
     ("rule_single_type_per_team",               "Ersttyp-Dupes im Party-Team ausblenden"),
+    ("rule_dragon_rage_clause",                 "Drachenwut-Klausel"),
 ]
+
+# Orden-Grenze der Drachenwut-Klausel (Slider im NuzlockeMenu).
+DRAGON_RAGE_BADGE_MIN = 1
+DRAGON_RAGE_BADGE_MAX = 4
 
 # Kanonische Regel-Defaults — 1:1 Spiegel von initialize_tree.py:288-305. Dient als
 # Fallback, falls ein nuz-Dict einen Key noch nicht enthaelt (sehr alte Session vor
@@ -68,9 +73,6 @@ RULE_DEFAULTS: dict[str, object] = {
     "rule_single_type_per_team": False,
     "rule_species_clause_cross_players": False,
     "rule_shiny_clause_always_catchable": True,
-    "rule_doubles_only": False,
-    "rule_doubles_only_after_first_rival": False,
-    "rule_randomized_movesets": False,
     "rule_dragon_rage_clause": False,
     "rule_dragon_rage_clause_badge_limit": 2,
     "rule_token_rule": False,
@@ -83,6 +85,51 @@ def normalize_mode(value) -> str:
     if not value or value == "off":
         return "nuzlocke"
     return value if value in MODE_LABELS else "nuzlocke"
+
+
+def find_matching_preset(nuz: dict, presets: dict) -> str | None:
+    """ID des ersten Presets, das exakt dem aktuellen nuz-Zustand entspricht.
+
+    Ein Preset gilt als kompletter Zustand: ungenannte Regeln = RULE_DEFAULTS
+    (so wendet apply_preset es auch an). run_mode/player_count/link_strategy
+    werden nur verglichen, wenn das Preset sie setzt. Presets ohne Regeln
+    (custom) matchen nie. None = kein Treffer -> Custom anzeigen.
+    """
+    for pid, preset in (presets or {}).items():
+        if not isinstance(preset, dict) or not preset.get("rules"):
+            continue
+        mode = preset.get("run_mode")
+        if mode is not None and normalize_mode(mode) != normalize_mode(nuz.get("run_mode")):
+            continue
+        if any(preset.get(key) is not None and preset.get(key) != nuz.get(key)
+               for key in ("soullink_player_count", "soullink_link_strategy")):
+            continue
+        rules = preset["rules"]
+        keys = set(RULE_DEFAULTS) | set(rules)
+        if all(rules.get(k, RULE_DEFAULTS.get(k)) == nuz.get(k, RULE_DEFAULTS.get(k))
+               for k in keys):
+            return pid
+    return None
+
+
+def resolve_preset_id(nuz: dict, presets: dict) -> str:
+    """Anzuzeigende Preset-ID: gespeicherte ID, falls es das Preset noch gibt,
+    sonst das exakt passende Preset, sonst Custom. Faengt entfernte IDs ab
+    (z.B. frueheres yml-Preset 'custom') und leere IDs frischer Sessions."""
+    stored = str(nuz.get("soullink_preset_id", "") or "")
+    if stored == CUSTOM_PRESET_ID or stored in (presets or {}):
+        return stored
+    return find_matching_preset(nuz, presets) or CUSTOM_PRESET_ID
+
+
+def dragon_rage_badge_limit(nuz: dict) -> int:
+    """Orden-Grenze der Drachenwut-Klausel, auf DRAGON_RAGE_BADGE_MIN..MAX geklemmt."""
+    try:
+        val = int(nuz.get("rule_dragon_rage_clause_badge_limit",
+                          RULE_DEFAULTS["rule_dragon_rage_clause_badge_limit"]))
+    except (TypeError, ValueError):
+        val = int(RULE_DEFAULTS["rule_dragon_rage_clause_badge_limit"])
+    return max(DRAGON_RAGE_BADGE_MIN, min(DRAGON_RAGE_BADGE_MAX, val))
 
 
 def rule_value(nuz: dict, key: str) -> bool:

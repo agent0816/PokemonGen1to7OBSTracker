@@ -28,7 +28,10 @@ from backend.nuzlocke_view import (
     MODE_LABEL_TO_VALUE,
     CUSTOM_PRESET_LABEL,
     CUSTOM_PRESET_ID,
+    RULE_DEFAULTS,
+    find_matching_preset,
     normalize_mode,
+    resolve_preset_id,
 )
 from frontend.widgets.timer_widget import TimerWidget
 from frontend.widgets.mainmenu import BizhawkSavePopup
@@ -59,6 +62,7 @@ RULE_CHECKBOXES: list[tuple[str, str, bool]] = [
     ("rule_first_type_clause_linked",         "Ersttyp-Clause (verlinkt)",       False),
     ("rule_first_type_clause_static_exception", "Ersttyp: Static-Ausnahme",      False),
     ("rule_single_type_per_team",             "Ersttyp-Dupes im Party-Team ausblenden", False),
+    ("rule_dragon_rage_clause",               "Drachenwut-Klausel",              False),
 ]
 
 class OwnerRow(BoxLayout):
@@ -116,6 +120,7 @@ class NuzlockeMenu(Screen):
         # Regel-Checkbox aendert. Kein Eintrag in soullink_presets.yml.
         self._preset_choices.append((CUSTOM_PRESET_ID, CUSTOM_PRESET_LABEL))
         self._preset_label_to_id = {label: pid for pid, label in self._preset_choices}
+        self._preset_id_to_label = {pid: label for pid, label in self._preset_choices}
         # Guard fuer _on_rule_checkbox_change — waehrend _refresh_rule_checkboxes
         # setzen wir CheckBox.active programmatisch und wollen nicht in den
         # Custom-Mode kippen. Wird via _suspend_rule_change() gesetzt.
@@ -180,7 +185,7 @@ class NuzlockeMenu(Screen):
         # Letzten gespeicherten Preset-Wert (nuz.soullink_preset_id) als Startwert
         # zeigen, damit der User nach App-Start / Session-Wechsel weiss welches
         # Preset zuletzt aktiv war. Fallback: erstes Label.
-        initial_preset_id = str(self.nuz.get("soullink_preset_id", "") or "")
+        initial_preset_id = resolve_preset_id(self.nuz, self._presets)
         initial_preset_label = preset_labels[0]
         for pid, label in self._preset_choices:
             if pid == initial_preset_id:
@@ -239,7 +244,7 @@ class NuzlockeMenu(Screen):
         config_row = BoxLayout(orientation="horizontal", size_hint_y=None,
                                 height="40dp", spacing="6dp")
         config_row.add_widget(Label(text="Modus:", size_hint_x=0.15))
-        mode_value = normalize_mode(self.nuz.get("soullink_mode"))
+        mode_value = normalize_mode(self.nuz.get("run_mode"))
         self.mode_spinner = Spinner(
             text=MODE_LABELS[mode_value],
             values=list(MODE_LABELS.values()),
@@ -458,11 +463,19 @@ class NuzlockeMenu(Screen):
         if not self._is_host():
             return
         self.nuz[rule_key] = bool(active)
-        if self.preset_spinner.text != CUSTOM_PRESET_LABEL:
-            self.preset_spinner.text = CUSTOM_PRESET_LABEL
-        self.nuz["soullink_preset_id"] = CUSTOM_PRESET_ID
-        self.status_label.text = f"Regel geaendert: {rule_key}={bool(active)} (Custom-Preset)"
+        label = self._sync_preset_display()
+        self.status_label.text = f"Regel geaendert: {rule_key}={bool(active)} ({label})"
         self._persist_structural_change(f"rule:{rule_key}")
+
+    def _sync_preset_display(self) -> str:
+        """Preset-Spinner nach manueller Aenderung abgleichen: exakt passendes
+        Preset anzeigen, sonst Custom. Persistiert die ID in nuz, gibt Label zurueck."""
+        pid = find_matching_preset(self.nuz, self._presets) or CUSTOM_PRESET_ID
+        label = self._preset_id_to_label.get(pid, CUSTOM_PRESET_LABEL)
+        if self.preset_spinner.text != label:
+            self.preset_spinner.text = label
+        self.nuz["soullink_preset_id"] = pid
+        return label
 
     def _is_host(self) -> bool:
         """True wenn User Server-Host ist (start_server=True in rem)."""
@@ -903,9 +916,11 @@ class NuzlockeMenu(Screen):
         # beim Menu-Init feuert mit dem Wert der schon in self.nuz steht.
         # Ohne dieses Guard-Check wuerde jedes Screen-Oeffnen eine
         # unnoetige synchrone Disk-Write + Server-Push ausloesen.
-        if self.nuz.get("soullink_mode") == mode_value:
+        if self.nuz.get("run_mode") == mode_value:
             return
-        self.nuz["soullink_mode"] = mode_value
+        self.nuz["run_mode"] = mode_value
+        # Modus gehoert zum Preset — passendes Preset oder Custom (wie Regeln)
+        self._sync_preset_display()
         self._persist_structural_change("mode")
 
     def _mode_value(self) -> str:
@@ -936,6 +951,7 @@ class NuzlockeMenu(Screen):
         if self.nuz.get("soullink_player_count") == int(count_int):
             return
         self.nuz["soullink_player_count"] = int(count_int)
+        self._sync_preset_display()
         self._persist_structural_change("player_count")
 
     def _collect_config(self) -> dict:
@@ -1024,17 +1040,14 @@ class NuzlockeMenu(Screen):
         # und triggert einen unnoetigen _persist_structural_change (Disk + Netz).
         self._suspend_spinner_change_events = True
         try:
-            mode_value = normalize_mode(self.nuz.get("soullink_mode"))
+            mode_value = normalize_mode(self.nuz.get("run_mode"))
             self.mode_spinner.text = MODE_LABELS[mode_value]
             self.player_count_spinner.text = str(self.nuz.get("soullink_player_count", 2) or 2)
             # Preset-Spinner auf zuletzt gespeicherte ID setzen (rein visuell,
-            # kein Auto-Apply). Bei unbekannter/leerer ID nichts aendern.
-            preset_id = str(self.nuz.get("soullink_preset_id", "") or "")
-            if preset_id:
-                for pid, label in self._preset_choices:
-                    if pid == preset_id:
-                        self.preset_spinner.text = label
-                        break
+            # kein Auto-Apply). Unbekannte/leere ID -> passendes Preset oder Custom.
+            preset_id = resolve_preset_id(self.nuz, self._presets)
+            self.preset_spinner.text = self._preset_id_to_label.get(
+                preset_id, CUSTOM_PRESET_LABEL)
             self._refresh_rule_checkboxes()
             self._rebuild_owner_rows()
         finally:
@@ -1280,7 +1293,7 @@ class NuzlockeMenu(Screen):
             self.status_label.text = "Preset nicht gefunden"
             return
         preset = self._presets[pid]
-        apply_preset(self.nuz, preset)
+        apply_preset(self.nuz, preset, RULE_DEFAULTS)
         # Preset-ID merken, damit der Spinner nach App-Neustart / Session-Wechsel
         # wieder auf diese Auswahl steht.
         self.nuz["soullink_preset_id"] = pid
@@ -1308,7 +1321,7 @@ class NuzlockeMenu(Screen):
         # Alle Felder mitschreiben (auch die bereits auto-persistierten):
         # falls User Rows manuell veraendert hat, sind self.nuz und Cfg
         # sowieso identisch. Kostenlose Sicherheitsschleife.
-        self.nuz["soullink_mode"] = cfg["mode"]
+        self.nuz["run_mode"] = cfg["mode"]
         self.nuz["soullink_player_count"] = cfg["player_count"]
         self.nuz["soullink_link_strategy"] = cfg["link_strategy"]
         self.nuz["soullink_team_membership"] = cfg["team_membership"]

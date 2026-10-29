@@ -19,13 +19,13 @@ def test_resolve_team_ids_solo_off():
 
 
 def test_resolve_team_ids_coop_fallback():
-    nuz = {"soullink_mode": "coop", "soullink_expected_owners": ["Alice", "Bob"]}
+    nuz = {"run_mode": "coop", "soullink_expected_owners": ["Alice", "Bob"]}
     assert sv.resolve_team_ids(nuz, None, None) == [("coop", "Team (Coop)")]
 
 
 def test_resolve_team_ids_coop_membership():
     nuz = {
-        "soullink_mode": "coop",
+        "run_mode": "coop",
         "soullink_team_membership": {"Alice": "Rot", "Bob": "Rot", "Carol": "Blau"},
     }
     teams = sv.resolve_team_ids(nuz, None, None)
@@ -34,7 +34,7 @@ def test_resolve_team_ids_coop_membership():
 
 
 def test_resolve_team_ids_versus_ffa():
-    nuz = {"soullink_mode": "versus_ffa", "soullink_expected_owners": ["Alice", "Bob"]}
+    nuz = {"run_mode": "versus_ffa", "soullink_expected_owners": ["Alice", "Bob"]}
     teams = sv.resolve_team_ids(nuz, None, None)
     assert teams == [("Alice", "Team Alice"), ("Bob", "Team Bob")]
 

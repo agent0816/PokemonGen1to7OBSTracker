@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-from backend.bag_decoder import POCKET_MAX_SLOTS
+from backend.bag_decoder import POCKET_MAX_SLOTS, catching_ball_ids
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, 'logs/bagmenu.log')
@@ -105,9 +105,8 @@ def item_display_name(edition_str, item_id: int) -> str:
 
 
 def is_ball(edition_str, item_id: int) -> bool:
-    """True, wenn der Item-Slug auf '-ball' endet (Nuzlocke-Ball-Regel)."""
-    slug = item_slug(edition_str, item_id)
-    return bool(slug and slug.endswith("-ball"))
+    """True, wenn die Item-ID ein Fang-Ball ist (Nuzlocke-Ball-Regel)."""
+    return int(item_id) in catching_ball_ids(edition_str)
 
 
 def pretty_iso(ts: str | None) -> str:

@@ -261,6 +261,34 @@ def edition_to_gen(edition: int) -> int:
     return edition // 10
 
 
+# Fang-Baelle je Generation als Item-IDs (aus items1..5.yml / items.yml).
+# Bewusst per ID statt Slug-Suffix: '-ball' trifft auch Nicht-Baelle
+# (Kugelrauch/smoke-ball, Kugelblitz/light-ball, Eisenkugel/iron-ball,
+# GS-Ball, polished-mud-ball, PLA-IDs 1640+ in items.yml).
+# Safari-Ball zaehlt mit (Randomizer koennen ihn als Item-Ball vergeben).
+# Ausgeschlossen sind Park-Ball und Turnier-/Sport-Ball (nur temporaer in
+# Zone/Event). Grundlage fuer die Nuzlocke-Regel rule_run_start_on_ball.
+_BALLS_GEN3 = frozenset({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12})
+_BALLS_GEN4 = _BALLS_GEN3 | {13, 14, 15, 16, 492, 493, 494, 495, 496, 497, 498}
+CATCHING_BALL_IDS: dict[int, frozenset[int]] = {
+    1: frozenset({1, 2, 3, 4, 8}),
+    2: frozenset({1, 2, 4, 5, 157, 159, 160, 161, 164, 165, 166}),
+    3: _BALLS_GEN3,
+    4: _BALLS_GEN4,
+    5: _BALLS_GEN4 | {576},
+    6: _BALLS_GEN4 | {576},
+    7: _BALLS_GEN4 | {576, 851},
+}
+
+
+def catching_ball_ids(edition) -> frozenset[int]:
+    """Item-IDs der Fang-Baelle fuer eine Edition (leer bei unbekannter Gen)."""
+    try:
+        return CATCHING_BALL_IDS.get(int(edition) // 10, frozenset())
+    except (TypeError, ValueError):
+        return frozenset()
+
+
 # Pocket-Keys, die im Pointer-YAML als "bag_<key>" auftauchen koennen.
 # Reihenfolge ist beliebig; der Reader iteriert und ueberspringt fehlende Keys.
 KNOWN_POCKET_KEYS = (

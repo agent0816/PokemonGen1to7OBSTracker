@@ -1449,7 +1449,7 @@ class ScrollSettings(ScrollView):
         - versus_ffa: pro expected_owner ein Team, Label = owner-Name.
         - Off/Nuzlocke: 1 impliziter Solo-Team-Slug (lokaler Owner), Label = "Team".
         """
-        mode = (self.nuz.get("soullink_mode") or "off").lower()
+        mode = (self.nuz.get("run_mode") or "off").lower()
         if mode == "coop":
             team_map = self.nuz.get("soullink_team_membership", {}) or {}
             if team_map:

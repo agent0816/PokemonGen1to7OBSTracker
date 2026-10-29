@@ -121,7 +121,7 @@ def test_death_report_debounce_and_pending():
     from backend.classes.munchlax import Munchlax, WIPE_ZERO_READ_THRESHOLD
 
     m = Munchlax("localhost", 12345, {"client_id": "c1"}, {}, {"your_name": "Alice"},
-                 nuz={"soullink_mode": "nuzlocke"})
+                 nuz={"run_mode": "nuzlocke"})
     slot = {"personality": 111, "dexnr": 25, "cur_hp": 0, "max_hp": 20, "lvl": 5}
     team = [slot, None, None, None, None, None]
 
@@ -150,7 +150,7 @@ def test_death_detection_disabled_mode_no_report():
     from backend.classes.munchlax import Munchlax
 
     m = Munchlax("localhost", 12345, {"client_id": "c1"}, {}, {"your_name": "Alice"},
-                 nuz={"soullink_mode": "disabled"})
+                 nuz={"run_mode": "disabled"})
     assert m._nuzlocke_rules_active() is False
 
 

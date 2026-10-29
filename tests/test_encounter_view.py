@@ -17,12 +17,12 @@ def _enc(**kw):
 
 # --- is_soullink ----------------------------------------------------------
 
-def test_is_soullink_modes():
-    assert ev.is_soullink({"soullink_mode": "coop"}) is True
-    assert ev.is_soullink({"soullink_mode": "versus"}) is True
-    assert ev.is_soullink({"soullink_mode": "nuzlocke"}) is False
-    assert ev.is_soullink({"soullink_mode": "versus_ffa"}) is False
-    assert ev.is_soullink({"soullink_mode": "disabled"}) is False
+def test_is_run_modes():
+    assert ev.is_soullink({"run_mode": "coop"}) is True
+    assert ev.is_soullink({"run_mode": "versus"}) is True
+    assert ev.is_soullink({"run_mode": "nuzlocke"}) is False
+    assert ev.is_soullink({"run_mode": "versus_ffa"}) is False
+    assert ev.is_soullink({"run_mode": "disabled"}) is False
     assert ev.is_soullink({}) is False          # Default = nuzlocke
     assert ev.is_soullink(None) is False
 

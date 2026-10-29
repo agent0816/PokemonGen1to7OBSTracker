@@ -53,7 +53,7 @@ class _DriveApp(MDApp):
         self._session_dir = session_dir
         self._out = out
         self.results: dict = {}
-        self.nuz = {"soullink_mode": "nuzlocke", "soullink_player_count": 2}
+        self.nuz = {"run_mode": "nuzlocke", "soullink_player_count": 2}
 
     def check(self, name, ok, detail=None):
         self.results[name] = {"ok": bool(ok), "detail": detail}
@@ -108,7 +108,7 @@ class _DriveApp(MDApp):
         self._next(self.s_soullink, 0.5)
 
     def s_soullink(self):
-        self.nuz["soullink_mode"] = "coop"
+        self.nuz["run_mode"] = "coop"
         self.menu._apply_filters()
         cards = self._cards()
         self.check("soullink_1_gruppe", len(cards) == 1, len(cards))

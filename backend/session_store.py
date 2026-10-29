@@ -80,9 +80,15 @@ def load_session_into(config_path: str, configs: SessionConfigs) -> None:
             # nuzlockemenu) bzw. bei App-Start via init_config_folder-
             # Migration.
             stale_keys = [k for k in list(target.keys())
-                          if k.startswith("rule_") or k.startswith("soullink_")]
+                          if k.startswith("rule_") or k.startswith("soullink_")
+                          or k == "run_mode"]
             for k in stale_keys:
                 del target[k]
+            # Alt-Key "soullink_mode" (bis 2026-10) -> "run_mode", falls die
+            # Session ohne Startup-Migration (initialize_tree) geladen wird.
+            if new_values and "soullink_mode" in new_values:
+                old_mode = new_values.pop("soullink_mode")
+                new_values.setdefault("run_mode", old_mode)
         if new_values:
             for key, value in new_values.items():
                 target[key] = value

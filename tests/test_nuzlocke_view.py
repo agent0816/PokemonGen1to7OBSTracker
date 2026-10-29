@@ -137,3 +137,55 @@ def test_client_verify_diff_preserves_original_index():
     expected_pairs = [(0, "Alice"), (2, "Bob")]
     _matched, missing, _extra = nv.client_verify_diff(expected_pairs, [])
     assert missing == [(0, "Alice"), (2, "Bob")]
+
+
+def test_preset_roundtrip_jedes_preset_wird_wiedererkannt():
+    from backend.soullink_presets import load_presets, apply_preset
+    presets = load_presets()
+    for pid, preset in presets.items():
+        if not preset.get("rules"):
+            continue
+        # Startzustand mit "fremden" Werten, die das Preset zuruecksetzen muss
+        nuz = dict(nv.RULE_DEFAULTS, rule_dragon_rage_clause_badge_limit=4,
+                   soullink_player_count=2, run_mode="disabled")
+        apply_preset(nuz, preset, nv.RULE_DEFAULTS)
+        assert nv.find_matching_preset({**nuz}, {pid: preset}) == pid
+        assert nuz["rule_dragon_rage_clause_badge_limit"] == preset["rules"].get(
+            "rule_dragon_rage_clause_badge_limit", 2)
+
+
+def test_preset_match_kippt_bei_abweichung():
+    preset = {"run_mode": "coop", "soullink_player_count": 2,
+              "rules": {"rule_token_rule": True}}
+    nuz = dict(nv.RULE_DEFAULTS, rule_token_rule=True,
+               run_mode="coop", soullink_player_count=2)
+    assert nv.find_matching_preset(nuz, {"p": preset}) == "p"
+    assert nv.find_matching_preset({**nuz, "run_mode": "versus"}, {"p": preset}) is None
+    assert nv.find_matching_preset({**nuz, "soullink_player_count": 3}, {"p": preset}) is None
+    assert nv.find_matching_preset({**nuz, "rule_dragon_rage_clause_badge_limit": 3},
+                                   {"p": preset}) is None
+    assert nv.find_matching_preset(nuz, {"c": {"run_mode": None, "rules": {}}}) is None
+
+
+def test_resolve_preset_id():
+    presets = {"p": {"run_mode": "coop", "rules": {"rule_token_rule": True}}}
+    match = dict(nv.RULE_DEFAULTS, rule_token_rule=True, run_mode="coop")
+    # entfernte ID (frueheres yml-'custom') -> passendes Preset bzw. Custom
+    assert nv.resolve_preset_id({**match, "soullink_preset_id": "custom"}, presets) == "p"
+    assert nv.resolve_preset_id({"soullink_preset_id": "custom"}, presets) == nv.CUSTOM_PRESET_ID
+    assert nv.resolve_preset_id({"soullink_preset_id": "p"}, presets) == "p"
+    assert nv.resolve_preset_id({"soullink_preset_id": nv.CUSTOM_PRESET_ID}, presets) == nv.CUSTOM_PRESET_ID
+
+
+def test_alle_bool_regeln_haben_checkbox():
+    keys = {k for k, _ in nv.RULE_CHECKBOXES}
+    bools = {k for k, v in nv.RULE_DEFAULTS.items() if isinstance(v, bool)}
+    assert bools <= keys
+
+
+
+def test_dragon_rage_badge_limit_geklemmt():
+    assert nv.dragon_rage_badge_limit({}) == 2
+    assert nv.dragon_rage_badge_limit({"rule_dragon_rage_clause_badge_limit": 9}) == 4
+    assert nv.dragon_rage_badge_limit({"rule_dragon_rage_clause_badge_limit": 0}) == 1
+    assert nv.dragon_rage_badge_limit({"rule_dragon_rage_clause_badge_limit": "x"}) == 2

@@ -5,7 +5,7 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from backend.bag_decoder import BagItem
+from backend.bag_decoder import BagItem, catching_ball_ids
 from backend.classes.Pokemon import Pokemon
 from backend.logging_setup import get_logger
 
@@ -909,17 +909,25 @@ class PokedexDB:
         """Prüft ob der Spieler JEMALS einen Ball besessen hat (bag_first_seen).
 
         Bestimmt ob der Nuzlocke-Run gestartet hat — einmal True, bleibt True.
+
+        Geprueft wird per Item-ID (catching_ball_ids) ueber alle Pockets statt
+        ueber die 'baelle'-Pocket: Gen 1 hat nur eine Tasche, Gen 5–7 legen
+        Baelle in 'items' ab — dort gab es nie eine 'baelle'-Pocket.
         """
         if self.connection is None:
             return False
+        ball_ids = catching_ball_ids(edition)
+        if not ball_ids:
+            return False
         try:
             edition_str = str(edition) if edition is not None else ""
+            placeholders = ",".join("?" * len(ball_ids))
             cursor = self.connection.cursor()
             cursor.execute(
                 "SELECT 1 FROM bag_first_seen "
-                "WHERE owner = ? AND edition = ? AND pocket = 'baelle' "
+                f"WHERE owner = ? AND edition = ? AND item_id IN ({placeholders}) "
                 "LIMIT 1",
-                (owner, edition_str),
+                (owner, edition_str, *sorted(ball_ids)),
             )
             return cursor.fetchone() is not None
         except Exception as err:

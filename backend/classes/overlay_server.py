@@ -391,7 +391,7 @@ class OverlayServer:
                 bucket["player_ids_by_owner"][owner] = []
 
         nuz = getattr(m, "nuz", {}) or {}
-        mode = (nuz.get("soullink_mode") or "off").lower()
+        mode = (nuz.get("run_mode") or "off").lower()
         team_map = nuz.get("soullink_team_membership", {}) or {}
         expected = nuz.get("soullink_expected_owners", []) or []
 

@@ -3,7 +3,7 @@
 Anwendung:
     presets = load_presets()
     apply_preset(nuz_dict, presets["versus_2v2"])
-    # nuz_dict enthält nun soullink_mode + alle rule_* Keys des Presets.
+    # nuz_dict enthält nun run_mode + alle rule_* Keys des Presets.
 """
 
 from pathlib import Path
@@ -34,17 +34,26 @@ def load_presets() -> dict:
         return {}
 
 
-def apply_preset(nuz: dict, preset: dict) -> dict:
+def apply_preset(nuz: dict, preset: dict, rule_defaults: dict | None = None) -> dict:
     """Wendet ein Preset auf ein nuzlocke.yml-Dict an (in-place).
 
-    Setzt soullink_mode/player_count/link_strategy falls im Preset gesetzt.
+    Setzt run_mode/player_count/link_strategy falls im Preset gesetzt.
     Überträgt alle rule_* Keys aus preset["rules"].
-    Regel-Keys, die im Preset NICHT vorkommen, bleiben unverändert.
+    Mit ``rule_defaults`` beschreibt ein Preset den kompletten Regel-Zustand:
+    Regel-Keys, die im Preset NICHT vorkommen, fallen auf den Default zurück
+    (Gegenstück zu nuzlocke_view.find_matching_preset). Ohne ``rule_defaults``
+    oder bei Preset ohne Regeln (custom) bleiben sie unverändert.
     """
     if not preset:
         return nuz
-    for key in ("soullink_mode", "soullink_player_count", "soullink_link_strategy"):
+    if rule_defaults and preset.get("rules"):
+        for rule_key, default in rule_defaults.items():
+            if rule_key not in preset["rules"]:
+                nuz[rule_key] = default
+    for key in ("run_mode", "soullink_player_count", "soullink_link_strategy"):
         val = preset.get(key)
+        if key == "run_mode" and val is None:
+            val = preset.get("soullink_mode")  # Alt-Key in eigenen Presets
         if val is not None:
             nuz[key] = val
     rules = preset.get("rules") or {}

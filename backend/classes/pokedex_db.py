@@ -10,7 +10,7 @@ from backend.classes.Pokemon import Pokemon
 from backend.logging_setup import get_logger
 
 
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
 # Marker fuer Legacy-Gift/Fossil/Static/Egg/Token-Encounter aus Sessions vor
 # der Migration auf route=map_header_id. Diese Zeilen hatten alle route=0
 # und wuerden nach dem Fix sonst mit den frisch geloggten Wilds auf MAPSEC=0
@@ -98,6 +98,8 @@ class PokedexDB:
             self._apply_v7(cursor)
         if current_version < 8:
             self._apply_v8(cursor)
+        if current_version < 9:
+            self._apply_v9(cursor)
 
         self.connection.commit()
 
@@ -348,6 +350,64 @@ class PokedexDB:
             f"{migrated} von {len(rows)} Zeilen umgeschrieben, {unknown} unbekannte map_id"
         )
 
+    def _apply_v9(self, cursor):
+        # Run-weite Regel-Marker pro (owner, edition), z.B.
+        # 'player_used_dragon_rage' fuer die Drachenwut-Klausel. Wird bei
+        # Run-Ende (Munchlax._finalize_run) und Session-Reset geleert.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS rule_flags (
+                owner   TEXT NOT NULL,
+                edition TEXT NOT NULL,
+                flag    TEXT NOT NULL,
+                set_at  TEXT NOT NULL,
+                PRIMARY KEY (owner, edition, flag)
+            )
+        """)
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (9, datetime.now(timezone.utc).isoformat()),
+        )
+        self.logger.info("PokedexDB Schema v9 angewendet (rule_flags)")
+
+    # -- Regel-Marker (Schema v9) ----------------------------------------------
+
+    @_serialized
+    def set_rule_flag(self, owner: str, edition, flag: str) -> bool:
+        """Setzt einen Run-weiten Regel-Marker (idempotent). True bei Erfolg."""
+        if self.connection is None:
+            return False
+        try:
+            edition_str = str(edition) if edition is not None else ""
+            self.connection.execute(
+                "INSERT OR IGNORE INTO rule_flags (owner, edition, flag, set_at) "
+                "VALUES (?, ?, ?, ?)",
+                (owner, edition_str, flag, datetime.now(timezone.utc).isoformat()),
+            )
+            self.connection.commit()
+            return True
+        except Exception as err:
+            self.logger.error(f"set_rule_flag failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    @_serialized
+    def has_rule_flag(self, owner: str, edition, flag: str) -> bool:
+        if self.connection is None:
+            return False
+        try:
+            edition_str = str(edition) if edition is not None else ""
+            cursor = self.connection.execute(
+                "SELECT 1 FROM rule_flags WHERE owner = ? AND edition = ? AND flag = ? LIMIT 1",
+                (owner, edition_str, flag),
+            )
+            return cursor.fetchone() is not None
+        except Exception as err:
+            self.logger.error(f"has_rule_flag failed: {type(err)},{err} — gebe True zurueck")
+            self.logger.error(f"{traceback.format_exc()}")
+            # Sichere Richtung: im Zweifel gilt der Marker als gesetzt (bei der
+            # Drachenwut-Klausel heisst das: Tod zaehlt).
+            return True
+
     @_serialized
     def reset_all_data(self) -> bool:
         """Löscht ALLE Inhalte der Content-Tabellen. Schema + schema_version
@@ -367,6 +427,7 @@ class PokedexDB:
             "bag_first_seen",
             "bag_inventory",
             "pokemon",
+            "rule_flags",
         )
         try:
             cursor = self.connection.cursor()

@@ -7,6 +7,9 @@ from backend.classes.Pokemon import Pokemon
 import backend.pokedecoder as pokedecoder
 import backend.bh_pointers as bh_pointers
 import backend.bag_decoder as bag_decoder
+from backend.dragon_rage import (
+    DragonRageTracker, GEN3_BATTLE_RESULTS_READ_SIZE, parse_gen3_battle_results,
+)
 from backend.encounter_tracker import EncounterTracker
 from backend.logging_setup import get_logger
 
@@ -298,6 +301,16 @@ class Bizhawk:
             )
             await self.send_messages(writer, pointer_str)
             self.logger.info(f"Pointer-Satz an {client_id} (edition={edition}, language={language}): {pointer_str}")
+            # Drachenwut-Klausel: gBattleResults (Gen 3) liefert die zuletzt
+            # eingesetzte Attacke pro Kampfseite. Ohne Pointer bleibt die
+            # Klausel fuer diesen Client inaktiv (Munchlax haelt dann keine
+            # Tode zurueck).
+            dr_ptr = pointers.get("battleresultspointer", 0) if 30 < edition < 40 else 0
+            dr_tracker = DragonRageTracker()
+            dr_read_polls = 0
+            self._dispatch_on_munchlax(
+                self.munchlax.set_dragon_rage_support(player, bool(dr_ptr))
+            )
 
             msg = (await self.receive_messages(reader, timeout=self._HANDSHAKE_TIMEOUT)).decode()
             if msg != "Aufgabe":
@@ -355,6 +368,15 @@ class Bizhawk:
                         await self.send_messages(writer, "team")
                         msg = await reader.readexactly(length)
                         update_teams(msg)
+                    elif counter % 60 == 1 and dr_ptr and dr_read_polls > 0:
+                        # Direkt nach dem Team-Read (counter % 60 == 0), damit HP
+                        # und gBattleResults aus fast demselben Frame stammen.
+                        tick_phase = "dragon_rage"
+                        await self.send_messages(
+                            writer, f"boxw {dr_ptr:X} {GEN3_BATTLE_RESULTS_READ_SIZE:X}"
+                        )
+                        raw = await reader.readexactly(GEN3_BATTLE_RESULTS_READ_SIZE)
+                        self._process_dragon_rage_read(dr_tracker, raw, player, edition)
                     elif counter % 60 == 2:
                         # Immer pollen (auch waehrend in_battle=True), sonst
                         # bleibt Gen <=4 nach erstem True fuer immer stuck —
@@ -365,6 +387,17 @@ class Bizhawk:
                         await self.send_messages(writer, "in_battle")
                         data = (await self.receive_messages(reader)).decode()
                         in_battle = data == "true"
+                        # Drachenwut: waehrend des Kampfes und noch 2 Polls
+                        # danach lesen — ein K.O. des letzten Pokemon beendet
+                        # den Kampf, bevor der naechste Read sicher kam.
+                        if in_battle and not prev_in_battle:
+                            dr_tracker.on_battle_start()
+                        if in_battle:
+                            dr_read_polls = 3
+                        elif dr_read_polls > 0:
+                            dr_read_polls -= 1
+                            if dr_read_polls == 0:
+                                dr_tracker.on_battle_end()
                         if (in_battle and not prev_in_battle
                                 and not self._encounter_inflight.get(client_id)):
                             self._encounter_inflight[client_id] = True
@@ -1301,6 +1334,38 @@ class Bizhawk:
         if section is not None:
             pos["map_section"] = section
         return pos
+
+    def _process_dragon_rage_read(self, tracker: DragonRageTracker, raw: bytes,
+                                  player: int, edition: int) -> None:
+        """Fuettert den DragonRageTracker mit gBattleResults + aktuellen HP und
+        meldet K.O.s / eigenen Drachenwut-Einsatz an Munchlax (cross-thread)."""
+        try:
+            player_move, enemy_move = parse_gen3_battle_results(raw)
+            with self.munchlax.state_lock:
+                team = self.munchlax.bizhawk_teams.get(player) or []
+                # cur_hp None (unvollstaendiger Read) auslassen — sonst gaelte
+                # er als 0 HP und damit als K.O.
+                hp_by_pv = {
+                    int(pk.personality): int(pk.cur_hp)
+                    for pk in team[:6]
+                    if pk is not None and pk.dexnr and pk.personality is not None
+                    and pk.cur_hp is not None
+                }
+            result = tracker.on_tick(player_move, enemy_move, hp_by_pv)
+            for pv in result.dragon_rage_kos:
+                self.logger.info(
+                    f"Drachenwut-K.O. erkannt: player={player} pv={pv} "
+                    f"enemy_move={enemy_move}"
+                )
+                self._dispatch_on_munchlax(self.munchlax.note_dragon_rage_ko(player, pv))
+            if result.player_used_dragon_rage:
+                self.logger.info(f"Spieler {player} hat Drachenwut eingesetzt")
+                self._dispatch_on_munchlax(
+                    self.munchlax.record_player_dragon_rage(player, edition)
+                )
+        except Exception as err:
+            self.logger.error(f"_process_dragon_rage_read failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
 
     async def _read_encounter_data(self, client_id: str, player: int,
                                     edition: int):

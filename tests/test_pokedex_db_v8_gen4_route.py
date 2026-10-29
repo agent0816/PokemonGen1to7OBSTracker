@@ -21,7 +21,8 @@ def test_v8_rechnet_gen4_wild_um(tmp_path):
     _insert(cur, 4, 34, 342, "wild")    # Gen 3: unangetastet
     _insert(cur, 5, 43, 99999, "wild")  # unbekannte map_id bleibt
     # v8 erneut ausfuehren (connect hat sie auf der leeren DB schon angewendet).
-    cur.execute("DELETE FROM schema_version WHERE version = 8")
+    # Ab v8 alles entfernen — _migrate laeuft nur ab MAX(version) (v9 ist idempotent).
+    cur.execute("DELETE FROM schema_version WHERE version >= 8")
     db._migrate()
     routes = dict(db.connection.execute(
         "SELECT personality, route FROM encounters").fetchall())

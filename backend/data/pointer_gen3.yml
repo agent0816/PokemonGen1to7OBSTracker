@@ -190,9 +190,17 @@
   battleopponentpointer: 0x0202402C
   partycountpointer: 0x02024029
   currentbox_indirect_offset: 0x0
+  # gBattleResults (IWRAM) fuer die Drachenwut-Klausel: +0x22 lastUsedMovePlayer,
+  # +0x24 lastUsedMoveOpponent (je u16). Quelle: Ironmon-Tracker
+  # GameAddresses/Pokemon Feuerrote.json (europaeische FR: DE/ES/IT/FR = 0x3004EE0),
+  # US-FR v1.0/v1.1 = 0x3004F90 (Override unten). DE-Wert live verifiziert
+  # 2026-10-29 (Lua-Helfer im Kampf: eigenes Tackle -> +0x22 = 33, gegnerische
+  # Drachenwut -> +0x24 = 82). US-Wert nur aus Ironmon, nicht live geprueft.
+  battleresultspointer: 0x03004EE0
   languages:
     1112560197:
       badgepointer: 0x3005008
+      battleresultspointer: 0x03004F90
     1112560196:
       badgepointer: 0x3004F58
   bag_qty_xor_encrypted: true

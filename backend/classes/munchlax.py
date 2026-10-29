@@ -14,7 +14,9 @@ from backend.bag_decoder import BagItem
 from backend.classes.obs import OBS
 from backend.classes.pokedex_db import PokedexDB
 from backend.controller.run_manager import RunManager
+from backend.dragon_rage import DRAGON_RAGE_FLAG
 from backend.logging_setup import get_logger
+from backend.nuzlocke_view import dragon_rage_badge_limit
 
 # Mindestabstand zwischen automatischen Box-Refreshs pro Spieler.
 # Verhindert Box-Read-Stürme z.B. bei Team-Reorder-Spam oder Evolutionen.
@@ -107,6 +109,11 @@ UNBUFFERED_DICT_TYPES = frozenset({
 WIPE_ZERO_READ_THRESHOLD = 1
 
 class Munchlax:
+    # Drachenwut-Klausel: so lange wird ein Tod zurueckgehalten, bis die
+    # KO-Meldung des BizHawk-Threads da ist (BH meldet ~1 Frame nach dem
+    # Team-Read, der Team-Broadcast laeuft 1/s ueber den Server).
+    DRAGON_RAGE_HOLD_S = 3.0
+
     def __init__(self, host, port, rem, sp, pl, configsave=None, nuz=None):
         self.client_id = rem.get("client_id", 0)
         if self.client_id == 0:
@@ -257,6 +264,21 @@ class Munchlax:
         # Filtert kurze RAM-Fluktuationen und Gen-6/7-Battle-RAM-Ausreißer, bevor ein
         # Pokemon als "tot" gilt.
         self._pokemon_hp_state: dict[tuple, dict] = {}
+        # Drachenwut-Klausel (alle Keys (player_id, pv), nur Munchlax-Loop):
+        # - _dragon_rage_kos: vom BizHawk-Thread gemeldete K.O.s durch Drachenwut
+        # - _forgiven_deaths: vergebene Tode, bleiben vergeben bis HP wieder > 0
+        # - _dragon_rage_hold: erster Tod-Zeitpunkt, waehrend auf eine KO-Meldung
+        #   gewartet wird (Team-Broadcast kann die BH-Meldung ueberholen)
+        # - dragon_rage_supported: player_id -> True, wenn der BH-Client fuer
+        #   seine Edition gBattleResults lesen kann (sonst keine Wartezeit)
+        self._dragon_rage_kos: dict[tuple, float] = {}
+        self._forgiven_deaths: set[tuple] = set()
+        self._dragon_rage_hold: dict[tuple, float] = {}
+        # - _dragon_rage_absent: seit wann ein getracktes Pokemon im Team fehlt
+        self._dragon_rage_absent: dict[tuple, float] = {}
+        self.dragon_rage_supported: dict[int, bool] = {}
+        # Wird von appmd gesetzt: Callback(info: dict) bei vergebenem Tod.
+        self.on_death_forgiven_callback = None
         # Race-Timer, gespiegelt vom Server. `timer_state` = kompletter Snapshot,
         # `timer_last_tick` = (elapsed, server_ts, local_ts_at_receive) für lokale
         # Drift-Korrektur zwischen Ticks (Client rechnet elapsed lokal weiter).
@@ -420,6 +442,10 @@ class Munchlax:
             self.countdown_state = {}
             self._reported_deaths = set()
             self._pending_death_reports = []
+            self._dragon_rage_kos = {}
+            self._forgiven_deaths = set()
+            self._dragon_rage_hold = {}
+            self._dragon_rage_absent = {}
             self.timer_last_tick = None
             self.countdown_last_tick = None
         self.initialized = False
@@ -460,6 +486,10 @@ class Munchlax:
             self._wipe_signaled = {}
             self._last_wipe_player_id = None
             self._pokemon_hp_state = {}
+            self._dragon_rage_kos = {}
+            self._forgiven_deaths = set()
+            self._dragon_rage_hold = {}
+            self._dragon_rage_absent = {}
             self._last_bag_hash = {}
             self.last_box_refresh_at = {}
         self.initialized = False
@@ -1950,6 +1980,208 @@ class Munchlax:
             )
             return False
 
+    async def note_dragon_rage_ko(self, player_id, pv) -> None:
+        """Vom BizHawk-Thread (via _dispatch_on_munchlax): Pokemon pv ist in
+        diesem Tick durch gegnerische Drachenwut auf 0 HP gefallen."""
+        try:
+            self._dragon_rage_kos[(player_id, pv)] = time.monotonic()
+            self.logger.info(f"Drachenwut-K.O. gemeldet: player={player_id} pv={pv}")
+        except Exception as err:
+            self.logger.error(f"note_dragon_rage_ko failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+
+    async def set_dragon_rage_support(self, player_id, supported: bool) -> None:
+        """Vom BizHawk-Thread beim Handshake: kann dieser Client Drachenwut erkennen?"""
+        self.dragon_rage_supported[player_id] = bool(supported)
+        state = "aktiv" if supported else "nicht verfuegbar (kein battleresultspointer)"
+        self.logger.info(f"Drachenwut-Erkennung player={player_id}: {state}")
+
+    async def record_player_dragon_rage(self, player_id, edition) -> None:
+        """Vom BizHawk-Thread: Spieler hat selbst Drachenwut eingesetzt. Hebt die
+        Drachenwut-Klausel fuer den Rest des Runs auf (Marker in rule_flags)."""
+        try:
+            if not await self._run_active_for_local_player(player_id, edition):
+                self.logger.info(
+                    f"Drachenwut selbst eingesetzt vor Run-Start ignoriert: player={player_id}")
+                return
+            self._ensure_pokedex_db()
+            if self.pokedex_db is None:
+                return
+            owner = PokedexDB.build_owner(self.pl.get('your_name', ''), str(player_id))
+            loop = asyncio.get_event_loop()
+            ok = await loop.run_in_executor(
+                None, self.pokedex_db.set_rule_flag, owner, edition, DRAGON_RAGE_FLAG)
+            self.logger.info(
+                f"Drachenwut selbst eingesetzt: owner={owner} edition={edition} "
+                f"— Klausel fuer diesen Run aufgehoben (gespeichert={ok})"
+            )
+        except Exception as err:
+            self.logger.error(f"record_player_dragon_rage failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+
+    @staticmethod
+    def _known_alive_pvs(team_data) -> set:
+        """pvs mit bekannter HP > 0. Ein Slot ohne lesbare HP (cur_hp None) gilt
+        NICHT als lebend — _is_pokemon_dead liefert dafuer zwar False, das darf
+        aber keine Vergebung aufheben."""
+        alive = set()
+        for slot in team_data[:6] if team_data else []:
+            if isinstance(slot, dict):
+                pv, hp = slot.get("personality"), slot.get("cur_hp")
+            elif slot is not None:
+                pv, hp = getattr(slot, "personality", None), getattr(slot, "cur_hp", None)
+            else:
+                continue
+            if pv is not None and hp is not None and hp > 0:
+                alive.add(pv)
+        return alive
+
+    def _dragon_rage_cleanup(self, player_id, dead_infos: list[tuple],
+                             alive: set) -> None:
+        """Raeumt Drachenwut-Zustand ab: Pokemon lebt wieder oder hat das Team verlassen.
+
+        ``alive``: pvs mit bekannter HP > 0 (siehe _known_alive_pvs).
+
+        - KO-Meldungen erst nach 2x Hold-Zeit bei "lebt" verwerfen: der BH-Thread
+          meldet den K.O. aus seinem frischen Team-Read, waehrend hier evtl. noch
+          ein aelterer Broadcast mit HP > 0 verarbeitet wird.
+        - Team-Austritt ebenfalls erst nach 2x Hold-Zeit: ein einzelner Tick mit
+          unvollstaendig gelesenem Slot darf keine Vergebung loeschen.
+        - Leeres Team (Soft-Reset, Titelmenue) zaehlt nicht als Austritt — sonst
+          verfiele jede Vergebung, bevor der Spielstand wieder geladen ist.
+        """
+        try:
+            now = time.monotonic()
+            grace = 2 * self.DRAGON_RAGE_HOLD_S
+            present = {pv for pv, _dex, _is_dead in dead_infos}
+            # Vergebungen fallen NUR bei "lebt" (oder Reset/Run-Ende) weg, nie bei
+            # Team-Austritt: ein vergebenes Pokemon kann per Box-Umweg mit 0 HP
+            # zurueckkommen und darf dann nicht doch gemeldet werden.
+            for key in [k for k in list(self._forgiven_deaths) if k[0] == player_id]:
+                if key[1] in alive:
+                    self._forgiven_deaths.discard(key)
+            tracked = {k for k in (list(self._dragon_rage_hold)
+                                   + list(self._dragon_rage_kos)) if k[0] == player_id}
+            gone = set()
+            if present:
+                for key in tracked:
+                    if key[1] in present:
+                        self._dragon_rage_absent.pop(key, None)
+                    elif now - self._dragon_rage_absent.setdefault(key, now) > grace:
+                        gone.add(key)
+                for key in [k for k in list(self._dragon_rage_absent) if k[0] == player_id]:
+                    if key not in tracked or key in gone:
+                        self._dragon_rage_absent.pop(key, None)
+            for key in tracked:
+                if key[1] in alive or key in gone:
+                    self._dragon_rage_hold.pop(key, None)
+                ts = self._dragon_rage_kos.get(key)
+                if ts is not None and (key in gone or (key[1] in alive and now - ts > grace)):
+                    self._dragon_rage_kos.pop(key, None)
+        except Exception as err:
+            self.logger.error(f"_dragon_rage_cleanup failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+
+    async def _apply_dragon_rage_clause(self, player_id, edition, team_data,
+                                        dead_infos: list[tuple]) -> list[tuple]:
+        """Drachenwut-Klausel: K.O. durch gegnerische Drachenwut vor Orden N zaehlt
+        nicht als Tod (is_dead -> False), solange der Spieler im Run nicht selbst
+        Drachenwut eingesetzt hat.
+
+        Laeuft vor Wipe-Check und Death-Report, denn der Server kann gemeldete
+        Tode nicht zuruecknehmen. Die BH-KO-Meldung kann vom Team-Broadcast
+        ueberholt werden — deshalb wird ein Tod bis DRAGON_RAGE_HOLD_S
+        zurueckgehalten, bevor er ohne KO-Meldung doch zaehlt.
+        """
+        self._dragon_rage_cleanup(player_id, dead_infos, self._known_alive_pvs(team_data))
+        # Vergeben bleibt vergeben — auch wenn die Klausel inzwischen nicht
+        # mehr greift (neuer Orden, Regel aus). Sonst ginge der Tod
+        # nachtraeglich an den Server, der ihn nicht zuruecknehmen kann.
+        # Bewusst ausserhalb des try: gilt auch, wenn unten etwas wirft.
+        dead_infos = [
+            (pv, dex, False if (player_id, pv) in self._forgiven_deaths else is_dead)
+            for pv, dex, is_dead in dead_infos
+        ]
+        try:
+            if not self.nuz.get("rule_dragon_rage_clause", False):
+                return dead_infos
+            if not self.dragon_rage_supported.get(player_id):
+                return dead_infos
+            try:
+                badges = int(team_data[6]) if len(team_data) > 6 and team_data[6] else 0
+            except (TypeError, ValueError):
+                badges = 0
+            badge_count = bin(badges).count("1")
+            limit = dragon_rage_badge_limit(self.nuz)
+            if badge_count >= limit:
+                return dead_infos
+            owner = PokedexDB.build_owner(self.pl.get('your_name', ''), str(player_id))
+            flag_set: bool | None = None
+            now = time.monotonic()
+            names = {}
+            for slot in team_data[:6]:
+                if isinstance(slot, dict):
+                    names[slot.get("personality")] = slot.get("nickname")
+                elif slot is not None:
+                    names[getattr(slot, "personality", None)] = getattr(slot, "nickname", None)
+            result = []
+            for pv, dex, is_dead in dead_infos:
+                key = (player_id, pv)
+                if not is_dead:
+                    result.append((pv, dex, is_dead))
+                    continue
+                # Invariante: bereits gemeldete Tode NIE nachtraeglich vergeben
+                # (Server kann nicht zuruecknehmen) — dieser Check muss vor dem
+                # Vergeben stehen.
+                if (pv, owner) in self._reported_deaths:
+                    result.append((pv, dex, True))
+                    continue
+                if flag_set is None:
+                    loop = asyncio.get_event_loop()
+                    flag_set = await loop.run_in_executor(
+                        None, self.pokedex_db.has_rule_flag, owner, edition, DRAGON_RAGE_FLAG)
+                if flag_set:
+                    result.append((pv, dex, True))
+                    continue
+                if key in self._dragon_rage_kos:
+                    self._forgiven_deaths.add(key)
+                    self._dragon_rage_hold.pop(key, None)
+                    info = {"player_id": player_id, "owner": owner, "pv": pv, "dexnr": dex,
+                            "nickname": names.get(pv), "badges": badge_count, "limit": limit}
+                    self.logger.info(
+                        f"Tod vergeben (Drachenwut-Klausel): owner={owner} pv={pv} dex={dex} "
+                        f"orden={badge_count} limit={limit}"
+                    )
+                    cb = self.on_death_forgiven_callback
+                    if callable(cb):
+                        try:
+                            cb(info)
+                        except Exception as err:
+                            self.logger.warning(f"on_death_forgiven_callback: {err}")
+                    result.append((pv, dex, False))
+                    continue
+                first = self._dragon_rage_hold.setdefault(key, now)
+                if now - first < self.DRAGON_RAGE_HOLD_S:
+                    result.append((pv, dex, False))
+                else:
+                    # Abgelaufen markieren statt poppen — sonst startet ein
+                    # nicht gemeldeter Tod (z.B. Ball-Gate) beim naechsten
+                    # Tick einen neuen Hold. Aufgeraeumt wird bei Revive/Austritt.
+                    if first != float("-inf"):
+                        self._dragon_rage_hold[key] = float("-inf")
+                        self.logger.info(
+                            f"Kein Drachenwut-K.O. gemeldet — Tod zaehlt: owner={owner} pv={pv}")
+                    result.append((pv, dex, True))
+            return result
+        except Exception as err:
+            self.logger.error(f"_apply_dragon_rage_clause failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            # Auch in diesem Tick neu vergebene Tode nicht durchlassen.
+            return [
+                (pv, dex, False if (player_id, pv) in self._forgiven_deaths else is_dead)
+                for pv, dex, is_dead in dead_infos
+            ]
+
     def _evaluate_team_deaths(self, player_id, team) -> list[tuple]:
         """Ein `_is_pokemon_dead`-Pass über das Team. Gibt [(pv, dexnr, is_dead)] zurück.
 
@@ -2285,6 +2517,16 @@ class Munchlax:
                 except Exception as err:
                     self.logger.warning(
                         f"_finalize_run: encounters leeren failed: {err}")
+                try:
+                    # Run-weite Regel-Marker (z.B. Drachenwut selbst
+                    # eingesetzt) gelten nur fuer den beendeten Run.
+                    if (run_id is not None
+                            and self.pokedex_db.connection is not None):
+                        self.pokedex_db.connection.execute("DELETE FROM rule_flags")
+                        self.pokedex_db.connection.commit()
+                except Exception as err:
+                    self.logger.warning(
+                        f"_finalize_run: rule_flags leeren failed: {err}")
         else:
             run_id = rm.finalize_active_run(reason=reason,
                                              wipe_player_id=wipe_player_id,
@@ -2298,6 +2540,13 @@ class Munchlax:
         if getattr(self, "_wipe_signaled", None) is not None:
             self._wipe_signaled.clear()
         self._last_wipe_player_id = None
+        # Drachenwut-Zustand gehoert zum beendeten Run (Rebind wie in den
+        # Reset-Pfaden, unter state_lock).
+        with self.state_lock:
+            self._dragon_rage_kos = {}
+            self._forgiven_deaths = set()
+            self._dragon_rage_hold = {}
+            self._dragon_rage_absent = {}
         self.logger.info(
             f"_finalize_run exit: run_id={run_id} reason={reason} "
             f"deleted_encounter_rows={deleted_rows}"
@@ -3294,6 +3543,8 @@ class Munchlax:
                     # Ein _is_pokemon_dead-Pass pro Tick — Ergebnis geht an
                     # Wipe-Check UND Death-Report (Zähler darf nur 1x hochzählen).
                     dead_infos = self._evaluate_team_deaths(player, pokemons)
+                    dead_infos = await self._apply_dragon_rage_clause(
+                        player, edition, team_data, dead_infos)
                     await self.check_total_wipe(player, pokemons, dead_infos)
                     await self._report_deaths(player, edition, dead_infos)
         except Exception as err:

@@ -322,6 +322,17 @@ class Screens(ScreenManager):
             lambda v: Clock.schedule_once(lambda dt: _open_wipe_banner(v), 0)
         )
 
+        # Drachenwut-Klausel: vergebener Tod → kurzer Hinweis (nur lokal).
+        def _show_death_forgiven(info: dict) -> None:
+            name = info.get("nickname") or f"#{info.get('dexnr')}"
+            show_snackbar(
+                f"Tod von {name} vergeben (Drachenwut vor Orden {info.get('limit')})",
+                level='info', duration=5.0,
+            )
+        munchlax.on_death_forgiven_callback = (
+            lambda info: Clock.schedule_once(lambda dt: _show_death_forgiven(info), 0)
+        )
+
         # Wipe-Dismissed: anderes Team-Mitglied hat sein Wipe-Popup per Cancel
         # geschlossen (coop/versus). Unser offenes Popup ebenfalls schließen.
         def _dismiss_wipe_banner(_subject_pid):

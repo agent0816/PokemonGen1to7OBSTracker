@@ -107,8 +107,29 @@ class _FastRotatingFileHandler(RotatingFileHandler):
         return False
 
 
+def _resolve_log_path(log_file: str) -> str:
+    """Log-Pfad, optional umgeleitet in ``TRACKER_PYTEST_LOG_DIR`` (nur Dateiname bleibt).
+
+    Fuer pytest (tests/conftest.py): Tests schreiben sonst in die echten
+    logs/*.log und rotieren sie beim ersten Oeffnen — das verfaelscht bzw.
+    verschiebt die Logs eines parallel laufenden Trackers. Eigener Name, weil
+    TRACKER_LOG_DIR bereits fuer die Lua-Logs der BizHawk-Kindprozesse steht.
+    """
+    override = os.environ.get("TRACKER_PYTEST_LOG_DIR")
+    if not override:
+        return log_file
+    try:
+        os.makedirs(override, exist_ok=True)
+    except OSError as err:
+        # Logging-Setup darf den Aufrufer nie crashen — dann eben der Originalpfad.
+        sys.stderr.write(f"[logging_setup] Log-Override {override} unbrauchbar: {err}\n")
+        return log_file
+    return os.path.join(override, os.path.basename(log_file))
+
+
 def _create_rotating_handler(log_file: str, max_bytes: int, backup_count: int,
                               formatter: logging.Formatter) -> RotatingFileHandler:
+    log_file = _resolve_log_path(log_file)
     fh = _FastRotatingFileHandler(log_file, mode='a', maxBytes=max_bytes,
                                   backupCount=backup_count, encoding='utf-8')
     log_key = os.path.normcase(os.path.abspath(log_file))

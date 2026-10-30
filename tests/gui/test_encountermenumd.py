@@ -1,6 +1,6 @@
 """GUI-Durchlauf Encounter-Screen (KivyMD) gegen eine temporaere Session-DB.
 
-Prueft: flache Tabelle (Standardmodus), Spieler-Filter, Soullink-Gruppenkarten.
+Prueft: Encounter-Karten (Standardmodus), Spieler-Filter, Soullink-Gruppenkarten.
 Marker ``gui``: braucht ein echtes GL-Fenster.
 
 Ausfuehrung:
@@ -19,7 +19,7 @@ from kivymd.app import MDApp
 from kivymd.uix.screenmanager import MDScreenManager
 
 from backend.classes.pokedex_db import PokedexDB
-from frontend.widgets.encountermenumd import EncounterRow, EncounterMenu, LinkGroupCard
+from frontend.widgets.encountermenumd import EncounterCard, EncounterMenu, LinkGroupCard
 
 
 def _seed_db(session_dir: str) -> None:
@@ -84,7 +84,7 @@ class _DriveApp(MDApp):
         Clock.schedule_once(lambda dt: Window.screenshot(name=f"{self._out}/{name}.png"), 0.6)
 
     def _rows(self):
-        return [w for w in self.menu.list_box.children if isinstance(w, EncounterRow)]
+        return [w for w in self.menu.cards_grid.children if isinstance(w, EncounterCard)]
 
     def _cards(self):
         return [w for w in self.menu.cards_grid.children if isinstance(w, LinkGroupCard)]

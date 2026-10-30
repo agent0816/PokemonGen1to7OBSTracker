@@ -113,7 +113,7 @@ class Screens(ScreenManager):
                 self.pokedex_menu = PokedexMenu(configsave, obs_websocket, APP_VERSION, pl)
                 self.add_widget(self.pokedex_menu)
             with perf_span("build.EncounterMenu"):
-                self.encounter_menu = EncounterMenu(configsave, pl, nuz, APP_VERSION)
+                self.encounter_menu = EncounterMenu(configsave, pl, nuz, APP_VERSION, obs_websocket)
                 self.add_widget(self.encounter_menu)
             with perf_span("build.BoxMenu"):
                 self.box_menu = BoxMenu(bizhawk, citra, munchlax, obs_websocket, pl)

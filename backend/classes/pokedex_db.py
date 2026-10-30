@@ -596,27 +596,29 @@ class PokedexDB:
         return written, new_pvs
 
     @_serialized
-    def get_lvls_by_personalities(self, personalities: list[int]) -> dict[int, int]:
+    def get_lvls_by_personalities(self, exp_by_pv: dict[int, int | None]) -> dict[int, int]:
         """Liefert pro PV das zuletzt gespeicherte Level (last_seen DESC).
 
-        Wird vom Munchlax beim Box-Refresh genutzt, um die XP-Approximation
-        des Decoders durch echte Team-Level zu ersetzen — sofern dasselbe
-        Pokemon (per PV) schon mal im Team war. Gen 1/2 hat keine PV und
-        landet ohnehin nie in der pokemon.db (siehe upsert_pokemon).
+        Wird vom Munchlax beim Box-Refresh genutzt, um das aus EXP berechnete
+        Box-Level durch das echte Team-Level zu ersetzen — sofern dasselbe
+        Pokemon (per PV) schon mal im Team war UND seine EXP seitdem gleich
+        geblieben ist. Sonst (z.B. Level im Pokemon-Editor geändert) wäre das
+        DB-Level veraltet. Gen 1/2 hat keine PV und landet ohnehin nie in der
+        pokemon.db (siehe upsert_pokemon).
         """
-        if self.connection is None or not personalities:
+        if self.connection is None or not exp_by_pv:
             return {}
         result: dict[int, int] = {}
         try:
             cursor = self.connection.cursor()
-            for pv in set(personalities):
+            for pv, exp in exp_by_pv.items():
                 cursor.execute(
-                    "SELECT lvl FROM pokemon WHERE personality = ? "
+                    "SELECT lvl, exp FROM pokemon WHERE personality = ? "
                     "AND lvl IS NOT NULL ORDER BY last_seen DESC LIMIT 1",
                     (int(pv),),
                 )
                 row = cursor.fetchone()
-                if row and row["lvl"] is not None:
+                if row and row["lvl"] is not None and exp is not None and row["exp"] == exp:
                     result[int(pv)] = row["lvl"]
             return result
         except Exception as err:

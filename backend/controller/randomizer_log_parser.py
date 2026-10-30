@@ -14,6 +14,9 @@ class RandoPokemon:
     abilities: list[str]
     item: str = ''
     tm_compat: list[bool] = field(default_factory=list)
+    # Level-Up-Moveset aus "--Pokemon Movesets--": [(lern_level, move_name)],
+    # Namen wie im Log (DE/EN, Großbuchstaben). Leer = Movesets unverändert.
+    levelup_moves: list[tuple[int, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -78,6 +81,9 @@ class RandomizerLogData:
     wild_areas: list[WildArea] = field(default_factory=list)
     starters: list[str] = field(default_factory=list)
     evolutions: dict[int, list[str]] = field(default_factory=dict)
+    # True, wenn "--Randomized Evolutions--" vorkommt: dann ersetzt
+    # ``evolutions`` die Vanilla-Entwicklungslinien komplett (sonst nur Methoden-Fixes)
+    evolutions_randomized: bool = False
     static_pokemon: list[tuple[str, str]] = field(default_factory=list)
     move_updates: list[MoveUpdate] = field(default_factory=list)
     in_game_trades: list[InGameTrade] = field(default_factory=list)
@@ -100,6 +106,7 @@ class RandomizerLogParser:
         "--Removing Impossible Evolutions--",
         "--Removing Timed-Based Evolutions--",
         "--Randomized Evolutions--",
+        "--Pokemon Movesets--",
         "--Random Starters--",
         "--Custom Starters--",
         "--TM Moves--",
@@ -143,7 +150,8 @@ class RandomizerLogParser:
             "--Pokemon Base Stats & Types--": self._parse_pokemon,
             "--Removing Impossible Evolutions--": self._parse_evolutions,
             "--Removing Timed-Based Evolutions--": self._parse_evolutions,
-            "--Randomized Evolutions--": self._parse_evolutions,
+            "--Randomized Evolutions--": self._parse_randomized_evolutions,
+            "--Pokemon Movesets--": self._parse_movesets,
             "--Random Starters--": self._parse_starters,
             "--Custom Starters--": self._parse_starters,
             "--TM Moves--": self._parse_tm_moves,
@@ -305,6 +313,33 @@ class RandomizerLogParser:
                         if evo_name and evo_name not in self._data.evolutions[pokemon_id]:
                             self._data.evolutions[pokemon_id].append(evo_name)
             i += 1
+
+    def _parse_movesets(self, lines: list[str], start: int):
+        """Level-Up-Movesets: Block pro Spezies, Kopfzeile "001 BISASAM -> SCHILLOK"
+        (Entwicklungsangabe optional), dann Basiswerte, dann "Level N : MOVE"."""
+        current: RandoPokemon | None = None
+        parsed = 0
+        i = start
+        while i < len(lines):
+            stripped = lines[i].strip()
+            if stripped.startswith("--") and stripped.endswith("--") and stripped.strip('-').strip():
+                break
+            header = re.match(r'^(\d{3})\s+\S', stripped)
+            if header:
+                current = self._data.pokemon.get(int(header.group(1)))
+                if current is not None:
+                    current.levelup_moves = []
+                    parsed += 1
+            else:
+                move = re.match(r'^Level\s+(\d+)\s*:\s*(.+?)$', stripped)
+                if move and current is not None:
+                    current.levelup_moves.append((int(move.group(1)), move.group(2).strip()))
+            i += 1
+        self.logger.info(f"Movesets geparst: {parsed} Spezies")
+
+    def _parse_randomized_evolutions(self, lines: list[str], start: int):
+        self._data.evolutions_randomized = True
+        self._parse_evolutions(lines, start)
 
     def _parse_starters(self, lines: list[str], start: int):
         i = start

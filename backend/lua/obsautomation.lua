@@ -574,6 +574,58 @@ local function handle_protocol_step(msg, battle_stats, state)
             comm.socketServerSendBytes({0x00})
         end
     end
+    -- pkw <ptr_hex> <addr_hex> <expect_hex> <payload_hex>: Compare-and-Write
+    -- fuer den Pokemon-Editor. Ist ptr ~= 0, wird addr als Offset auf den
+    -- 4-Byte-Pointer bei ptr addiert (Gen 3 E/FR/BG: SaveBlock wandert, daher
+    -- Deref im selben Frame wie der Write; Guard auf EWRAM). Geschrieben wird
+    -- nur, wenn die aktuellen Bytes ab addr exakt expect entsprechen — sonst
+    -- hat sich Party/Box seit dem Lesen veraendert. Alles innerhalb eines
+    -- Lua-Aufrufs, also im selben Frame (das Spiel sieht nie einen halben Slot).
+    -- Antwort IMMER 1 Byte: 0x01 = geschrieben, 0x02 = Mismatch, 0x00 = ERR.
+    if response and response:sub(1, 4) == "pkw " then
+        local ptr_s, off_s, exp_s, hex_s = string.match(response:sub(5), "^(%x+)%s+(%x+)%s+(%x+)%s+(%x+)$")
+        local result = 0x00
+        if ptr_s and (#exp_s % 2 == 0) and (#hex_s % 2 == 0) then
+            local ptr = tonumber(ptr_s, 16)
+            local addr = tonumber(off_s, 16)
+            local valid = true
+            if ptr ~= 0 then
+                local base = memory.read_u32_le(ptr, state.domain)
+                if base < 0x02000000 or base >= 0x02040000 then
+                    logging.error(string.format("pkw: Pointer 0x%08X ausserhalb EWRAM", base))
+                    valid = false
+                else
+                    addr = base + addr
+                end
+            end
+            if valid then
+                local n = #exp_s // 2
+                local current = memory.read_bytes_as_array(addr, n, state.domain)
+                local same = true
+                for i = 1, n do
+                    if current[i] ~= tonumber(exp_s:sub(2 * i - 1, 2 * i), 16) then
+                        same = false
+                        break
+                    end
+                end
+                if same then
+                    local k = 0
+                    for i = 1, #hex_s, 2 do
+                        memory.writebyte(addr + k, tonumber(hex_s:sub(i, i + 1), 16), state.domain)
+                        k = k + 1
+                    end
+                    result = 0x01
+                    logging.info(string.format("pkw: %d Bytes ab 0x%X geschrieben", k, addr))
+                else
+                    result = 0x02
+                    logging.warning(string.format("pkw: Slot ab 0x%X hat sich veraendert, nichts geschrieben", addr))
+                end
+            end
+        else
+            logging.error("Ungültiges pkw-Kommando: " .. tostring(response))
+        end
+        comm.socketServerSendBytes({result})
+    end
 end
 
 function main()

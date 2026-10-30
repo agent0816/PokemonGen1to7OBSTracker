@@ -1,5 +1,6 @@
 import yaml
 from backend.classes.Pokemon import Pokemon
+from backend.exp_curves import growth_curve, level_from_exp
 
 species1_lut = yaml.safe_load(open("backend/data/species1.yml"))
 species3_lut = yaml.safe_load(open("backend/data/species3.yml"))
@@ -468,13 +469,15 @@ def pokemon3(data, edition, is_boxed=False):
     nature = personality % 25
 
     ev_names = ['hp', 'attack', 'defense', 'speed', 'special_attack', 'special_defense']
-    evs = {ev_names[index]: int(byte) for index, byte in enumerate(unshuffled_bytes[0x19:0x1E])}
+    # E-Block beginnt bei unshuffled 0x18: HP, Atk, Def, Init, SpAng, SpVert
+    evs = {ev_names[index]: int(byte) for index, byte in enumerate(unshuffled_bytes[0x18:0x1E])}
 
     move_bytes = unshuffled_bytes[0x0C:0x14]
     pp_bytes = unshuffled_bytes[0x14:0x18]
     moves = [{"id": int.from_bytes(move_bytes[2 * i:2 * i + 2], "little"), "pp": int(byte)} for i, byte in enumerate(pp_bytes)]
 
-    iv_base = int.from_bytes(unshuffled_bytes[0x29:0x2D], "little")
+    # M-Block ab 0x24: Pokerus, Fangort, Herkunft (u16), dann IV/Ei/Fähigkeits-Wort
+    iv_base = int.from_bytes(unshuffled_bytes[0x28:0x2C], "little")
     ivs = {ev_names[index]: ((iv_base >> (index * 5)) & 0x1F) for index in range(6)}
     ability_bit = (iv_base >> 31) & 1
 
@@ -523,10 +526,11 @@ def pokemon3(data, edition, is_boxed=False):
         lvl = data[84]
         cur_hp = int.from_bytes(data[0x56:0x58], "little")
         max_hp = int.from_bytes(data[0x58:0x5A], "little")
-        battle_stats = {ev_names[index]: int.from_bytes(data[index * 2 + 0x5A:0x63 + index * 2], "little") for index in range(1, 6)}
+        # 0x5A Ang, 0x5C Vert, 0x5E Init, 0x60 SpAng, 0x62 SpVert (je u16)
+        battle_stats = {ev_names[index]: int.from_bytes(data[0x58 + index * 2:0x5A + index * 2], "little") for index in range(1, 6)}
     else:
         status = {}
-        lvl = xp_to_level_mediumfast(experience_points)
+        lvl = level_from_exp(growth_curve(species), experience_points)
         cur_hp = 1
         max_hp = 1
         battle_stats = {}
@@ -633,7 +637,7 @@ def pokemon45(data, gen, is_boxed=False):
         max_hp = int.from_bytes(decrypted_battle_stats[8:10], "little")
         battle_stats = {ev_names[index]: int.from_bytes(decrypted_battle_stats[index * 2 + 8:10 + index * 2], "little") for index in range(1, 6)}
     else:
-        lvl = xp_to_level_mediumfast(experience_points)
+        lvl = level_from_exp(growth_curve(dexnr), experience_points)
         cur_hp = 1
         max_hp = 1
         battle_stats = {}
@@ -718,7 +722,7 @@ def pokemon67(data, gen, is_boxed=False):
         battle_stats = {ev_names[index]: int.from_bytes(decrypted_battle_stats[index * 2 + 10:12 + index * 2], "little") for index in range(1, 6)}
     else:
         status = {}
-        lvl = xp_to_level_mediumfast(experience_points)
+        lvl = level_from_exp(growth_curve(dexnr), experience_points)
         cur_hp = 1
         max_hp = 1
         battle_stats = {}

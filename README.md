@@ -90,6 +90,7 @@ Konfiguration liegt pro Session unter `backend/config/<session_name>/` mit acht 
 - [ ] Anzeige "aktueller Spieler" (Kontext ROM)
 - [ ] Item-Sprites in die UI einbetten
 - [ ] Uhr / Versus-Timer
+- [ ] Pokemon-Editor (Level + Attacken für Team/PC-Box): Gen 3 umgesetzt + live getestet (Feuerrot); offen: Gen 4/5, Gen 6/7 (Citra/Azahar), Gen 1/2 nur Team
 
 ### Overlay
 

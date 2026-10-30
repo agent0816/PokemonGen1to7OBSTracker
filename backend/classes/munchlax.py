@@ -931,10 +931,11 @@ class Munchlax:
         """Ersetzt berechnete Box-Pokemon-Level durch DB-Werte (per PV).
 
         Box-Pokemon haben ab Gen 3 kein gespeichertes Level — der pokedecoder
-        nutzt deshalb eine Medium-Fast-Approximation, die bei Fast/Slow/
-        Erratic/Fluctuating-Spezies bis zu mehrere Level daneben liegen kann.
-        Wenn dasselbe Pokemon (per PV) schon mal im Team war, kennen wir das
-        echte Level aus pokemon.db und nehmen es bevorzugt.
+        rechnet es aus EXP + Vanilla-Wachstumskurve; bei Randomizer-Runs mit
+        "Standardize EXP Curves" kann das daneben liegen. Wenn dasselbe Pokemon
+        (per PV) mit identischer EXP schon mal im Team war, kennen wir das echte
+        Level aus pokemon.db und nehmen es bevorzugt. Abweichende EXP (z.B.
+        Pokemon-Editor) → DB-Level veraltet, Decoder-Level bleibt.
 
         Gen 1/2 wird automatisch übersprungen: dort kommen Box-Pokemon ohne
         Personality-Attribut, das Memory-Level steht direkt im Slot.
@@ -958,7 +959,7 @@ class Munchlax:
             levels = await loop.run_in_executor(
                 None,
                 self.pokedex_db.get_lvls_by_personalities,
-                list(slots_by_pv.keys()),
+                {pv: getattr(slots[0], "experience_points", None) for pv, slots in slots_by_pv.items()},
             )
             for pv, lvl in levels.items():
                 for slot in slots_by_pv.get(pv, []):

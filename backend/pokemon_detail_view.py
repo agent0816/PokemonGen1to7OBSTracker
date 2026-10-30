@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import yaml
 
+from backend.exp_curves import exp_at_level, growth_curve  # noqa: F401 (Re-Export)
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, './logs/pokemon_detail.log')
@@ -350,66 +351,8 @@ def move_type_id(move_id) -> int | None:
 
 # --- EXP-Kurven / Fortschritt zum nächsten Level ------------------------------
 #
-# Growth-Kurve pro Spezies aus backend/data/growth_rates.yml (Vanilla, Quelle
-# veekun/pokedex). CAVEAT: Der Universal Randomizer kann per "Standardize EXP
-# Curves" die ROM-Kurve ändern (ordinary→medium_fast, legendär→slow); das steht
-# NICHT im Rando-Log (verifiziert gegen UPR-ZX-Source), daher nur Vanilla
-# verfügbar. Bei standardisierten Runs kann der Fortschritt abweichen.
-
-_growth_rates: dict[int, str] | None = None
-
-
-def _load_growth_rates() -> dict[int, str]:
-    global _growth_rates
-    if _growth_rates is None:
-        data = _load_yaml("backend/data/growth_rates.yml")
-        _growth_rates = {int(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
-    return _growth_rates
-
-
-def growth_curve(dexnr) -> str:
-    """Vanilla-Growth-Kurve einer Spezies; 'medium_fast' als Default."""
-    try:
-        return _load_growth_rates().get(int(dexnr), "medium_fast")
-    except (TypeError, ValueError):
-        return "medium_fast"
-
-
-def exp_at_level(curve: str, n: int) -> int:
-    """Gesamt-EP, um Level ``n`` zu erreichen (n≥1; Level 1 = 0).
-
-    Formeln nach Bulbapedia/veekun für die sechs Kurven.
-    """
-    if n <= 1:
-        return 0
-    if curve == "medium_fast":
-        val = n ** 3
-    elif curve == "fast":
-        val = 4 * n ** 3 / 5
-    elif curve == "slow":
-        val = 5 * n ** 3 / 4
-    elif curve == "medium_slow":
-        val = 6 / 5 * n ** 3 - 15 * n ** 2 + 100 * n - 140
-    elif curve == "erratic":
-        if n <= 50:
-            val = n ** 3 * (100 - n) / 50
-        elif n <= 68:
-            val = n ** 3 * (150 - n) / 100
-        elif n <= 98:
-            val = n ** 3 * ((1911 - 10 * n) // 3) / 500
-        else:
-            val = n ** 3 * (160 - n) / 100
-    elif curve == "fluctuating":
-        if n <= 15:
-            val = n ** 3 * ((n + 1) // 3 + 24) / 50
-        elif n <= 36:
-            val = n ** 3 * (n + 14) / 50
-        else:
-            val = n ** 3 * (n // 2 + 32) / 50
-    else:
-        val = n ** 3
-    return max(0, int(val))
-
+# Kurven-Logik (exp_at_level, growth_curve) lebt in backend/exp_curves.py (auch
+# vom Decoder und vom Pokemon-Editor genutzt) und wird oben re-exportiert.
 
 def exp_progress(dexnr, level, current_exp) -> dict | None:
     """Fortschritt im aktuellen Level: dict mit in_level/needed/fraction/curve/

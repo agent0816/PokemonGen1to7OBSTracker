@@ -7,6 +7,7 @@ from backend.classes.Pokemon import Pokemon
 import backend.pokedecoder as pokedecoder
 import backend.bh_pointers as bh_pointers
 import backend.bag_decoder as bag_decoder
+import backend.pokemon_encoder as pokemon_encoder
 from backend.dragon_rage import (
     DragonRageTracker, GEN3_BATTLE_RESULTS_READ_SIZE, parse_gen3_battle_results,
 )
@@ -128,6 +129,14 @@ class Bizhawk:
         # sich nicht ueberschneiden, sonst lesen wir ein halb-geschriebenes
         # Pocket oder allokieren denselben leeren Slot doppelt.
         self._bag_io_locks: dict[str, asyncio.Lock] = {}
+        # Pokemon-Editor: serialisiert Slot-Read→Write pro Client.
+        self._poke_io_locks: dict[str, asyncio.Lock] = {}
+        # Letzter in_battle-Poll pro Client (Tick-Loop schreibt, edit_pokemon
+        # liest — beides auf dem BH-Loop). Im Kampf wird nicht editiert: die
+        # Kampfkopie der Party überschreibt die Party beim Kampfende.
+        self._in_battle: dict[str, bool] = {}
+        # Strong-Refs fuer Folge-Tasks des Editors (Box-Refresh), sonst GC-Risiko
+        self._edit_tasks: set[asyncio.Task] = set()
         # On-demand SaveRAM-Flush pro Client: flush_saveram() setzt das Flag,
         # der Tick-Loop sendet einmalig "saveRAM" und triggert das Event.
         self._flush_requested: dict[str, bool] = {}
@@ -322,6 +331,7 @@ class Bizhawk:
             update_teams(msg)
             counter = 2
             in_battle = False
+            self._in_battle[client_id] = False
             # Phase-Timing-Akkumulator pro Branch:
             # {phase_name: {count, sum_proc_s, max_proc_s, sum_recv_s, max_recv_s}}
             # proc_s = reine Python-Verarbeitung pro Tick (nach Receive).
@@ -387,6 +397,7 @@ class Bizhawk:
                         await self.send_messages(writer, "in_battle")
                         data = (await self.receive_messages(reader)).decode()
                         in_battle = data == "true"
+                        self._in_battle[client_id] = in_battle
                         # Drachenwut: waehrend des Kampfes und noch 2 Polls
                         # danach lesen — ein K.O. des letzten Pokemon beendet
                         # den Kampf, bevor der naechste Read sicher kam.
@@ -448,7 +459,17 @@ class Bizhawk:
                             tick_phase = "box_queue"
                             cmd, offset, size, fut, payload_hex = queue.pop(0)
                             try:
-                                if cmd == "bagw":
+                                if cmd == "pkw":
+                                    # payload_hex = "<ptr> <expect_hex> <payload_hex>",
+                                    # offset = Adresse bzw. Offset auf *ptr
+                                    ptr_hex, expect_hex, data_hex = payload_hex.split(" ")
+                                    await self.send_messages(
+                                        writer, f"pkw {ptr_hex} {offset:X} {expect_hex} {data_hex}"
+                                    )
+                                    ack = await reader.readexactly(1)
+                                    if not fut.done():
+                                        fut.set_result(ack[0])
+                                elif cmd == "bagw":
                                     await self.send_messages(
                                         writer, f"bagw {offset:X} {payload_hex}"
                                     )
@@ -932,6 +953,147 @@ class Bizhawk:
             if not ok:
                 return False, "Lua hat das Schreiben mit ERR quittiert."
             return True, f"+{count} Sonderbonbon{'s' if count > 1 else ''} (jetzt {plan.new_qty})"
+
+    # Max. Wartezeit auf eine Lua-Antwort im Editor (Emulator pausiert/haengt);
+    # sonst bliebe _poke_io_locks dauerhaft belegt.
+    _EDIT_IO_TIMEOUT = 15.0
+
+    async def edit_pokemon(self, client_id: str, target: dict,
+                           edit: "pokemon_encoder.PokemonEdit", rando_data=None) -> tuple[bool, str]:
+        """Pokemon-Editor: Level/Attacken eines Party- oder Box-Slots ändern.
+
+        ``target``: {"kind": "party"|"box", "slot": int, "box": int (nur Box),
+        "personality": int}. Ablauf pro Versuch: Slot frisch lesen, PID gegen
+        ``personality`` prüfen, Edit planen (pokemon_encoder), per 'pkw'
+        Compare-and-Write zurückschreiben. Hat sich der Slot zwischen Lesen und
+        Schreiben verändert (Lua meldet Mismatch), wird neu gelesen (max. 3x).
+
+        Liefert (success, UI-Meldung).
+        """
+        edition = self.edition_per_client.get(client_id)
+        if edition is None:
+            return False, "Spieler nicht verbunden."
+        is_boxed = target.get("kind") == "box"
+        if not pokemon_encoder.is_supported(edition, is_boxed):
+            return False, f"Bearbeiten wird für diese Edition ({edition}) noch nicht unterstützt."
+        if self._in_battle.get(client_id):
+            return False, "Im Kampf kann nicht bearbeitet werden."
+
+        try:
+            size = pokemon_encoder.slot_size(edition, is_boxed)
+        except pokemon_encoder.EditError as err:
+            return False, str(err)
+        location = self._pokemon_slot_location(client_id, edition, target, size)
+        if location is None:
+            self.logger.warning(f"edit_pokemon: keine Slot-Adresse für {client_id} {target} (edition={edition})")
+            return False, "Slot-Adresse konnte nicht bestimmt werden."
+        ptr, addr = location
+
+        lock = self._poke_io_locks.setdefault(client_id, asyncio.Lock())
+        async with lock:
+            for attempt in range(1, 4):
+                # disconnect() poppt die Queue; ein setdefault danach legte eine
+                # Queue ohne Consumer an und der Future hinge bis zum Timeout.
+                if self.edition_per_client.get(client_id) is None:
+                    return False, "Spieler nicht verbunden."
+                try:
+                    raw = await self._read_pokemon_slot(client_id, ptr, addr, size)
+                except asyncio.TimeoutError:
+                    self.logger.error(f"edit_pokemon: Slot-Read Timeout {client_id} {target}")
+                    return False, "Emulator antwortet nicht (pausiert?) — Slot nicht gelesen."
+                except Exception as err:
+                    self.logger.error(f"edit_pokemon: Slot-Read fehlgeschlagen {client_id} {target}: {type(err)},{err}")
+                    self.logger.error(traceback.format_exc())
+                    return False, "Lesen des Slots fehlgeschlagen."
+                if raw is None:
+                    return False, "Save noch nicht geladen — Slot nicht erreichbar."
+                if int.from_bytes(raw[0:4], "little") != target.get("personality"):
+                    self.logger.warning(f"edit_pokemon: PID im Slot passt nicht zu {target} — Team/Box hat sich verändert")
+                    return False, "Pokemon ist nicht mehr an dieser Stelle — Ansicht aktualisieren und erneut versuchen."
+                try:
+                    plan = pokemon_encoder.plan_edit(raw, edition, is_boxed, edit, rando_data)
+                except pokemon_encoder.EditError as err:
+                    self.logger.info(f"edit_pokemon {client_id} {target}: abgelehnt — {err}")
+                    return False, str(err)
+                except Exception as err:
+                    self.logger.error(f"edit_pokemon: plan_edit fehlgeschlagen {target}: {type(err)},{err}")
+                    self.logger.error(traceback.format_exc())
+                    return False, "Änderung konnte nicht berechnet werden — Logs prüfen."
+                if not plan.changed:
+                    return False, plan.summary
+                if self._in_battle.get(client_id):
+                    return False, "Im Kampf kann nicht bearbeitet werden."
+                if self.edition_per_client.get(client_id) is None:
+                    return False, "Spieler nicht verbunden."
+
+                loop = asyncio.get_event_loop()
+                fut = loop.create_future()
+                payload = f"{ptr:X} {raw.hex().upper()} {plan.new_bytes.hex().upper()}"
+                self.box_request_queues.setdefault(client_id, []).append(("pkw", addr, size, fut, payload))
+                try:
+                    result = await asyncio.wait_for(fut, self._EDIT_IO_TIMEOUT)
+                except asyncio.TimeoutError:
+                    self.logger.error(f"edit_pokemon {client_id} {target}: keine pkw-Antwort in {self._EDIT_IO_TIMEOUT}s")
+                    return False, "Emulator antwortet nicht (pausiert?) — Schreiben nicht bestätigt."
+                except Exception as err:
+                    self.logger.error(f"edit_pokemon {client_id} {target}: pkw abgebrochen: {type(err)},{err}")
+                    return False, "Verbindung zum Emulator während des Schreibens verloren."
+                if result == 0x01:
+                    self.logger.info(f"edit_pokemon {client_id} {target}: {plan.summary} (Versuch {attempt})")
+                    if is_boxed:
+                        player = int(client_id[7:])
+                        task = asyncio.create_task(self._auto_refresh_boxes(client_id, player))
+                        self._edit_tasks.add(task)
+                        task.add_done_callback(self._edit_tasks.discard)
+                    return True, plan.summary
+                if result != 0x02:
+                    self.logger.error(f"edit_pokemon {client_id} {target}: Lua meldet ERR (0x{result:02X})")
+                    return False, "Lua hat das Schreiben mit ERR quittiert."
+                self.logger.info(f"edit_pokemon {client_id} {target}: Slot verändert, neuer Versuch ({attempt}/3)")
+            return False, "Slot ändert sich laufend — bitte kurz stillstehen und erneut versuchen."
+
+    def _pokemon_slot_location(self, client_id: str, edition: int, target: dict,
+                               size: int) -> tuple[int, int] | None:
+        """(ptr, addr) für 'pkw': ptr == 0 → addr absolut, sonst Offset auf *ptr."""
+        language = self.language_per_client.get(client_id)
+        pointers = bh_pointers.get_pointers(edition, language if language else None)
+        slot = int(target.get("slot", -1))
+        if target.get("kind") == "party":
+            party_ptr = pointers.get("pointer")
+            if not isinstance(party_ptr, int) or not 0 <= slot < 6:
+                return None
+            return 0, party_ptr + slot * size
+        box = int(target.get("box", -1))
+        stride = pointers.get("box_stride")
+        box_count = pointers.get("box_count")
+        if not stride or not box_count or not 0 <= box < box_count:
+            return None
+        if not 0 <= slot < pokedecoder.slots_per_box(edition):
+            return None
+        rel = box * stride + slot * size
+        indirect_addr = pointers.get("box_pointer_indirect")
+        if indirect_addr:
+            return indirect_addr, pointers.get("box_pointer_offset", 0) + rel
+        box_pointer = pointers.get("box_pointer")
+        if not isinstance(box_pointer, int):
+            return None
+        return 0, box_pointer + rel
+
+    async def _read_pokemon_slot(self, client_id: str, ptr: int, addr: int, size: int) -> bytes | None:
+        """Liest einen Slot über die Box-Queue; bei ptr != 0 vorher Deref (EWRAM-Guard)."""
+        loop = asyncio.get_event_loop()
+        queue = self.box_request_queues.setdefault(client_id, [])
+        if ptr:
+            ptr_fut = loop.create_future()
+            queue.append(("boxw", ptr, 4, ptr_fut, ""))
+            base = int.from_bytes(await asyncio.wait_for(ptr_fut, self._EDIT_IO_TIMEOUT), "little")
+            if not (0x02000000 <= base < 0x02040000):
+                self.logger.debug(f"_read_pokemon_slot: Pointer 0x{base:08X} ausserhalb EWRAM")
+                return None
+            addr = base + addr
+        fut = loop.create_future()
+        queue.append(("boxw", addr, size, fut, ""))
+        return bytes(await asyncio.wait_for(fut, self._EDIT_IO_TIMEOUT))
 
     async def _resolve_pocket_addr_async(self, client_id: str, edition: int,
                                           pocket_key: str) -> int | None:
@@ -2132,6 +2294,7 @@ class Bizhawk:
         # Session neu relevant waere.
         self._wild_encounters_processed.pop(client_id, None)
         self._encounter_inflight.pop(client_id, None)
+        self._in_battle.pop(client_id, None)
         self._last_battle_pv.pop(client_id, None)
         self._last_map_header.pop(client_id, None)
         # Konsistenz-Cleanup: die per-Client-Inflight-/Flush-Flags werden bei

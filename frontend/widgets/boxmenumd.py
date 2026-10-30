@@ -326,6 +326,16 @@ class BoxMenu(MDScreen):
             logger.error(f"Rando-Daten für Box-Detail nicht lesbar: {err}")
         detail = self.manager.get_screen("PokemonDetail")
         detail.show(pokemon, edition, rando_data, return_screen="BoxMenu", munchlax=self.munchlax)
+        # Bearbeiten (nur BizHawk-Spieler lokal; Gate liegt in set_edit_target)
+        personality = getattr(pokemon, "personality", None)
+        target = None
+        if personality is not None:
+            target = {"kind": "box", "box": index, "slot": slot_index,
+                      "personality": personality}
+        try:
+            detail.set_edit_target(target, self.bizhawk, self.current_player, self.pl)
+        except Exception:
+            logger.error(f"Edit-Ziel setzen fehlgeschlagen: {traceback.format_exc()}")
         self.manager.current = "PokemonDetail"
 
     def _render_current_box(self):

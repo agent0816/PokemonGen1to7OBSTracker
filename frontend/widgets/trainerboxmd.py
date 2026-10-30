@@ -264,7 +264,27 @@ class TrainerBoxMD(MDBoxLayout):
             rando_getter = self.screen.randomizer.get_log_data
         if hasattr(detail, 'set_refresh_source'):
             detail.set_refresh_source(self.player_id, slot, self.munchlax, rando_getter)
+        self._set_detail_edit_target(detail, pokemon)
         mgr.current = "PokemonDetail"
+
+    def _set_detail_edit_target(self, detail, pokemon) -> None:
+        """Edit-Ziel für das Bearbeiten-Dialog setzen. Der RAM-Party-Slot ist der
+        Index in unsorted_teams (sortierter Index != RAM-Slot) → per personality."""
+        if not hasattr(detail, 'set_edit_target'):
+            return
+        try:
+            from backend.pokemon_editor_logic import find_party_slot
+            personality = getattr(pokemon, "personality", None)
+            ram_slot = find_party_slot(
+                self.munchlax.snapshot_unsorted_teams().get(self.player_id) or [], personality)
+            target = None
+            if ram_slot is not None:
+                target = {"kind": "party", "slot": ram_slot, "personality": personality}
+            detail.set_edit_target(target, getattr(self.screen, "bizhawk", None),
+                                   self.player_id, getattr(self.screen, "pl", None))
+        except Exception:
+            logger.error(f"Edit-Ziel setzen fehlgeschlagen: {traceback.format_exc()}")
+            detail.set_edit_target(None, None, None)
 
     # --- Orden ----------------------------------------------------------------
 

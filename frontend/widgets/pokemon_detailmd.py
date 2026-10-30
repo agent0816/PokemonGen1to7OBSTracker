@@ -8,6 +8,7 @@ Rück-Navigation über ``return_screen`` (woher der Drilldown kam), gesetzt beim
 ``show``-Aufruf. So dient derselbe Screen mehreren Einstiegspunkten.
 """
 import os
+import traceback
 
 from kivy.clock import Clock
 from kivy.metrics import dp
@@ -35,6 +36,7 @@ from backend.pokemon_detail_view import (
     type_color_hex, type_image_path, type_name_id, types_de,
 )
 from backend.tm_type_resolver import resolve_tm_hm_sprite
+from frontend.widgets.md_common import show_snackbar
 from frontend.widgets.stat_radar import RADAR_SCALE, StatRadar
 
 logger = get_logger(__name__, './logs/pokemon_detail.log')
@@ -75,6 +77,12 @@ class PokemonDetailMD(MDScreen):
         self._refresh_src = None
         self._last_sig = None
         self._live_tick = None
+        # Edit-Kontext (Bearbeiten-Dialog): None = kein Edit möglich
+        self._edit_ctx: dict | None = None
+        self._pokemon = None
+        self._rando_data = None
+        self._editor = None
+        self._editor_open = False
 
         root = MDBoxLayout(orientation="vertical", padding="10dp", spacing="8dp")
 
@@ -86,6 +94,13 @@ class PokemonDetailMD(MDScreen):
         header.add_widget(self.back_button)
         self.title_label = MDLabel(text="Pokemon-Detail", role="large", valign="center")
         header.add_widget(self.title_label)
+        # Bearbeiten (Level/Attacken): nur mit gesetztem Edit-Ziel sichtbar.
+        self.edit_button = MDButton(
+            MDButtonText(text="Bearbeiten"), style="tonal", pos_hint={"center_y": .5},
+            size_hint_x=None, on_release=lambda _i: self._open_editor(),
+        )
+        header.add_widget(self.edit_button)
+        self._set_edit_button_visible(False)
         root.add_widget(header)
 
         scroll = MDScrollView(do_scroll_x=False)
@@ -139,9 +154,89 @@ class PokemonDetailMD(MDScreen):
             tuple(sorted(k for k, v in status.items() if v)),
         )
 
+    # -- Bearbeiten (Level/Attacken) -------------------------------------------
+
+    def _set_edit_button_visible(self, visible: bool) -> None:
+        self.edit_button.opacity = 1 if visible else 0
+        self.edit_button.disabled = not visible
+        self.edit_button.width = dp(130) if visible else 0
+
+    def set_edit_target(self, target: dict | None, bizhawk, client_slot: int | None,
+                        pl=None) -> None:
+        """Aktiviert den Bearbeiten-Button für das aktuell angezeigte Pokemon.
+
+        Nach ``show()`` aufrufen (show() setzt das Ziel zurück). ``target`` =
+        {"kind": "party"|"box", "slot", ["box"], "personality"}. Nur Live-Team und
+        PC-Box rufen das auf, nie die Pokedex-DB-Ansicht. Der Button bleibt
+        unsichtbar bei: kein Ziel, kein BizHawk, remote-Spieler, nicht
+        unterstützter Edition, Ei.
+        """
+        from backend.pokemon_editor_logic import edit_allowed
+        self._edit_ctx = None
+        pokemon = self._pokemon
+        if target is None or bizhawk is None or client_slot is None or pokemon is None:
+            self._set_edit_button_visible(False)
+            return
+        remote = bool((pl or {}).get(f"remote_{client_slot}", False))
+        is_boxed = target.get("kind") == "box"
+        if not edit_allowed(self._edition, is_boxed, getattr(pokemon, "dexnr", None),
+                            remote, True):
+            self._set_edit_button_visible(False)
+            return
+        self._edit_ctx = {"target": dict(target), "bizhawk": bizhawk,
+                          "client_id": f"player{int(client_slot):03d}"}
+        self._set_edit_button_visible(True)
+
+    def _restore_edit_ctx(self, edit_ctx, pokemon, munchlax, player_id) -> None:
+        if edit_ctx is None or getattr(pokemon, "dexnr", None) in ("egg", 0, "", None):
+            return
+        target = edit_ctx["target"]
+        if getattr(pokemon, "personality", None) != target.get("personality"):
+            logger.info("PokemonDetailMD: anderes Pokemon im Slot — Bearbeiten-Ziel verworfen")
+            return
+        if target.get("kind") == "party":
+            from backend.pokemon_editor_logic import find_party_slot
+            snapshot = munchlax.snapshot_unsorted_teams() if hasattr(munchlax, "snapshot_unsorted_teams") else {}
+            ram_slot = find_party_slot(snapshot.get(player_id) or [], target.get("personality"))
+            if ram_slot is None:
+                return
+            target = {**target, "slot": ram_slot}
+        self._edit_ctx = {**edit_ctx, "target": target}
+        self._set_edit_button_visible(True)
+
+    def _after_write(self) -> None:
+        """Nach erfolgreichem Schreiben: Box-Ansicht ist eine Momentaufnahme —
+        zurück zur Box, die das Backend bereits neu einliest. Party aktualisiert
+        sich über den Live-Refresh selbst."""
+        ctx = self._edit_ctx
+        if ctx is not None and ctx["target"].get("kind") == "box":
+            self._go_back()
+
+    def _open_editor(self) -> None:
+        ctx = self._edit_ctx
+        if ctx is None or self._pokemon is None or self._editor_open:
+            return
+        try:
+            from frontend.widgets.pokemon_editor_md import PokemonEditorDialogMD
+            self._editor_open = True  # Live-Refresh pausieren
+            self._editor = PokemonEditorDialogMD(
+                self._pokemon, self._edition, self._rando_data, ctx["target"],
+                ctx["bizhawk"], ctx["client_id"], on_dismiss=self._on_editor_dismiss,
+                on_written=self._after_write)
+            self._editor.open()
+        except Exception:
+            self._editor_open = False
+            self._editor = None
+            logger.error(f"PokemonDetailMD: Editor öffnen fehlgeschlagen: {traceback.format_exc()}")
+            show_snackbar("Bearbeiten-Dialog konnte nicht geöffnet werden — Logs prüfen.", level='error')
+
+    def _on_editor_dismiss(self) -> None:
+        self._editor_open = False
+        self._editor = None
+
     def _live_refresh(self, _dt) -> None:
         src = self._refresh_src
-        if src is None:
+        if src is None or self._editor_open:
             return
         try:
             player_id, slot, munchlax, rando_getter = src
@@ -155,6 +250,7 @@ class PokemonDetailMD(MDScreen):
                 return
             self._last_sig = sig
             rando_data = rando_getter() if rando_getter else None
+            edit_ctx = self._edit_ctx
             try:
                 self.show(pokemon, self._edition, rando_data,
                           return_screen=self.return_screen, munchlax=munchlax,
@@ -163,8 +259,11 @@ class PokemonDetailMD(MDScreen):
                 # show() nullt _refresh_src → als Live-Ansicht IMMER wiederherstellen,
                 # auch wenn show() mitten im Rebuild wirft (sonst stiller Tick-Tod).
                 self._refresh_src = src
+                # Edit-Ziel nur übernehmen, wenn noch dasselbe Pokemon angezeigt wird
+                # (gleiche PID) — nach Tausch/Umsortierung sonst Schreiben gegen das
+                # falsche Pokemon. RAM-Slot frisch bestimmen (Umsortierung ändert ihn).
+                self._restore_edit_ctx(edit_ctx, pokemon, munchlax, player_id)
         except Exception:
-            import traceback
             logger.error(f"PokemonDetailMD._live_refresh fehlgeschlagen: {traceback.format_exc()}")
 
     # -- Befüllung -------------------------------------------------------------
@@ -178,6 +277,11 @@ class PokemonDetailMD(MDScreen):
         # Jeder show()-Aufruf ist zunächst eine Snapshot-Ansicht; ein Live-
         # Einstiegspunkt (Hauptmenü-Team) setzt die Quelle NACH show() erneut.
         self._refresh_src = None
+        self._pokemon = pokemon
+        self._rando_data = rando_data
+        # Edit-Ziel zurücksetzen; Live-Team/Box setzen es nach show() erneut.
+        self._edit_ctx = None
+        self._set_edit_button_visible(False)
         self.detail_layout.clear_widgets()
 
         if pokemon is None or getattr(pokemon, "dexnr", 0) in (0, "", None):

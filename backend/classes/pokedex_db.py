@@ -10,7 +10,7 @@ from backend.classes.Pokemon import Pokemon
 from backend.logging_setup import get_logger
 
 
-CURRENT_SCHEMA_VERSION = 9
+CURRENT_SCHEMA_VERSION = 10
 # Marker fuer Legacy-Gift/Fossil/Static/Egg/Token-Encounter aus Sessions vor
 # der Migration auf route=map_header_id. Diese Zeilen hatten alle route=0
 # und wuerden nach dem Fix sonst mit den frisch geloggten Wilds auf MAPSEC=0
@@ -100,6 +100,8 @@ class PokedexDB:
             self._apply_v8(cursor)
         if current_version < 9:
             self._apply_v9(cursor)
+        if current_version < 10:
+            self._apply_v10(cursor)
 
         self.connection.commit()
 
@@ -368,6 +370,94 @@ class PokedexDB:
             (9, datetime.now(timezone.utc).isoformat()),
         )
         self.logger.info("PokedexDB Schema v9 angewendet (rule_flags)")
+
+    def _apply_v10(self, cursor):
+        # Geschlecht + Form pro Encounter (Sprites im Encounter-Screen).
+        # Idempotent: Spalten nur anlegen, wenn sie fehlen (Tests spielen
+        # Migrationen erneut ab).
+        cursor.execute("PRAGMA table_info(encounters)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "female" not in columns:
+            cursor.execute(
+                "ALTER TABLE encounters ADD COLUMN female INTEGER NOT NULL DEFAULT 0"
+            )
+        if "form" not in columns:
+            cursor.execute(
+                "ALTER TABLE encounters ADD COLUMN form TEXT NOT NULL DEFAULT ''"
+            )
+
+        # Backfill alter Zeilen:
+        # 1) Pokemon liegt in der pokemon-Tabelle (gefangen/erhalten) mit
+        #    gleicher PV und gleicher Spezies -> female + form von dort.
+        #    pokemon.owner ist lokal str(player_slot), encounters.owner
+        #    build_owner-Format 'name_<slot>' -> beide Varianten abgleichen.
+        # 2) sonst (Gen 3–5): female wie die Decoder aus PV + gender_lut,
+        #    form bleibt '' (ohne Pokemon-Bytes nicht rekonstruierbar).
+        # Gen 6/7 speichern das Geschlecht explizit (Byte 0x1D), nicht aus der
+        # PV — die PV-Formel waere dort falsch, und pokemon.female wurde vor
+        # dem Decoder-Fix ebenfalls per PV berechnet. Fuer Gen 6/7 deshalb nur
+        # die Form uebernehmen, female bleibt Default (0).
+        try:
+            from backend.pokedecoder import gender_lut
+        except Exception as err:
+            gender_lut = {}
+            self.logger.warning(
+                f"PokedexDB Schema v10: gender_lut nicht ladbar ({type(err).__name__},{err}) "
+                f"— PV-Backfill fuer Geschlecht entfaellt"
+            )
+        cursor.execute(
+            "SELECT rowid, personality, owner, edition, dexnr FROM encounters"
+        )
+        rows = cursor.fetchall()
+        from_pokedex = 0
+        from_pv = 0
+        for rowid, personality, owner, edition, dexnr in rows:
+            try:
+                gen = int(edition) // 10
+            except (TypeError, ValueError):
+                gen = 0
+            owner_variants = [owner]
+            slot = PokedexDB.owner_slot(owner)
+            if slot is not None:
+                owner_variants.append(str(slot))
+            placeholders = ",".join("?" for _ in owner_variants)
+            cursor.execute(
+                f"SELECT owner, dexnr, female, form FROM pokemon "
+                f"WHERE personality = ? AND owner IN ({placeholders})",
+                [int(personality)] + owner_variants,
+            )
+            matches = {r[0]: r for r in cursor.fetchall()}
+            match = next((matches[o] for o in owner_variants if o in matches), None)
+            if match is not None and str(match[1]) == str(dexnr):
+                female_db = int(bool(match[2])) if gen < 6 else 0
+                cursor.execute(
+                    "UPDATE encounters SET female = ?, form = ? WHERE rowid = ?",
+                    (female_db, match[3] or "", rowid),
+                )
+                from_pokedex += 1
+                continue
+            try:
+                dex_int = int(dexnr)
+            except (TypeError, ValueError):
+                continue
+            if 3 <= gen <= 5 and dex_int in gender_lut:
+                female = int(personality) % 256 < gender_lut[dex_int]
+                if female:
+                    cursor.execute(
+                        "UPDATE encounters SET female = 1 WHERE rowid = ?",
+                        (rowid,),
+                    )
+                    from_pv += 1
+
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (10, datetime.now(timezone.utc).isoformat()),
+        )
+        self.logger.info(
+            f"PokedexDB Schema v10 angewendet (encounters female + form): "
+            f"{from_pokedex} von {len(rows)} Zeilen aus pokemon-Tabelle nachgefuellt, "
+            f"{from_pv} weitere per PV als weiblich markiert"
+        )
 
     # -- Regel-Marker (Schema v9) ----------------------------------------------
 
@@ -756,7 +846,9 @@ class PokedexDB:
                          is_first: bool, is_shiny_override: bool,
                          is_dupes_skip: bool, has_balls: bool,
                          method: str = "wild",
-                         outcome: str = "unknown") -> bool:
+                         outcome: str = "unknown",
+                         female: bool = False,
+                         form: str = "") -> bool:
         if self.connection is None:
             return False
         try:
@@ -767,15 +859,15 @@ class PokedexDB:
                 INSERT OR IGNORE INTO encounters (
                     personality, owner, edition, route, dexnr, lvl, shiny,
                     is_first, is_shiny_override, is_dupes_skip, has_balls,
-                    method, outcome, timestamp
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    method, outcome, timestamp, female, form
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     int(personality), owner, int(edition), int(route),
                     int(dexnr), int(lvl), int(shiny),
                     int(is_first), int(is_shiny_override),
                     int(is_dupes_skip), int(has_balls),
-                    method, outcome, now,
+                    method, outcome, now, int(bool(female)), form or "",
                 ),
             )
             self.connection.commit()
@@ -811,13 +903,27 @@ class PokedexDB:
             return False
         try:
             cursor = self.connection.cursor()
+            # Clients vor Schema v10 senden female/form nicht mit — dann die
+            # vorhandenen Werte der Zeile behalten statt sie per REPLACE auf
+            # den Default zurückzusetzen.
+            if "female" not in enc or "form" not in enc:
+                cursor.execute(
+                    "SELECT female, form FROM encounters "
+                    "WHERE personality = ? AND owner = ?",
+                    (int(enc["personality"]), enc["owner"]),
+                )
+                existing = cursor.fetchone()
+                if existing is not None:
+                    enc = dict(enc)
+                    enc.setdefault("female", existing[0])
+                    enc.setdefault("form", existing[1])
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO encounters (
                     personality, owner, edition, route, dexnr, lvl, shiny,
                     is_first, is_shiny_override, is_dupes_skip, has_balls,
-                    method, outcome, timestamp
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    method, outcome, timestamp, female, form
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     int(enc["personality"]), enc["owner"], int(enc["edition"]),
@@ -827,6 +933,7 @@ class PokedexDB:
                     int(enc.get("is_dupes_skip", 0)), int(enc.get("has_balls", 0)),
                     enc.get("method", "wild"), enc.get("outcome", "unknown"),
                     enc.get("timestamp", ""),
+                    int(bool(enc.get("female", 0))), str(enc.get("form") or ""),
                 ),
             )
             self.connection.commit()
@@ -953,13 +1060,21 @@ class PokedexDB:
         if self.connection is None or not family_members:
             return False
         try:
+            # pokemon.owner ist str(player_slot) (Munchlax._persist_teams),
+            # Aufrufer reichen den Encounter-Owner 'name_<slot>' → beide
+            # Varianten abfragen. Slots sind sessionweit eindeutig (P1–P4).
+            owner_variants = [owner]
+            slot = PokedexDB.owner_slot(owner)
+            if slot is not None:
+                owner_variants.append(str(slot))
+            owner_placeholders = ",".join("?" for _ in owner_variants)
             placeholders = ",".join("?" for _ in family_members)
             cursor = self.connection.cursor()
             cursor.execute(
                 f"SELECT 1 FROM pokemon "
-                f"WHERE owner = ? AND dexnr IN ({placeholders}) "
+                f"WHERE owner IN ({owner_placeholders}) AND dexnr IN ({placeholders}) "
                 f"LIMIT 1",
-                [owner] + [str(d) for d in family_members],
+                owner_variants + [str(d) for d in family_members],
             )
             return cursor.fetchone() is not None
         except Exception as err:

@@ -72,6 +72,7 @@ class PokemonDetailMD(MDScreen):
         self._edition = 0
         self._detail_munchlax = None
         self._detail_owner = None
+        self._detail_player_slot = None
         # Live-Refresh-Quelle (nur Hauptmenü-Team): (player_id, slot, munchlax,
         # rando_getter). None = Snapshot-Ansicht (Pokedex/Box), kein Live-Tick.
         self._refresh_src = None
@@ -254,7 +255,8 @@ class PokemonDetailMD(MDScreen):
             try:
                 self.show(pokemon, self._edition, rando_data,
                           return_screen=self.return_screen, munchlax=munchlax,
-                          owner=self._detail_owner)
+                          owner=self._detail_owner,
+                          player_slot=self._detail_player_slot)
             finally:
                 # show() nullt _refresh_src → als Live-Ansicht IMMER wiederherstellen,
                 # auch wenn show() mitten im Rebuild wirft (sonst stiller Tick-Tod).
@@ -269,11 +271,16 @@ class PokemonDetailMD(MDScreen):
     # -- Befüllung -------------------------------------------------------------
 
     def show(self, pokemon, edition: int, rando_data=None, return_screen: str = "PokedexMenu",
-             munchlax=None, owner: str | None = None) -> None:
+             munchlax=None, owner: str | None = None,
+             player_slot: int | None = None) -> None:
+        """``owner``: Soullink-Root-Name (Schlüssel in link["members"]).
+        ``player_slot``: Spieler-Slot des Pokemon — wird über
+        ``munchlax.player_names`` zum Namen aufgelöst, wenn ``owner`` fehlt."""
         self._edition = edition
         self.return_screen = return_screen
         self._detail_munchlax = munchlax
         self._detail_owner = owner
+        self._detail_player_slot = player_slot
         # Jeder show()-Aufruf ist zunächst eine Snapshot-Ansicht; ein Live-
         # Einstiegspunkt (Hauptmenü-Team) setzt die Quelle NACH show() erneut.
         self._refresh_src = None
@@ -520,10 +527,22 @@ class PokemonDetailMD(MDScreen):
         links = getattr(m, "soullink_links", None)
         if not isinstance(links, dict) or not links:
             return
+        # Soullink-Member sind mit Root-Owner (Spielername ohne Slot) geschlüsselt
+        # (arceus: owner_root). Reihenfolge: expliziter owner → Name zum Slot
+        # (Handshake-Name aus player_names, auch für Mitspieler) → eigener Name.
         owner = self._detail_owner
+        slot = self._detail_player_slot
+        if owner is None and slot is not None:
+            # Snapshot unter state_lock (BH-Thread/Sync schreiben per clear+update)
+            snapshot = getattr(m, "snapshot_player_names", None)
+            names = snapshot() if callable(snapshot) else getattr(m, "player_names", None)
+            if isinstance(names, dict):
+                owner = names.get(slot) or names.get(str(slot)) or None
+            if owner is None:
+                logger.debug(f"Soullink-Abschnitt: kein Name für Slot {slot} bekannt")
+                return
         if owner is None:
             try:
-                # Soullink-Member sind mit Root-Owner (ohne Slot) geschlüsselt.
                 owner = m.pl.get("your_name", "") if m.pl else ""
             except Exception:
                 return

@@ -29,6 +29,8 @@ class EncounterResult:
     is_dupes_skip: bool
     has_balls: bool
     already_logged: bool
+    female: bool = False
+    form: str = ""
     # True → Caller (bizhawk/citrahandler) muss send_soullink_token_earned auf
     # dem Event-Loop-Thread triggern. process_gift_encounter selbst läuft im
     # run_in_executor-Worker-Thread und kann kein asyncio.create_task rufen.
@@ -368,6 +370,8 @@ class EncounterTracker:
         lvl = opponent["lvl"]
         shiny = opponent["shiny"]
         personality = opponent["personality"]
+        female = bool(opponent.get("female", False))
+        form = opponent.get("form") or ""
         method = "wild"
         outcome = "unknown"
         already_logged = False
@@ -395,6 +399,8 @@ class EncounterTracker:
                     has_balls=has_balls,
                     method=method,
                     outcome=outcome,
+                    female=female,
+                    form=form,
                 )
                 already_logged = not inserted
 
@@ -409,12 +415,14 @@ class EncounterTracker:
             is_shiny_override=is_shiny_override,
             is_dupes_skip=is_dupes_skip,
             has_balls=has_balls, already_logged=already_logged,
+            female=female, form=form,
         )
 
     def process_gift_encounter(self, owner: str, edition: int,
                                 personality: int, dexnr: int, lvl: int,
                                 shiny: bool, route: int,
-                                map_header_id: int) -> EncounterResult | None:
+                                map_header_id: int, female: bool = False,
+                                form: str = "") -> EncounterResult | None:
         """Prüft ob ein neues Pokemon ein bekanntes Geschenk ist und loggt es."""
         gift_defs = self._load_gifts(edition)
         gifts = gift_defs.get(map_header_id, [])
@@ -515,6 +523,8 @@ class EncounterTracker:
                     has_balls=has_balls,
                     method=method,
                     outcome=outcome,
+                    female=female,
+                    form=form,
                 )
                 already_logged = not inserted
 
@@ -544,12 +554,13 @@ class EncounterTracker:
             is_shiny_override=is_shiny_override,
             is_dupes_skip=is_dupes_skip,
             has_balls=has_balls, already_logged=already_logged,
-            token_earned=token_earned,
+            token_earned=token_earned, female=female, form=form,
         )
 
     def process_starter_encounter(self, owner: str, edition: int,
                                     personality: int, dexnr: int, lvl: int,
-                                    shiny: bool) -> EncounterResult | None:
+                                    shiny: bool, female: bool = False,
+                                    form: str = "") -> EncounterResult | None:
         """Loggt Starter als virtuellen Encounter mit route=STARTER_ROUTE (-1).
 
         Nur einbuchen wenn owner+edition noch KEINEN Encounter hat — sonst
@@ -578,6 +589,8 @@ class EncounterTracker:
                     has_balls=has_balls,
                     method="starter",
                     outcome="obtained",
+                    female=female,
+                    form=form,
                 )
                 if not inserted:
                     return None
@@ -594,6 +607,7 @@ class EncounterTracker:
             method="starter", outcome="obtained",
             is_first=True, is_shiny_override=False, is_dupes_skip=False,
             has_balls=has_balls, already_logged=False, token_earned=False,
+            female=female, form=form,
         )
 
     def update_outcome(self, personality: int, owner: str, outcome: str) -> bool:

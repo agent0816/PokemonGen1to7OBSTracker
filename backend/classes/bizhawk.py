@@ -1600,9 +1600,9 @@ class Bizhawk:
             opp_bytes = await opp_fut
 
             if edition < 40:
-                opp = pokedecoder.decode_opponent_gen3(opp_bytes)
+                opp = pokedecoder.decode_opponent_gen3(opp_bytes, edition)
             else:
-                opp = pokedecoder.decode_opponent_gen45(opp_bytes)
+                opp = pokedecoder.decode_opponent_gen45(opp_bytes, edition // 10)
             if opp is None:
                 self.logger.debug("Gegner-Slot leer oder ungültig")
                 return
@@ -1728,6 +1728,8 @@ class Bizhawk:
                     "has_balls": int(result.has_balls),
                     "method": result.method,
                     "outcome": result.outcome,
+                    "female": int(result.female),
+                    "form": str(result.form or ""),
                 }))
         except Exception as err:
             self.logger.error(f"Encounter-Read fehlgeschlagen: {type(err)},{err}")
@@ -1880,6 +1882,8 @@ class Bizhawk:
                                 dexnr=int(dx),
                                 lvl=pk.lvl or 1,
                                 shiny=bool(pk.shiny),
+                                female=bool(pk.female),
+                                form=pk.form or "",
                             ),
                         )
                     except Exception as err:
@@ -1901,6 +1905,8 @@ class Bizhawk:
                             "has_balls": int(starter_result.has_balls),
                             "method": starter_result.method,
                             "outcome": starter_result.outcome,
+                            "female": int(starter_result.female),
+                            "form": str(starter_result.form or ""),
                         }))
 
         for pv in non_battle_pvs:
@@ -1928,6 +1934,8 @@ class Bizhawk:
                         shiny=bool(pokemon.shiny),
                         route=getattr(pokemon, "route", 0) or 0,
                         map_header_id=map_header or 0,
+                        female=bool(pokemon.female),
+                        form=pokemon.form or "",
                     ),
                 )
             except Exception as err:
@@ -1953,6 +1961,8 @@ class Bizhawk:
                     "has_balls": int(result.has_balls),
                     "method": result.method,
                     "outcome": result.outcome,
+                    "female": int(result.female),
+                    "form": str(result.form or ""),
                 }))
             if result and result.token_earned:
                 # Trigger auf dem Kivy-Loop — Munchlax-Writer lebt dort. Executor-Worker
@@ -1989,6 +1999,7 @@ class Bizhawk:
                 lvl=pokemon.lvl or 1, shiny=bool(pokemon.shiny),
                 route=getattr(pokemon, "route", 0) or 0,
                 map_header_id=map_header or 0,
+                female=bool(pokemon.female), form=pokemon.form or "",
             )
 
     async def _read_party_count(self, client_id: str, edition: int) -> int | None:

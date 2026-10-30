@@ -162,6 +162,8 @@ def build_encounter_rows(
                 "edition": enc_edition,
                 "lvl": enc.get("lvl", ""),
                 "shiny": bool(enc.get("shiny", 0)),
+                "female": bool(enc.get("female", 0)),
+                "form": enc.get("form") or "",
                 "method": enc.get("method", "wild"),
                 "owner": str(enc.get("owner", "") or ""),
                 "status": determine_status(enc),
@@ -179,6 +181,8 @@ def build_encounter_rows(
                     "edition": edition_filter,
                     "lvl": "",
                     "shiny": False,
+                    "female": False,
+                    "form": "",
                     "method": "—",
                     "owner": "",
                     "status": "open",
@@ -263,6 +267,8 @@ def group_soullink(
                 "edition": edition,
                 "lvl": enc.get("lvl", ""),
                 "shiny": bool(enc.get("shiny", 0)),
+                "female": bool(enc.get("female", 0)),
+                "form": enc.get("form") or "",
                 "status": status,
             })
         # Mitglieder nach Slot ordnen (None ans Ende), damit P1/P2/… stabil stehen

@@ -782,7 +782,7 @@ class CitraHandler:
             if enc_data is None:
                 self.logger.warning("Encounter-Read: keine RPC-Antwort von Azahar")
                 return
-            opp = pokedecoder.decode_opponent_gen67(enc_data)
+            opp = pokedecoder.decode_opponent_gen67(enc_data, self.edition // 10)
             if opp is None:
                 self.logger.debug("Gegner-Slot leer oder ungültig")
                 return
@@ -841,6 +841,8 @@ class CitraHandler:
                         "has_balls": int(result.has_balls),
                         "method": result.method,
                         "outcome": result.outcome,
+                        "female": int(result.female),
+                        "form": str(result.form or ""),
                     }),
                     name="send_encounter_sync(wild)",
                 )
@@ -959,6 +961,8 @@ class CitraHandler:
                                 dexnr=int(dx),
                                 lvl=pk.lvl or 1,
                                 shiny=bool(pk.shiny),
+                                female=bool(pk.female),
+                                form=pk.form or "",
                             ),
                         )
                     except Exception as err:
@@ -981,6 +985,8 @@ class CitraHandler:
                                 "has_balls": int(starter_result.has_balls),
                                 "method": starter_result.method,
                                 "outcome": starter_result.outcome,
+                                "female": int(starter_result.female),
+                                "form": str(starter_result.form or ""),
                             }),
                             name="send_encounter_sync(starter)",
                         )
@@ -1019,6 +1025,8 @@ class CitraHandler:
                         shiny=bool(pokemon.shiny),
                         route=gift_route,
                         map_header_id=map_header_id,
+                        female=bool(pokemon.female),
+                        form=pokemon.form or "",
                     ),
                 )
             except Exception as err:
@@ -1045,6 +1053,8 @@ class CitraHandler:
                         "has_balls": int(result.has_balls),
                         "method": result.method,
                         "outcome": result.outcome,
+                        "female": int(result.female),
+                        "form": str(result.form or ""),
                     }),
                     name="send_encounter_sync(gift)",
                 )

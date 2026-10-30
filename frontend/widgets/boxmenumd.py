@@ -325,7 +325,8 @@ class BoxMenu(MDScreen):
         except Exception as err:
             logger.error(f"Rando-Daten für Box-Detail nicht lesbar: {err}")
         detail = self.manager.get_screen("PokemonDetail")
-        detail.show(pokemon, edition, rando_data, return_screen="BoxMenu", munchlax=self.munchlax)
+        detail.show(pokemon, edition, rando_data, return_screen="BoxMenu", munchlax=self.munchlax,
+                    player_slot=self.current_player)
         # Bearbeiten (nur BizHawk-Spieler lokal; Gate liegt in set_edit_target)
         personality = getattr(pokemon, "personality", None)
         target = None

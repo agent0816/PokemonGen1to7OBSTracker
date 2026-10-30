@@ -495,11 +495,13 @@ class PokedexMenu(MDScreen):
         app = MDApp.get_running_app()
         munchlax = getattr(app, "munchlax", None) if app is not None else None
         detail = self.manager.get_screen("PokemonDetail")
-        # Soullink-Member sind mit Root-Owner (ohne Slot-Suffix) geschlüsselt
-        # (arceus), DB-owner ist name_<slot> → Root extrahieren, sonst matcht nichts.
-        owner = PokedexDB.owner_root(str(row.get("owner") or "")) or None
+        # Soullink-Member sind mit Root-Owner (Spielername ohne Slot) geschlüsselt
+        # (arceus). pokemon.owner ist str(<slot>) → Name löst die Detailansicht
+        # über player_names auf; nur ein owner im Format name_<slot> trägt ihn selbst.
+        root = PokedexDB.owner_root(str(row.get("owner") or ""))
+        owner = root if root and not root.isdigit() else None
         detail.show(pokemon, edition, return_screen="PokedexMenu",
-                    munchlax=munchlax, owner=owner)
+                    munchlax=munchlax, owner=owner, player_slot=row_slot(row))
         self.manager.current = "PokemonDetail"
 
     def _sprite_source(self, row: dict) -> str:

@@ -86,9 +86,23 @@ def decryptpokemon(data, gen):
         ).to_bytes(2, "little")
     return (unshuffled_bytes, decrypted_battle_stats, shiny_value, encryption_key)
 
-def decode_opponent_gen45(data: bytes) -> dict | None:
-    """Dekodiert nur Species, Level, Shiny, Personality und met_location
-    aus einem Gen-4/5-Party-Slot (220 oder 236 Bytes).
+def _opponent_female(dexnr: int, personality: int) -> bool:
+    """Geschlecht wie in den vollen Decodern (Gen 3–5): PV-Low-Byte gegen gender_lut."""
+    if dexnr in gender_lut:
+        return personality % 256 < gender_lut[dexnr]
+    return False
+
+
+def gen67_female(gender_form_byte: int) -> bool:
+    """Gen 6/7 speichern das Geschlecht explizit, nicht aus der PID abgeleitet:
+    Struct-Byte 0x1D (unshuffled 0x15), Bits 1–2 = 0 männlich, 1 weiblich,
+    2 geschlechtslos (PKHeX PK6/PK7 ``Gender``). Bits 3–7 = Form (get_form)."""
+    return (gender_form_byte >> 1) & 0x3 == 1
+
+
+def decode_opponent_gen45(data: bytes, gen: int = 4) -> dict | None:
+    """Dekodiert nur Species, Level, Shiny, Personality, met_location,
+    Geschlecht und Form aus einem Gen-4/5-Party-Slot (220 oder 236 Bytes).
 
     Gibt None zurück bei leerem Slot.
     """
@@ -117,12 +131,16 @@ def decode_opponent_gen45(data: bytes) -> dict | None:
         "shiny": shiny_value < 9,
         "personality": personality,
         "met_location": met_location,
+        "female": _opponent_female(dexnr, personality),
+        "form": get_form(unshuffled_bytes[0x38], dexnr, gen),
     }
 
 
-def decode_opponent_gen3(data: bytes) -> dict | None:
-    """Dekodiert Species, Level, Shiny, Personality, met_location und current HP
-    aus einem Gen-3-Party-Slot (100 Bytes)."""
+def decode_opponent_gen3(data: bytes, edition: int = 0) -> dict | None:
+    """Dekodiert Species, Level, Shiny, Personality, met_location, current HP,
+    Geschlecht und Form aus einem Gen-3-Party-Slot (100 Bytes).
+
+    ``edition`` wird nur für die Deoxys-Form gebraucht (wie ``pokemon3``)."""
     if len(data) < 100:
         return None
     personality = int.from_bytes(data[:4], "little")
@@ -135,12 +153,16 @@ def decode_opponent_gen3(data: bytes) -> dict | None:
         return None
 
     dexnr = species
+    form = ""
     if species in range(277, 440):
         converted = species3_lut.get(species, species)
         if isinstance(converted, str):
+            form = converted[3:]
             dexnr = int(converted[:3])
         else:
             dexnr = converted
+        if dexnr == 386:
+            form = {34: "-attack", 35: "-defense", 33: "-speed"}.get(edition, "")
 
     lvl = data[84]
     met_location = unshuffled_bytes[0x25]
@@ -154,12 +176,14 @@ def decode_opponent_gen3(data: bytes) -> dict | None:
         "personality": personality,
         "met_location": met_location,
         "current_hp": current_hp,
+        "female": _opponent_female(dexnr, personality),
+        "form": form,
     }
 
 
-def decode_opponent_gen67(data: bytes) -> dict | None:
-    """Dekodiert Species, Level, Shiny, Personality und met_location
-    aus einem Gen-6/7-Wild-Encounter-Slot (232 Bytes PK6)."""
+def decode_opponent_gen67(data: bytes, gen: int = 6) -> dict | None:
+    """Dekodiert Species, Level, Shiny, Personality, met_location, Geschlecht
+    und Form aus einem Gen-6/7-Wild-Encounter-Slot (232 Bytes PK6)."""
     if len(data) < 232:
         return None
     encryption_key = int.from_bytes(data[:4], "little")
@@ -190,6 +214,8 @@ def decode_opponent_gen67(data: bytes) -> dict | None:
         "shiny": shiny_value < 17,
         "personality": personality,
         "met_location": met_location,
+        "female": gen67_female(unshuffled_bytes[0x15]),
+        "form": get_form(unshuffled_bytes[0x15], dexnr, gen),
     }
 
 
@@ -671,7 +697,6 @@ def pokemon67(data, gen, is_boxed=False):
     ot_secret_id = int.from_bytes(unshuffled_bytes[0x06:0x08], "little")
     experience_points = int.from_bytes(unshuffled_bytes[0x08:0x0C], "little")
     ability = int.from_bytes(unshuffled_bytes[0x0C:0x0D])
-    female = False
     personality = int.from_bytes(unshuffled_bytes[0x10:0x14], "little")
     nature = int.from_bytes(unshuffled_bytes[0x14:0x15])
 
@@ -685,8 +710,7 @@ def pokemon67(data, gen, is_boxed=False):
     iv_base = int.from_bytes(unshuffled_bytes[0x6C:0x70], "little")
     ivs = {ev_names[index]: ((iv_base >> (index * 5)) & 0x1F) for index in range(6)}
 
-    if dexnr in gender_lut:
-        female = personality % 256 < gender_lut[dexnr]
+    female = gen67_female(unshuffled_bytes[0x15])
 
     if item in items6plus:
         item = items6plus[item]

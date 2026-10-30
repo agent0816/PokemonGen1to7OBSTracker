@@ -257,7 +257,7 @@ class TrainerBoxMD(MDBoxLayout):
             return
         detail = mgr.get_screen("PokemonDetail")
         detail.show(pokemon, edition, rando_data, return_screen="MainMenu",
-                    munchlax=self.munchlax, owner=None)
+                    munchlax=self.munchlax, owner=None, player_slot=self.player_id)
         # Live-Refresh: Detail aktualisiert sich aus dem Live-Team, solange offen.
         rando_getter = None
         if hasattr(self.screen, 'randomizer'):

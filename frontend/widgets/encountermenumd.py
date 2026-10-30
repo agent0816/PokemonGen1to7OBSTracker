@@ -525,10 +525,12 @@ class EncounterMenu(MDScreen):
 
     def _sprite_source(self, row: dict) -> str:
         """Sprite-Pfad via OBS.get_sprite; leer bei offenen Routen/Fehlern.
-        Gecacht pro (dexnr, edition, shiny), wie im Pokedex."""
+        Gecacht pro (dexnr, edition, shiny, female, form), wie im Pokedex."""
         if self.obs_websocket is None or row.get("is_open"):
             return ""
-        cache_key = (row.get("dexnr"), row.get("edition"), bool(row.get("shiny")))
+        female = bool(row.get("female"))
+        form = row.get("form") or ""
+        cache_key = (row.get("dexnr"), row.get("edition"), bool(row.get("shiny")), female, form)
         if cache_key in self._sprite_cache:
             return self._sprite_cache[cache_key]
         try:
@@ -536,8 +538,8 @@ class EncounterMenu(MDScreen):
             if dexnr <= 0:
                 source = ""
             else:
-                shim = SimpleNamespace(shiny=bool(row.get("shiny")), female=False,
-                                       dexnr=dexnr, form="")
+                shim = SimpleNamespace(shiny=bool(row.get("shiny")), female=female,
+                                       dexnr=dexnr, form=form)
                 source = self.obs_websocket.get_sprite(shim, False, int(row.get("edition"))) or ""
                 # get_sprite prüft keine Existenz; fehlende Datei → FitImage zeichnet weiß
                 if source and not os.path.exists(source):

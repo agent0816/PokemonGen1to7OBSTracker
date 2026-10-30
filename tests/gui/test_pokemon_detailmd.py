@@ -103,6 +103,35 @@ class _DriveApp(MDApp):
                    len(self.detail.detail_layout.children))
         self.check("return_screen", self.detail.return_screen == "PokedexMenu", self.detail.return_screen)
         self.shot("01_detail")
+        self._next(self.s_soullink_mitspieler)
+
+    def _texts(self):
+        return [w.text for w in self.detail.detail_layout.walk() if hasattr(w, "text")]
+
+    def s_soullink_mitspieler(self):
+        # Pokemon eines Mitspielers (Slot 4): link["members"] ist mit dem
+        # Spielernamen geschlüsselt (arceus owner_root), nicht mit dem Slot.
+        munchlax = SimpleNamespace(
+            pl={"your_name": "Alice"},
+            player_names={1: "Alice", 4: "Stephan"},
+            soullink_links={7: {"link_id": 7, "route": 5, "state": "complete", "members": {
+                "Stephan": {"personality": 0x444, "dexnr": 25, "outcome": "caught"},
+                "Alice": {"personality": 0x111, "dexnr": 1, "outcome": "caught"},
+            }}},
+        )
+        self.detail.show(_poke(0x444, 25, "Pika"), 31, return_screen="PokedexMenu",
+                         munchlax=munchlax, owner=None, player_slot=4)
+        texts = self._texts()
+        self.check("soullink_partner_mitspieler", "Alice:" in texts, texts[-6:])
+        self.check("soullink_kein_selbst", "Stephan:" not in texts)
+        # Slot ohne bekannten Namen: kein Abschnitt — kein Fallback auf den
+        # eigenen Namen (der alte Bug)
+        munchlax.player_names = {1: "Alice"}
+        self.detail.show(_poke(0x111, 1, "Bisa"), 31, return_screen="PokedexMenu",
+                         munchlax=munchlax, owner=None, player_slot=4)
+        texts = self._texts()
+        self.check("soullink_slot_ohne_name", not any("Soullink-Partner" in str(t) for t in texts),
+                   texts[-6:])
         self._next(self.s_back)
 
     def s_back(self):
@@ -115,7 +144,8 @@ class _DriveApp(MDApp):
 
 
 _EXPECTED = {"eine_karte", "detail_aktiv", "titel_gesetzt", "sektionen_gerendert",
-             "return_screen", "zurueck_pokedex"}
+             "return_screen", "soullink_partner_mitspieler", "soullink_kein_selbst",
+             "soullink_slot_ohne_name", "zurueck_pokedex"}
 
 
 @pytest.mark.gui

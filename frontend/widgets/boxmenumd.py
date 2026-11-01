@@ -21,9 +21,9 @@ from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.screen import MDScreen
 
 from backend.logging_setup import get_logger
+from backend.party_rules import is_marked_dead
+from frontend.box_reader import read_boxes_for_player
 
-GAMES_CITRA = {"X", "Y", "Omega Rubin", "Alpha Saphir",
-               "Sonne", "Mond", "Ultra Sonne", "Ultra Mond"}
 
 # Gen 1/2 nutzen 4x5=20 Slots, Gen 3+ die vollen 5x6=30. Für ein einheitliches
 # Layout wird immer 5 Zeilen x 6 Spalten gerendert, überzählige Slots bleiben leer.
@@ -66,7 +66,9 @@ class BoxSlotCard(MDCard):
         except Exception:
             return ""
 
-    def set_pokemon(self, pokemon, edition: int) -> None:
+    def set_pokemon(self, pokemon, edition: int, dead: bool = False) -> None:
+        # Tote Pokemon (Encounter dead=1) gedimmt wie in der TrainerBox
+        self.sprite.opacity = 0.55 if dead else 1.0
         if pokemon is None or pokemon.dexnr in (0, "", None):
             self.sprite.source = self._empty_sprite()
             self.nickname_label.text = ""
@@ -267,26 +269,11 @@ class BoxMenu(MDScreen):
 
     async def _read_boxes_for_player(self, player: int) -> list | None:
         """Entscheidet anhand der Edition, welcher Emulator-Handler zuständig ist."""
-        game = self.pl.get("session_game", "")
-        if game in GAMES_CITRA:
-            # Citra-Handler bedient aktuell nur den lokalen Player
-            if self.citra.player_number != player:
-                Clock.schedule_once(
-                    lambda dt: self._after_refresh_error(
-                        f"Citra ist Spieler {self.citra.player_number} zugeordnet, nicht {player}."
-                    ), 0,
-                )
-                return None
-            return await self.citra.read_and_decode_boxes()
-        client_id = f"player{player:03d}"
-        if client_id not in self.bizhawk.bizhawks:
-            Clock.schedule_once(
-                lambda dt: self._after_refresh_error(f"Emulator {client_id} nicht verbunden."),
-                0,
-            )
+        boxes, error = await read_boxes_for_player(self.pl, self.citra, self.bizhawk, player)
+        if error is not None:
+            Clock.schedule_once(lambda dt: self._after_refresh_error(error), 0)
             return None
-        from frontend.bh_dispatch import bh_submit
-        return await bh_submit(self.bizhawk.read_and_decode_boxes(client_id))
+        return boxes
 
     def _after_refresh(self, player: int, box_count: int):
         self.refresh_button.disabled = False
@@ -350,9 +337,10 @@ class BoxMenu(MDScreen):
         index = max(0, min(self.current_box_index, len(boxes) - 1))
         box = boxes[index]
         # Slots die die Box kennt werden befüllt, der Rest wird leer gerendert.
+        dead_pvs = self.munchlax.snapshot_dead_pvs().get(self.current_player)
         for i, slot_widget in enumerate(self.slot_widgets):
             pokemon = box[i] if i < len(box) else None
-            slot_widget.set_pokemon(pokemon, edition)
+            slot_widget.set_pokemon(pokemon, edition, dead=is_marked_dead(pokemon, dead_pvs))
         self.title_label.text = (
             f"PC-Boxen — Spieler {self.current_player} — Box {index + 1}/{len(boxes)}"
         )

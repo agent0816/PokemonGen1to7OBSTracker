@@ -172,7 +172,7 @@ class TrackerCoreMixin:
         from backend.classes.overlay_server import OverlayServer
         from backend.munchlax_thread import MunchlaxThread
 
-        self.arceus = Arceus("", self.rem["client_port"], self.rem)
+        self.arceus = Arceus("", self.rem["client_port"], self.rem, configsave=self.configsave)
         # Isolierter Thread + eigener asyncio-Loop fuer den Arceus-Server.
         # Alle Arceus-Coros (start, stop, start_helper_listener,
         # handle_munchlax, check_heartbeats, timer_tick_loop) laufen von jetzt

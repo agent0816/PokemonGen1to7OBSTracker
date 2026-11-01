@@ -201,6 +201,8 @@ def test_encounter_view_reicht_durch():
              "outcome": "caught", "link_group_id": 7}]
     rows, _, _ = build_encounter_rows(encs, {})
     assert rows[0]["female"] is True and rows[0]["form"] == "-east"
-    groups = group_soullink(encs, {}, expected_count=1)
+    links = {7: {"link_id": 7, "route": 5, "state": "complete", "members": {
+        "Ash": {"personality": 1, "edition": 42, "outcome": "caught", "dexnr": 422}}}}
+    groups = group_soullink(links, encs, {}, expected_count=1)
     member = groups[0]["members"][0]
     assert member["female"] is True and member["form"] == "-east"

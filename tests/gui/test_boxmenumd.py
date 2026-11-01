@@ -29,6 +29,7 @@ def _box(prefix: str) -> list:
     box: list = [None] * 30
     box[0] = _poke(25, f"{prefix}Blitz", 12)
     box[1] = _poke(6, f"{prefix}Draco", 34)
+    box[1].personality = 99  # als tot markiert (siehe snapshot_dead_pvs)
     box[7] = _poke(7, f"{prefix}Schiggy", 5)
     return box
 
@@ -53,7 +54,8 @@ class _DriveApp(MDApp):
         self.theme_cls.theme_style = "Dark"
         self.theme_cls.primary_palette = "Orange"
         self.sm = MDScreenManager()
-        munchlax = SimpleNamespace(boxes={1: [_box("A"), _box("B")]}, editions={1: 34})
+        munchlax = SimpleNamespace(boxes={1: [_box("A"), _box("B")]}, editions={1: 34},
+                                   snapshot_dead_pvs=lambda: {1: frozenset({99})})
         self.menu = BoxMenu(None, None, munchlax, _FakeObs(), {"player_count": 2})
         self.sm.add_widget(self.menu)
         return self.sm
@@ -88,6 +90,8 @@ class _DriveApp(MDApp):
                    and self.menu.player_button_text.text == "Spieler: 1")
         self.check("box_label", self.menu.box_button_text.text == "Box 1/2",
                    self.menu.box_button_text.text)
+        self.check("tot_gedimmt", self.menu.slot_widgets[1].sprite.opacity < 1.0
+                   and self.menu.slot_widgets[0].sprite.opacity == 1.0)
         self.shot("01_box1")
         self._next(self.s_next)
 
@@ -104,7 +108,7 @@ class _DriveApp(MDApp):
         self.stop()
 
 
-_EXPECTED = {"dreissig_slots", "nickname_a", "level_text", "nav_vorhanden", "box_label",
+_EXPECTED = {"tot_gedimmt", "dreissig_slots", "nickname_a", "level_text", "nav_vorhanden", "box_label",
              "box2_nickname", "box2_label", "wrap_box1"}
 
 

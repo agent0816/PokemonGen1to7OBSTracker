@@ -40,11 +40,28 @@ def _seed_db(session_dir: str) -> None:
                             "wild", "caught")
         db.insert_encounter(0x11, "Bob_2", 34, 4, 43, 6, False, False, False, False, False,
                             "wild", "caught")
-        with db.access_lock:
-            db.connection.execute("UPDATE encounters SET link_group_id = 1 WHERE route = 4")
-            db.connection.commit()
+        # Gesperrte Felder (manuelle Korrektur) → Schloss-Icon auf der Karte
+        db.apply_encounter_edit(0x2, "Alice_1", {"outcome": "caught"})
+        db.apply_encounter_edit(0x11, "Bob_2", {"lvl": 7})
     finally:
         db.close()
+
+
+class _FakeMunchlax:
+    """Minimal-Munchlax: nur Links-Snapshot + Callback-Slot."""
+
+    def __init__(self) -> None:
+        self.on_soullink_state_changed_callback = None
+        self.links = {1: {
+            "link_id": 1, "route": 4, "edition_gen": 3, "link_index": 0, "state": "complete",
+            "expected_owners": ["Alice", "Bob"],
+            "members": {
+                "Alice": {"personality": 0x10, "edition": 34, "outcome": "caught", "dexnr": 25},
+                "Bob": {"personality": 0x11, "edition": 34, "outcome": "caught", "dexnr": 43},
+            }}}
+
+    def snapshot_soullink_links(self) -> dict:
+        return {k: dict(v) for k, v in self.links.items()}
 
 
 class _DriveApp(MDApp):
@@ -62,7 +79,9 @@ class _DriveApp(MDApp):
         self.theme_cls.theme_style = "Dark"
         self.theme_cls.primary_palette = "Orange"
         self.sm = MDScreenManager()
-        self.menu = EncounterMenu(self._session_dir, {"player_count": 2}, self.nuz, "test")
+        self.fake_munchlax = _FakeMunchlax()
+        self.menu = EncounterMenu(self._session_dir, {"player_count": 2}, self.nuz, "test",
+                                  munchlax=self.fake_munchlax, rem={})
         self.sm.add_widget(self.menu)
         return self.sm
 

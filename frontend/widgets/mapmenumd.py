@@ -697,10 +697,10 @@ class MapMenu(MDScreen):
                 return []
             cur = db.connection.cursor()
             if edition:
-                cur.execute("SELECT * FROM encounters WHERE edition = ?",
+                cur.execute("SELECT * FROM encounters WHERE edition = ? AND deleted = 0",
                             (int(edition),))
             else:
-                cur.execute("SELECT * FROM encounters")
+                cur.execute("SELECT * FROM encounters WHERE deleted = 0")
             return [dict(r) for r in cur.fetchall()]
         except Exception as err:
             logger.error(f"_query_catches gescheitert: {err}")

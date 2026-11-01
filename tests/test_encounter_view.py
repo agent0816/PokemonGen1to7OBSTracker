@@ -99,36 +99,180 @@ def test_aggregate_link_status():
     assert ev.aggregate_link_status(["caught", "not_caught"], 2) == "failed"
 
 
+# --- build_encounter_rows: deleted / locks ---------------------------------
+
+def test_build_rows_deleted_gefiltert_und_mit_show_deleted():
+    encs = [_enc(route=100, personality=1), _enc(route=101, personality=2, deleted=1)]
+    rows, enc_count, _ = ev.build_encounter_rows(encs, SPECIES_DE)
+    assert enc_count == 1 and rows[0]["route"] == 100
+    rows, enc_count, _ = ev.build_encounter_rows(encs, SPECIES_DE, show_deleted=True)
+    assert enc_count == 2
+    assert [r["deleted"] for r in rows] == [False, True]
+
+
+def test_build_rows_deleted_zaehlt_nicht_als_getroffene_route():
+    encs = [_enc(edition=34, route=89, deleted=1)]
+    rows, enc_count, open_count = ev.build_encounter_rows(encs, SPECIES_DE, edition_filter=34)
+    assert enc_count == 0
+    assert any(r["route"] == 89 and r["is_open"] for r in rows)
+
+
+def test_build_rows_locks_und_personality():
+    encs = [_enc(personality=77, manual_fields="outcome,lvl", is_first=1)]
+    rows, _, _ = ev.build_encounter_rows(encs, SPECIES_DE)
+    r = rows[0]
+    assert r["personality"] == 77
+    assert r["locks"] == {"outcome", "lvl"}
+    assert r["manual_fields"] == "outcome,lvl"
+    assert r["is_first"] == 1 and r["deleted"] is False
+
+
+def test_build_rows_open_placeholder_hat_leere_felder():
+    rows, _, _ = ev.build_encounter_rows([], SPECIES_DE, edition_filter=34)
+    ph = next(r for r in rows if r["is_open"])
+    assert ph["personality"] is None and ph["locks"] == set()
+    assert ph["manual_fields"] == "" and ph["deleted"] is False
+
+
 # --- group_soullink -------------------------------------------------------
 
-def test_group_soullink_basic():
+def _link(link_id=1, route=100, members=None, state="pending", **kw):
+    link = {"link_id": link_id, "route": route, "edition_gen": 3, "link_index": 0,
+            "state": state, "expected_owners": ["Ash", "Misty"], "members": members or {}}
+    link.update(kw)
+    return link
+
+
+def _mem(personality, outcome="caught", dexnr=4, edition=34, **kw):
+    mem = {"personality": personality, "edition": edition, "outcome": outcome,
+           "dexnr": dexnr, "method": "wild"}
+    mem.update(kw)
+    return mem
+
+
+def test_group_soullink_zwei_mitglieder():
     encs = [
-        _enc(owner="Ash_1", dexnr=4, route=100, link_group_id=1, outcome="caught"),
-        _enc(owner="Misty_2", dexnr=7, route=100, link_group_id=1, outcome="caught"),
-        _enc(owner="Ash_1", dexnr=16, route=101, link_group_id=2, outcome="not_caught"),
-        _enc(owner="Misty_2", dexnr=1, route=101, link_group_id=2, outcome="caught"),
-        _enc(owner="Ash_1", dexnr=4, route=102, link_group_id=None),  # ungelinkt -> raus
+        _enc(owner="Ash_1", personality=10, dexnr=4, route=100),
+        _enc(owner="Misty_2", personality=20, dexnr=7, route=100),
     ]
-    groups = ev.group_soullink(encs, SPECIES_DE, expected_count=2)
-    assert len(groups) == 2
-    g1 = next(g for g in groups if g["link_group_id"] == 1)
-    assert [m["slot"] for m in g1["members"]] == [1, 2]
-    assert g1["agg_status"] == "complete"
-    g2 = next(g for g in groups if g["link_group_id"] == 2)
-    assert g2["agg_status"] == "failed"          # einer verpasst
-
-
-def test_group_soullink_pending_when_member_missing():
-    encs = [_enc(owner="Ash_1", dexnr=4, route=100, link_group_id=5, outcome="caught")]
-    groups = ev.group_soullink(encs, SPECIES_DE, expected_count=2)
+    links = {1: _link(1, 100, {"Ash": _mem(10), "Misty": _mem(20)}, state="complete")}
+    groups = ev.group_soullink(links, encs, SPECIES_DE, expected_count=2)
     assert len(groups) == 1
-    assert groups[0]["agg_status"] == "pending"   # nur 1 von 2
+    g = groups[0]
+    assert g["link_id"] == 1 and g["link_group_id"] == 1
+    assert g["agg_status"] == "complete"
+    assert [m["slot"] for m in g["members"]] == [1, 2]
+    assert [m["species"] for m in g["members"]] == ["Glumanda", "Schiggy"]
+    assert g["members"][0]["owner"] == "Ash_1" and g["members"][0]["root_owner"] == "Ash"
+    assert g["expected_owners"] == ["Ash", "Misty"] and g["manual"] is False
+
+
+def test_group_soullink_dead_status_und_locks():
+    encs = [_enc(owner="Ash_1", personality=10, manual_fields="outcome")]
+    links = {1: _link(1, 100, {"Ash": _mem(10, outcome="dead", manual=1)})}
+    m = ev.group_soullink(links, encs, SPECIES_DE)[0]["members"][0]
+    assert m["status"] == "dead"
+    assert m["locks"] == {"outcome"} and m["member_manual"] is True
+
+
+def test_group_soullink_mitglied_ohne_encounter():
+    links = {1: _link(1, 100, {"Ash": _mem(10, outcome="not_caught", dexnr=7),
+                               "Misty": _mem(20, outcome="komisch")})}
+    g = ev.group_soullink(links, [], SPECIES_DE)[0]
+    by_root = {m["root_owner"]: m for m in g["members"]}
+    assert by_root["Ash"]["slot"] is None and by_root["Ash"]["owner"] == "Ash"
+    assert by_root["Ash"]["species"] == "Schiggy"
+    assert by_root["Ash"]["status"] == "not_caught"
+    assert by_root["Misty"]["status"] == "unknown"
+
+
+def test_group_soullink_geloeschter_encounter_wird_ignoriert():
+    encs = [_enc(owner="Ash_1", personality=10, dexnr=4, deleted=1)]
+    links = {1: _link(1, 100, {"Ash": _mem(10, dexnr=7)})}
+    m = ev.group_soullink(links, encs, SPECIES_DE)[0]["members"][0]
+    assert m["slot"] is None and m["species"] == "Schiggy"
+
+
+def test_group_soullink_pv_und_owner_muessen_passen():
+    encs = [_enc(owner="Misty_2", personality=10, dexnr=4)]   # falscher Owner
+    links = {1: _link(1, 100, {"Ash": _mem(10, dexnr=7)})}
+    m = ev.group_soullink(links, encs, SPECIES_DE)[0]["members"][0]
+    assert m["slot"] is None and m["species"] == "Schiggy"
+
+
+def test_group_soullink_agg_fallback_bei_unbekanntem_state():
+    encs = [_enc(owner="Ash_1", personality=10, outcome="caught")]
+    links = {1: _link(1, 100, {"Ash": _mem(10)}, state="komisch")}
+    assert ev.group_soullink(links, encs, SPECIES_DE, expected_count=2)[0]["agg_status"] == "pending"
+    assert ev.group_soullink(links, encs, SPECIES_DE, expected_count=1)[0]["agg_status"] == "complete"
+
+
+def test_group_soullink_edition_filter_und_query():
+    encs = [
+        _enc(owner="Ash_1", personality=10, edition=34, dexnr=4),
+        _enc(owner="Ash_1", personality=11, edition=43, dexnr=7, route=200),
+    ]
+    links = {1: _link(1, 100, {"Ash": _mem(10)}),
+             2: _link(2, 200, {"Ash": _mem(11, edition=43)})}
+    groups = ev.group_soullink(links, encs, SPECIES_DE, edition_filter=43)
+    assert [g["link_id"] for g in groups] == [2]
+    groups = ev.group_soullink(links, encs, SPECIES_DE, query="glum")
+    assert [g["link_id"] for g in groups] == [1]
+
+
+def test_group_soullink_sortierung_nach_route():
+    links = {1: _link(1, 300, {}), 2: _link(2, -1, {}), 3: _link(3, 50, {})}
+    groups = ev.group_soullink(links, [], SPECIES_DE)
+    assert [g["route"] for g in groups] == [-1, 50, 300]
 
 
 def test_group_soullink_members_sorted_by_slot():
-    encs = [
-        _enc(owner="Misty_2", dexnr=7, route=100, link_group_id=1),
-        _enc(owner="Ash_1", dexnr=4, route=100, link_group_id=1),
-    ]
-    groups = ev.group_soullink(encs, SPECIES_DE, expected_count=2)
+    encs = [_enc(owner="Misty_2", personality=20, dexnr=7),
+            _enc(owner="Ash_1", personality=10, dexnr=4)]
+    links = {1: _link(1, 100, {"Misty": _mem(20), "Ash": _mem(10)})}
+    groups = ev.group_soullink(links, encs, SPECIES_DE)
     assert [m["slot"] for m in groups[0]["members"]] == [1, 2]
+
+
+def test_build_rows_outcome_dead_female_raw():
+    encs = [_enc(outcome="not_caught", dead=1, female=None),
+            _enc(route=101, outcome="caught", female=1)]
+    rows, _, _ = ev.build_encounter_rows(encs, SPECIES_DE)
+    assert rows[0]["outcome"] == "not_caught" and rows[0]["dead"] is True
+    assert rows[0]["female_raw"] is None
+    assert rows[1]["outcome"] == "caught" and rows[1]["dead"] is False
+    assert rows[1]["female_raw"] == 1
+    ph = next(r for r in ev.build_encounter_rows([], SPECIES_DE, edition_filter=34)[0]
+              if r["is_open"])
+    assert ph["outcome"] == "unknown" and ph["dead"] is False
+
+
+def test_unlinked_encounters_ohne_gruppe_geloeschte_und_is_first():
+    encs = [
+        _enc(owner="Ash_1", personality=10, is_first=1),                # gruppiert
+        _enc(owner="Misty_2", personality=20, is_first=0),              # ohne Gruppe, is_first egal
+        _enc(owner="Ash_1", personality=30, deleted=1),                 # geloescht
+        _enc(owner="Ash_1", personality=20),                            # PV gleich, anderer Root
+        _enc(owner="Ash_1", personality=-5),                            # Freitext-PV
+    ]
+    links = {1: _link(1, 100, {"Ash": _mem(10), "Misty": _mem(99)}, state="pending")}
+    result = ev.unlinked_encounters(links, encs)
+    assert [(e["owner"], e["personality"]) for e in result] == [
+        ("Misty_2", 20), ("Ash_1", 20), ("Ash_1", -5)]
+    assert ev.unlinked_encounters({}, encs[:1]) == encs[:1]
+
+
+def test_link_targets_filtert_owner_und_vorhandene_mitglieder():
+    encs = [_enc(owner="Ash_1", personality=10, route=100),
+            _enc(owner="Misty_2", personality=20, route=100)]
+    links = {
+        1: _link(1, 100, {"Ash": _mem(10), "Misty": _mem(20)}, state="complete"),
+        2: _link(2, 101, {"Misty": _mem(21)}, state="pending"),      # Ash fehlt noch
+        3: _link(3, 102, {"Ash": _mem(30)}, state="pending"),        # Ash schon drin
+    }
+    groups = ev.group_soullink(links, encs, SPECIES_DE)
+    targets = ev.link_targets(groups, "Ash")
+    assert [t[1] for t in targets] == [2]
+    assert "Route 101" in targets[0][0] and "Misty" in targets[0][0]
+    assert ev.link_targets(groups, "Ash", exclude_link_id=2) == []
+    assert ev.link_targets(groups, "Fremd") == []

@@ -33,3 +33,20 @@ def first_type_dupe_slots(team, nuz: dict | None) -> set[int]:
     for t in slot_type.values():
         counts[t] = counts.get(t, 0) + 1
     return {slot for slot, t in slot_type.items() if counts.get(t, 0) >= 2}
+
+
+def is_marked_dead(pokemon, dead_pvs) -> bool:
+    """True, wenn der Encounter dieses Pokemon als tot markiert ist
+    (Nuzlocke: auch bei vollen KP ausgrauen). Match ueber die PV; Pokemon
+    ohne PV (Gen 1/2), Eier und leere Slots nie."""
+    if not dead_pvs or pokemon is None:
+        return False
+    if isinstance(pokemon, dict):
+        pv = pokemon.get("personality")
+        dex = pokemon.get("dexnr", 0)
+    else:
+        pv = getattr(pokemon, "personality", None)
+        dex = getattr(pokemon, "dexnr", 0)
+    if pv is None or not dex or dex == "egg":
+        return False
+    return pv in dead_pvs

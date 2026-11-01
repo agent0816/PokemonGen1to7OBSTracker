@@ -291,3 +291,10 @@ if __name__ == "__main__":
             print(f"ERROR {t.__name__}: {type(e).__name__}: {e}")
     print(f"\n{len(TESTS) - failed}/{len(TESTS)} tests passed")
     sys.exit(0 if failed == 0 else 1)
+
+
+def test_assign_link_group_idempotent_bei_replay():
+    a = _make_arceus()
+    l1 = a._assign_link_group(enc(100, "Alice_c1"))
+    assert a._assign_link_group(enc(100, "Alice_c1")) is None
+    assert len(a.soullink_links) == 1 and l1["link_index"] == 1

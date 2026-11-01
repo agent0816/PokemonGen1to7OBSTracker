@@ -7,10 +7,11 @@ from pathlib import Path
 
 from backend.bag_decoder import BagItem, catching_ball_ids
 from backend.classes.Pokemon import Pokemon
+from backend.encounter_edit import merge_encounter_edit, parse_locks
 from backend.logging_setup import get_logger
 
 
-CURRENT_SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = 12
 # Marker fuer Legacy-Gift/Fossil/Static/Egg/Token-Encounter aus Sessions vor
 # der Migration auf route=map_header_id. Diese Zeilen hatten alle route=0
 # und wuerden nach dem Fix sonst mit den frisch geloggten Wilds auf MAPSEC=0
@@ -45,17 +46,20 @@ class PokedexDB:
         self.access_lock = threading.RLock()
         self.logger = get_logger(__name__, './logs/pokedex_db.log')
 
-    def connect(self):
+    def connect(self, timeout: float = 5.0, quiet: bool = False):
         with self.access_lock:
             try:
                 self.session_path.mkdir(parents=True, exist_ok=True)
                 # check_same_thread=False: DB-Zugriffe laufen aus mehreren Executor-
                 # Threads (alter_teams, _finalize_run). Serialisierung erfolgt über
                 # ``self.access_lock``.
-                self.connection = sqlite3.connect(self.db_path, check_same_thread=False)
+                self.connection = sqlite3.connect(
+                    self.db_path, check_same_thread=False, timeout=timeout)
                 self.connection.row_factory = sqlite3.Row
                 self._migrate()
-                self.logger.info(f"PokedexDB verbunden: {self.db_path}")
+                # quiet: Kurzverbindungen (Arceus-Persistenz) nicht pro Write loggen.
+                (self.logger.debug if quiet else self.logger.info)(
+                    f"PokedexDB verbunden: {self.db_path}")
             except Exception as err:
                 self.logger.error(f"PokedexDB connect failed: {type(err)},{err}")
                 self.logger.error(f"{traceback.format_exc()}")
@@ -102,6 +106,10 @@ class PokedexDB:
             self._apply_v9(cursor)
         if current_version < 10:
             self._apply_v10(cursor)
+        if current_version < 11:
+            self._apply_v11(cursor)
+        if current_version < 12:
+            self._apply_v12(cursor)
 
         self.connection.commit()
 
@@ -459,6 +467,68 @@ class PokedexDB:
             f"{from_pv} weitere per PV als weiblich markiert"
         )
 
+    def _apply_v11(self, cursor):
+        # Manuelle Encounter-/Link-/Tod-Korrektur: Sperr-Liste + Soft-Delete,
+        # Link-Metadaten fuer Persistenz, neue Tabelle soullink_deaths.
+        # Idempotent: Spalten nur anlegen, wenn sie fehlen.
+        def add_columns(table: str, specs: dict[str, str]) -> None:
+            cursor.execute(f"PRAGMA table_info({table})")
+            existing = {row[1] for row in cursor.fetchall()}
+            for name, ddl in specs.items():
+                if name not in existing:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+
+        add_columns("encounters", {
+            "manual_fields": "TEXT DEFAULT ''",
+            "deleted": "INTEGER DEFAULT 0",
+        })
+        add_columns("soullink_links", {
+            "expected_owners": "TEXT DEFAULT '[]'",
+            "manual": "INTEGER DEFAULT 0",
+            # Ersttyp-Kompensation schon gutgeschrieben (Arceus-Guard gegen
+            # doppelte Token nach Server-Neustart).
+            "compensation_paid": "INTEGER DEFAULT 0",
+        })
+        add_columns("soullink_link_members", {
+            "dexnr": "INTEGER",
+            "method": "TEXT DEFAULT 'wild'",
+            "manual": "INTEGER DEFAULT 0",
+        })
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS soullink_deaths (
+                personality INTEGER NOT NULL,
+                owner       TEXT    NOT NULL,
+                edition     INTEGER,
+                cause       TEXT,
+                timestamp   REAL,
+                link_id     INTEGER,
+                partners    TEXT DEFAULT '[]',
+                dead        INTEGER DEFAULT 1,
+                manual      INTEGER DEFAULT 0,
+                PRIMARY KEY (personality, owner)
+            )
+        """)
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (11, datetime.now(timezone.utc).isoformat()),
+        )
+        self.logger.info(
+            "PokedexDB Schema v11 angewendet (manual_fields, deleted, "
+            "Link-Metadaten, soullink_deaths)"
+        )
+
+    def _apply_v12(self, cursor):
+        # Tot-Markierung pro Encounter (Nuzlocke/Soullink). Klebt: die
+        # Automatik setzt nur 0→1, zurueck geht es nur manuell (Sperre "dead").
+        cursor.execute("PRAGMA table_info(encounters)")
+        if "dead" not in {row[1] for row in cursor.fetchall()}:
+            cursor.execute("ALTER TABLE encounters ADD COLUMN dead INTEGER DEFAULT 0")
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (12, datetime.now(timezone.utc).isoformat()),
+        )
+        self.logger.info("PokedexDB Schema v12 angewendet (encounters.dead)")
+
     # -- Regel-Marker (Schema v9) ----------------------------------------------
 
     @_serialized
@@ -513,6 +583,7 @@ class PokedexDB:
         tables = (
             "soullink_link_members",
             "soullink_links",
+            "soullink_deaths",
             "encounters",
             "bag_first_seen",
             "bag_inventory",
@@ -879,11 +950,26 @@ class PokedexDB:
 
     @_serialized
     def update_encounter_outcome(self, personality: int, owner: str,
-                                  outcome: str) -> bool:
+                                  outcome: str, automatic: bool = True) -> bool:
+        """Setzt das outcome. ``automatic=True`` respektiert die Sperre
+        ``outcome`` in ``manual_fields`` (kein Update, False)."""
         if self.connection is None:
             return False
         try:
             cursor = self.connection.cursor()
+            if automatic:
+                cursor.execute(
+                    "SELECT manual_fields FROM encounters "
+                    "WHERE personality = ? AND owner = ?",
+                    (int(personality), owner),
+                )
+                row = cursor.fetchone()
+                if row is not None and "outcome" in parse_locks(row[0]):
+                    self.logger.info(
+                        f"update_encounter_outcome: pv={personality} owner={owner} "
+                        f"outcome={outcome} ignoriert (manuell gesperrt)"
+                    )
+                    return False
             cursor.execute(
                 "UPDATE encounters SET outcome = ? "
                 "WHERE personality = ? AND owner = ?",
@@ -897,18 +983,67 @@ class PokedexDB:
             return False
 
     @_serialized
+    def mark_encounter_dead(self, personality: int, owner: str,
+                            automatic: bool = True) -> bool:
+        """Setzt dead=1 (nur 0→1). ``automatic=True`` respektiert die Sperre
+        ``dead`` (manuell lebendig). True nur, wenn sich etwas geaendert hat."""
+        if self.connection is None:
+            return False
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT manual_fields, dead FROM encounters "
+                "WHERE personality = ? AND owner = ?",
+                (int(personality), owner),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                # Ohne Encounter-Zeile kein Ausgrauen (z.B. Pokemon vor Run-Start)
+                self.logger.debug(
+                    f"mark_encounter_dead: pv={personality} owner={owner} ohne Encounter")
+                return False
+            if row[1]:
+                return False
+            if automatic and "dead" in parse_locks(row[0]):
+                self.logger.info(
+                    f"mark_encounter_dead: pv={personality} owner={owner} "
+                    f"ignoriert (manuell lebendig)"
+                )
+                return False
+            cursor.execute(
+                "UPDATE encounters SET dead = 1 WHERE personality = ? AND owner = ?",
+                (int(personality), owner),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
+        except Exception as err:
+            self.logger.error(f"mark_encounter_dead failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    @_serialized
     def sync_encounter(self, enc: dict) -> bool:
         """INSERT OR REPLACE für Remote-Encounters. Überschreibt bei PK-Kollision."""
         if self.connection is None:
             return False
         try:
             cursor = self.connection.cursor()
-            # Clients vor Schema v10 senden female/form nicht mit — dann die
-            # vorhandenen Werte der Zeile behalten statt sie per REPLACE auf
-            # den Default zurückzusetzen.
-            if "female" not in enc or "form" not in enc:
+            # Clients vor Schema v10/v11 senden female/form/manual_fields/deleted
+            # nicht mit — dann die vorhandenen Werte der Zeile behalten statt sie
+            # per REPLACE auf den Default zurückzusetzen.
+            # Tot klebt: eine Zeile mit dead=1 wird nur zurueckgesetzt, wenn
+            # der Payload die Sperre "dead" traegt (manuell lebendig).
+            if not enc.get("dead") and "dead" not in parse_locks(enc.get("manual_fields")):
                 cursor.execute(
-                    "SELECT female, form FROM encounters "
+                    "SELECT dead FROM encounters WHERE personality = ? AND owner = ?",
+                    (int(enc["personality"]), enc["owner"]),
+                )
+                row = cursor.fetchone()
+                if row is not None and row[0]:
+                    enc = dict(enc, dead=1)
+            if any(k not in enc for k in ("female", "form", "manual_fields", "deleted", "dead")):
+                cursor.execute(
+                    "SELECT female, form, manual_fields, deleted, dead FROM encounters "
                     "WHERE personality = ? AND owner = ?",
                     (int(enc["personality"]), enc["owner"]),
                 )
@@ -917,13 +1052,17 @@ class PokedexDB:
                     enc = dict(enc)
                     enc.setdefault("female", existing[0])
                     enc.setdefault("form", existing[1])
+                    enc.setdefault("manual_fields", existing[2])
+                    enc.setdefault("deleted", existing[3])
+                    enc.setdefault("dead", existing[4])
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO encounters (
                     personality, owner, edition, route, dexnr, lvl, shiny,
                     is_first, is_shiny_override, is_dupes_skip, has_balls,
-                    method, outcome, timestamp, female, form
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    method, outcome, timestamp, female, form,
+                    manual_fields, deleted, dead
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     int(enc["personality"]), enc["owner"], int(enc["edition"]),
@@ -934,12 +1073,369 @@ class PokedexDB:
                     enc.get("method", "wild"), enc.get("outcome", "unknown"),
                     enc.get("timestamp", ""),
                     int(bool(enc.get("female", 0))), str(enc.get("form") or ""),
+                    str(enc.get("manual_fields") or ""),
+                    int(bool(enc.get("deleted", 0))),
+                    int(bool(enc.get("dead", 0))),
                 ),
             )
             self.connection.commit()
             return cursor.rowcount > 0
         except Exception as err:
             self.logger.error(f"sync_encounter failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    @_serialized
+    def encounter_import_context(self, owner: str, edition: int) -> tuple[set, set]:
+        """Fuer den Import: alle PVs mit Encounter-Zeile dieses Owners (auch
+        geloeschte, damit sie nicht wieder auftauchen) und Wild-Routen, die
+        schon einen First-Encounter haben (gleiche Filter wie
+        has_encounter_on_route, ohne has_balls)."""
+        if self.connection is None:
+            return set(), set()
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT personality FROM encounters WHERE owner = ?", (owner,))
+            pvs = {row[0] for row in cursor.fetchall()}
+            cursor.execute(
+                "SELECT DISTINCT route FROM encounters WHERE owner = ? AND edition = ? "
+                "AND is_first = 1 AND method = 'wild' AND deleted = 0",
+                (owner, int(edition)),
+            )
+            routes = {row[0] for row in cursor.fetchall()}
+            return pvs, routes
+        except Exception as err:
+            self.logger.error(f"encounter_import_context failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return set(), set()
+
+    @_serialized
+    def insert_imported_encounters(self, encounters: list[dict]) -> list[dict]:
+        """INSERT OR IGNORE fuer importierte Encounter — bestehende Zeilen
+        (auch geloeschte) werden nie ueberschrieben. Gibt die tatsaechlich
+        eingefuegten zurueck."""
+        if self.connection is None:
+            return []
+        inserted: list[dict] = []
+        try:
+            cursor = self.connection.cursor()
+            for enc in encounters:
+                cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO encounters (
+                        personality, owner, edition, route, dexnr, lvl, shiny,
+                        is_first, is_shiny_override, is_dupes_skip, has_balls,
+                        method, outcome, timestamp, female, form,
+                        manual_fields, deleted, dead
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        int(enc["personality"]), enc["owner"], int(enc["edition"]),
+                        int(enc["route"]), int(enc["dexnr"]), int(enc["lvl"]),
+                        int(enc.get("shiny", 0)),
+                        int(enc.get("is_first", 0)), int(enc.get("is_shiny_override", 0)),
+                        int(enc.get("is_dupes_skip", 0)), int(enc.get("has_balls", 0)),
+                        enc.get("method", "wild"), enc.get("outcome", "caught"),
+                        enc.get("timestamp", ""),
+                        int(bool(enc.get("female", 0))), str(enc.get("form") or ""),
+                        "", 0, 0,
+                    ),
+                )
+                if cursor.rowcount > 0:
+                    inserted.append(enc)
+            self.connection.commit()
+        except Exception as err:
+            self.connection.rollback()
+            self.logger.error(f"insert_imported_encounters failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return []
+        return inserted
+
+    @_serialized
+    def get_encounter(self, personality: int, owner: str) -> dict | None:
+        """Eine Encounter-Zeile (inkl. deleted) als dict, sonst None."""
+        if self.connection is None:
+            return None
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT * FROM encounters WHERE personality = ? AND owner = ?",
+                (int(personality), owner),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row is not None else None
+        except Exception as err:
+            self.logger.error(f"get_encounter failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return None
+
+    @_serialized
+    def apply_encounter_edit(self, personality: int, owner: str, changes: dict,
+                             unlock: list[str] | None = None,
+                             delete: bool | None = None) -> dict | None:
+        """Manuelle Korrektur: Zeile laden, mergen, zurückschreiben.
+        Gibt die neue Zeile zurück (None bei Fehler / unbekannter Zeile).
+        Verschachtelte @_serialized-Aufrufe sind ok (access_lock ist ein RLock)."""
+        enc = self.get_encounter(personality, owner)
+        if enc is None:
+            return None
+        merged = merge_encounter_edit(enc, changes, unlock, delete)
+        if not self.sync_encounter(merged):
+            return None
+        return self.get_encounter(personality, owner)
+
+    @_serialized
+    def load_all_encounters(self, raise_errors: bool = False) -> list[dict]:
+        """Alle Zeilen inkl. deleted (Arceus-Cache)."""
+        if self.connection is None:
+            if raise_errors:
+                raise RuntimeError("PokedexDB nicht verbunden")
+            return []
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT * FROM encounters ORDER BY timestamp")
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as err:
+            self.logger.error(f"load_all_encounters failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            if raise_errors:
+                raise
+            return []
+
+    # -- Soullink-Links / -Tode persistieren (Schema v11) ---------------------
+
+    @_serialized
+    def save_link(self, link: dict) -> bool:
+        """Upsert einer Link-Gruppe; Members werden komplett ersetzt."""
+        if self.connection is None:
+            return False
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            link_id = int(link["link_id"])
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT created_at FROM soullink_links WHERE link_id = ?",
+                (link_id,),
+            )
+            row = cursor.fetchone()
+            created_at = row[0] if row is not None else now
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO soullink_links (
+                    link_id, route, edition_gen, link_index, state,
+                    created_at, updated_at, expected_owners, manual,
+                    compensation_paid
+                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    link_id, int(link.get("route", 0)),
+                    int(link.get("edition_gen", 0)),
+                    int(link.get("link_index", 1)),
+                    link.get("state", "pending"), created_at, now,
+                    json.dumps(list(link.get("expected_owners") or [])),
+                    int(bool(link.get("manual", 0))),
+                    int(bool(link.get("compensation_paid", False))),
+                ),
+            )
+            cursor.execute(
+                "DELETE FROM soullink_link_members WHERE link_id = ?", (link_id,)
+            )
+            for owner, member in (link.get("members") or {}).items():
+                dexnr = member.get("dexnr")
+                cursor.execute(
+                    """
+                    INSERT INTO soullink_link_members (
+                        link_id, owner, personality, edition, outcome,
+                        dexnr, method, manual
+                    ) VALUES (?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        link_id, owner, int(member["personality"]),
+                        int(member.get("edition") or 0),
+                        member.get("outcome", "unknown"),
+                        int(dexnr) if dexnr is not None else None,
+                        member.get("method", "wild"),
+                        int(bool(member.get("manual", 0))),
+                    ),
+                )
+            self.connection.commit()
+            return True
+        except Exception as err:
+            self.logger.error(f"save_link failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    @_serialized
+    def delete_link(self, link_id: int) -> bool:
+        if self.connection is None:
+            return False
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "DELETE FROM soullink_link_members WHERE link_id = ?", (int(link_id),)
+            )
+            cursor.execute(
+                "DELETE FROM soullink_links WHERE link_id = ?", (int(link_id),)
+            )
+            self.connection.commit()
+            return True
+        except Exception as err:
+            self.logger.error(f"delete_link failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    @_serialized
+    def load_links(self, raise_errors: bool = False) -> dict[int, dict]:
+        """Links in der Struktur von ``Arceus.soullink_links``."""
+        if self.connection is None:
+            if raise_errors:
+                raise RuntimeError("PokedexDB nicht verbunden")
+            return {}
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT * FROM soullink_links ORDER BY link_id")
+            links: dict[int, dict] = {}
+            for row in cursor.fetchall():
+                try:
+                    expected = json.loads(row["expected_owners"] or "[]")
+                except (TypeError, ValueError):
+                    expected = []
+                links[row["link_id"]] = {
+                    "link_id": row["link_id"],
+                    "route": row["route"],
+                    "edition_gen": row["edition_gen"],
+                    "link_index": row["link_index"],
+                    "state": row["state"],
+                    "expected_owners": expected,
+                    "manual": int(row["manual"] or 0),
+                    "members": {},
+                }
+                if "compensation_paid" in row.keys() and row["compensation_paid"]:
+                    links[row["link_id"]]["compensation_paid"] = True
+            cursor.execute("SELECT * FROM soullink_link_members")
+            for row in cursor.fetchall():
+                link = links.get(row["link_id"])
+                if link is None:
+                    continue
+                link["members"][row["owner"]] = {
+                    "personality": row["personality"],
+                    "edition": row["edition"],
+                    "outcome": row["outcome"],
+                    "dexnr": row["dexnr"],
+                    "method": row["method"] or "wild",
+                    "manual": int(row["manual"] or 0),
+                }
+            return links
+        except Exception as err:
+            self.logger.error(f"load_links failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            if raise_errors:
+                raise
+            return {}
+
+    @_serialized
+    def clear_links(self) -> bool:
+        if self.connection is None:
+            return False
+        try:
+            self.connection.execute("DELETE FROM soullink_link_members")
+            self.connection.execute("DELETE FROM soullink_links")
+            self.connection.commit()
+            return True
+        except Exception as err:
+            self.logger.error(f"clear_links failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    @_serialized
+    def save_death(self, death: dict) -> bool:
+        if self.connection is None:
+            return False
+        try:
+            self.connection.execute(
+                """
+                INSERT OR REPLACE INTO soullink_deaths (
+                    personality, owner, edition, cause, timestamp,
+                    link_id, partners, dead, manual
+                ) VALUES (?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    int(death["personality"]), death["owner"],
+                    death.get("edition"), death.get("cause"),
+                    death.get("timestamp"), death.get("link_id"),
+                    json.dumps(list(death.get("partners") or [])),
+                    int(bool(death.get("dead", 1))),
+                    int(bool(death.get("manual", 0))),
+                ),
+            )
+            self.connection.commit()
+            return True
+        except Exception as err:
+            self.logger.error(f"save_death failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    @_serialized
+    def delete_death(self, personality: int, owner: str) -> bool:
+        if self.connection is None:
+            return False
+        try:
+            self.connection.execute(
+                "DELETE FROM soullink_deaths WHERE personality = ? AND owner = ?",
+                (int(personality), owner),
+            )
+            self.connection.commit()
+            return True
+        except Exception as err:
+            self.logger.error(f"delete_death failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    @_serialized
+    def load_deaths(self, raise_errors: bool = False) -> dict[tuple[int, str], dict]:
+        """Tode in der Struktur von ``Arceus.soullink_deaths``."""
+        if self.connection is None:
+            if raise_errors:
+                raise RuntimeError("PokedexDB nicht verbunden")
+            return {}
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT * FROM soullink_deaths")
+            deaths: dict[tuple[int, str], dict] = {}
+            for row in cursor.fetchall():
+                try:
+                    partners = json.loads(row["partners"] or "[]")
+                except (TypeError, ValueError):
+                    partners = []
+                deaths[(row["personality"], row["owner"])] = {
+                    "personality": row["personality"],
+                    "owner": row["owner"],
+                    "edition": row["edition"],
+                    "cause": row["cause"],
+                    "timestamp": row["timestamp"],
+                    "partners": partners,
+                    "link_id": row["link_id"],
+                    "dead": int(row["dead"]) if row["dead"] is not None else 1,
+                    "manual": int(row["manual"] or 0),
+                }
+            return deaths
+        except Exception as err:
+            self.logger.error(f"load_deaths failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            if raise_errors:
+                raise
+            return {}
+
+    @_serialized
+    def clear_deaths(self) -> bool:
+        if self.connection is None:
+            return False
+        try:
+            self.connection.execute("DELETE FROM soullink_deaths")
+            self.connection.commit()
+            return True
+        except Exception as err:
+            self.logger.error(f"clear_deaths failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
             return False
 
@@ -951,7 +1447,7 @@ class PokedexDB:
             query = (
                 "SELECT route, method, outcome, dexnr, lvl, shiny, "
                 "is_first, is_dupes_skip, has_balls, timestamp "
-                "FROM encounters WHERE owner = ?"
+                "FROM encounters WHERE owner = ? AND deleted = 0"
             )
             params: list = [owner]
             if edition is not None:
@@ -973,13 +1469,17 @@ class PokedexDB:
         Wird fuer Starter-Detection genutzt: erst wenn diese Kombi noch
         komplett leer ist, wird ein Team-Wachstum als Starter interpretiert.
         Verhindert Doppel-Starter bei spaeteren Team-Aenderungen.
+        Manuell geloeschte Zeilen (deleted=1) zaehlen bewusst mit — sonst
+        wuerde nach Loeschen des Starters das naechste Team-Wachstum
+        erneut als Starter erkannt.
         """
         if self.connection is None:
             return False
         try:
             cursor = self.connection.cursor()
             cursor.execute(
-                "SELECT 1 FROM encounters WHERE owner = ? AND edition = ? LIMIT 1",
+                "SELECT 1 FROM encounters "
+                "WHERE owner = ? AND edition = ? LIMIT 1",
                 (owner, int(edition)),
             )
             return cursor.fetchone() is not None
@@ -1009,6 +1509,7 @@ class PokedexDB:
             cursor.execute(
                 "SELECT 1 FROM encounters "
                 "WHERE owner = ? AND edition = ? AND route = ? AND method = ? "
+                "  AND deleted = 0 "
                 "LIMIT 1",
                 (owner, int(edition), int(route), method),
             )
@@ -1044,7 +1545,7 @@ class PokedexDB:
                 "SELECT 1 FROM encounters "
                 "WHERE owner = ? AND edition = ? AND route = ? "
                 "  AND has_balls = 1 AND is_first = 1 "
-                "  AND method = 'wild' "
+                "  AND method = 'wild' AND deleted = 0 "
                 "LIMIT 1",
                 (owner, int(edition), int(route)),
             )
@@ -1118,7 +1619,7 @@ class PokedexDB:
         if self.connection is None:
             return []
         try:
-            query = "SELECT * FROM encounters WHERE owner = ?"
+            query = "SELECT * FROM encounters WHERE owner = ? AND deleted = 0"
             params: list = [owner]
             if edition is not None:
                 query += " AND edition = ?"

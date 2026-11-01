@@ -15,6 +15,7 @@ from backend.classes.obs import OBS
 from backend.classes.pokedex_db import PokedexDB
 from backend.controller.run_manager import RunManager
 from backend.dragon_rage import DRAGON_RAGE_FLAG
+from backend.encounter_edit import new_encounter
 from backend.logging_setup import get_logger
 from backend.nuzlocke_view import dragon_rage_badge_limit
 
@@ -57,6 +58,8 @@ LOG_DEDUP_WINDOW_SECONDS = 10.0
 # Config pro ~10 s Spielzeit, 300 Items ~ 50 Minuten Puffer bei typischer
 # Rate — deutlich mehr als jeder realistische Disconnect-Zeitraum.
 OUTBOUND_BUFFER_MAXLEN = 300
+# Encounter-Import: so viele Encounter pro encounter_sync-Message
+IMPORT_SYNC_BATCH = 50
 
 # Message-Typen (Dict-type) + String-Prefixe, die NICHT gebuffert und NICHT
 # sequence-nummeriert werden. Heartbeat ist zustandsfrei; declared_player_ids
@@ -91,6 +94,14 @@ UNBUFFERED_DICT_TYPES = frozenset({
     "log_bundle_ack",
     "log_bundle_request",
     "log_bundle_response",
+    # Manuelle Korrekturen: kein Replay nach Reconnect. Nach einem Server-
+    # Neustart wuerde ein nachgespieltes server_state_reload(clear) frischen
+    # Stand loeschen bzw. ein Edit auf veraltetem Stand landen. Die UI sieht
+    # das Ergebnis am Server-Echo und der User wiederholt bei Bedarf.
+    "encounter_edit",
+    "soullink_link_edit",
+    "soullink_death_edit",
+    "server_state_reload",
 })
 
 # Wipe-Detection HP-Consistency: erst nach N Zero-Reads pro Pokemon gilt
@@ -240,6 +251,21 @@ class Munchlax:
         self.soullink_config: dict = {}
         self.soullink_links: dict[int, dict] = {}
         self.soullink_deaths: dict[tuple[int, str], dict] = {}
+        # Manuell "lebendig" markierte Pokemon (personality, root_owner)
+        self.soullink_alive_locks: set[tuple[int, str]] = set()
+        # Als tot markierte Encounter je Spieler-Slot (player_id → PVs) fuer
+        # das Ausgrauen in Overlay/OBS/TrainerBox/Boxen. Quelle: encounters.dead.
+        self.dead_pvs: dict[int, frozenset] = {}
+        self._dead_pvs_stale = True
+        # Serialisiert refresh_dead_pvs (sonst schreibt ein aelterer SQL-
+        # Snapshot nach einem neueren zurueck). Lazy auf dem Munchlax-Loop.
+        self._dead_pvs_lock: asyncio.Lock | None = None
+        # Frontend-Hooks fuer manuelle Korrekturen (Aufruf im Munchlax-Thread,
+        # Frontend muss selbst per Clock auf den UI-Thread wechseln):
+        # on_edit_rejected_callback(request_type, reason),
+        # on_soullink_state_changed_callback()
+        self.on_edit_rejected_callback = None
+        self.on_soullink_state_changed_callback = None
         self.soullink_versus_state: dict[str, dict] = {}
         self.soullink_versus_battles: list[dict] = []
         # Team-State (modus-unabhängig) fürs Overlay. Owner-Rohdaten pro Team;
@@ -355,6 +381,8 @@ class Munchlax:
         # faellt send_message auf unwrapped-Modus zurueck und der Buffer
         # wird geleert.
         self._server_supports_resume: bool | None = None
+        # Faehigkeiten aus dem resume_ack (z.B. "manual_edits")
+        self._server_features: set[str] = set()
         # Strong-Ref auf den _auto_reconnect-Task. GC-Risiko siehe memory
         # feedback-async-task-strong-ref — und wird in disconnect(
         # intentional=True) gecancelt, damit ein User-Disconnect waehrend
@@ -433,6 +461,9 @@ class Munchlax:
             self.soullink_config = {}
             self.soullink_links = {}
             self.soullink_deaths = {}
+            self.soullink_alive_locks = set()
+            self.dead_pvs = {}
+            self._dead_pvs_stale = True
             self.soullink_versus_state = {}
             self.soullink_versus_battles = []
             self.soullink_team_state = {}
@@ -476,6 +507,9 @@ class Munchlax:
             self.boxes = {}
             self.soullink_links = {}
             self.soullink_deaths = {}
+            self.soullink_alive_locks = set()
+            self.dead_pvs = {}
+            self._dead_pvs_stale = True
             self.soullink_versus_state = {}
             self.soullink_versus_battles = []
             self.soullink_team_state = {}
@@ -537,6 +571,19 @@ class Munchlax:
     def snapshot_editions(self) -> dict:
         with self.state_lock:
             return dict(self.editions)
+
+    def snapshot_boxes(self, player_id: int) -> list:
+        """Kopie der PC-Boxen eines Spielers (Liste von Box-Listen)."""
+        with self.state_lock:
+            return [list(box) for box in (self.boxes.get(player_id) or [])]
+
+    def snapshot_soullink_config(self) -> dict:
+        with self.state_lock:
+            return dict(self.soullink_config or {})
+
+    def owned_player_ids(self) -> list[int]:
+        """Oeffentlicher Zugriff auf die lokalen Netz-Slots (fuer das Frontend)."""
+        return self._owned_player_ids()
 
     def snapshot_positions(self) -> dict:
         """Snapshot der Live-Spielerpositionen (Kartenfeature). Frontend liest
@@ -1093,6 +1140,7 @@ class Munchlax:
                         # Flag umzudrehen wuerde Reihenfolge invertieren).
                         # Watchdog laeuft dann einfach durch.
                         last_seen = int(data.get("last_seen_seq", 0))
+                        self._server_features = set(data.get("features") or [])
                         buffered_count = len(self._outbound_buffer)
                         self.logger.info(
                             f"resume_ack empfangen: last_seen_seq={last_seen}, "
@@ -1428,10 +1476,12 @@ class Munchlax:
                                 f"state={link.get('state')} members={list(link.get('members', {}).keys())}"
                             )
                             await self._notify_overlay_session("soullink_link_state", link)
+                            self._notify_soullink_state_changed()
                     elif msg_type == "soullink_death":
                         death = data.get("death") or {}
                         self._handle_remote_death(death)
                         await self._notify_overlay_session("soullink_death", death)
+                        self._notify_soullink_state_changed()
                     elif msg_type == "soullink_versus_state":
                         with self.state_lock:
                             self.soullink_versus_state = data.get("state", {}) or {}
@@ -1547,6 +1597,21 @@ class Munchlax:
                             "label": data.get("label", ""),
                             "duration_seconds": data.get("duration_seconds", 0.0),
                         })
+                    elif msg_type == "edit_rejected":
+                        self._handle_edit_rejected(data)
+                    elif msg_type == "soullink_link_removed":
+                        link_id = data.get("link_id")
+                        with self.state_lock:
+                            self.soullink_links.pop(link_id, None)
+                        self.logger.info(f"soullink_link_removed empfangen: link={link_id}")
+                        await self._notify_overlay_session("soullink_link_removed", {"link_id": link_id})
+                        self._notify_soullink_state_changed()
+                    elif msg_type == "soullink_death_state":
+                        self._handle_remote_death_state(data)
+                        await self.force_overlay_broadcast("soullink_death_state")
+                    elif msg_type == "soullink_state_snapshot":
+                        self._handle_soullink_state_snapshot(data)
+                        await self.force_overlay_broadcast("soullink_state_snapshot")
                     else:
                         self.logger.warning(f"Unbekannter Message-Typ vom Server: {msg_type}")
                     continue
@@ -1679,6 +1744,8 @@ class Munchlax:
                     self.pokedex_db.close()
                 self.pokedex_db = PokedexDB(current_path)
                 self.pokedex_db.connect()
+                # Neue Session/DB → Tot-Cache beim naechsten Team-Tick neu laden
+                self._dead_pvs_stale = True
         except Exception as err:
             self.logger.error(f"_ensure_pokedex_db failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
@@ -1794,6 +1861,318 @@ class Munchlax:
                 })
         except Exception as err:
             self.logger.warning(f"send_soullink_death failed: {err}")
+
+    # ----- Manuelle Korrekturen (Encounter, Links, Tode) -----
+
+    def server_supports_edits(self) -> bool:
+        return (self.is_connected and self._server_supports_resume is True
+                and "manual_edits" in self._server_features)
+
+    def _edit_unavailable_reason(self) -> str | None:
+        """None = Edit kann an den Server; sonst Grund fuer die UI."""
+        if not self.is_connected:
+            return "Keine Server-Verbindung"
+        if self._server_supports_resume is not True:
+            return "Server-Verbindung wird noch aufgebaut"
+        if "manual_edits" not in self._server_features:
+            return "Server unterstützt Bearbeiten nicht (Host muss aktualisieren)"
+        return None
+
+    async def _send_edit(self, message: dict) -> tuple[bool, str]:
+        reason = self._edit_unavailable_reason()
+        if reason is not None:
+            self.logger.warning(f"{message.get('type')} nicht gesendet: {reason}")
+            return False, reason
+        try:
+            async with self.writer_lock:
+                await self.send_message(message)
+        except Exception as err:
+            self.logger.error(f"{message.get('type')} senden failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False, f"Senden fehlgeschlagen: {err}"
+        self.logger.info(
+            f"{message.get('type')} gesendet: "
+            f"{ {k: v for k, v in message.items() if k != 'type'} }"
+        )
+        return True, "Gesendet"
+
+    async def edit_encounter(self, personality: int, owner: str,
+                             changes: dict | None = None,
+                             unlock: list[str] | None = None,
+                             delete: bool | None = None,
+                             create: dict | None = None) -> tuple[bool, str]:
+        """Manuelle Encounter-Korrektur. Mit Server: an Arceus (Server
+        broadcastet das Ergebnis an alle, auch an uns). Ohne Verbindung:
+        direkt in die lokale DB (Solo)."""
+        message = {"type": "encounter_edit", "personality": int(personality),
+                   "owner": owner}
+        for key, value in (("changes", changes), ("unlock", unlock),
+                           ("delete", delete), ("create", create)):
+            if value is not None:
+                message[key] = value
+        if self.is_connected:
+            return await self._send_edit(message)
+        # Lokal nur im echten Solo-Betrieb: Host (eigener Server) oder ein
+        # Client im Reconnect wuerde sonst am Server-Stand vorbei schreiben.
+        if self.rem.get("start_server", False) or self.reconnecting:
+            reason = "Keine Server-Verbindung"
+            self.logger.warning(f"encounter_edit nicht angewendet: {reason}")
+            return False, reason
+        return await self._apply_encounter_edit_local(message)
+
+    async def _apply_encounter_edit_local(self, message: dict) -> tuple[bool, str]:
+        self._ensure_pokedex_db()
+        if self.pokedex_db is None or self.pokedex_db.connection is None:
+            self.logger.warning("encounter_edit lokal nicht angewendet: keine DB")
+            return False, "Datenbank nicht verfügbar"
+        loop = asyncio.get_event_loop()
+        pv, owner = message["personality"], message["owner"]
+        try:
+            if message.get("create") is not None:
+                existing = await loop.run_in_executor(
+                    None, self.pokedex_db.get_encounter, pv, owner)
+                if existing is not None and not existing.get("deleted"):
+                    self.logger.info(f"encounter_edit lokal abgelehnt: pv={pv} owner={owner} existiert bereits")
+                    return False, "Encounter existiert bereits"
+                ok = await loop.run_in_executor(
+                    None, self.pokedex_db.sync_encounter,
+                    new_encounter(pv, owner, message["create"]))
+            else:
+                ok = await loop.run_in_executor(
+                    None, self.pokedex_db.apply_encounter_edit, pv, owner,
+                    message.get("changes") or {}, message.get("unlock"),
+                    message.get("delete")) is not None
+        except Exception as err:
+            self.logger.error(f"encounter_edit lokal failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False, f"Fehler: {err}"
+        self.logger.info(f"encounter_edit lokal (ohne Server): pv={pv} owner={owner} ok={ok}")
+        if not ok:
+            return False, "Encounter nicht gefunden"
+        self._notify_soullink_state_changed()
+        await self.refresh_dead_pvs("lokaler Edit")
+        return True, "Gespeichert"
+
+    async def encounter_import_context(self, player_id: int) -> dict | None:
+        """Kontext fuer den Import-Dialog: owner, edition, vorhandene PVs und
+        Wild-Routen mit First-Encounter. None ohne DB/Edition."""
+        self._ensure_pokedex_db()
+        if self.pokedex_db is None or self.pokedex_db.connection is None:
+            self.logger.warning(f"encounter_import_context: keine DB (Spieler {player_id})")
+            return None
+        with self.state_lock:
+            edition = self.editions.get(player_id)
+        if edition is None:
+            self.logger.info(f"encounter_import_context: Spieler {player_id} ohne Edition")
+            return None
+        owner = PokedexDB.build_owner(self.pl.get('your_name', ''), str(player_id))
+        loop = asyncio.get_running_loop()
+        pvs, routes = await loop.run_in_executor(
+            None, self.pokedex_db.encounter_import_context, owner, edition)
+        return {"owner": owner, "edition": edition,
+                "existing_pvs": pvs, "routes_with_first": routes}
+
+    async def import_encounters(self, player_id: int,
+                                encounters: list[dict]) -> tuple[bool, int, str]:
+        """Importierte Encounter (aus Team/Boxen) lokal einfuegen und wie
+        automatisch erkannte per encounter_sync an den Server geben (dort
+        Link-Zuordnung per Route + Broadcast). Keine Sperren, bestehende
+        Zeilen bleiben unangetastet."""
+        if player_id not in self._owned_player_ids():
+            self.logger.warning(f"import_encounters: Spieler {player_id} nicht lokal")
+            return False, 0, "Nur eigene Spieler importierbar"
+        owner = PokedexDB.build_owner(self.pl.get('your_name', ''), str(player_id))
+        foreign = [e for e in encounters if e.get("owner") != owner]
+        if foreign:
+            self.logger.warning(
+                f"import_encounters: {len(foreign)} Encounter mit fremdem Owner verworfen "
+                f"(erwartet {owner})")
+            encounters = [e for e in encounters if e.get("owner") == owner]
+        if not encounters:
+            return False, 0, "Nichts zu übernehmen"
+        # Wie edit_encounter: lokal ohne Server nur im echten Solo-Betrieb,
+        # sonst landen die Encounter nie beim Server (Re-Import ueberspringt
+        # sie als bekannt).
+        if not self.is_connected and (self.rem.get("start_server", False) or self.reconnecting):
+            self.logger.warning("import_encounters abgelehnt: keine Server-Verbindung")
+            return False, 0, "Keine Server-Verbindung - bitte erst verbinden"
+        self._ensure_pokedex_db()
+        if self.pokedex_db is None or self.pokedex_db.connection is None:
+            self.logger.warning("import_encounters: keine DB")
+            return False, 0, "Datenbank nicht verfügbar"
+        try:
+            loop = asyncio.get_running_loop()
+            inserted = await loop.run_in_executor(
+                None, self.pokedex_db.insert_imported_encounters, encounters)
+        except Exception as err:
+            self.logger.error(f"import_encounters DB failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False, 0, f"Fehler: {err}"
+        self.logger.info(
+            f"import_encounters: owner={owner} {len(inserted)} von {len(encounters)} "
+            f"eingefuegt ({len(encounters) - len(inserted)} schon vorhanden)")
+        if not inserted:
+            return False, 0, "Alle schon vorhanden"
+        if not self.is_connected:
+            self.logger.info("import_encounters: Solo ohne Server, nur lokal gespeichert")
+            self._notify_soullink_state_changed()
+            return True, len(inserted), f"{len(inserted)} Encounter lokal übernommen"
+        # Gebuffert wie automatische encounter_sync: send_message legt die
+        # Message vor dem Wire-Write in den Replay-Puffer → ein gescheiterter
+        # Batch wird beim Reconnect nachgeliefert. Deshalb bei Fehlern NICHT
+        # abbrechen, sondern alle Batches einreihen.
+        failed = 0
+        batches = range(0, len(inserted), IMPORT_SYNC_BATCH)
+        for start in batches:
+            batch = inserted[start:start + IMPORT_SYNC_BATCH]
+            try:
+                async with self.writer_lock:
+                    await self.send_message({"type": "encounter_sync", "encounters": batch})
+                self.logger.info(
+                    f"import_encounters: Batch ab {start} gesendet ({len(batch)} Encounter, "
+                    f"client_id={self.rem.get('client_id')})")
+            except Exception as err:
+                failed += len(batch)
+                self.logger.error(
+                    f"import_encounters: encounter_sync Batch ab {start} failed "
+                    f"({len(batch)} Encounter, Replay-Puffer: "
+                    f"{self._server_supports_resume is not False}): {type(err)},{err}")
+                self.logger.error(f"{traceback.format_exc()}")
+        self._notify_soullink_state_changed()
+        if failed:
+            return True, len(inserted), (
+                f"{len(inserted)} lokal übernommen, {failed} werden nach Reconnect "
+                f"an den Server nachgeliefert")
+        return True, len(inserted), f"{len(inserted)} Encounter übernommen"
+
+    async def edit_soullink_link(self, op: str, **kwargs) -> tuple[bool, str]:
+        """Link-Operation (move/unlink/create/dissolve) — nur mit Server,
+        Links existieren nur dort."""
+        return await self._send_edit({"type": "soullink_link_edit", "op": op, **kwargs})
+
+    async def edit_soullink_death(self, personality: int, owner: str,
+                                  dead: bool | None) -> tuple[bool, str]:
+        """dead=True tot, False lebendig (Sperre), None = Automatik."""
+        return await self._send_edit({
+            "type": "soullink_death_edit", "personality": int(personality),
+            "owner": owner, "dead": dead,
+        })
+
+    async def request_server_state_reload(self, clear: bool) -> None:
+        """Host: Arceus nach Run-Ende (clear) / Snapshot-Restore neu laden lassen."""
+        if not self.rem.get("start_server", False):
+            return
+        ok, reason = await self._send_edit({"type": "server_state_reload", "clear": bool(clear)})
+        if not ok:
+            self.logger.warning(f"server_state_reload (clear={clear}) nicht gesendet: {reason}")
+
+    def _handle_edit_rejected(self, data: dict) -> None:
+        request_type = data.get("request_type")
+        reason = data.get("reason", "")
+        self.logger.warning(f"edit_rejected vom Server: {request_type}: {reason}")
+        cb = self.on_edit_rejected_callback
+        if callable(cb):
+            try:
+                cb(request_type, reason)
+            except Exception as err:
+                self.logger.warning(f"on_edit_rejected_callback failed: {err}")
+
+    def _handle_remote_death_state(self, data: dict) -> None:
+        key = (data.get("personality"), data.get("owner"))
+        with self.state_lock:
+            if not data.get("dead"):
+                self.soullink_deaths.pop(key, None)
+            if data.get("manual"):
+                self.soullink_alive_locks.add(key)
+            else:
+                self.soullink_alive_locks.discard(key)
+        self.logger.info(
+            f"soullink_death_state empfangen: pv={key[0]} owner={key[1]} "
+            f"dead={data.get('dead')} manual={data.get('manual')}"
+        )
+        self._notify_soullink_state_changed()
+
+    def _handle_soullink_state_snapshot(self, data: dict) -> None:
+        links = data.get("links") or {}
+        deaths = {(d.get("personality"), d.get("owner")): d
+                  for d in (data.get("deaths") or []) if isinstance(d, dict)}
+        alive = {tuple(k) for k in (data.get("alive_locks") or []) if len(k) == 2}
+        with self.state_lock:
+            self.soullink_links = dict(links)
+            self.soullink_deaths = deaths
+            self.soullink_alive_locks = alive
+        self.logger.info(
+            f"soullink_state_snapshot empfangen: links={len(links)} "
+            f"deaths={len(deaths)} alive_locks={len(alive)}"
+        )
+        self._notify_soullink_state_changed()
+
+    def snapshot_dead_pvs(self) -> dict[int, frozenset]:
+        with self.state_lock:
+            return dict(self.dead_pvs)
+
+    def _load_dead_pvs_sync(self) -> dict[int, frozenset]:
+        db = self.pokedex_db
+        if db is None or db.connection is None:
+            return {}
+        result: dict[int, set] = {}
+        with db.access_lock:
+            cur = db.connection.execute(
+                "SELECT personality, owner FROM encounters WHERE dead = 1 AND deleted = 0")
+            rows = cur.fetchall()
+        for pv, owner in rows:
+            slot = PokedexDB.owner_slot(str(owner or ""))
+            if slot is not None:
+                result.setdefault(slot, set()).add(pv)
+            else:
+                self.logger.debug(f"dead_pvs: Owner ohne Slot uebersprungen: {owner!r} pv={pv}")
+        return {pid: frozenset(pvs) for pid, pvs in result.items()}
+
+    async def refresh_dead_pvs(self, reason: str = "") -> None:
+        """Tot-Cache aus der DB neu laden; bei Aenderung Overlay + OBS fuer
+        die betroffenen Spieler neu zeichnen (TrainerBox pollt selbst)."""
+        if self._dead_pvs_lock is None:
+            self._dead_pvs_lock = asyncio.Lock()
+        async with self._dead_pvs_lock:
+            await self._refresh_dead_pvs_locked(reason)
+
+    async def _refresh_dead_pvs_locked(self, reason: str) -> None:
+        self._ensure_pokedex_db()
+        self._dead_pvs_stale = False
+        try:
+            loop = asyncio.get_running_loop()
+            new = await loop.run_in_executor(None, self._load_dead_pvs_sync)
+        except Exception as err:
+            self._dead_pvs_stale = True
+            self.logger.error(f"refresh_dead_pvs failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return
+        with self.state_lock:
+            old = self.dead_pvs
+            self.dead_pvs = new
+        changed = {pid for pid in set(old) | set(new) if old.get(pid) != new.get(pid)}
+        if not changed:
+            return
+        self.logger.info(
+            f"dead_pvs aktualisiert ({reason}): "
+            f"{ {pid: len(new.get(pid, ())) for pid in sorted(changed)} }"
+        )
+        await self.force_overlay_broadcast(f"dead_pvs: {reason}")
+        if self.obs and self.obs.is_connected:
+            for pid in changed:
+                team = self.sorted_teams.get(pid)
+                if team:
+                    # Nur die "besiegt"-Filter, kein Neuaufbau der Slots
+                    self._dispatch_on_kivy(self.obs._obs_serial(
+                        self.obs.refresh_dead_filters(pid, team)))
+
+    def _notify_soullink_state_changed(self) -> None:
+        cb = self.on_soullink_state_changed_callback
+        if callable(cb):
+            try:
+                cb()
+            except Exception as err:
+                self.logger.warning(f"on_soullink_state_changed_callback failed: {err}")
 
     async def send_soullink_config(self, config: dict):
         """Setzt/aktualisiert die Soullink-Config auf dem Server."""
@@ -2225,6 +2604,7 @@ class Munchlax:
                 self._pending_death_reports.append(
                     {"personality": pv, "owner": owner, "edition": edition}
                 )
+                await self._mark_encounter_dead_local(pv, owner)
             else:
                 self._reported_deaths.discard(key)
         if self.is_connected and self._pending_death_reports:
@@ -2233,6 +2613,30 @@ class Munchlax:
                 await self.send_soullink_death(
                     report["personality"], report["owner"], edition=report["edition"]
                 )
+
+    async def _mark_encounter_dead_local(self, pv: int, owner: str) -> None:
+        """Tot-Markierung am Encounter (klebt, Sperre "dead" = manuell lebendig
+        respektiert). Auch ohne Server — der Server uebernimmt den Tod bei
+        Verbindung zusaetzlich per soullink_death und broadcastet ihn."""
+        if not self._nuzlocke_rules_active():
+            self.logger.debug(f"Tot-Markierung uebersprungen (Nuzlocke aus): owner={owner} pv={pv}")
+            return
+        self._ensure_pokedex_db()
+        if self.pokedex_db is None or self.pokedex_db.connection is None:
+            self.logger.warning(f"Tot-Markierung nicht moeglich (keine DB): owner={owner} pv={pv}")
+            return
+        try:
+            loop = asyncio.get_event_loop()
+            changed = await loop.run_in_executor(
+                None, self.pokedex_db.mark_encounter_dead, pv, owner)
+        except Exception as err:
+            self.logger.error(f"mark_encounter_dead failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return
+        if changed:
+            self.logger.info(f"Encounter als tot markiert: owner={owner} pv={pv}")
+            self._notify_soullink_state_changed()
+            await self.refresh_dead_pvs("lokaler Tod")
 
     async def check_total_wipe(self, player_id, team, dead_infos: list[tuple] | None = None) -> bool:
         """Prüft rule_restart_on_total_wipe: alle Team-Slots tot → Broadcast Warning.
@@ -2528,6 +2932,11 @@ class Munchlax:
                 except Exception as err:
                     self.logger.warning(
                         f"_finalize_run: rule_flags leeren failed: {err}")
+                # Persistierte Soullink-Links/-Tode gehoeren zum beendeten
+                # Run (Arceus laedt sie sonst beim naechsten Start wieder).
+                if run_id is not None:
+                    self.pokedex_db.clear_links()
+                    self.pokedex_db.clear_deaths()
         else:
             run_id = rm.finalize_active_run(reason=reason,
                                              wipe_player_id=wipe_player_id,
@@ -2548,6 +2957,16 @@ class Munchlax:
             self._forgiven_deaths = set()
             self._dragon_rage_hold = {}
             self._dragon_rage_absent = {}
+        # Arceus haelt Encounter/Links/Tode im RAM und wuerde sie sonst beim
+        # naechsten Edit/Connect zurueckspielen. _finalize_run laeuft im
+        # Executor-Thread → cross-thread auf den Munchlax-Loop.
+        if self.rem.get("start_server", False):
+            try:
+                self.dispatch_cross_thread(
+                    self.request_server_state_reload(clear=True),
+                    name="server_state_reload_run_end")
+            except Exception as err:
+                self.logger.warning(f"_finalize_run: server_state_reload nicht gestartet: {err}")
         self.logger.info(
             f"_finalize_run exit: run_id={run_id} reason={reason} "
             f"deleted_encounter_rows={deleted_rows}"
@@ -2681,6 +3100,7 @@ class Munchlax:
             return
         with self.state_lock:
             self.soullink_deaths[(pv, owner)] = death
+            self.soullink_alive_locks.discard((pv, owner))
         partners = death.get("partners", [])
         # Ist dieser Client Owner eines Partners? Dann lokale UI/DB-Reaktion nötig.
         my_partner = None
@@ -3444,6 +3864,7 @@ class Munchlax:
             self.logger.info(
                 f"Remote-Encounters empfangen: {count} von {len(encounters)} "
                 f"eingefügt/aktualisiert")
+            await self.refresh_dead_pvs("remote encounter_sync")
 
     async def _handle_remote_outcome(self, data: dict):
         self._ensure_pokedex_db()
@@ -3528,6 +3949,10 @@ class Munchlax:
                             f"_persist_teams: skip encounter-detect für player={player} "
                             f"(remote, lokale Slots: {sorted(local_slots)})"
                         )
+                # Tot-Cache vor den Local-/Ball-Gates laden: auch reine
+                # Remote-Clients und inaktive Runs brauchen ihn fuer die Anzeige.
+                if self._dead_pvs_stale:
+                    await self.refresh_dead_pvs("Initial/Session")
                 if self._nuzlocke_rules_active():
                     # Wipe/Death nur für lokal betreute Player evaluieren
                     # (analog Encounter-Filter oben). Ohne diesen Guard würde
@@ -3924,6 +4349,7 @@ class Munchlax:
         # (unknown), wird durch resume_ack auf True oder durch Watchdog-Timeout
         # auf False gesetzt.
         self._server_supports_resume = None
+        self._server_features = set()
         self._resume_pending = True
         self._resend_running = False
         if self._resume_timeout_task is not None and not self._resume_timeout_task.done():

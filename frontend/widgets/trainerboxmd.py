@@ -17,7 +17,7 @@ from kivymd.uix.label import MDLabel
 
 from backend.logging_setup import get_logger
 from backend.perf_probe import perf_span
-from backend.party_rules import first_type_dupe_slots
+from backend.party_rules import first_type_dupe_slots, is_marked_dead
 from backend.player_colors import hex8_to_rgba, player_rgba
 from frontend.widgets.status_labels import STATUS_LABELS, STATUS_PRIORITY
 
@@ -361,6 +361,7 @@ class TrainerBoxMD(MDBoxLayout):
 
         new_team = self.munchlax.sorted_teams[self.player_id]
         blocked_slots = first_type_dupe_slots(new_team, self.munchlax.nuz)
+        dead_pvs = self.munchlax.snapshot_dead_pvs().get(self.player_id)
 
         for slot, pokemon in enumerate(new_team):
             slot_box = self.pokemon_boxes.get(f"slot{slot}")
@@ -385,8 +386,9 @@ class TrainerBoxMD(MDBoxLayout):
                 slot_box.item_image.source = item_src
             slot_box.set_hp(pokemon.cur_hp, pokemon.max_hp)
 
-            fainted = (pokemon.cur_hp == 0 and pokemon.dexnr not in (0, 'egg')
-                       and pokemon.max_hp > 0)
+            fainted = ((pokemon.cur_hp == 0 and pokemon.dexnr not in (0, 'egg')
+                        and pokemon.max_hp > 0)
+                       or is_marked_dead(pokemon, dead_pvs))
             slot_box.set_dimmed(fainted)
 
             status = getattr(pokemon, 'status', {})

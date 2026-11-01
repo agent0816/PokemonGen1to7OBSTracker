@@ -912,6 +912,14 @@ class NuzlockeMenu(MDScreen):
                     self.munchlax.force_overlay_broadcast(f"snapshot restore (nuzlockemenu_md): {snap_id}"))
             except Exception as err:
                 logger.warning(f"force_overlay_broadcast nach restore failed: {err}")
+            # Server (Host) laedt Links/Tode/Encounter aus der
+            # wiederhergestellten pokemon.db neu, sonst ueberschreibt
+            # sein RAM-Stand den Snapshot.
+            try:
+                await self.munchlax.submit_cross_thread(
+                    self.munchlax.request_server_state_reload(clear=False))
+            except Exception as err:
+                logger.warning(f"server_state_reload nach restore failed: {err}")
         else:
             Clock.schedule_once(lambda _dt: show_snackbar(f"Restore fehlgeschlagen: {snap_id}", level='error'), 0)
 

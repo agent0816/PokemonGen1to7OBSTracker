@@ -205,6 +205,14 @@ class TotalWipeBannerMD:
                         self.munchlax.force_overlay_broadcast(f"snapshot restore: {snap_id}"))
                 except Exception as err:
                     logger.warning(f"force_overlay_broadcast nach restore failed: {err}")
+                # Server (Host) laedt Links/Tode/Encounter aus der
+                # wiederhergestellten pokemon.db neu, sonst ueberschreibt
+                # sein RAM-Stand den Snapshot.
+                try:
+                    await self.munchlax.submit_cross_thread(
+                        self.munchlax.request_server_state_reload(clear=False))
+                except Exception as err:
+                    logger.warning(f"server_state_reload nach restore failed: {err}")
                 dismiss_delay = 0
             else:
                 self._set_status("Restore fehlgeschlagen")
@@ -362,6 +370,14 @@ class TotalWipeBannerMD:
                 self.munchlax.force_overlay_broadcast(f"randomize+restore: {snap_id}"))
         except Exception as err:
             logger.warning(f"force_overlay_broadcast nach randomize+restore failed: {err}")
+        # Server (Host) laedt Links/Tode/Encounter aus der
+        # wiederhergestellten pokemon.db neu, sonst ueberschreibt
+        # sein RAM-Stand den Snapshot.
+        try:
+            await self.munchlax.submit_cross_thread(
+                self.munchlax.request_server_state_reload(clear=False))
+        except Exception as err:
+            logger.warning(f"server_state_reload nach restore failed: {err}")
         try:
             rom_hint = await loop.run_in_executor(None, self._new_rom_hint)
         except Exception as err:

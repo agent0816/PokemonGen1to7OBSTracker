@@ -8,7 +8,7 @@ from aiohttp import web
 
 from backend.classes.pokedex_db import PokedexDB
 from backend.logging_setup import get_logger
-from backend.party_rules import first_type_dupe_slots
+from backend.party_rules import first_type_dupe_slots, is_marked_dead
 from backend.team_id import slug_team_id
 from backend.tm_type_resolver import resolve_tm_hm_sprite
 
@@ -229,6 +229,7 @@ class OverlayServer:
         hide_incomplete = self._soullink_filter_active()
         link_id_by_pv = self._link_id_by_personality(owner)
         blocked_slots = first_type_dupe_slots(team[:6], self.munchlax.nuz)
+        dead_pvs = self.munchlax.snapshot_dead_pvs().get(player_id)
 
         team_data = []
         for slot, pkmn in enumerate(team[:6]):
@@ -272,6 +273,8 @@ class OverlayServer:
                 "max_hp": pkmn.max_hp,
                 "sprite_url": f"/sprite/{player_id}/{slot}?v={sprite_cache_key}",
                 "personality": pv,
+                # Nuzlocke-Tod (Encounter dead=1): ausgrauen auch bei vollen KP
+                "dead": is_marked_dead(pkmn, dead_pvs),
             }
             entry["identity_key"] = pkmn.identity_key or f"empty_{slot}"
             if link_state is not None:
@@ -1018,7 +1021,7 @@ function createSlotNode(p, data) {{
 
     const img = document.createElement('img');
     img.className = 'sprite';
-    if (p.cur_hp === 0 && p.max_hp > 0) img.classList.add('fainted');
+    if ((p.cur_hp === 0 && p.max_hp > 0) || p.dead) img.classList.add('fainted');
     if (data.show_status_effects) {{
         const sc = statusGlowClass(p.status);
         if (sc) img.classList.add(sc);
@@ -1073,7 +1076,7 @@ function updateSlotContent(div, p, data) {{
     }}
 
     img.className = 'sprite';
-    if (p.cur_hp === 0 && p.max_hp > 0) img.classList.add('fainted');
+    if ((p.cur_hp === 0 && p.max_hp > 0) || p.dead) img.classList.add('fainted');
     if (data.show_status_effects) {{
         const sc = statusGlowClass(p.status);
         if (sc) img.classList.add(sc);

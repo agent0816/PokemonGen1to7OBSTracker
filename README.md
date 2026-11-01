@@ -81,6 +81,8 @@ Konfiguration liegt pro Session unter `backend/config/<session_name>/` mit acht 
 - [ ] Nuzlocke-Regeln implementieren (Death-Detection, Same-Route-Regel, Species-Clause)
 - [ ] Soullink-Regeln implementieren
 - [ ] Encounter-Tracking Gen 7 fertigstellen (Zonen mappen)
+- [ ] Manuelle Encounter-Korrektur (MD-UI): Encounter bearbeiten/anlegen/löschen, Feld-Sperren vor Automatik, Soullink-Gruppen umbauen, Tot-Status als DB-Spalte (Ausgrauen in Overlay/OBS/TrainerBox/Boxen); umgesetzt + Unit-/GUI-Tests, offen: Live-Test Host+Client
+- [ ] Encounter-Import aus Team + PC-Boxen (MD-UI, „Aus Spiel“): Vorschau nach Route, Erstbegegnung wählbar, fremder OT → Geschenk, Gen 3+; umgesetzt + Unit-/GUI-Tests, offen: Live-Test mit echtem Emulator
 
 ### UI
 

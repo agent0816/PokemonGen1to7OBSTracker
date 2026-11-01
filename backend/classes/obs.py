@@ -4,7 +4,7 @@ import traceback
 from types import SimpleNamespace
 from websockets.exceptions import WebSocketException
 
-from backend.party_rules import first_type_dupe_slots
+from backend.party_rules import first_type_dupe_slots, is_marked_dead
 from backend.tm_type_resolver import resolve_tm_hm_sprite
 from backend.logging_setup import get_logger
 
@@ -1185,15 +1185,17 @@ class OBS():
 
     def _build_filter_updates(self, player: int, slots, team) -> list:
         blocked = first_type_dupe_slots(team, self.munchlax.nuz)
+        dead_pvs = self.munchlax.snapshot_dead_pvs().get(player)
         batch = []
         for slot in slots:
             pokemon = team[slot]
             source = self._slot_name(player, slot)
 
+            # Ausgegraut bei KP=0 oder als tot markiertem Encounter (Nuzlocke)
             fainted = (
                 slot not in blocked
-                and pokemon.cur_hp == 0
                 and pokemon.dexnr not in (0, 'egg')
+                and (pokemon.cur_hp == 0 or is_marked_dead(pokemon, dead_pvs))
             )
             batch.append(simpleobsws.Request(
                 "SetSourceFilterEnabled",
@@ -1224,6 +1226,21 @@ class OBS():
         return batch
 
     # ── Bestehende Methoden (erweitert) ──────────────────────────────
+
+    async def refresh_dead_filters(self, player: int, team) -> None:
+        """Setzt nur die "besiegt"-Filter neu (Tot-Markierung geaendert),
+        ohne die Slot-Quellen neu aufzubauen."""
+        if not self.ws or not self.ws.is_identified():
+            return
+        if not self.conf.get('show_status_effects'):
+            return
+        slots = range(min(6, len(team)))
+        try:
+            await self._ensure_filters(player, slots)
+            await self.ws.call_batch(self._build_filter_updates(player, slots, team))
+        except Exception as err:
+            self.logger.error(f"refresh_dead_filters Spieler {player} failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
 
     async def changeSource(self, player, slots, team, edition, slot_mapping=None):
         if not self.ws or not self.ws.is_identified():

@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import traceback
 
-from backend.classes.pokedex_db import LEGACY_GIFT_ROUTE_MARKER
+from backend.classes.pokedex_db import LEGACY_GIFT_ROUTE_MARKER, PokedexDB
+from backend.encounter_edit import parse_locks
 from backend.logging_setup import get_logger
 from backend.pokedex_view import (
     edition_to_gen,
@@ -47,6 +48,7 @@ STATUS_TEXT = {
     "unknown":    "offen",
     "dupes":      "dupe",
     "open":       "offen",
+    "dead":       "tot",
 }
 
 # Aggregat-Zustände einer Soullink-Gruppe (analog arceus._compute_link_state).
@@ -77,7 +79,9 @@ def edition_label(edition: int) -> str:
 
 
 def determine_status(enc: dict) -> str:
-    """Status-Schlüssel eines Encounters (dupes > outcome > unknown)."""
+    """Status-Schlüssel eines Encounters (tot > dupes > outcome > unknown)."""
+    if enc.get("dead", 0):
+        return "dead"
     if enc.get("is_dupes_skip", 0):
         return "dupes"
     outcome = enc.get("outcome", "unknown")
@@ -122,16 +126,21 @@ def build_encounter_rows(
     edition_filter: int | None = None,
     player_filter: str = "alle",
     query: str = "",
+    show_deleted: bool = False,
 ) -> tuple[list[dict], int, int]:
     """Flache Routen-/Encounter-Liste (wie Klassik).
 
     Gibt ``(rows, enc_count, open_count)`` zurück. ``rows`` ist nach
     Starter/Route/Marker-Buckets sortiert. Bei gesetztem Edition-Filter werden
     noch nicht getroffene Routen als ``is_open``-Platzhalter ergänzt.
+    Gelöschte Encounter (``deleted=1``) werden nur mit ``show_deleted`` gezeigt
+    und zählen sonst nicht als getroffene Route.
     """
     query = (query or "").strip().lower()
     encountered_routes: dict[int, list[dict]] = {}
     for enc in encounters:
+        if enc.get("deleted", 0) and not show_deleted:
+            continue
         if player_filter and player_filter != "alle":
             if str(enc.get("owner", "") or "") != player_filter:
                 continue
@@ -168,6 +177,18 @@ def build_encounter_rows(
                 "owner": str(enc.get("owner", "") or ""),
                 "status": determine_status(enc),
                 "is_open": False,
+                "personality": enc.get("personality"),
+                "manual_fields": str(enc.get("manual_fields") or ""),
+                "locks": parse_locks(enc.get("manual_fields")),
+                "deleted": bool(enc.get("deleted", 0)),
+                "is_first": enc.get("is_first", 0),
+                "is_dupes_skip": enc.get("is_dupes_skip", 0),
+                "is_shiny_override": enc.get("is_shiny_override", 0),
+                "has_balls": enc.get("has_balls", 0),
+                "outcome": enc.get("outcome") or "unknown",
+                "dead": bool(enc.get("dead", 0)),
+                # Rohwert (None = unbekannt) für den Bearbeiten-Dialog
+                "female_raw": enc.get("female"),
             })
 
     if edition_filter is not None:
@@ -187,6 +208,17 @@ def build_encounter_rows(
                     "owner": "",
                     "status": "open",
                     "is_open": True,
+                    "personality": None,
+                    "manual_fields": "",
+                    "locks": set(),
+                    "deleted": False,
+                    "is_first": 0,
+                    "is_dupes_skip": 0,
+                    "is_shiny_override": 0,
+                    "has_balls": 0,
+                    "outcome": "unknown",
+                    "dead": False,
+                    "female_raw": None,
                 })
 
     if query:
@@ -217,71 +249,107 @@ def aggregate_link_status(statuses: list[str], expected_count: int) -> str:
     return "failed"
 
 
+def _as_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+# Gültige Link-Member-Outcomes (Server-Werte, ohne Anzeige-Sonderfälle)
+_MEMBER_OUTCOMES = frozenset({"caught", "obtained", "not_caught", "unknown"})
+
+
+def _find_member_encounter(encounters: list[dict], root: str, personality) -> dict | None:
+    """Passender (nicht gelöschter) Encounter: gleiche PV und Owner-Root."""
+    if personality is None:
+        # Ohne PV kein eindeutiger Treffer (sonst matcht None == None den
+        # erstbesten Encounter des Spielers).
+        return None
+    for enc in encounters:
+        if enc.get("deleted", 0):
+            continue
+        if enc.get("personality") != personality:
+            continue
+        if PokedexDB.owner_root(str(enc.get("owner", "") or "")) == root:
+            return enc
+    return None
+
+
 def group_soullink(
+    links: dict[int, dict],
     encounters: list[dict],
     species_de: dict,
     expected_count: int = 2,
     edition_filter: int | None = None,
     query: str = "",
 ) -> list[dict]:
-    """Soullink-Encounter nach ``link_group_id`` zu Gruppen-Karten bündeln.
+    """Soullink-Gruppen aus den Server-Links (``Arceus.soullink_links``) aufbauen.
 
-    Jede Gruppe: Route + Mitglieder (ein Pokemon je Spieler, Slot über
-    ``row_slot``) + Aggregat-Status. Encounter ohne ``link_group_id`` werden
-    übersprungen (nicht gelinkte Einzel-Encounter tauchen nur in der flachen
-    Liste auf). Nach Route-Buckets sortiert, Mitglieder nach Slot.
+    Jedes Mitglied wird mit seinem Encounter (gleiche PV + Owner-Root) angereichert;
+    fehlt der Encounter, zeigen die Link-Daten das Mitglied trotzdem. Nach
+    Route-Buckets sortiert, Mitglieder nach Slot.
     """
     query = (query or "").strip().lower()
-    groups: dict[object, list[dict]] = {}
-    for enc in encounters:
-        gid = enc.get("link_group_id")
-        if gid in (None, ""):
-            continue
-        if edition_filter is not None:
-            try:
-                if int(enc.get("edition", 0)) != edition_filter:
-                    continue
-            except (TypeError, ValueError):
-                continue
-        groups.setdefault(gid, []).append(enc)
-
     result: list[dict] = []
-    for gid, encs in groups.items():
-        try:
-            route = int(encs[0].get("route", 0))
-        except (TypeError, ValueError):
-            route = 0
-        try:
-            edition = int(encs[0].get("edition", 0))
-        except (TypeError, ValueError):
-            edition = 0
-
+    for key, link in (links or {}).items():
+        if not isinstance(link, dict):
+            continue
+        link_id = link.get("link_id", key)
+        route = _as_int(link.get("route", 0))
         members: list[dict] = []
-        for enc in encs:
-            status = determine_status(enc)
+        for root, mem in (link.get("members") or {}).items():
+            mem = mem if isinstance(mem, dict) else {}
+            personality = mem.get("personality")
+            enc = _find_member_encounter(encounters, str(root), personality)
+            dexnr = enc.get("dexnr", 0) if enc else mem.get("dexnr", 0)
+            edition = _as_int(enc.get("edition") if enc else mem.get("edition", 0))
+            outcome = mem.get("outcome")
+            if outcome == "dead":
+                status = "dead"
+            elif enc:
+                status = determine_status(enc)
+            else:
+                status = outcome if outcome in _MEMBER_OUTCOMES else "unknown"
             members.append({
-                "slot": row_slot(enc),
-                "owner": str(enc.get("owner", "") or ""),
-                "species": species_name(enc.get("dexnr", 0), species_de),
-                "dexnr": enc.get("dexnr", 0),
+                "slot": row_slot(enc) if enc else None,
+                "owner": str(enc.get("owner", "") or "") if enc else str(root),
+                "root_owner": str(root),
+                "personality": personality,
+                "species": species_name(dexnr, species_de),
+                "dexnr": dexnr,
                 "edition": edition,
-                "lvl": enc.get("lvl", ""),
-                "shiny": bool(enc.get("shiny", 0)),
-                "female": bool(enc.get("female", 0)),
-                "form": enc.get("form") or "",
+                "lvl": enc.get("lvl", "") if enc else "",
+                "shiny": bool(enc.get("shiny", 0)) if enc else False,
+                "female": bool(enc.get("female", 0)) if enc else False,
+                "form": (enc.get("form") or "") if enc else "",
                 "status": status,
+                "manual_fields": str(enc.get("manual_fields") or "") if enc else "",
+                "locks": parse_locks(enc.get("manual_fields")) if enc else set(),
+                "member_manual": bool(mem.get("manual")),
             })
-        # Mitglieder nach Slot ordnen (None ans Ende), damit P1/P2/… stabil stehen
+        if edition_filter is not None and not any(
+                m["edition"] == edition_filter for m in members):
+            continue
+        # Mitglieder nach Slot ordnen (None ans Ende), damit P1/P2/... stabil stehen
         members.sort(key=lambda m: (m["slot"] is None, m["slot"] if m["slot"] is not None else 0))
 
-        agg = aggregate_link_status([m["status"] for m in members], expected_count)
+        edition = next((m["edition"] for m in members if m["edition"]), 0)
+        state = link.get("state")
+        if state in LINK_STATE_TEXT:
+            agg = state
+        else:
+            agg = aggregate_link_status([m["status"] for m in members], expected_count)
         result.append({
-            "link_group_id": gid,
+            "link_id": link_id,
+            "link_group_id": link_id,
             "route": route,
             "location": location_name(route, edition),
             "edition": edition,
             "members": members,
             "agg_status": agg,
+            "manual": bool(link.get("manual")),
+            "expected_owners": list(link.get("expected_owners") or []),
         })
 
     if query:
@@ -293,4 +361,58 @@ def group_soullink(
         result = [g for g in result if _match(g)]
 
     result.sort(key=lambda g: _route_sort_key(g["route"], False))
+    return result
+
+
+def unlinked_encounters(links: dict[int, dict], encounters: list[dict]) -> list[dict]:
+    """Nicht gelöschte Encounter, die in keinem Link-Member stecken.
+
+    Ein Encounter gilt als gruppiert, wenn ein Link-Member unter seinem Owner-Root
+    dieselbe PV trägt (wie ``_find_member_encounter``). ``is_first`` ist egal.
+    """
+    linked: set[tuple] = set()
+    for link in (links or {}).values():
+        if not isinstance(link, dict):
+            continue
+        for root, mem in (link.get("members") or {}).items():
+            pv = mem.get("personality") if isinstance(mem, dict) else None
+            if pv is not None:
+                linked.add((pv, str(root)))
+    result: list[dict] = []
+    for enc in encounters:
+        if enc.get("deleted", 0):
+            continue
+        root = PokedexDB.owner_root(str(enc.get("owner", "") or ""))
+        if (enc.get("personality"), root) in linked:
+            continue
+        result.append(enc)
+    return result
+
+
+def group_title(group: dict) -> str:
+    """'Ort (Route N)' bzw. 'Route N' einer Gruppe."""
+    loc = group.get("location", "")
+    route = group.get("route", 0)
+    return loc if loc == f"Route {route}" else f"{loc} (Route {route})"
+
+
+def link_targets(groups: list[dict], root_owner: str,
+                 exclude_link_id=None) -> list[tuple[str, int]]:
+    """Zielgruppen fuer 'verschieben/hinzufuegen' eines Pokemon des Spielers ``root_owner``.
+
+    Nur Gruppen, deren ``expected_owners`` den Spieler enthalten und die noch kein
+    Mitglied dieses Spielers haben (Server lehnt sonst ab). Anzeige
+    'Route X - Mitglieder'. Rueckgabe ``[(Text, link_id)]``.
+    """
+    result: list[tuple[str, int]] = []
+    for group in groups:
+        if exclude_link_id is not None and group.get("link_id") == exclude_link_id:
+            continue
+        if root_owner not in (group.get("expected_owners") or []):
+            continue
+        members = group.get("members") or []
+        if any(m.get("root_owner") == root_owner for m in members):
+            continue
+        names = ", ".join(f"{m.get('root_owner')}: {m.get('species')}" for m in members)
+        result.append((f"{group_title(group)} - {names or 'leer'}", group["link_id"]))
     return result

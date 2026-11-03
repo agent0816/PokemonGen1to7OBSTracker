@@ -30,6 +30,7 @@ from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 from backend.classes.pokedex_db import PokedexDB
 from backend.encounter_view import link_targets, locations_for_edition
 from backend.logging_setup import get_logger
+from backend.player_display import button_text, owner_label
 from backend.pokedex_view import location_name, species_name
 from frontend.widgets.md_common import confirm_dialog, show_snackbar
 
@@ -387,7 +388,12 @@ class EncounterEditDialogMD:
                        height=dp(26))
         self.head_label = head
         body.add_widget(head)
-        owner = MDLabel(text=f"Spieler: {self.owner}", role="small", size_hint_y=None,
+        try:
+            names = self.munchlax.snapshot_player_names()
+        except Exception:
+            names = {}
+        owner = MDLabel(text=button_text(owner_label(self.owner, names)), role="small",
+                        size_hint_y=None,
                         height=dp(20))
         body.add_widget(owner)
         self.group_button = None

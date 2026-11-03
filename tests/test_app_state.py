@@ -30,7 +30,8 @@ def state_path(tmp_path, monkeypatch):
 def test_load_defaults_when_missing(state_path):
     assert not state_path.exists()
     state = app_state.load_app_state()
-    assert state == {"ui": "md", "onboarding_done": False}
+    assert state == {"ui": "md", "onboarding_done": False,
+                     "theme_style": "Dark", "primary_palette": "Orange"}
 
 
 def test_get_ui_preference_default_md(state_path):
@@ -59,7 +60,8 @@ def test_partial_keys_filled_with_defaults(state_path):
 def test_broken_file_falls_back_to_defaults(state_path):
     state_path.write_text("::: not valid yaml :::", encoding="utf-8")
     state = app_state.load_app_state()
-    assert state == {"ui": "md", "onboarding_done": False}
+    assert state == {"ui": "md", "onboarding_done": False,
+                     "theme_style": "Dark", "primary_palette": "Orange"}
 
 
 def test_non_dict_file_falls_back(state_path):

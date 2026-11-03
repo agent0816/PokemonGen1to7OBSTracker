@@ -276,3 +276,10 @@ def test_link_targets_filtert_owner_und_vorhandene_mitglieder():
     assert "Route 101" in targets[0][0] and "Misty" in targets[0][0]
     assert ev.link_targets(groups, "Ash", exclude_link_id=2) == []
     assert ev.link_targets(groups, "Fremd") == []
+
+
+def test_aggregate_link_status_dead_wins():
+    from backend.encounter_view import aggregate_link_status
+    assert aggregate_link_status(["caught", "dead"], 2) == "dead"
+    assert aggregate_link_status(["dead"], 2) == "dead"
+    assert aggregate_link_status(["caught", "not_caught"], 2) == "failed"

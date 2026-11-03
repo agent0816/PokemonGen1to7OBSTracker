@@ -56,6 +56,8 @@ def init_config_folder():
         save_config(app_state, {
             'ui': 'md',
             'onboarding_done': bool(preexisting),
+            'theme_style': 'Dark',
+            'primary_palette': 'Orange',
         })
     else:
         # Migration fehlender Keys (z.B. frühe F0/F1-Datei ohne onboarding_done):
@@ -69,6 +71,13 @@ def init_config_folder():
             changed = True
         if 'ui' not in state:
             state['ui'] = 'md'
+            changed = True
+        # Theme-Auswahl (Testrunde 2026-11-03): bisher fest Dark/Orange.
+        if 'theme_style' not in state:
+            state['theme_style'] = 'Dark'
+            changed = True
+        if 'primary_palette' not in state:
+            state['primary_palette'] = 'Orange'
             changed = True
         if changed:
             save_config(app_state, state)

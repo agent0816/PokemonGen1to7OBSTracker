@@ -35,7 +35,10 @@
 #   der Eiseninsel (West = Vollmond, Ost = Neumond, Reihenfolge wie Decomp x 1 < 4).
 # Layout aus PLATIN; D/P teilen dasselbe Sinnoh-Layout (games-Feld pro Eintrag aus
 # encounter-yml, sonst [41,42,43]) — DP nicht gegengeprueft (Schritt F).
-region: sinnoh
+region: sinnoh
+# Starter (route=-1) wird auf dem Heimatdorf angezeigt (Zweiblattdorf); die Route,
+# auf der er erhalten wird, bleibt danach ein eigener gültiger Encounter.
+starter_section: 1
 image: sinnoh.png
 tile_px: 7
 x_offset: 1

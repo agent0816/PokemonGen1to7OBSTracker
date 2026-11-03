@@ -87,6 +87,10 @@ class _DriveApp(MDApp):
         d = self.dlg
         d.session_name_text_box.text = "Neu Run"; d.on_next(None)
         d.name_text_box.text = "Misty"; d.on_next(None)
+        # Gen-Button-Reihe: Laufzeit-Wechsel auf Gen 2 (Stil filled/tonal)
+        d.navbar.select("Gen 2")
+        self.check("gen_button_aktiv", d.navbar._buttons["Gen 2"].style == "filled"
+                   and d.navbar._buttons["Gen 1"].style == "tonal")
         card = next(w for w in d.game_selection_manager.get_screen("Gen 2").walk() if isinstance(w, GameCoverCard) and w.game_display == "Gold")
         card.dispatch("on_release")
         self.check("dialog_schritt3",
@@ -143,7 +147,7 @@ class _DriveApp(MDApp):
 
 # Erwartete Checks — stellt sicher, dass keiner still wegfaellt (z.B. Step-Crash).
 _EXPECTED = {
-    "dialog_offen", "dialog_schritt3", "angelegt_8_yamls", "pl_override",
+    "dialog_offen", "dialog_schritt3", "gen_button_aktiv", "angelegt_8_yamls", "pl_override",
     "template_unveraendert", "session_list", "aktiv_configsave",
     "aktiv_nuz_inplace_stale_weg", "aktiv_pl", "callback",
     "default_vor_wechsel_gespeichert", "aktive_nicht_geloescht",

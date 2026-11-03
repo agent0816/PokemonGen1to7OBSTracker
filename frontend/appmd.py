@@ -23,7 +23,7 @@ from backend.logging_setup import get_logger
 from backend.perf_probe import ENABLED as PERF_ENABLED, perf_log, perf_span
 from frontend.app_core import TrackerCoreMixin
 from frontend.perf_hooks import count_widgets, install_frame_watchdog, log_on_next_frame
-from frontend.widgets.md_common import show_snackbar
+from frontend.widgets.md_common import bind_window_background, show_snackbar
 from frontend.widgets.navrail import TrackerNavigationRail
 from frontend.widgets.splashmd import SplashScreen
 from frontend.widgets.statusbarmd import StatusBarMD
@@ -36,6 +36,11 @@ from version import VERSION
 # importiert, das erst hinter dem Splash (nach dem ersten Frame) läuft.
 
 logger = get_logger(__name__, 'logs/frontend.log')
+
+# Roboto mit ♂/♀ (KivyMD-Roboto hat die Glyphen nicht). Muss VOR dem ersten
+# gerenderten Label laufen — keine Widgets oberhalb dieser Zeile erzeugen.
+from frontend.fonts_md import register_gender_fonts  # noqa: E402
+register_gender_fonts()
 
 APP_NAME = "PokemonOBSTracker"
 APP_VERSION = VERSION
@@ -344,6 +349,119 @@ class Screens(ScreenManager):
             lambda pid: Clock.schedule_once(lambda dt: _dismiss_wipe_banner(pid), 0)
         )
 
+        # Host-Sync "Encounter bei allen erfassen": Server bittet um Auto-Import
+        # (Team + Boxen, Standard-Auswahl), Ergebnis geht an den Host zurück.
+        self._auto_import_running = False
+
+        def _start_auto_import(data: dict) -> None:
+            if self._auto_import_running:
+                logger.info("Auto-Import läuft bereits — melde 'läuft bereits' an den Host")
+                try:
+                    future = munchlax.submit_cross_thread(munchlax.send_encounter_import_result(
+                        str(data.get("request_id") or ""),
+                        [{"player": None, "ok": False, "count": 0, "msg": "läuft bereits"}]))
+                    future.add_done_callback(lambda f: f.cancelled() or f.exception())
+                except Exception as err:
+                    logger.warning(f"Busy-Rückmeldung fehlgeschlagen: {err}")
+                return
+            from frontend.widgets.encounter_edit_md import spawn_task
+            self._auto_import_running = True
+            spawn_task(_auto_import(data))
+
+        async def _auto_import(data: dict) -> None:
+            from frontend.encounter_auto_import import run_auto_import
+            request_id = str(data.get("request_id") or "")
+            # Der Ausloeser (Host) bekommt sein eigenes Ergebnis ueber die
+            # Sammel-Snackbar — hier keine zweite Meldung.
+            own_request = request_id and request_id == getattr(
+                munchlax, "last_import_request_id", None)
+            try:
+                try:
+                    results = await run_auto_import(munchlax, self.pl, self.citra, self.bizhawk)
+                except Exception as err:
+                    logger.error(f"Auto-Import fehlgeschlagen: {type(err)},{err}")
+                    logger.error(traceback.format_exc())
+                    show_snackbar("Encounter-Erfassung fehlgeschlagen (siehe Log).",
+                                  level='error')
+                    return
+                total = sum(int(r.get("count") or 0) for r in results)
+                if not own_request:
+                    show_snackbar(f"{data.get('requested_by') or 'Host'} hat die Encounter-"
+                                  f"Erfassung gestartet: {total} übernommen.",
+                                  level='success' if total else 'info', duration=4.0)
+                try:
+                    future = munchlax.submit_cross_thread(
+                        munchlax.send_encounter_import_result(request_id, results))
+                    # Spaete Fehler der geshieldeten Future abholen (kein
+                    # "exception never retrieved" nach Timeout)
+                    future.add_done_callback(lambda f: f.cancelled() or f.exception())
+                    await asyncio.wait_for(asyncio.shield(future), 30)
+                except Exception as err:
+                    logger.error(f"Auto-Import-Ergebnis nicht gemeldet: {type(err)},{err}")
+                    logger.error(traceback.format_exc())
+                    show_snackbar("Ergebnis konnte nicht an den Host gemeldet werden.",
+                                  level='error')
+            finally:
+                self._auto_import_running = False
+
+        # Host: Ergebnisse der Clients sammeln und gebuendelt anzeigen
+        # (show_snackbar stapelt nicht — N Einzelmeldungen wuerden sich ueberlagern).
+        # Anzeige, sobald alle in "started" genannten Clients geantwortet haben,
+        # spaetestens nach IMPORT_SUMMARY_TIMEOUT (fehlende = "keine Antwort",
+        # z.B. alte Clients ohne die Funktion).
+        IMPORT_SUMMARY_TIMEOUT = 45
+        self._import_requests_ui: dict[str, dict] = {}
+
+        def _show_import_summary(request_id: str) -> None:
+            from frontend.encounter_auto_import import summary_text
+            entry = self._import_requests_ui.pop(request_id, None)
+            if entry is None:
+                return
+            if entry.get("timer") is not None:
+                entry["timer"].cancel()
+            per_client = list(entry["results"])
+            answered = [name for name, _r in per_client]
+            missing = list(entry["expected"])
+            for name in answered:
+                if name in missing:
+                    missing.remove(name)
+            per_client += [(name, [{"player": None, "ok": False, "msg": "keine Antwort"}])
+                           for name in missing]
+            if per_client:
+                text, ok = summary_text(per_client)
+                show_snackbar(text, level='success' if ok else 'info', duration=8.0)
+
+        def _import_feedback(kind: str, data: dict) -> None:
+            request_id = str(data.get("request_id") or "")
+            if kind == "started":
+                clients = [str(c) for c in (data.get("clients") or [])]
+                timer = Clock.schedule_once(lambda dt: _show_import_summary(request_id),
+                                            IMPORT_SUMMARY_TIMEOUT)
+                self._import_requests_ui[request_id] = {
+                    "expected": clients, "results": [], "timer": timer}
+                show_snackbar(f"Erfassung angefragt bei {len(clients)} Client(s): "
+                              f"{', '.join(clients)}", level='info', duration=3.0)
+                return
+            entry = self._import_requests_ui.get(request_id)
+            if entry is None:
+                # Nachzuegler nach dem Timeout: einzeln melden
+                from frontend.encounter_auto_import import result_text
+                text, ok = result_text(str(data.get("client_name") or "?"),
+                                       data.get("results") or [])
+                show_snackbar(text, level='success' if ok else 'info', duration=6.0)
+                return
+            entry["results"].append((str(data.get("client_name") or "?"),
+                                     data.get("results") or []))
+            if len(entry["results"]) >= len(entry["expected"]):
+                _show_import_summary(request_id)
+
+        munchlax.on_encounter_import_request = (
+            lambda d: Clock.schedule_once(lambda dt: _start_auto_import(d), 0)
+        )
+        munchlax.on_encounter_import_feedback = (
+            lambda kind, d: Clock.schedule_once(lambda dt: _import_feedback(kind, d), 0)
+        )
+
         # Slot-Kollision: Server hat declared_player_ids abgelehnt, weil ein
         # anderer Client denselben Netz-Slot belegt. Client ist danach bereits
         # disconnected; User muss remote_N-Flags anpassen und neu verbinden.
@@ -375,6 +493,14 @@ class Screens(ScreenManager):
         app = MDApp.get_running_app()
         if app is not None:
             app.title = _window_title(session_name)
+        # Ein offener Wipe-Banner gehört zur vorigen Session (Snapshot/Run-Pfade
+        # zeigen auf deren configsave) — schließen.
+        banner = getattr(self, "_active_wipe_banner", None)
+        if banner is not None and getattr(banner, "_is_open", False):
+            try:
+                banner.dismiss()
+            except Exception as err:
+                logger.error(f"Wipe-Banner beim Session-Wechsel nicht schließbar: {err}")
         try:
             with perf_span("session_changed.main"):
                 self.main_menu.load_from_session()
@@ -491,7 +617,10 @@ class MainWindow(MDBoxLayout):
             show_snackbar("Bitte zuerst eine Session auswählen oder anlegen.",
                           level='info', duration=4.0)
             return False
-        if target == "SessionMenu" and current not in ("SessionMenu", "Update"):
+        # Standard-Einstellungen (keine Session gewählt): nichts zu sichern, kein
+        # Save-Hinweis/Disconnect — direkt navigieren.
+        if (target == "SessionMenu" and current not in ("SessionMenu", "Update")
+                and self._session_selected()):
             main_menu = getattr(self.screen_manager, "main_menu", None)
             if (main_menu is not None and hasattr(main_menu, "_needs_safe_switch")
                     and main_menu._needs_safe_switch()):
@@ -503,9 +632,13 @@ class MainWindow(MDBoxLayout):
 class TrackerAppMD(TrackerCoreMixin, MDApp):
     def build(self):
         self.title = _window_title(None)
+        # Theme aus app_state (Settings > Darstellung), Default Dark/Orange.
+        # Animation erst danach einschalten, sonst animiert schon der Start.
+        style, palette = app_state.get_theme()
+        self.theme_cls.theme_style = style
+        self.theme_cls.primary_palette = palette
         self.theme_cls.theme_style_switch_animation = True
-        self.theme_cls.theme_style = "Dark"
-        self.theme_cls.primary_palette = "Orange"
+        bind_window_background(self.theme_cls)
 
         # Sofort einen minimalen Root mit Splash zurückgeben, damit der erste
         # Frame schnell rendert (statt langem Schwarz-Screen). Der teure Rest

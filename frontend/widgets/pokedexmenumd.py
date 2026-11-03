@@ -22,6 +22,7 @@ from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
 from backend.classes.pokedex_db import PokedexDB
 from backend.logging_setup import get_logger
+from backend.player_display import labels_for_slots
 from backend.player_colors import PLAYER_COLORS, player_rgba
 from backend.pokedex_view import (
     filter_rows, item_name, load_species_de, location_name, row_slot, species_name,
@@ -249,8 +250,12 @@ class PokedexMenu(MDScreen):
             self.player_bar.add_widget(btn)
 
         _add("", "Alle")
+        from frontend.widgets.md_common import player_names_of
+        labels = labels_for_slots(range(1, count + 1), player_names_of(screen=self))
         for slot in range(1, count + 1):
-            _add(str(slot), f"P{slot}")
+            label = labels[slot]
+            # Lange Clientnamen kuerzen, sonst sprengt die Leiste bei 4 Spielern 800 px
+            _add(str(slot), label if len(label) <= 16 else label[:15] + "…")
 
     def _select_slot(self, key: str) -> None:
         self._active_slot = key

@@ -56,6 +56,7 @@ LINK_STATE_TEXT = {
     "complete": "komplett",
     "pending":  "offen",
     "failed":   "fehlgeschlagen",
+    "dead":     "tot",
 }
 
 _CAUGHT_LIKE = frozenset({"caught", "obtained"})
@@ -239,7 +240,10 @@ def aggregate_link_status(statuses: list[str], expected_count: int) -> str:
 
     pending, solange nicht alle erwarteten Mitglieder da sind oder eines noch
     offen ist; complete, wenn alle gefangen/erhalten; sonst failed.
+    Ein totes Mitglied macht die ganze Gruppe tot (Vorrang).
     """
+    if any(s == "dead" for s in statuses):
+        return "dead"
     if len(statuses) < max(expected_count, 1):
         return "pending"
     if any(s in ("unknown", "open") for s in statuses):

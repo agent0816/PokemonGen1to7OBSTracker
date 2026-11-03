@@ -28,6 +28,7 @@ from backend.encounter_import import (
     own_trainer,
 )
 from backend.logging_setup import get_logger
+from backend.player_display import labels_for_slots
 from backend.pokedex_view import location_name, species_name
 from frontend.box_reader import read_boxes_for_player
 from frontend.widgets.encounter_create_md import ChoiceField, _DialogBase, _dialog_content, labeled
@@ -206,12 +207,18 @@ class EncounterImportDialogMD(_DialogBase):
         if not self.owned:
             self.body.add_widget(self._label("Kein lokaler Spieler vorhanden.", dp(48)))
             return
+        try:
+            names = self.munchlax.snapshot_player_names()
+        except Exception:
+            names = {}
+        labels = labels_for_slots(self.owned, names)
         if len(self.owned) > 1:
-            self._pid_field = ChoiceField([(f"Spieler {p}", p) for p in self.owned], self.pid,
+            self._pid_field = ChoiceField([(labels[p], p) for p in self.owned], self.pid,
                                           self.set_player)
             self.body.add_widget(labeled("Spieler", self._pid_field.button, dp(48)))
         else:
-            self.body.add_widget(self._label(f"Spieler {self.pid}", dp(32), "medium"))
+            self.body.add_widget(self._label(labels.get(self.pid, f"Spieler {self.pid}"),
+                                             dp(32), "medium"))
         hint = MDLabel(
             text=("Liest Team und PC-Boxen des Spielers und trägt bereits gefangene Pokemon "
                   "als Encounter nach. Bereits erfasste und Eier werden übersprungen."),

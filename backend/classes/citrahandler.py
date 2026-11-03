@@ -633,9 +633,19 @@ class CitraHandler:
         self.logger.debug(f"Pointer gesetzt: edition={self.edition}, game={self.munchlax.pl['session_game']}")
 
     def set_player_number(self):
-        for i in range(1, self.munchlax.pl['player_count'] + 1):
-            if not self.munchlax.pl[f"remote_{i}"]:
+        # Letzter lokaler Slot (bisherige Semantik). Neu: vorher zuruecksetzen —
+        # sonst blieb nach Umstellung auf "alle remote" ein alter Slot stehen —
+        # und .get statt KeyError bei fehlendem remote_N.
+        self.player_number = None
+        pl = self.munchlax.pl
+        try:
+            count = int(pl.get('player_count', 1) or 1)
+        except (TypeError, ValueError):
+            count = 1
+        for i in range(1, count + 1):
+            if not pl.get(f"remote_{i}", False):
                 self.player_number = i
+        self.logger.info(f"Citra-Spieler-Slot: {self.player_number}")
         if self.player_number:
             self.munchlax.editions[self.player_number] = self.edition
             name = self.munchlax.pl.get('your_name', '')

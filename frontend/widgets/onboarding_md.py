@@ -30,7 +30,7 @@ from backend.logging_setup import get_logger
 from backend.sprite_repo import clone_sprite_repo, apply_sprite_paths
 from frontend.widgets.file_picker_md import pick_directory, pick_file
 from frontend.widgets.md_common import show_snackbar
-from frontend.widgets.sessionsmenumd import GameNavigationBar, GameSelectionScreen
+from frontend.widgets.sessionsmenumd import GenButtonRow, GameSelectionScreen
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
@@ -310,8 +310,7 @@ class OnboardingScreen(MDScreen):
         self._game_selection.size_hint_y = None
         self._game_selection.height = dp(300)
         item_list = [{"screen_name": gen} for gen in self._game_selection.games]
-        navbar = GameNavigationBar(self._game_selection, item_list,
-                                   size_hint_y=None, height=dp(56))
+        navbar = GenButtonRow(self._game_selection, item_list)
         picker = MDBoxLayout(orientation="vertical", size_hint_y=None,
                              height=dp(360), spacing=dp(4))
         picker.add_widget(navbar)

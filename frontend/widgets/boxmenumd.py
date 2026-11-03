@@ -21,6 +21,8 @@ from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.screen import MDScreen
 
 from backend.logging_setup import get_logger
+from backend.player_display import button_text, labels_for_slots, slot_label
+from frontend.widgets.md_common import player_names_of
 from backend.party_rules import is_marked_dead
 from frontend.box_reader import read_boxes_for_player
 
@@ -177,7 +179,7 @@ class BoxMenu(MDScreen):
         if self.current_player > player_count:
             self.current_player = 1
             self.current_box_index = 0
-        self.player_button_text.text = f"Spieler: {self.current_player}"
+        self.player_button_text.text = button_text(self._player_label(self.current_player))
 
     # --- Dropdowns ------------------------------------------------------------
 
@@ -196,8 +198,13 @@ class BoxMenu(MDScreen):
             m.dismiss()
         on_pick(value)
 
+    def _player_label(self, slot) -> str:
+        return slot_label(slot, player_names_of(self.munchlax))
+
     def _open_player_menu(self, caller) -> None:
-        entries = [(f"Spieler {i}", i) for i in range(1, self._player_count() + 1)]
+        slots = list(range(1, self._player_count() + 1))
+        labels = labels_for_slots(slots, player_names_of(self.munchlax))
+        entries = [(labels[i], i) for i in slots]
         self._open_menu(caller, entries, self._on_player_change)
 
     def _open_box_menu(self, caller) -> None:
@@ -212,7 +219,7 @@ class BoxMenu(MDScreen):
         except (TypeError, ValueError):
             return
         self.current_box_index = 0
-        self.player_button_text.text = f"Spieler: {self.current_player}"
+        self.player_button_text.text = button_text(self._player_label(self.current_player))
         self._refresh_box_spinner_values()
         self._render_current_box()
 
@@ -245,7 +252,7 @@ class BoxMenu(MDScreen):
             self.status_label.text = "Läuft bereits…"
             return
         self.refresh_button.disabled = True
-        self.status_label.text = f"Lese Boxen für Spieler {self.current_player}…"
+        self.status_label.text = f"Lese Boxen für {self._player_label(self.current_player)}…"
         self._refresh_task = asyncio.create_task(self._do_refresh(self.current_player))
 
     async def _do_refresh(self, player: int):
@@ -277,7 +284,7 @@ class BoxMenu(MDScreen):
 
     def _after_refresh(self, player: int, box_count: int):
         self.refresh_button.disabled = False
-        self.status_label.text = f"{box_count} Boxen für Spieler {player} geladen."
+        self.status_label.text = f"{box_count} Boxen für {self._player_label(player)} geladen."
         self._refresh_box_spinner_values()
         self._render_current_box()
 
@@ -332,7 +339,7 @@ class BoxMenu(MDScreen):
         if not boxes:
             for slot_widget in self.slot_widgets:
                 slot_widget.set_pokemon(None, edition)
-            self.title_label.text = f"PC-Boxen — Spieler {self.current_player}"
+            self.title_label.text = f"PC-Boxen — {self._player_label(self.current_player)}"
             return
         index = max(0, min(self.current_box_index, len(boxes) - 1))
         box = boxes[index]
@@ -342,7 +349,7 @@ class BoxMenu(MDScreen):
             pokemon = box[i] if i < len(box) else None
             slot_widget.set_pokemon(pokemon, edition, dead=is_marked_dead(pokemon, dead_pvs))
         self.title_label.text = (
-            f"PC-Boxen — Spieler {self.current_player} — Box {index + 1}/{len(boxes)}"
+            f"PC-Boxen — {self._player_label(self.current_player)} — Box {index + 1}/{len(boxes)}"
         )
         # Status nur setzen, wenn gerade kein Refresh läuft (sonst dessen
         # Fortschritts-/Fehlertext nicht überschreiben).

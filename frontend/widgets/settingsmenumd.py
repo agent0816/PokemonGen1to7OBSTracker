@@ -44,7 +44,7 @@ from backend.logging_setup import (get_logger, get_console_level, set_console_le
 from backend.dev_mode import is_developer
 from backend.perf_probe import perf_log, perf_span
 from frontend.perf_hooks import count_widgets
-from frontend.widgets.md_common import show_snackbar, confirm_dialog
+from frontend.widgets.md_common import bind_theme_color, show_snackbar, confirm_dialog
 from frontend.widgets.settings_widgets import (LABEL_W, DropdownField, browse_row,
                                                labeled_row, make_textfield)
 from frontend.widgets.file_picker_md import pick_file, pick_directory
@@ -73,9 +73,11 @@ def _section_card(title: str) -> MDBoxLayout:
     card = MDBoxLayout(orientation="vertical", padding=dp(14),
                        spacing=dp(12), size_hint_y=None, adaptive_height=True,
                        radius=[dp(16)] * 4, md_bg_color=CARD_BG)
+    # Theme-abhaengig (Hell/Dunkel live umschaltbar); CARD_BG nur Startwert.
+    bind_theme_color(card, "md_bg_color", "surfaceContainerColor")
     lbl = MDLabel(text=title, role="small", bold=True, adaptive_height=True)
     lbl.theme_text_color = "Custom"
-    lbl.text_color = MDApp.get_running_app().theme_cls.primaryColor
+    bind_theme_color(lbl, "text_color", "primaryColor")
     card.add_widget(lbl)
     return card
 
@@ -759,15 +761,43 @@ class SettingsMenu(MDScreen):
                 break
         self._rebuild_player_expand()
         self._save("player")
-        # MainMenu-Team-Boxen an neue Spieleranzahl angleichen (Parität Klassik
-        # update_trainer_boxes) + Overlay-Links (Spieleranzahl ändert die URLs).
+        self._after_player_layout_change()
+
+    def _after_player_layout_change(self) -> None:
+        """Nach Änderung von Spieleranzahl oder lokal/remote: MainMenu-Team-Boxen
+        (Parität Klassik update_trainer_boxes) + Overlay-Links neu aufbauen und die
+        lokalen Slots bei laufender Verbindung erneut an den Server melden — sonst
+        behält der Server die alten Slots (Testrunde 2026-11-02, owned=[4])."""
+        if self._config_dirty:
+            # _save hat nichts geschrieben (Werte der vorigen Session) — pl wäre veraltet.
+            return
         try:
             if self.manager is not None and self.manager.has_screen("MainMenu"):
                 self.manager.get_screen("MainMenu").rebuild_trainer_boxes()
         except Exception as err:
-            logger.error(f"MainMenu-Rebuild nach Spieleranzahl fehlgeschlagen: {err}")
+            logger.error(f"MainMenu-Rebuild nach Spieler-Änderung fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
         self._rebuild_overlay_links()
+        mun = self.munchlax
+        if mun is not None and getattr(mun, "is_connected", False):
+            coro = mun.redeclare_player_ids()
+            try:
+                mun.dispatch_cross_thread(coro, name="redeclare_player_ids")
+                msg = "Spieler-Slots aktualisiert."
+                main_menu = (self.manager.get_screen("MainMenu")
+                             if self.manager is not None and self.manager.has_screen("MainMenu")
+                             else None)
+                if main_menu is not None and getattr(main_menu, "_emulator_running", None)                         and main_menu._emulator_running():
+                    # Emulator meldet seinen Slot nur im Handshake — alter Slot
+                    # bliebe sonst aktiv und überschreibt die neue Deklaration.
+                    msg += " Emulator neu verbinden, damit der neue Slot greift."
+                    show_snackbar(msg, level='info', duration=6.0)
+                else:
+                    show_snackbar(msg, level='info', duration=2.5)
+            except Exception as err:
+                coro.close()
+                logger.error(f"redeclare_player_ids-Dispatch fehlgeschlagen: {err}")
+                logger.error(traceback.format_exc())
 
     @perf_span("settings._rebuild_player_expand")
     def _rebuild_player_expand(self) -> None:
@@ -811,6 +841,7 @@ class SettingsMenu(MDScreen):
                 self._suspend_save = prev
         if not self._suspend_save:
             self._save("player")
+            self._after_player_layout_change()
 
     def _on_player_obs(self, n: int, val: bool) -> None:
         if not self._suspend_save:
@@ -1048,6 +1079,32 @@ class SettingsMenu(MDScreen):
         finally:
             self._suspend_save = prev
 
+        # --- Theme: Hell/Dunkel + Akzentfarbe, wirkt sofort ---------------
+        style, palette = app_state.get_theme()
+        theme_card = _section_card("Theme")
+        self._theme_segment = MDSegmentedButton()
+        self._theme_items: dict[str, MDSegmentedButtonItem] = {}
+        for style_value, label in ((app_state.THEME_DARK, "Dunkel"),
+                                   (app_state.THEME_LIGHT, "Hell")):
+            item = MDSegmentedButtonItem(MDSegmentButtonLabel(text=label))
+            item.bind(active=lambda _it, val, st=style_value: self._on_theme_style(st, val))
+            self._theme_items[style_value] = item
+            self._theme_segment.add_widget(item)
+        theme_card.add_widget(labeled_row("Hell / Dunkel", self._theme_segment))
+        self._palette_labels = dict(app_state.ACCENT_PALETTES)
+        self._palette_by_label = {v: k for k, v in self._palette_labels.items()}
+        self._palette_dd = DropdownField(list(self._palette_labels.values()),
+                                         self._palette_labels[palette],
+                                         self._on_palette_select)
+        theme_card.add_widget(labeled_row("Akzentfarbe", self._palette_dd))
+        pane.add_widget(theme_card)
+        prev = self._suspend_save
+        self._suspend_save = True
+        try:
+            self._theme_items[style].active = True
+        finally:
+            self._suspend_save = prev
+
         card = _section_card("Logging")
         self._console_level = DropdownField(LOG_LEVELS, get_console_level(),
                                             lambda v: set_console_level(v))
@@ -1080,6 +1137,31 @@ class SettingsMenu(MDScreen):
         else:
             self._dev_module_box = None
         return pane
+
+    def _on_theme_style(self, style: str, active: bool) -> None:
+        """Hell/Dunkel live umschalten und app-weit speichern."""
+        if not active or self._suspend_save:
+            return
+        try:
+            MDApp.get_running_app().theme_cls.theme_style = style
+            app_state.set_theme(style=style)
+            logger.info(f"Theme-Stil gesetzt: {style}")
+        except Exception as err:
+            logger.error(f"Theme-Stil setzen fehlgeschlagen: {err}\n{traceback.format_exc()}")
+            show_snackbar("Theme konnte nicht gespeichert werden.", level='error', duration=4.0)
+
+    def _on_palette_select(self, label: str) -> None:
+        """Akzentfarbe live umschalten und app-weit speichern."""
+        palette = self._palette_by_label.get(label)
+        if palette is None:
+            return
+        try:
+            MDApp.get_running_app().theme_cls.primary_palette = palette
+            app_state.set_theme(palette=palette)
+            logger.info(f"Akzentfarbe gesetzt: {palette}")
+        except Exception as err:
+            logger.error(f"Akzentfarbe setzen fehlgeschlagen: {err}\n{traceback.format_exc()}")
+            show_snackbar("Akzentfarbe konnte nicht gespeichert werden.", level='error', duration=4.0)
 
     def _on_ui_segment(self, ui_value: str, active: bool) -> None:
         # MDSegmentedButton feuert active=True fürs neu gewählte und active=False

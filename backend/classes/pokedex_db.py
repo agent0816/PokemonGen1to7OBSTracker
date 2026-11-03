@@ -1185,6 +1185,31 @@ class PokedexDB:
         return self.get_encounter(personality, owner)
 
     @_serialized
+    def rebind_encounter(self, owner: str, old_pv: int, new_pv: int) -> bool:
+        """Pseudo-PV eines manuellen Encounters durch die echte PV ersetzen
+        (Auto-Bindung). False, wenn es die alte Zeile nicht gibt oder unter der
+        neuen PV schon ein Encounter liegt."""
+        if self.connection is None:
+            return False
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT 1 FROM encounters WHERE personality = ? AND owner = ?",
+                           (int(new_pv), owner))
+            if cursor.fetchone() is not None:
+                self.logger.info(f"rebind_encounter: pv={new_pv} owner={owner} existiert bereits")
+                return False
+            cursor.execute("UPDATE encounters SET personality = ? WHERE personality = ? AND owner = ?",
+                           (int(new_pv), int(old_pv), owner))
+            self.connection.commit()
+            ok = cursor.rowcount > 0
+            self.logger.info(f"rebind_encounter: owner={owner} {old_pv} -> {new_pv} ok={ok}")
+            return ok
+        except Exception as err:
+            self.logger.error(f"rebind_encounter failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return False
+
+    @_serialized
     def load_all_encounters(self, raise_errors: bool = False) -> list[dict]:
         """Alle Zeilen inkl. deleted (Arceus-Cache)."""
         if self.connection is None:
@@ -1584,7 +1609,8 @@ class PokedexDB:
             return False
 
     @_serialized
-    def has_catching_balls(self, owner: str, edition) -> bool:
+    def has_catching_balls(self, owner: str, edition,
+                           since_ts: str | None = None) -> bool:
         """Prüft ob der Spieler JEMALS einen Ball besessen hat (bag_first_seen).
 
         Bestimmt ob der Nuzlocke-Run gestartet hat — einmal True, bleibt True.
@@ -1592,6 +1618,14 @@ class PokedexDB:
         Geprueft wird per Item-ID (catching_ball_ids) ueber alle Pockets statt
         ueber die 'baelle'-Pocket: Gen 1 hat nur eine Tasche, Gen 5–7 legen
         Baelle in 'items' ab — dort gab es nie eine 'baelle'-Pocket.
+
+        since_ts (Start des aktiven Runs, run_meta 'YYYY-MM-DDTHH:MM:SSZ'):
+        nur Baelle ab Run-Start zaehlen. bag_first_seen ueberlebt Run-Ende
+        (INSERT OR IGNORE), deshalb zusaetzlich der aktuelle Bestand
+        (bag_inventory.last_seen) — ein Ball, der schon im Vor-Run gesehen
+        wurde und jetzt wieder in der Tasche liegt, oeffnet das Gate auch.
+        Verglichen werden die ersten 19 Zeichen (Formate: ISO mit +00:00
+        vs. ...Z, beide UTC).
         """
         if self.connection is None:
             return False
@@ -1602,11 +1636,26 @@ class PokedexDB:
             edition_str = str(edition) if edition is not None else ""
             placeholders = ",".join("?" * len(ball_ids))
             cursor = self.connection.cursor()
+            ids = sorted(ball_ids)
+            if not since_ts:
+                cursor.execute(
+                    "SELECT 1 FROM bag_first_seen "
+                    f"WHERE owner = ? AND edition = ? AND item_id IN ({placeholders}) "
+                    "LIMIT 1",
+                    (owner, edition_str, *ids),
+                )
+                return cursor.fetchone() is not None
+            since = str(since_ts)[:19]
             cursor.execute(
                 "SELECT 1 FROM bag_first_seen "
                 f"WHERE owner = ? AND edition = ? AND item_id IN ({placeholders}) "
+                "AND substr(first_seen, 1, 19) >= ? "
+                "UNION ALL "
+                "SELECT 1 FROM bag_inventory "
+                f"WHERE owner = ? AND edition = ? AND item_id IN ({placeholders}) "
+                "AND qty > 0 AND substr(last_seen, 1, 19) >= ? "
                 "LIMIT 1",
-                (owner, edition_str, *sorted(ball_ids)),
+                (owner, edition_str, *ids, since, owner, edition_str, *ids, since),
             )
             return cursor.fetchone() is not None
         except Exception as err:

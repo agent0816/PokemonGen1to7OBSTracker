@@ -79,6 +79,32 @@ def new_manual_personality() -> int:
     return -random.randint(1, 2 ** 31)
 
 
+def find_rebind_candidate(rows: list[dict], dexnr: int,
+                          family: list[int] | None = None) -> dict | None:
+    """Manuell angelegten Encounter (Pseudo-PV < 0) zu einem neu aufgetauchten
+    echten Pokemon finden (Auto-Bindung, Testrunde 2026-11-02).
+
+    ``rows``: Encounter EINES Owners/einer Edition. Kandidaten: negative PV,
+    nicht gelöscht, Art = ``dexnr`` oder aus derselben Familie. Eindeutig
+    gleiche Art gewinnt; sonst genau ein Familien-Treffer. Mehrdeutig → None
+    (lieber nicht binden als falsch binden).
+    """
+    try:
+        dex = int(dexnr)
+    except (TypeError, ValueError):
+        return None
+    fam = {int(d) for d in (family or [dex])} | {dex}
+    pool = [r for r in rows
+            if isinstance(r.get("personality"), int) and r["personality"] < 0
+            and not r.get("deleted") and r.get("dexnr") in fam]
+    exact = [r for r in pool if r.get("dexnr") == dex]
+    if len(exact) == 1:
+        return exact[0]
+    if not exact and len(pool) == 1:
+        return pool[0]
+    return None
+
+
 def new_encounter(personality: int, owner: str, create: dict) -> dict:
     """Manuell angelegter Encounter: Defaults + ``create``-Felder (gesperrt)."""
     base = {

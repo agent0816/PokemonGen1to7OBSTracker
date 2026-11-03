@@ -48,7 +48,7 @@ CONNECTED_OVERVIEW_SECONDS = 300.0
 # keine Cross-Owner-Checks auf dem Server.
 SOULLINK_MODES = ("coop", "versus")
 # Im resume_ack angekuendigte Server-Faehigkeiten
-SERVER_FEATURES = ("manual_edits",)
+SERVER_FEATURES = ("manual_edits", "encounter_rebind", "encounter_import_request")
 
 # Replay-TTL fuer transient (ereignishafte) soullink_rule_violations beim
 # Client-Reconnect. 5 min decken Soft-Reconnects ab (Heartbeat-Latenz ~35s
@@ -96,6 +96,9 @@ class Arceus:
         self.port = port
         self.munchlaxes = {}
         self.munchlax_names = {}
+        # Host-Sync "Encounter bei allen erfassen": request_id -> client_id des
+        # Ausloesers, damit die Ergebnisse der Clients dort ankommen.
+        self._import_requests: dict[str, str] = {}
         self.munchlax_status = {}
         self.munchlax_heartbeats = {}
         self.heartbeat_counts = {}
@@ -638,12 +641,19 @@ class Arceus:
                         if death_link is not None:
                             self._persist_link(death_link)
                         asyncio.create_task(self.broadcast_soullink_death(payload))
+                        self._propagate_partner_deaths(payload)
                     if self._recompute_versus_state():
                         asyncio.create_task(self.broadcast_soullink_versus_state())
                 elif isinstance(data, dict) and data.get("type") == "encounter_edit":
                     self._run_edit(self._handle_encounter_edit, client_id, data)
                 elif isinstance(data, dict) and data.get("type") == "soullink_link_edit":
                     self._run_edit(self._handle_link_edit, client_id, data)
+                elif isinstance(data, dict) and data.get("type") == "encounter_rebind":
+                    self._run_edit(self._handle_encounter_rebind, client_id, data)
+                elif isinstance(data, dict) and data.get("type") == "encounter_import_request":
+                    self._handle_encounter_import_request(client_id, data)
+                elif isinstance(data, dict) and data.get("type") == "encounter_import_result":
+                    self._handle_encounter_import_result(client_id, data)
                 elif isinstance(data, dict) and data.get("type") == "soullink_death_edit":
                     self._run_edit(self._handle_death_edit, client_id, data)
                 elif isinstance(data, dict) and data.get("type") == "server_state_reload":
@@ -1404,9 +1414,13 @@ class Arceus:
         return list(expected)
 
     def _compute_link_state(self, link: dict) -> str:
-        """Berechnet state (pending/complete/failed) aus Member-Outcomes."""
+        """Berechnet state (pending/complete/failed/dead) aus Member-Outcomes."""
         members = link.get("members", {})
         outcomes = [m.get("outcome", "unknown") for m in members.values()]
+        # Soullink: stirbt einer, ist die ganze Gruppe tot (Partner werden per
+        # _propagate_partner_deaths mitmarkiert) — Vorrang vor pending/failed.
+        if any(o == "dead" for o in outcomes):
+            return "dead"
         # Warten bis alle erwarteten Members drin sind
         if len(members) < len(link.get("expected_owners", [])):
             return "pending"
@@ -1512,6 +1526,11 @@ class Arceus:
                 continue
             if member.get("outcome") == outcome:
                 return None
+            # Ein aktiver Tod (auch propagierter Partner-Tod) bleibt dead —
+            # analog _apply_encounter_to_links.
+            if (member.get("outcome") == "dead"
+                    and (personality, owner_key) in self.soullink_deaths):
+                return None
             member["outcome"] = outcome
             new_state = self._compute_link_state(link)
             if new_state != link["state"]:
@@ -1566,6 +1585,28 @@ class Arceus:
         self._persist("clear_deaths")
         self.logger.info("Arceus _reset_session_state: alle Session-Caches geleert")
 
+    def _clear_live_caches_for_session_switch(self) -> None:
+        """RAM-only-Teil von _reset_session_state fuer den Session-Wechsel."""
+        self.teams = {}
+        self.boxes = {}
+        self.bags = {}
+        self.positions = {}
+        self.soullink_versus_state = {}
+        self.soullink_versus_battles = []
+        self.soullink_rule_violations = {}
+        self._last_violation_broadcast_ts = {}
+        self.soullink_tokens = {}
+        self._team_owner_cache = {}
+        self.soullink_team_state = {}
+        # Race-Timer + Countdown gehoeren zur Session (sonst sendet der Server
+        # beim Connect den alten Stand an alle Clients).
+        self._timer_reset()
+        self._countdown_reset()
+        # soullink_config bewusst NICHT: der Host pusht sie (Auto-Push im
+        # NuzlockeMenu); ein Reset auf mode=off wuerde Soullink bis zum
+        # naechsten Push abschalten.
+        self.logger.info("Arceus: Live-Caches der vorigen Session geleert (Session-Wechsel)")
+
     # ----- Persistenz (Encounter-Cache, Links, Tode) -----
 
     def set_configsave(self, configsave) -> None:
@@ -1601,6 +1642,13 @@ class Arceus:
                 "nicht gespeichert (naechster Versuch beim Server-Neustart)"
             )
             return False
+        if self._persist_path is not None and path != self._persist_path:
+            # Session-Wechsel: Live-Caches der vorigen Session verwerfen
+            # (Teams/Boxen/Bags/Positionen/Versus/Tokens). Encounter/Links/Tode
+            # kommen direkt danach frisch aus der neuen DB. Nichts persistieren
+            # — anders als _reset_session_state darf die neue DB nicht geleert
+            # werden. Replay-State (seq/boot-epoch) bleibt: Clients zaehlen weiter.
+            self._clear_live_caches_for_session_switch()
         self.encounters = {(e["personality"], e["owner"]): e for e in encounters}
         self.soullink_links = links
         self.soullink_next_id = max(links.keys(), default=0) + 1
@@ -1802,7 +1850,8 @@ class Arceus:
         statt Exception im Receive-Loop, die den Client trennen wuerde)."""
         def is_int(v) -> bool:
             return isinstance(v, int) and not isinstance(v, bool)
-        for field in ("personality", "link_id", "target_link_id"):
+        for field in ("personality", "link_id", "target_link_id",
+                      "old_personality", "new_personality"):
             if field in data and data[field] is not None and not is_int(data[field]):
                 return f"{field} ungültig"
         if "owner" in data and data["owner"] is not None and not isinstance(data["owner"], str):
@@ -1901,6 +1950,146 @@ class Arceus:
             f"links={[link['link_id'] for link in links]} removed={removed}"
         )
         self._publish_edit_result([new], links, removed)
+
+    def _handle_encounter_import_request(self, client_id: str, data: dict) -> None:
+        """Host-Sync: an ALLE Clients (inkl. Ausloeser) weiterreichen; jeder
+        liest Team + Boxen und importiert automatisch. Ausloeser bekommt die
+        Liste der angefragten Clients zurueck (encounter_import_started)."""
+        request_id = str(data.get("request_id") or "")
+        if not request_id:
+            self.logger.warning(f"encounter_import_request von {client_id} ohne request_id")
+            return
+        self._import_requests[request_id] = client_id
+        # Nur die letzten Anfragen merken (Ergebnisse kommen binnen Sekunden).
+        while len(self._import_requests) > 20:
+            self._import_requests.pop(next(iter(self._import_requests)))
+        clients = list(self.munchlaxes.keys())
+        names = [self.munchlax_names.get(cid, cid) for cid in clients]
+        requested_by = self.munchlax_names.get(client_id, client_id)
+        self.logger.info(
+            f"encounter_import_request {request_id} von {requested_by} ({client_id}) "
+            f"→ {len(clients)} Clients: {names}")
+        message = {"type": "encounter_import_request", "request_id": request_id,
+                   "requested_by": requested_by}
+
+        async def _fanout() -> None:
+            # Erst "started" an den Ausloeser (Sammelanzeige vorbereiten), dann
+            # parallel an alle — ein langsamer Client verzoegert die anderen nicht.
+            await self._send_safe(client_id, {
+                "type": "encounter_import_started", "request_id": request_id,
+                "clients": names,
+            }, "encounter_import_started")
+            await asyncio.gather(*(self._send_safe(cid, message, "encounter_import_request")
+                                   for cid in clients))
+        asyncio.create_task(_fanout())
+
+    def _handle_encounter_import_result(self, client_id: str, data: dict) -> None:
+        """Ergebnis eines Clients an den Ausloeser der Anfrage weiterleiten."""
+        request_id = str(data.get("request_id") or "")
+        target = self._import_requests.get(request_id)
+        name = self.munchlax_names.get(client_id, client_id)
+        results = data.get("results") if isinstance(data.get("results"), list) else []
+        self.logger.info(
+            f"encounter_import_result {request_id} von {name}: {results} → {target}")
+        if target is None:
+            self.logger.info(f"encounter_import_result {request_id}: unbekannte request_id, verworfen")
+            return
+        if target not in self.munchlaxes:
+            self.logger.info(f"encounter_import_result {request_id}: Ausloeser {target} "
+                             f"nicht mehr verbunden, verworfen")
+            return
+        asyncio.create_task(self._send_safe(target, {
+            "type": "encounter_import_result", "request_id": request_id,
+            "client_name": name, "results": results,
+        }, "encounter_import_result"))
+
+    def _handle_encounter_rebind(self, client_id: str, data: dict) -> None:
+        """``encounter_rebind {owner, old_personality, new_personality}``.
+
+        Auto-Bindung: der Client hat ein neues echtes Pokemon gefunden, das zu
+        einem manuell angelegten Encounter (Pseudo-PV < 0) passt. Encounter-Key,
+        Link-Mitglied, Tod/Lebendig-Sperre werden auf die echte PV umgeschluesselt.
+        Automatische Aktion → Ablehnung nur loggen, kein edit_rejected-Popup.
+        """
+        owner = data.get("owner") or ""
+        old_pv = data.get("old_personality")
+        new_pv = data.get("new_personality")
+        def reject(reason: str) -> None:
+            self.logger.warning(
+                f"encounter_rebind von {client_id} abgelehnt: {reason} "
+                f"(owner={owner} old={old_pv} new={new_pv})")
+            # Nur an den Absender (kein Popup): dessen wartende Bindung loest
+            # sich sofort und die PV laeuft normal durch Gift/Starter-Erkennung.
+            asyncio.create_task(self._send_safe(client_id, {
+                "type": "encounter_rebind_rejected", "owner": owner,
+                "old_personality": old_pv, "new_personality": new_pv,
+                "reason": reason,
+            }, "encounter_rebind_rejected"))
+        if not owner or old_pv is None or new_pv is None:
+            reject("Felder fehlen")
+            return
+        if not self._client_owns_owner(client_id, owner):
+            reject("fremder Owner")
+            return
+        if old_pv >= 0 or new_pv < 0:
+            reject("old muss Pseudo-PV (<0), new echte PV (>=0) sein")
+            return
+        old_key, new_key = (old_pv, owner), (new_pv, owner)
+        old_enc = self.encounters.get(old_key)
+        if old_enc is None or old_enc.get("deleted"):
+            reject("manueller Encounter unbekannt")
+            return
+        existing = self.encounters.get(new_key)
+        if existing is not None and not existing.get("deleted"):
+            reject("echte PV hat schon einen Encounter")
+            return
+        new_enc = dict(old_enc, personality=new_pv)
+        self.encounters.pop(old_key, None)
+        self.encounters[new_key] = new_enc
+        owner_root = PokedexDB.owner_root(owner)
+        link = self._find_member_link(old_pv, owner_root)
+        if link is not None:
+            link["members"][owner_root]["personality"] = new_pv
+            self._persist_link(link)
+            asyncio.create_task(self.broadcast_soullink_link_state(link))
+        death = self.soullink_deaths.pop((old_pv, owner_root), None)
+        if death is not None:
+            death = dict(death, personality=new_pv)
+            self.soullink_deaths[(new_pv, owner_root)] = death
+            self._persist("delete_death", old_pv, owner_root)
+            self._persist_death(death)
+        # Partner-Listen anderer Tode zeigen evtl. noch auf die Pseudo-PV
+        # (sonst findet _propagate_partner_deaths den Partner nicht mehr).
+        for other in self.soullink_deaths.values():
+            touched = False
+            for partner in other.get("partners") or []:
+                if (partner.get("personality") == old_pv
+                        and PokedexDB.owner_root(partner.get("owner") or "") == owner_root):
+                    partner["personality"] = new_pv
+                    touched = True
+            if touched:
+                self._persist_death(other)
+        if (old_pv, owner_root) in self.soullink_alive_locks:
+            self.soullink_alive_locks.discard((old_pv, owner_root))
+            self.soullink_alive_locks.add((new_pv, owner_root))
+            self._persist("delete_death", old_pv, owner_root)
+            self._persist_death({
+                "personality": new_pv, "owner": owner_root,
+                "edition": new_enc.get("edition"), "cause": "manual_alive",
+                "timestamp": time.time(), "partners": [],
+                "link_id": link["link_id"] if link else None, "dead": 0, "manual": 1,
+            })
+        # Encounter-Zeile persistiert der Host-Munchlax beim Empfang von
+        # encounter_rebound (gleicher Weg wie encounter_edit/encounter_sync).
+        self.logger.info(
+            f"encounter_rebind von {client_id}: owner={owner} {old_pv} -> {new_pv} "
+            f"dex={new_enc.get('dexnr')} link={link['link_id'] if link else None}"
+        )
+        asyncio.create_task(self._broadcast_all({
+            "type": "encounter_rebound", "owner": owner,
+            "old_personality": old_pv, "new_personality": new_pv,
+            "encounter": new_enc,
+        }, "encounter_rebound"))
 
     def _apply_encounter_to_links(self, enc: dict) -> tuple[list[dict], list[int]]:
         """Zieht Link-Mitgliedschaft nach einem Encounter-Edit nach."""
@@ -2157,6 +2346,7 @@ class Arceus:
             if link is not None:
                 self._persist_link(link)
             asyncio.create_task(self.broadcast_soullink_death(death))
+            self._propagate_partner_deaths(death)
         elif dead is False:
             self.soullink_alive_locks.add(death_key)
             old = self.soullink_deaths.pop(death_key, None)
@@ -2167,6 +2357,7 @@ class Arceus:
                     restored = enc.get("outcome") if enc else None
                     member["outcome"] = (restored if restored not in (None, "dead")
                                          else "caught")
+                self._revert_partner_deaths(link)
                 link["state"] = self._compute_link_state(link)
                 self._persist_link(link)
                 asyncio.create_task(self.broadcast_soullink_link_state(link))
@@ -2345,7 +2536,7 @@ class Arceus:
                     "edition": member.get("edition"),
                     "dexnr": member.get("dexnr"),
                 })
-            target_link["state"] = "failed"
+            target_link["state"] = "dead"
         death = {
             "personality": personality,
             "owner": owner,
@@ -2361,6 +2552,121 @@ class Arceus:
             f"link={link_id} partners={[p['owner'] for p in partners]}"
         )
         return death
+
+    def _propagate_partner_deaths(self, death: dict | None) -> None:
+        """Soullink: Partner eines gestorbenen Pokemon ebenfalls tot markieren.
+
+        Fuer jeden Partner aus ``death["partners"]``: Link-Member outcome=dead,
+        Encounter dead=1 MIT Sperre (Schloss, Automatik ueberschreibt nicht),
+        eigener Death-Eintrag (cause=soullink_partner) + Broadcast. Keine
+        Rekursion: Partner-Deaths tragen leere partners-Listen.
+        Uebersprungen: manuell lebendig gesperrte Partner und bereits tote.
+        Synchron (kein await) — Sends laufen als Tasks.
+        """
+        if not death or not death.get("partners"):
+            return
+        link_id = death.get("link_id")
+        link = self.soullink_links.get(link_id) if link_id is not None else None
+        changed_encs: list[dict] = []
+        partner_deaths: list[dict] = []
+        for partner in death.get("partners") or []:
+            pv = partner.get("personality")
+            p_owner = PokedexDB.owner_root(partner.get("owner") or "")
+            if pv is None or not p_owner:
+                continue
+            p_key = (pv, p_owner)
+            enc_key = self._find_encounter_key(pv, p_owner)
+            enc = self.encounters.get(enc_key) if enc_key is not None else None
+            if enc is not None and enc.get("deleted"):
+                continue
+            if p_key in self.soullink_alive_locks or (
+                    enc is not None and is_locked(enc, "dead") and not enc.get("dead")):
+                self.logger.info(
+                    f"Partner-Tod uebersprungen (manuell lebendig): owner={p_owner} pv={pv} link={link_id}"
+                )
+                continue
+            if link is not None:
+                member = link["members"].get(p_owner)
+                if member is not None and member.get("personality") == pv:
+                    member["outcome"] = "dead"
+            if enc is not None and not (enc.get("dead") and is_locked(enc, "dead")):
+                new_enc = self._set_encounter_dead(enc_key, True)
+                if new_enc is not None:
+                    changed_encs.append(new_enc)
+            if p_key in self.soullink_deaths:
+                continue
+            p_death = {
+                "personality": pv,
+                "owner": p_owner,
+                "edition": partner.get("edition"),
+                "cause": "soullink_partner",
+                "timestamp": time.time(),
+                "partners": [],
+                "link_id": link_id,
+            }
+            self.soullink_deaths[p_key] = p_death
+            self._persist_death(p_death)
+            partner_deaths.append(p_death)
+            self.logger.info(
+                f"Soullink-Partner-Tod: owner={p_owner} pv={pv} link={link_id} "
+                f"(ausgeloest durch owner={death.get('owner')} pv={death.get('personality')})"
+            )
+        if link is not None:
+            link["state"] = self._compute_link_state(link)
+            self._persist_link(link)
+        if changed_encs:
+            asyncio.create_task(self.broadcast_encounter_sync(None, changed_encs))
+        for p_death in partner_deaths:
+            asyncio.create_task(self.broadcast_soullink_death(p_death))
+
+    def _revert_partner_deaths(self, link: dict) -> None:
+        """Gegenstueck zu _propagate_partner_deaths: wird ein Original manuell
+        wiederbelebt (Fehlerkennung), fallen die nur mitgerissenen Partner
+        (cause=soullink_partner) ebenfalls zurueck — aber nur, wenn im Link kein
+        echter Tod mehr uebrig ist. Aufrufer persistiert/broadcastet den Link."""
+        link_id = link.get("link_id")
+        members = link.get("members", {})
+        for m_owner, member in members.items():
+            d = self.soullink_deaths.get((member.get("personality"), m_owner))
+            if d is not None and d.get("cause") != "soullink_partner":
+                return
+        changed_encs: list[dict] = []
+        for m_owner, member in members.items():
+            pv = member.get("personality")
+            d = self.soullink_deaths.get((pv, m_owner))
+            if d is None or d.get("cause") != "soullink_partner" or d.get("link_id") != link_id:
+                continue
+            self.soullink_deaths.pop((pv, m_owner), None)
+            # Wie beim Original: manuell-lebendig-Sperre (Persistenz ueber
+            # manual_alive-Eintrag, analog _handle_death_edit dead=False).
+            self.soullink_alive_locks.add((pv, m_owner))
+            self._persist_death({
+                "personality": pv, "owner": m_owner, "edition": d.get("edition"),
+                "cause": "manual_alive", "timestamp": time.time(),
+                "partners": [], "link_id": link_id, "dead": 0, "manual": 1,
+            })
+            enc_key = self._find_encounter_key(pv, m_owner)
+            enc = self.encounters.get(enc_key) if enc_key is not None else None
+            if enc is not None and enc.get("dead") and not enc.get("deleted"):
+                # MIT Sperre (dead=0 gelockt) wie beim wiederbelebten Original:
+                # ohne Sperre erzwingt "Tod klebt" in PokedexDB.sync_encounter auf
+                # den Clients wieder dead=1. "Auf Automatik zuruecksetzen" hebt sie auf.
+                new_enc = merge_encounter_edit(enc, {"dead": 0})
+                self.encounters[enc_key] = new_enc
+                changed_encs.append(new_enc)
+            if member.get("outcome") == "dead":
+                restored = enc.get("outcome") if enc else None
+                member["outcome"] = (restored if restored not in (None, "dead")
+                                     else "caught")
+            self.logger.info(
+                f"Soullink-Partner-Tod zurueckgesetzt: owner={m_owner} pv={pv} link={link_id}"
+            )
+            asyncio.create_task(self._broadcast_all({
+                "type": "soullink_death_state", "personality": pv,
+                "owner": m_owner, "dead": False, "manual": True,
+            }, "soullink_death_state"))
+        if changed_encs:
+            asyncio.create_task(self.broadcast_encounter_sync(None, changed_encs))
 
     # ----- Timer -----
 

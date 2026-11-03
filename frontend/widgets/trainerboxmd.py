@@ -16,9 +16,11 @@ from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.label import MDLabel
 
 from backend.logging_setup import get_logger
+from backend.player_display import slot_label
 from backend.perf_probe import perf_span
 from backend.party_rules import first_type_dupe_slots, is_marked_dead
 from backend.player_colors import hex8_to_rgba, player_rgba
+from frontend.widgets.md_common import bind_theme_color, player_names_of
 from frontend.widgets.status_labels import STATUS_LABELS, STATUS_PRIORITY
 
 logger = get_logger(__name__, 'logs/frontend.log')
@@ -141,6 +143,7 @@ class TrainerBoxMD(MDBoxLayout):
         super().__init__(orientation="horizontal", padding=0, spacing=0,
                          radius=[dp(10)] * 4, md_bg_color=CARD_BG,
                          adaptive_height=True, **kwargs)
+        bind_theme_color(self, "md_bg_color", "surfaceContainerColor")
         self.player_id = player_id
         self.munchlax = munchlax
         self.obs_websocket = obs_websocket
@@ -184,7 +187,8 @@ class TrainerBoxMD(MDBoxLayout):
         # Header: getönt, Spielername + Edition
         header = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(30),
                              padding=(dp(8), 0), md_bg_color=tint, radius=[dp(6)] * 4)
-        self.name_label = MDLabel(text=f"Spieler {self.player_id}", valign="center")
+        self.name_label = MDLabel(text=slot_label(self.player_id, player_names_of(self.munchlax)),
+                                 valign="center")
         self.name_label.role = "medium"
         header.add_widget(self.name_label)
         content.add_widget(header)
@@ -207,7 +211,7 @@ class TrainerBoxMD(MDBoxLayout):
         """Anzeige auf Ausgangszustand wie nach __init__ zurücksetzen (Session-
         Wechsel). Ersetzt den teuren Neubau (~130 ms pro Box, KivyMD-Widget-Init);
         Sprite-/Orden-Pfade kommen frisch aus der neuen Session-Config."""
-        self.name_label.text = f"Spieler {self.player_id}"
+        self.name_label.text = slot_label(self.player_id, player_names_of(self.munchlax))
         empty_sprite = self._empty_sprite()
         empty_item = f"{self.obs_websocket.conf['items_path']}/0.png"
         for slot_box in self.pokemon_boxes.values():
@@ -349,7 +353,8 @@ class TrainerBoxMD(MDBoxLayout):
                          f"fehlgeschlagen: {traceback.format_exc()}")
 
     def _team_aktualisieren(self) -> None:
-        display_name = self.munchlax.player_names.get(self.player_id, f"Spieler {self.player_id}")
+        # Clientname; Nummer nur bei mehreren Slots mit gleichem Namen
+        display_name = slot_label(self.player_id, player_names_of(self.munchlax))
         if self.name_label.text != display_name:
             self.name_label.text = display_name
 

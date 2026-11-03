@@ -101,10 +101,39 @@ class _DriveApp(MDApp):
         self.check("legende_befuellt", len(self.menu.legend_box.children) >= 1,
                    len(self.menu.legend_box.children))
         self.shot("02_legend")
-        self._next(self.s_sevii)
+        self._next(self.s_belegt)
+
+    def _legend_texts(self):
+        out = []
+        for card in self.menu.legend_box.children:
+            for w in getattr(card, "children", []):
+                if hasattr(w, "text"):
+                    out.append(w.text)
+        return out
+
+    def s_belegt(self):
+        # Testrunde 2026-11-02: Starter aufs Heimatdorf, verpasster Encounter
+        # belegt die Route (nicht nur gefangene).
+        self.menu._starter_rows = [{"method": "starter", "route": -1,
+                                    "outcome": "obtained", "dexnr": 4, "lvl": 5}]
+        self.menu._route_catches = {101: [{"method": "wild", "route": 101,
+                                           "outcome": "not_caught", "dexnr": 16}]}
+        self.menu._refresh_occupied()
+        occ = self.menu.map_canvas.occupied_sections
+        self.check("belegt_heimatdorf_und_route", {88, 101} <= occ, occ)
+        self.menu._on_section_selected(88)
+        texts = self._legend_texts()
+        self.check("starter_in_legende", any("Starter" in t for t in texts), texts)
+        self.menu._on_section_selected(101)
+        texts = self._legend_texts()
+        self.check("verpasst_in_legende", any("verpasst" in t for t in texts), texts)
+        self.shot("02b_belegt")
+        self._next(self.s_sevii, 1.5)
 
     def s_sevii(self):
         # Einamon-Kammer (188) liegt nur auf der Sevii-6–7-Karte → Auto-Wechsel.
+        self.menu._starter_rows = []
+        self.menu._refresh_occupied()
         _POS["map_section"] = 188
         self.menu._route_catches = {188: [{"outcome": "caught", "dexnr": 201}]}
         self.menu._poll_position()
@@ -134,7 +163,8 @@ class _DriveApp(MDApp):
 
 _EXPECTED = {"hotspots_geladen", "bild_geladen", "region_titel", "position_alabastia",
              "pallet_hotspot", "legende_titel", "legende_befuellt", "sevii_wechsel",
-             "sevii_marker", "kanto_zurueck", "catches_behalten"}
+             "sevii_marker", "kanto_zurueck", "catches_behalten",
+             "belegt_heimatdorf_und_route", "starter_in_legende", "verpasst_in_legende"}
 
 
 @pytest.mark.gui

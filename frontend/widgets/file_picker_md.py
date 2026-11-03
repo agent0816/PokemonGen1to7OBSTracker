@@ -11,12 +11,28 @@ import string
 import traceback
 from typing import Callable, List, Optional
 
+from kivy.factory import Factory
+from kivy.uix.recyclegridlayout import RecycleGridLayout
+from kivy.uix.recycleview import RecycleView
 from kivy.utils import platform
 from kivymd.uix.filemanager import MDFileManager
 
 from backend.logging_setup import get_logger
+from frontend.widgets.md_common import show_snackbar
 
 logger = get_logger(__name__, 'logs/frontend.log')
+
+# Nuitka-Onefile: Das MDFileManager-kv nutzt RecycleView/RecycleGridLayout, die
+# Kivy nur lazy über die Factory importiert (__import__ zur Laufzeit). Nuitka
+# sieht diesen Import nicht → "No module named 'kivy.uix.recycleview.__init__'"
+# beim Öffnen (Crash-Reports 2026-11-02). Statischer Import oben zieht die Module
+# in den Build; die Klassen direkt registrieren umgeht den Factory-Import ganz.
+for _cls in (RecycleView, RecycleGridLayout):
+    try:
+        Factory.unregister(_cls.__name__)
+        Factory.register(_cls.__name__, cls=_cls)
+    except Exception as _err:
+        logger.warning(f"Factory-Registrierung {_cls.__name__} fehlgeschlagen: {_err}")
 
 
 class _SafeFileManager(MDFileManager):
@@ -105,7 +121,7 @@ def _open(
     selector: str,
     ext: List[str],
     title: str,
-) -> MDFileManager:
+) -> Optional[MDFileManager]:
     global _active_manager
     # Ein evtl. noch offener Manager wird zuerst geschlossen.
     _close_active()
@@ -125,15 +141,31 @@ def _open(
     # und Ordner-Picker klar unterscheidbar sind. Datei-Auswahl: Ordner UND Dateien
     # (Ordner braucht man zum Navigieren).
     search = "dirs" if selector == "folder" else "all"
-    manager = _SafeFileManager(
-        exit_manager=_on_exit,
-        select_path=_on_select,
-        selector=selector,
-        ext=ext,
-        search=search,
-    )
-    _active_manager = manager
-    manager.show(_safe_start_dir(start_path))
+    manager: Optional[MDFileManager] = None
+    try:
+        manager = _SafeFileManager(
+            exit_manager=_on_exit,
+            select_path=_on_select,
+            selector=selector,
+            ext=ext,
+            search=search,
+        )
+        _active_manager = manager
+        manager.show(_safe_start_dir(start_path))
+    except Exception as err:
+        # Kein Crash der ganzen App, nur weil der Picker nicht baut (z.B. fehlendes
+        # Modul im Build) — User bekommt Hinweis, Traceback landet im Log.
+        _active_manager = None
+        if manager is not None:
+            try:
+                manager.close()
+            except Exception:
+                pass
+        logger.error(f"file_picker_md: MDFileManager konnte nicht geöffnet werden: {err}")
+        logger.error(traceback.format_exc())
+        show_snackbar("Dateiauswahl nicht verfügbar — Pfad bitte manuell eintragen.",
+                      level='error', duration=5.0)
+        return None
     return manager
 
 
@@ -142,7 +174,7 @@ def pick_file(
     start_path: Optional[str] = None,
     filters: Optional[list] = None,
     title: str = "Datei auswählen",
-) -> MDFileManager:
+) -> Optional[MDFileManager]:
     """Dateiauswahl (MD). `title` wird aus Signatur-Kompatibilitaet akzeptiert,
     MDFileManager hat keine eigene Titelzeile."""
     return _open(on_select, start_path, selector="file",
@@ -153,6 +185,6 @@ def pick_directory(
     on_select: Callable[[str], None],
     start_path: Optional[str] = None,
     title: str = "Ordner auswählen",
-) -> MDFileManager:
+) -> Optional[MDFileManager]:
     """Ordnerauswahl (MD)."""
     return _open(on_select, start_path, selector="folder", ext=[], title=title)

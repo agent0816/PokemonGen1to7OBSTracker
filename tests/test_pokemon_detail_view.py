@@ -36,6 +36,11 @@ def test_resolve_types_from_rando_fallback() -> None:
     assert resolve_types_from_rando([]) == []
 
 
+def test_resolve_types_from_rando_uppercase() -> None:
+    # UPR-Log liefert Grossbuchstaben (GRASS) — muss auf Title-Case-LUT normalisiert werden
+    assert resolve_types_from_rando(["GRASS", "POISON"]) == ["Pflanze", "Gift"]
+
+
 def test_coerce_dexnr() -> None:
     assert _coerce_dexnr("25") == 25
     assert _coerce_dexnr("egg") == "egg"

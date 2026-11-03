@@ -38,7 +38,7 @@ from backend.nuzlocke_view import (
     connected_owner_names, merge_owner_rows, client_verify_diff,
 )
 from frontend.widgets.settings_widgets import make_textfield, DropdownField, LABEL_W
-from frontend.widgets.md_common import show_snackbar, confirm_dialog, format_hms
+from frontend.widgets.md_common import bind_theme_color, show_snackbar, confirm_dialog, format_hms
 
 logger = get_logger(__name__, 'logs/nuzlockemenu_md.log')
 
@@ -51,10 +51,11 @@ def _card(title: str | None = None) -> MDBoxLayout:
     card = MDBoxLayout(orientation="vertical", padding=dp(14), spacing=dp(10),
                        size_hint_y=None, adaptive_height=True,
                        radius=[dp(16)] * 4, md_bg_color=CARD_BG)
+    bind_theme_color(card, "md_bg_color", "surfaceContainerColor")
     if title:
         lbl = MDLabel(text=title, role="small", bold=True, adaptive_height=True)
         lbl.theme_text_color = "Custom"
-        lbl.text_color = MDApp.get_running_app().theme_cls.primaryColor
+        bind_theme_color(lbl, "text_color", "primaryColor")
         card.add_widget(lbl)
     return card
 
@@ -162,7 +163,8 @@ class NuzlockeMenu(MDScreen):
         self._host_label = MDLabel(text="", role="small", halign="right",
                                    valign="center")
         self._host_label.theme_text_color = "Custom"
-        self._host_label.text_color = (1, 0.85, 0.2, 1)
+        # Fester Gelbton war im hellen Theme unlesbar → Tertiaerfarbe des Themes.
+        bind_theme_color(self._host_label, "text_color", "tertiaryColor")
         head.add_widget(self._host_label)
         root.add_widget(head)
 
@@ -676,8 +678,9 @@ class NuzlockeMenu(MDScreen):
 
         for name in matched:
             container.add_widget(self._verify_row(
-                "check-circle", (0.27, 0.87, 0.27, 1), name,
-                "verbunden", (0.6, 0.9, 0.6, 1)))
+                # Mittleres Grün: lesbar auf dunklem UND hellem Theme.
+                "check-circle", (0.18, 0.62, 0.22, 1), name,
+                "verbunden", (0.2, 0.58, 0.26, 1)))
 
         empty_slots = [i for i, r in enumerate(self._owner_rows) if not r.owner]
         for slot_index, slot_owner in missing_pairs:

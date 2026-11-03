@@ -7,7 +7,10 @@
 #   (wild_encounters.json + setwildbattle/givemon/Tausch in Map-Scripts); leer = nichts
 #   fang-/erhaltbar. METEOR_FALLS2/FIERY_PATH2/JAGGED_PASS2 entfernt (von keiner Map genutzt).
 
-region: hoenn
+region: hoenn
+# Starter (route=-1) wird auf dem Heimatdorf angezeigt (Wurzelheim); die Route,
+# auf der er erhalten wird, bleibt danach ein eigener gültiger Encounter.
+starter_section: 0
 image: hoenn.png
 # Bild 257x159 = echte In-Game RSE-Spielkarte (User-Screenshot Map_Hoenn.png).
 #   Ersetzt den fruehren 224x120-Decomp-Crop, der unten + rechts abgeschnitten

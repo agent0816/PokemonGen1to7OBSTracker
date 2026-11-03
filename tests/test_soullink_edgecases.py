@@ -60,7 +60,7 @@ def test_second_slot_new_link():
     assert l2["link_index"] == 2
 
 
-def test_death_marks_failed():
+def test_death_marks_dead():
     a = _make_arceus()
     a._assign_link_group(enc(100, "Alice_c1"))
     link = a._assign_link_group(enc(200, "Bob_c2"))
@@ -68,8 +68,105 @@ def test_death_marks_failed():
     death = a._process_death({"personality": 100, "owner": "Alice_c1", "edition": 51})
     assert death["link_id"] == link["link_id"]
     assert death["partners"][0]["owner"] == "Bob_c2"
-    assert a.soullink_links[link["link_id"]]["state"] == "failed"
+    # Soullink: ein Toter = Gruppe tot (nicht mehr "fehlgeschlagen").
+    assert a.soullink_links[link["link_id"]]["state"] == "dead"
 
+
+def _arceus_with_encounters(*encs):
+    a = _make_arceus()
+    for e in encs:
+        a.encounters[(e["personality"], e["owner"])] = dict(e)
+        a._assign_link_group(e)
+    return a
+
+
+def test_partner_death_propagates_with_lock():
+    import asyncio
+    from backend.encounter_edit import is_locked
+
+    async def run():
+        a = _arceus_with_encounters(enc(100, "Alice_c1"), enc(200, "Bob_c2", dex=12))
+        death = a._process_death({"personality": 100, "owner": "Alice_c1", "edition": 51})
+        a._propagate_partner_deaths(death)
+        await asyncio.sleep(0)
+        return a, death
+    a, death = asyncio.run(run())
+    link = a.soullink_links[death["link_id"]]
+    assert link["members"]["Bob_c2"]["outcome"] == "dead"
+    assert link["state"] == "dead"
+    bob = a.encounters[(200, "Bob_c2")]
+    assert bob["dead"] == 1 and is_locked(bob, "dead")
+    assert a.soullink_deaths[(200, "Bob_c2")]["cause"] == "soullink_partner"
+    assert a.soullink_deaths[(200, "Bob_c2")]["partners"] == []
+
+
+def test_partner_death_respects_alive_lock():
+    import asyncio
+
+    async def run():
+        a = _arceus_with_encounters(enc(100, "Alice_c1"), enc(200, "Bob_c2", dex=12))
+        a.soullink_alive_locks.add((200, "Bob_c2"))
+        death = a._process_death({"personality": 100, "owner": "Alice_c1", "edition": 51})
+        a._propagate_partner_deaths(death)
+        await asyncio.sleep(0)
+        return a
+    a = asyncio.run(run())
+    assert not a.encounters[(200, "Bob_c2")].get("dead")
+    assert (200, "Bob_c2") not in a.soullink_deaths
+
+
+def test_partner_death_idempotent():
+    import asyncio
+
+    async def run():
+        a = _arceus_with_encounters(enc(100, "Alice_c1"), enc(200, "Bob_c2", dex=12))
+        death = a._process_death({"personality": 100, "owner": "Alice_c1", "edition": 51})
+        a._propagate_partner_deaths(death)
+        first = dict(a.soullink_deaths[(200, "Bob_c2")])
+        a._propagate_partner_deaths(death)
+        await asyncio.sleep(0)
+        return a, first
+    a, first = asyncio.run(run())
+    assert a.soullink_deaths[(200, "Bob_c2")] == first
+
+
+def test_partner_death_reverted_when_original_revived():
+    import asyncio
+    from backend.encounter_edit import is_locked
+
+    async def run():
+        a = _arceus_with_encounters(enc(100, "Alice_c1"), enc(200, "Bob_c2", dex=12))
+        death = a._process_death({"personality": 100, "owner": "Alice_c1", "edition": 51})
+        a._propagate_partner_deaths(death)
+        # Original manuell wiederbeleben (wie _handle_death_edit dead=False)
+        a.soullink_deaths.pop((100, "Alice_c1"))
+        link = a.soullink_links[death["link_id"]]
+        link["members"]["Alice_c1"]["outcome"] = "caught"
+        a._revert_partner_deaths(link)
+        link["state"] = a._compute_link_state(link)
+        await asyncio.sleep(0)
+        return a, link
+    a, link = asyncio.run(run())
+    bob = a.encounters[(200, "Bob_c2")]
+    # dead=0 MIT Sperre, sonst re-killt "Tod klebt" auf den Clients
+    assert not bob["dead"] and is_locked(bob, "dead")
+    assert (200, "Bob_c2") not in a.soullink_deaths
+    assert link["members"]["Bob_c2"]["outcome"] == "caught"
+    assert link["state"] == "complete"
+
+
+def test_late_outcome_does_not_override_partner_death():
+    import asyncio
+
+    async def run():
+        a = _arceus_with_encounters(enc(100, "Alice_c1"), enc(200, "Bob_c2", dex=12))
+        death = a._process_death({"personality": 100, "owner": "Alice_c1", "edition": 51})
+        a._propagate_partner_deaths(death)
+        a._update_link_member_outcome(200, "Bob_c2", "caught")
+        await asyncio.sleep(0)
+        return a, death
+    a, death = asyncio.run(run())
+    assert a.soullink_links[death["link_id"]]["members"]["Bob_c2"]["outcome"] == "dead"
 
 def test_mode_off_no_link():
     a = _make_arceus()
@@ -259,7 +356,7 @@ TESTS = [
     test_coop_both_catch,
     test_coop_one_fails,
     test_second_slot_new_link,
-    test_death_marks_failed,
+    test_death_marks_dead,
     test_mode_off_no_link,
     test_mode_nuzlocke_no_link,
     test_mode_disabled_no_link,

@@ -10,7 +10,10 @@
 # pokemon: Quellen laut pret/pokefirered (wild_encounters.json + setwildbattle/givemon/
 #   Tausch in Map-Scripts); leer = nichts fang-/erhaltbar.
 
-region: kanto
+region: kanto
+# Starter (route=-1) wird auf dem Heimatdorf angezeigt (Alabastia); die Route,
+# auf der er erhalten wird, bleibt danach ein eigener gültiger Encounter.
+starter_section: 88
 image: kanto.png
 # Bild 192x144 = echte In-Game FRLG-Spielkarte (User-Screenshot FRBG_integrierte_
 #   Spielkarte_(Kanto).png). Ersetzt den fruehren 160x128-Decomp-Crop, der rechts

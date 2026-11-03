@@ -174,7 +174,9 @@ def resolve_types_from_rando(rando_types: list[str]) -> list[str]:
     """Löst englische Typnamen aus dem Rando-Log in deutsche auf."""
     result = []
     for t in rando_types:
-        type_id = types_en_reverse.get(t)
+        # UPR-Log liefert Typen in Grossbuchstaben (GRASS) — LUT ist Title-Case
+        key = str(t).strip().capitalize()
+        type_id = types_en_reverse.get(key)
         if type_id is not None:
             result.append(types_de.get(type_id, t))
         else:

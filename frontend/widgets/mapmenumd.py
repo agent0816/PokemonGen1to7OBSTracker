@@ -31,9 +31,12 @@ from kivymd.uix.screen import MDScreen
 from kivymd.uix.scrollview import MDScrollView
 
 from backend.logging_setup import get_logger
+from backend.player_display import button_text, labels_for_slots, slot_label
 from backend.perf_probe import perf_span
 from backend.pokemon_detail_view import resource_path
 from backend.classes.pokedex_db import PokedexDB
+from backend.encounter_edit import parse_locks
+from backend.encounter_view import STATUS_TEXT, determine_status
 
 logger = get_logger(__name__, 'logs/mapmenu.log')
 
@@ -90,6 +93,8 @@ class MapCanvas(Widget):
         self.img_h = 1
         self.current_section: int | None = None
         self.selected_sections: list[int] = []
+        # Sections mit mindestens einem Encounter (Route belegt) — dezent gefüllt.
+        self.occupied_sections: set[int] = set()
         self.on_select = on_select
         self._img_rect = (0, 0, 0, 0)  # ix, iy, iw, ih (letterbox-Rect)
         self.bind(size=self._redraw, pos=self._redraw)
@@ -123,7 +128,14 @@ class MapCanvas(Widget):
             logger.error(traceback.format_exc())
         self._redraw()
 
+    def set_occupied(self, sections) -> None:
+        new = set(sections or ())
+        if new != self.occupied_sections:
+            self.occupied_sections = new
+            self._redraw()
+
     def clear_map(self):
+        self.occupied_sections = set()
         self.hotspots = {}
         self._texture = None
         self.img_w = 1
@@ -196,6 +208,17 @@ class MapCanvas(Widget):
                     for (x, y, w, h) in e["rects"]:
                         sx, sy, sw, sh = self._px_rect(x, y, w, h)
                         Line(rectangle=(sx, sy, sw, sh), width=1)
+            # Belegte Routen (mind. ein Encounter): rot füllen + Rand, damit es
+            # auch auf den orangen Routen der Spielkarte sichtbar ist.
+            for fill in (True, False):
+                Color(0.85, 0.12, 0.12, 0.45 if fill else 0.95)
+                for ms in self.occupied_sections:
+                    for (x, y, w, h) in self.hotspots.get(ms, {}).get("rects", ()):
+                        sx, sy, sw, sh = self._px_rect(x, y, w, h)
+                        if fill:
+                            Rectangle(pos=(sx, sy), size=(sw, sh))
+                        else:
+                            Line(rectangle=(sx, sy, sw, sh), width=1.3)
             # Ausgewählte Section(s) (Gold) — bei überlappenden Zellen alle.
             Color(1, 0.85, 0.2, 1)
             for ms in self.selected_sections:
@@ -278,6 +301,9 @@ class MapMenu(MDScreen):
         self._menus: list[MDDropdownMenu] = []
         # {mapsec: [encounter-row-dict, ...]} des aktuellen Spielers.
         self._route_catches: dict[int, list[dict]] = {}
+        # Starter (route=-1) → Heimatdorf der Region (YAML ``starter_section``).
+        self._starter_rows: list[dict] = []
+        self._starter_section: int | None = None
         self._region_file: str | None = None
         self._loaded_edition: int | None = None
         # Generationszähler gegen out-of-order Encounter-Loads (Spielerwechsel).
@@ -363,14 +389,25 @@ class MapMenu(MDScreen):
     def _refresh_player_button(self):
         if self.current_player > self._player_count():
             self.current_player = self._default_player()
-        self.player_button_text.text = f"Spieler: {self.current_player}"
+        self.player_button_text.text = button_text(self._player_label(self.current_player))
         self.player_button.disabled = self._player_count() <= 1
 
+    def _names(self) -> dict:
+        try:
+            return self.munchlax.snapshot_player_names() if self.munchlax is not None else {}
+        except Exception:
+            return {}
+
+    def _player_label(self, slot) -> str:
+        return slot_label(slot, self._names())
+
     def _open_player_menu(self, caller):
+        slots = list(range(1, self._player_count() + 1))
+        labels = labels_for_slots(slots, self._names())
         items = [{
-            "text": f"Spieler {p}",
+            "text": labels[p],
             "on_release": (lambda p=p: self._select_player(p)),
-        } for p in range(1, self._player_count() + 1)]
+        } for p in slots]
         menu = MDDropdownMenu(caller=caller, items=items)
         self._menus.append(menu)
         menu.open()
@@ -441,6 +478,7 @@ class MapMenu(MDScreen):
         # kurz die Encounter des vorigen Spielers/Spiels zeigt.
         if not same_edition:
             self._route_catches = {}
+            self._starter_rows = []
         if region_file is None:
             # Direkt die Teilkarte der Live-Position wählen (kein Kanto-Flash,
             # wenn der Spieler beim Betreten des Screens auf Sevii steht).
@@ -483,6 +521,9 @@ class MapMenu(MDScreen):
                 "(aktuell Gen 3: Kanto/Hoenn/Sevii, Gen 4: Sinnoh und Johto/Kanto)."
             )
             return
+        # Vor dem Laden zurücksetzen — schlägt das Laden fehl, darf kein alter
+        # Heimatdorf-Hotspot der vorigen Region stehen bleiben.
+        self._starter_section = None
         try:
             yaml_path = resource_path(os.path.join(MAPS_DATA_DIR, region_file))
             with open(yaml_path, encoding="utf-8") as fh:
@@ -499,6 +540,9 @@ class MapMenu(MDScreen):
                 f"hotspots={len(hotspots)}"
             )
             self.map_canvas.load_map(image_path, hotspots)
+            ss = data.get("starter_section")
+            self._starter_section = int(ss) if ss is not None else None
+            self._refresh_occupied()
             title = data.get("title") or data.get("region", "").title()
             self.title_label.text = f"Karte — {title}"
             self.legend_title.text = "Route anklicken für Details"
@@ -665,6 +709,7 @@ class MapMenu(MDScreen):
         if gen != self._load_gen:
             return  # neuerer Load (Spielerwechsel) hat Vorrang
         grouped: dict[int, list[dict]] = {}
+        starters: list[dict] = []
         for row in rows:
             # Slot-Filter statt exaktem Owner: der DB-owner ist 'name_<slot>',
             # der lokale your_name stimmt bei Remote-Spielern NICHT (KRITISCH).
@@ -673,13 +718,25 @@ class MapMenu(MDScreen):
             # ID-Räume und würden sonst unter fremden Routen auftauchen.
             if PokedexDB.owner_slot(row.get("owner")) != slot:
                 continue
-            if row.get("method") not in (None, "wild"):
+            method = row.get("method")
+            route = row.get("route")
+            if method == "starter" or route == -1:
+                # Starter liegt auf dem Heimatdorf (die Erhalt-Route bleibt
+                # danach ein eigener gültiger Encounter).
+                starters.append(row)
+                continue
+            # Manuell gesetzte Route stammt aus dem Routen-Picker (MAPSEC) und
+            # passt damit zur Karte, egal welche Methode gewählt wurde.
+            manual_route = "route" in parse_locks(row.get("manual_fields"))
+            if method not in (None, "wild") and not manual_route:
                 continue
             try:
                 grouped.setdefault(int(row.get("route")), []).append(row)
             except (TypeError, ValueError):
                 continue
         self._route_catches = grouped
+        self._starter_rows = starters
+        self._refresh_occupied()
         # Legende nachziehen, falls schon eine Route gewählt war, bevor die
         # Daten da waren (sonst bliebe sie fälschlich auf "Route frei").
         sel = self.map_canvas.selected_sections
@@ -713,6 +770,20 @@ class MapMenu(MDScreen):
             except Exception:
                 pass
 
+    def _rows_for_section(self, ms: int) -> list[dict]:
+        rows = list(self._route_catches.get(ms, []))
+        if self._starter_section is not None and ms == self._starter_section:
+            rows = self._starter_rows + rows
+        return rows
+
+    def _refresh_occupied(self) -> None:
+        """Belegte Sections an die Canvas geben (Route = belegt, sobald dort
+        irgendein Encounter liegt — auch verpasst/offen/tot)."""
+        occ = {ms for ms, rows in self._route_catches.items() if rows}
+        if self._starter_rows and self._starter_section is not None:
+            occ.add(self._starter_section)
+        self.map_canvas.set_occupied(occ)
+
     def _on_section_selected(self, mapsecs: int | list[int]):
         """Legende für die angeklickte(n) Section(s). Teilen sich mehrere
         Sections die Zelle (Dungeon auf Route, See am Ufer), zeigt die
@@ -736,20 +807,24 @@ class MapMenu(MDScreen):
                 self.legend_box.add_widget(head)
             elif src_txt:
                 self.legend_title.text = f"{label}  ·  {src_txt}"
-            rows = self._route_catches.get(ms, [])
-            # Nur echte Wild-Erstencounter als "hier gefangen" zeigen.
-            caught = [r for r in rows if r.get("outcome") in ("caught", "obtained")]
-            if not caught:
+            rows = self._rows_for_section(ms)
+            # Jeder Encounter belegt die Route (Nuzlocke: auch verpasst/offen).
+            if not rows:
                 text = ("Hier gibt es keine Pokemon" if sources == []
-                        else "Route frei — noch kein Pokemon gefangen")
+                        else "Route frei — noch kein Encounter")
                 self.legend_box.add_widget(self._legend_line(None, text, edition))
                 continue
-            for r in caught:
+            for r in rows:
                 nick = r.get("nickname") or ""
                 lvl = r.get("lvl")
                 txt = nick or f"Dex #{r.get('dexnr')}"
                 if lvl:
                     txt += f"  Lv {lvl}"
+                status = STATUS_TEXT.get(determine_status(r), "")
+                if r.get("method") == "starter" or r.get("route") == -1:
+                    status = f"Starter · {status}" if status else "Starter"
+                if status:
+                    txt += f"  ·  {status}"
                 self.legend_box.add_widget(self._legend_line(r, txt, edition))
 
     @staticmethod

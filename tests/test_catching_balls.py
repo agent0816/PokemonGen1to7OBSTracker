@@ -75,3 +75,36 @@ def test_run_mode_migration_session_store(tmp_path):
     cfg.nuz["run_mode"] = "coop"  # Rest aus voriger Session
     load_session_into(f"{tmp_path}/", cfg)
     assert cfg.nuz == {"run_mode": "disabled"}
+
+
+def _set_ts(db, table, col, ts):
+    db.connection.execute(f"UPDATE {table} SET {col} = ?", (ts,))
+    db.connection.commit()
+
+
+def test_ball_gate_run_gebunden_alter_ball_zaehlt_nicht(tmp_path):
+    # Testrunde 2026-11-02: Ball aus Vor-Run hielt das Gate im neuen Run offen
+    db = _db(tmp_path)
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [BagItem(id=4, qty=5)])
+    _set_ts(db, "bag_first_seen", "first_seen", "2026-11-01T10:00:00+00:00")
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [])  # Neuer Run: Tasche leer
+    since = "2026-11-02T18:00:00Z"
+    assert db.has_catching_balls("Ash_1", 33) is True          # ohne Run: monoton
+    assert db.has_catching_balls("Ash_1", 33, since) is False  # mit Run: zu
+
+
+def test_ball_gate_run_gebunden_ball_wieder_in_tasche(tmp_path):
+    db = _db(tmp_path)
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [BagItem(id=4, qty=5)])
+    _set_ts(db, "bag_first_seen", "first_seen", "2026-11-01T10:00:00+00:00")
+    # Im neuen Run wieder Baelle -> first_seen bleibt alt, Bestand ist neu
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [BagItem(id=4, qty=3)])
+    assert db.has_catching_balls("Ash_1", 33, "2026-11-02T18:00:00Z") is True
+
+
+def test_ball_gate_run_gebunden_neuer_ball(tmp_path):
+    db = _db(tmp_path)
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [BagItem(id=4, qty=5)])
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [])
+    # first_seen = jetzt (nach Run-Start), Tasche inzwischen leer -> offen (monoton)
+    assert db.has_catching_balls("Ash_1", 33, "2000-01-01T00:00:00Z") is True

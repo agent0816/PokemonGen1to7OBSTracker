@@ -11,7 +11,10 @@
 # Labels = PKHeX gen4 DE. pokemon: Quellen laut pokeheartgold (gs_enc_data.json via
 #   wildEncounterBank; WildBattle/GiveMon/GiveEgg/ChooseStarter/NPCTradeExec in den
 #   Map-Scripts). Live-Position fuer HGSS steht noch aus (player x/y-Offsets).
-region: johto_kanto
+region: johto_kanto
+# Starter (route=-1) wird auf dem Heimatdorf angezeigt (Neuborkia); die Route,
+# auf der er erhalten wird, bleibt danach ein eigener gültiger Encounter.
+starter_section: 126
 title: Johto + Kanto
 image: johto_kanto.png
 tile_px: 8

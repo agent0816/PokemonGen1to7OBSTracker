@@ -29,6 +29,7 @@ from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 from backend.classes.pokedex_db import PokedexDB
 from backend.encounter_edit import new_manual_personality, pokemon_gender_form
 from backend.logging_setup import get_logger
+from backend.player_display import labels_for_slots
 from backend.pokedex_view import location_name, species_name
 from frontend.widgets.encounter_edit_md import (
     LEVEL_MAX, LEVEL_MIN, METHOD_OPTIONS, OUTCOME_OPTIONS, EntryPicker, build_route_entries,
@@ -329,7 +330,12 @@ class EncounterCreateDialogMD(_DialogBase):
         content, body, self.scroll = _dialog_content()
         self.body = body
 
-        player_entries = [(f"Spieler {pid}", pid) for pid in self.owned]
+        try:
+            names = self.munchlax.snapshot_player_names()
+        except Exception:
+            names = {}
+        labels = labels_for_slots(self.owned, names)
+        player_entries = [(labels[pid], pid) for pid in self.owned]
         self._fields["pid"] = ChoiceField(player_entries, self.state["pid"], self.set_player,
                                           "kein lokaler Spieler")
         body.add_widget(labeled("Spieler", self._fields["pid"].button, dp(48)))

@@ -87,7 +87,8 @@ class _DriveApp(MDApp):
         self.check("nickname_a", "ABlitz" in texts and "ADraco" in texts, texts)
         self.check("level_text", "Lv 12" in texts and "Lv 34" in texts, texts)
         self.check("nav_vorhanden", self.menu.prev_button and self.menu.next_button
-                   and self.menu.player_button_text.text == "Spieler: 1")
+                   and self.menu.player_button_text.text == "Spieler 1",
+                   self.menu.player_button_text.text)
         self.check("box_label", self.menu.box_button_text.text == "Box 1/2",
                    self.menu.box_button_text.text)
         self.check("tot_gedimmt", self.menu.slot_widgets[1].sprite.opacity < 1.0

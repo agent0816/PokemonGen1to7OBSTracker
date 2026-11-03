@@ -81,7 +81,8 @@ class _DriveApp(MDApp):
         self.sm = MDScreenManager()
         self.fake_munchlax = _FakeMunchlax()
         self.menu = EncounterMenu(self._session_dir, {"player_count": 2}, self.nuz, "test",
-                                  munchlax=self.fake_munchlax, rem={})
+                                  munchlax=self.fake_munchlax,
+                                  rem={"start_server": True})
         self.sm.add_widget(self.menu)
         return self.sm
 
@@ -116,6 +117,12 @@ class _DriveApp(MDApp):
             return
         self.check("flat_5_zeilen", len(rows) == 5, len(rows))
         self.check("flat_keine_karten", not self._cards())
+        # Host: "bei allen erfassen" links neben Aktualisieren
+        hdr = self.menu._header.children
+        self.check("host_sync_button",
+                   self.menu.sync_all_button in hdr and self.menu.refresh_button in hdr
+                   and hdr.index(self.menu.sync_all_button) == hdr.index(self.menu.refresh_button) + 1,
+                   [type(w).__name__ for w in hdr])
         self.shot("01_encounter_flat")
         self._next(self.s_filter)
 
@@ -140,7 +147,7 @@ class _DriveApp(MDApp):
         self.stop()
 
 
-_EXPECTED = {
+_EXPECTED = {"host_sync_button",
     "flat_5_zeilen", "flat_keine_karten", "spieler_filter_bob",
     "soullink_1_gruppe", "soullink_2_member", "soullink_keine_flat_zeilen",
 }

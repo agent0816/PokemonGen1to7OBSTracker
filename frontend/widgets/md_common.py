@@ -1,5 +1,6 @@
 """Wiederverwendbare KivyMD-Bausteine (Ersatz für toast.py / Popup-Factory der Klassik-UI)."""
 import traceback
+import weakref
 from typing import Any, Awaitable, Callable
 
 from kivy.core.window import Window
@@ -23,6 +24,71 @@ from kivymd.uix.snackbar import MDSnackbarText
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, 'logs/frontend.log')
+
+
+def bind_theme_color(widget: Widget, widget_prop: str, theme_prop: str) -> None:
+    """Setzt widget.<widget_prop> auf theme_cls.<theme_prop> und haelt es bei
+    Theme-Wechsel (Hell/Dunkel, Akzentfarbe) aktuell.
+
+    Nur eine weakref auf das Widget: die Bindung an das langlebige theme_cls
+    darf neu gebaute Widgets (TrainerBox, Karten) nicht am Leben halten.
+    weakref.finalize loest die Bindung, sobald das Widget eingesammelt ist —
+    sonst sammeln sich bei jedem Rebuild tote Observer an theme_cls an.
+    """
+    from kivymd.app import MDApp
+    app = MDApp.get_running_app()
+    theme = getattr(app, "theme_cls", None)
+    if theme is None:
+        return
+    ref = weakref.ref(widget)
+
+    def _apply(*_args: Any) -> None:
+        target = ref()
+        if target is None:
+            theme.funbind(theme_prop, _apply)
+            return
+        setattr(target, widget_prop, getattr(theme, theme_prop))
+
+    theme.fbind(theme_prop, _apply)
+    weakref.finalize(widget, theme.funbind, theme_prop, _apply)
+    _apply()
+
+
+def player_names_of(munchlax: Any = None, screen: Any = None) -> dict:
+    """Snapshot {slot: Clientname} fuer Anzeigenamen (backend/player_display).
+
+    Ohne munchlax wird die Referenz des MainMenu-Screens genutzt (Bag/Pokedex).
+    Fehler → {} (Anzeige faellt dann auf Owner-Name/"Spieler N" zurueck).
+    """
+    try:
+        if munchlax is None and screen is not None and getattr(screen, "manager", None):
+            munchlax = getattr(screen.manager.get_screen("MainMenu"), "munchlax", None)
+        if munchlax is None:
+            return {}
+        getter = getattr(munchlax, "snapshot_player_names", None)
+        if callable(getter):
+            return getter()
+        return dict(getattr(munchlax, "player_names", {}) or {})
+    except Exception:
+        return {}
+
+
+def bind_window_background(theme: Any) -> None:
+    """Fensterhintergrund (hinter den Screens) passend zum Theme.
+
+    Die MD-Screens setzen keinen eigenen Hintergrund, sichtbar ist
+    Window.clearcolor. Dunkel bleibt wie bisher schwarz; im hellen Theme
+    sonst schwarzer Hintergrund unter hellen Karten → backgroundColor.
+    """
+    def _apply(*_args: Any) -> None:
+        if theme.theme_style == "Light":
+            Window.clearcolor = tuple(theme.backgroundColor)
+        else:
+            Window.clearcolor = (0, 0, 0, 1)
+
+    theme.fbind("theme_style", _apply)
+    theme.fbind("backgroundColor", _apply)
+    _apply()
 
 _SNACKBAR_COLORS = {
     'info': None,

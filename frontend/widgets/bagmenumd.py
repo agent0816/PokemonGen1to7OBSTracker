@@ -30,8 +30,9 @@ from backend.bag_view import (
 )
 from backend.classes.pokedex_db import PokedexDB
 from backend.logging_setup import get_logger
+from backend.player_display import button_text, labels_for_owners, owner_label
 from backend.tm_type_resolver import resolve_tm_hm_sprite
-from frontend.widgets.md_common import show_snackbar
+from frontend.widgets.md_common import player_names_of, show_snackbar
 
 logger = get_logger(__name__, 'logs/bagmenu.log')
 
@@ -426,7 +427,9 @@ class BagMenu(MDScreen):
 
     def _open_player_menu(self, caller) -> None:
         entries: list[tuple[str, object]] = [("alle", "alle")]
-        entries += [(self._owner_title(o), o) for o in self._owners()]
+        owners = self._owners()
+        labels = labels_for_owners(owners, player_names_of(screen=self))
+        entries += [(labels[o], o) for o in owners]
         self._open_menu(caller, entries, self._pick_player)
 
     def _open_pocket_menu(self, caller) -> None:
@@ -435,7 +438,7 @@ class BagMenu(MDScreen):
 
     def _pick_player(self, value, text) -> None:
         self._player_filter = str(value)
-        self.player_button_text.text = f"Spieler: {text}"
+        self.player_button_text.text = "Spieler: alle" if value == "alle" else button_text(text)
         # Spielerwechsel kann andere Editionen/Pockets sichtbar machen
         if self._pocket_label not in pocket_labels_for(self._all_rows, self._player_filter):
             self._pocket_label = "alle"
@@ -447,10 +450,8 @@ class BagMenu(MDScreen):
         self.pocket_button_text.text = f"Pocket: {text}"
         self._apply_filters()
 
-    @staticmethod
-    def _owner_title(owner: str) -> str:
-        slot = PokedexDB.owner_slot(owner)
-        return f"Spieler {slot}" if slot is not None else str(owner)
+    def _owner_title(self, owner: str) -> str:
+        return owner_label(owner, player_names_of(screen=self))
 
     def _apply_filters(self) -> None:
         pocket_key = None if self._pocket_label == "alle" else pocket_key_from_label(self._pocket_label)
@@ -486,9 +487,7 @@ class BagMenu(MDScreen):
         block = MDBoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
         block.bind(minimum_height=block.setter("height"))
 
-        slot = PokedexDB.owner_slot(owner)
-        owner_txt = slot if slot is not None else owner
-        title_text = f"Spieler {owner_txt} — Edition {edition}"
+        title_text = f"{self._owner_title(owner)} — Edition {edition}"
         if section.get("edition_name"):
             title_text += f" ({section['edition_name']})"
         can_write = self._can_write_for_owner(owner, edition)

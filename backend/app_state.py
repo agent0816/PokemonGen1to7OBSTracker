@@ -21,9 +21,32 @@ UI_MD = 'md'
 UI_CLASSIC = 'classic'
 _VALID_UI = (UI_MD, UI_CLASSIC)
 
+# KivyMD-Theme (MD-UI): Hell/Dunkel + Akzentfarbe. primary_palette nimmt in
+# KivyMD 2 jeden kivy.utils.hex_colormap-Namen; angeboten wird eine kuratierte
+# Auswahl (Wert -> Anzeigename).
+THEME_DARK = 'Dark'
+THEME_LIGHT = 'Light'
+_VALID_THEME_STYLES = (THEME_DARK, THEME_LIGHT)
+ACCENT_PALETTES = {
+    'Orange': 'Orange',
+    'Red': 'Rot',
+    'Crimson': 'Karmesin',
+    'Pink': 'Pink',
+    'Purple': 'Lila',
+    'Indigo': 'Indigo',
+    'Blue': 'Blau',
+    'Teal': 'Petrol',
+    'Green': 'Grün',
+    'Olive': 'Oliv',
+    'Gold': 'Gold',
+    'Brown': 'Braun',
+}
+
 DEFAULT_STATE = {
     'ui': UI_MD,
     'onboarding_done': False,
+    'theme_style': THEME_DARK,
+    'primary_palette': 'Orange',
 }
 
 
@@ -74,4 +97,30 @@ def is_onboarding_done() -> bool:
 def set_onboarding_done(value: bool = True) -> None:
     state = load_app_state()
     state['onboarding_done'] = bool(value)
+    save_app_state(state)
+
+
+def get_theme() -> tuple[str, str]:
+    """(theme_style, primary_palette); ungueltige Werte fallen auf Dark/Orange."""
+    state = load_app_state()
+    style = state.get('theme_style', THEME_DARK)
+    palette = state.get('primary_palette', 'Orange')
+    if style not in _VALID_THEME_STYLES:
+        style = THEME_DARK
+    if palette not in ACCENT_PALETTES:
+        palette = 'Orange'
+    return style, palette
+
+
+def set_theme(style: str | None = None, palette: str | None = None) -> None:
+    """Speichert Hell/Dunkel und/oder Akzentfarbe (None = unveraendert)."""
+    if style is not None and style not in _VALID_THEME_STYLES:
+        raise ValueError(f"Ungueltiger Theme-Stil: {style!r}")
+    if palette is not None and palette not in ACCENT_PALETTES:
+        raise ValueError(f"Ungueltige Akzentfarbe: {palette!r}")
+    state = load_app_state()
+    if style is not None:
+        state['theme_style'] = style
+    if palette is not None:
+        state['primary_palette'] = palette
     save_app_state(state)

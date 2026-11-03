@@ -15,7 +15,7 @@ from backend.classes.obs import OBS
 from backend.classes.pokedex_db import PokedexDB
 from backend.controller.run_manager import RunManager
 from backend.dragon_rage import DRAGON_RAGE_FLAG
-from backend.encounter_edit import new_encounter
+from backend.encounter_edit import find_rebind_candidate, new_encounter
 from backend.logging_setup import get_logger
 from backend.nuzlocke_view import dragon_rage_badge_limit
 
@@ -74,6 +74,15 @@ IMPORT_SYNC_BATCH = 50
 UNBUFFERED_DICT_TYPES = frozenset({
     "heartbeat",
     "declared_player_ids",
+    # Host-Sync "Encounter bei allen erfassen": einmalige Aktion auf Knopfdruck.
+    # Ein Replay nach Reconnect wuerde den Import Minuten spaeter erneut
+    # anstossen bzw. ein veraltetes Ergebnis melden → nicht puffern.
+    "encounter_import_request",
+    "encounter_import_result",
+    # encounter_rebind wartet max. 5s auf Antwort; bei Timeout verarbeitet der
+    # Client die PV als Gift/Starter. Ein spaeteres Replay wuerde dann eine
+    # zweite, widerspruechliche Bindung ausloesen → nicht puffern.
+    "encounter_rebind",
     "resume_query",
     "boxes_update",
     # rando_moves_sync hat eine eigene Pending-Queue (_pending_rando_moves)
@@ -282,6 +291,12 @@ class Munchlax:
         self._reported_deaths: set[tuple[int, str]] = set()
         self._pending_death_reports: list[dict] = []
         self.on_total_wipe_callback = None
+        # Host-Sync (Frontend setzt beide, Aufruf aus dem Munchlax-Thread):
+        # - on_encounter_import_request(data): Server bittet um Auto-Import
+        # - on_encounter_import_feedback(kind, data): kind 'started'|'result'
+        #   (nur beim Ausloeser)
+        self.on_encounter_import_request = None
+        self.on_encounter_import_feedback = None
         # Wird von app.py gesetzt: Callback, wenn ein anderer Client sein
         # Wipe-Popup per Cancel geschlossen hat und wir im selben Team sind.
         # Empfaengt subject_pid (int).
@@ -383,6 +398,10 @@ class Munchlax:
         self._server_supports_resume: bool | None = None
         # Faehigkeiten aus dem resume_ack (z.B. "manual_edits")
         self._server_features: set[str] = set()
+        # Auto-Bindung: (owner, old_pv) -> Future, wartet auf encounter_rebound
+        # bzw. encounter_rebind_rejected. Sperrt den Kandidaten zugleich gegen
+        # eine zweite neue PV im selben Tick.
+        self._pending_rebinds: dict[tuple, asyncio.Future] = {}
         # Strong-Ref auf den _auto_reconnect-Task. GC-Risiko siehe memory
         # feedback-async-task-strong-ref — und wird in disconnect(
         # intentional=True) gecancelt, damit ein User-Disconnect waehrend
@@ -485,7 +504,7 @@ class Munchlax:
         # kein Sync-Push mehr. Clearen wuerde Overlays bis zum naechsten
         # Randomize auf Vanilla fallen lassen (R1 WARNUNG sync).
 
-    def _clear_session_runtime_state(self):
+    def _clear_session_runtime_state(self, clear_outbound: bool = True):
         """Setzt In-Memory-Session-Caches zurück, OHNE ``soullink_config`` zu
         verlieren. Wird sowohl vom lokalen Reset (Host-Trigger) als auch vom
         Remote-Handler (session_reset-Broadcast) gerufen — beide Pfade sollen
@@ -519,6 +538,8 @@ class Munchlax:
             self._pending_death_reports = []
             self._wipe_signaled = {}
             self._last_wipe_player_id = None
+            self._wipe_debounce_logged = set()
+            self._ball_gate_open = {}
             self._pokemon_hp_state = {}
             self._dragon_rage_kos = {}
             self._forgiven_deaths = set()
@@ -535,7 +556,39 @@ class Munchlax:
         # produzieren. seq-Counter weiter laufen lassen; der naechste
         # resume_ack vom Server traegt last_seen_seq=0 fuer diesen Client
         # (wird in Arceus beim Session-Reset ebenfalls geloescht).
-        self._outbound_buffer.clear()
+        # clear_outbound=False: Aufruf aus fremdem Thread (Kivy) — der Buffer
+        # wird im Munchlax-Loop iteriert, dort separat leeren.
+        if clear_outbound:
+            self._outbound_buffer.clear()
+
+    def clear_for_session_switch(self, clear_outbound: bool = True) -> None:
+        """Session-Wechsel (Frontend, nach disconnect_all): alle Session-Inhalte
+        aus dem RAM werfen, damit Screens keine Residuen der vorigen Session
+        zeigen (Testrunde 2026-11-02) und z.B. ein haengender Wipe-Marker nicht
+        in die neue Session wandert. Zusaetzlich zu _clear_session_runtime_state
+        auch soullink_config und Timer/Countdown — die neue Session bekommt
+        beides beim naechsten Connect frisch vom Server.
+        player_names/client_names bleiben (Citra/BizHawk setzen ihre Namen nur
+        im Handshake, ein Clear wuerde laufende Emulatoren namenlos machen);
+        rando_*-Moves bleiben ebenfalls erhalten.
+        """
+        self._clear_session_runtime_state(clear_outbound=clear_outbound)
+        with self.state_lock:
+            self.soullink_config = {}
+            self.timer_state = {}
+            self.countdown_state = {}
+            self.timer_last_tick = None
+            self.countdown_last_tick = None
+        self.logger.info("Session-Wechsel: Munchlax-Session-State geleert")
+
+    async def clear_for_session_switch_async(self) -> None:
+        """Zweiter Clear auf dem Munchlax-Loop, serialisiert mit disconnect()
+        ueber disconnect_lock: faengt Daten ab, die der Receive-Loop zwischen
+        sofortigem Kivy-Clear und tatsaechlichem Disconnect noch eingetragen
+        hat, und leert den Replay-Buffer threadsicher."""
+        self._ensure_async_locks()
+        async with self.disconnect_lock:
+            self.clear_for_session_switch(clear_outbound=True)
 
     # ------------------------------------------------------------------
     # Snapshot-Getter fuer cross-thread-Reads aus dem Kivy-Loop.
@@ -580,6 +633,11 @@ class Munchlax:
     def snapshot_soullink_config(self) -> dict:
         with self.state_lock:
             return dict(self.soullink_config or {})
+
+    def snapshot_player_names(self) -> dict:
+        """Snapshot {slot: Clientname} fuer Anzeigenamen (backend/player_display)."""
+        with self.state_lock:
+            return dict(self.player_names or {})
 
     def owned_player_ids(self) -> list[int]:
         """Oeffentlicher Zugriff auf die lokalen Netz-Slots (fuer das Frontend)."""
@@ -1296,6 +1354,29 @@ class Munchlax:
                         await self._handle_remote_session_reset()
                     elif msg_type == "encounter_sync":
                         await self._handle_remote_encounters(data.get("encounters", []))
+                    elif msg_type == "encounter_rebound":
+                        await self._handle_encounter_rebound(data)
+                    elif msg_type == "encounter_import_request":
+                        self.logger.info(
+                            f"encounter_import_request empfangen: id={data.get('request_id')} "
+                            f"von={data.get('requested_by')}")
+                        if callable(getattr(self, "on_encounter_import_request", None)):
+                            self._call_frontend("on_encounter_import_request", data)
+                        else:
+                            # Ohne Frontend (z.B. Headless) dem Host trotzdem antworten
+                            asyncio.create_task(self.send_encounter_import_result(
+                                str(data.get("request_id") or ""),
+                                [{"player": None, "ok": False, "count": 0,
+                                  "msg": "Erfassung hier nicht verfügbar"}]))
+                    elif msg_type in ("encounter_import_started", "encounter_import_result"):
+                        self.logger.info(f"{msg_type} empfangen: {data}")
+                        kind = "started" if msg_type == "encounter_import_started" else "result"
+                        self._call_frontend("on_encounter_import_feedback", kind, data)
+                    elif msg_type == "encounter_rebind_rejected":
+                        self.logger.info(
+                            f"encounter_rebind_rejected empfangen: owner={data.get('owner')} "
+                            f"old={data.get('old_personality')} reason={data.get('reason')}")
+                        self._resolve_pending_rebind(data, False)
                     elif msg_type == "encounter_outcome":
                         await self._handle_remote_outcome(data)
                     elif msg_type == "bag_sync":
@@ -1862,6 +1943,28 @@ class Munchlax:
         except Exception as err:
             self.logger.warning(f"send_soullink_death failed: {err}")
 
+    async def redeclare_player_ids(self) -> None:
+        """Sendet die lokalen Netz-Slots erneut an den Server.
+
+        Bisher nur im Connect-Handshake — stellt der User in den Einstellungen
+        bei laufender Verbindung lokal/remote oder die Spieleranzahl um, behielt
+        der Server die alten Slots (Testrunde 2026-11-02: "rando_moves_sync
+        verworfen … owned=[4]" nach Umstellung auf Slot 1). Server akzeptiert
+        wiederholte Deklaration (alter_teams-Handler) bzw. antwortet bei
+        Kollision mit slot_collision → Popup + Disconnect wie beim Connect.
+        """
+        owned = self._owned_player_ids()
+        if not self.is_connected:
+            self.logger.info(f"redeclare_player_ids: nicht verbunden, nichts gesendet (owned={owned})")
+            return
+        try:
+            async with self.writer_lock:
+                await self.send_message({"type": "declared_player_ids", "player_ids": owned})
+            self.logger.info(f"declared_player_ids erneut gesendet: {owned}")
+        except Exception as err:
+            self.logger.warning(f"redeclare_player_ids failed: {err}")
+            self.logger.warning(traceback.format_exc())
+
     # ----- Manuelle Korrekturen (Encounter, Links, Tode) -----
 
     def server_supports_edits(self) -> bool:
@@ -1952,6 +2055,57 @@ class Munchlax:
         self._notify_soullink_state_changed()
         await self.refresh_dead_pvs("lokaler Edit")
         return True, "Gespeichert"
+
+    def _call_frontend(self, attr: str, *args) -> None:
+        """Frontend-Callback aufrufen (Frontend wrappt selbst per Clock)."""
+        cb = getattr(self, attr, None)
+        if not callable(cb):
+            self.logger.warning(f"{attr} nicht registriert — Nachricht ignoriert")
+            return
+        try:
+            cb(*args)
+        except Exception as err:
+            self.logger.warning(f"{attr} failed: {type(err).__name__},{err}")
+
+    async def request_encounter_import(self) -> tuple[bool, str]:
+        """Host: alle verbundenen Clients sollen ihre Encounter aus Team +
+        Boxen automatisch erfassen. Rueckgabe (ok, Meldung) fuer die UI."""
+        if not self.rem.get("start_server", False):
+            return False, "Nur der Host kann die Erfassung starten"
+        if not self.is_connected:
+            return False, "Keine Server-Verbindung"
+        if self._server_supports_resume is not True or \
+                "encounter_import_request" not in self._server_features:
+            self.logger.warning("request_encounter_import: Server kennt die Nachricht nicht")
+            return False, "Server unterstützt das nicht (Update nötig)"
+        request_id = uuid.uuid4().hex
+        # Frontend erkennt daran die eigene Anfrage (keine Doppel-Snackbar)
+        self.last_import_request_id = request_id
+        try:
+            async with self.writer_lock:
+                await self.send_message({"type": "encounter_import_request",
+                                         "request_id": request_id})
+        except Exception as err:
+            self.logger.error(f"encounter_import_request senden failed: {type(err)},{err}")
+            self.logger.error(traceback.format_exc())
+            return False, f"Senden fehlgeschlagen: {err}"
+        self.logger.info(f"encounter_import_request gesendet: id={request_id}")
+        return True, "Erfassung angefragt"
+
+    async def send_encounter_import_result(self, request_id: str,
+                                           results: list[dict]) -> None:
+        """Ergebnis des Auto-Imports an den Server (der leitet an den Host)."""
+        if not self.is_connected:
+            self.logger.info("encounter_import_result: nicht verbunden, verworfen")
+            return
+        try:
+            async with self.writer_lock:
+                await self.send_message({"type": "encounter_import_result",
+                                         "request_id": request_id, "results": results})
+            self.logger.info(f"encounter_import_result gesendet: id={request_id} {results}")
+        except Exception as err:
+            self.logger.error(f"encounter_import_result senden failed: {type(err)},{err}")
+            self.logger.error(traceback.format_exc())
 
     async def encounter_import_context(self, player_id: int) -> dict | None:
         """Kontext fuer den Import-Dialog: owner, edition, vorhandene PVs und
@@ -2067,6 +2221,11 @@ class Munchlax:
             self.logger.warning(f"server_state_reload (clear={clear}) nicht gesendet: {reason}")
 
     def _handle_edit_rejected(self, data: dict) -> None:
+        if data.get("request_type") == "encounter_rebind":
+            # Automatische Bindung: kein Snackbar, nur wartende Bindung freigeben.
+            self.logger.info(f"encounter_rebind abgelehnt (edit_rejected): {data.get('reason')}")
+            self._resolve_pending_rebind(data.get("request") or {}, False)
+            return
         request_type = data.get("request_type")
         reason = data.get("reason", "")
         self.logger.warning(f"edit_rejected vom Server: {request_type}: {reason}")
@@ -2327,6 +2486,34 @@ class Munchlax:
         # gebunden). Receive-Loop koppelt nicht an GUI-Lag.
         self._dispatch_on_kivy(srv.notify_session_event(event_type, payload))
 
+    def active_run_start_ts(self) -> str | None:
+        """Start-Zeitstempel des aktiven Runs (run_meta.start_ts) oder None.
+
+        Fuer das run-gebundene Ball-Gate. Gecacht pro (Session-Pfad, mtime von
+        runs/active.txt): das Gate wird pro Tick gefragt, RunManager liest YAML
+        von Platte. create_run/finalize schreiben bzw. loeschen den Marker →
+        Cache invalidiert sofort, kein Fenster mit altem Run-Start.
+        Thread-sicher genug: nur Tupel-Zuweisung, schlimmstenfalls doppelt gelesen.
+        """
+        path = str(self.configsave) if self.configsave is not None else ""
+        try:
+            marker_mtime = os.stat(os.path.join(path, "runs", "active.txt")).st_mtime_ns if path else None
+        except OSError:
+            marker_mtime = None
+        cache = getattr(self, "_run_start_cache", None)
+        if cache is not None and cache[0] == path and cache[1] == marker_mtime:
+            return cache[2]
+        value = None
+        if path:
+            try:
+                rm = self.get_run_manager()
+                run = rm.get_active_run() if rm is not None else None
+                value = (run or {}).get("start_ts") or None
+            except Exception as err:
+                self.logger.warning(f"active_run_start_ts failed: {type(err).__name__},{err}")
+        self._run_start_cache = (path, marker_mtime, value)
+        return value
+
     async def _run_active_for_local_player(self, player_id, edition) -> bool:
         """True wenn der Nuzlocke-Run für diesen lokalen Player scharf ist.
 
@@ -2346,15 +2533,36 @@ class Munchlax:
         """
         if not self.nuz.get("rule_run_start_on_ball", True):
             return True
+        # _gate_error_by_player: False-Ergebnis stammt aus Fehler/fehlender DB,
+        # nicht aus "noch kein Ball" — Aufrufer darf dann keinen Wipe-Marker
+        # loesen. Pro Player, weil zwischen Setzen und Lesen ein await liegt.
+        errors = getattr(self, "_gate_error_by_player", None)
+        if errors is None:
+            errors = self._gate_error_by_player = {}
+        errors[player_id] = False
         if self.pokedex_db is None or self.pokedex_db.connection is None:
+            errors[player_id] = True
             return False
         owner = PokedexDB.build_owner(self.pl.get('your_name', ''), str(player_id))
         loop = asyncio.get_event_loop()
         try:
-            return await loop.run_in_executor(
-                None, self.pokedex_db.has_catching_balls, owner, edition
+            since = await loop.run_in_executor(None, self.active_run_start_ts)
+            result = await loop.run_in_executor(
+                None, self.pokedex_db.has_catching_balls, owner, edition, since
             )
+            # Gate-Wechsel einmalig loggen (sonst nicht nachvollziehbar, ab
+            # wann Tode/Wipes zaehlen).
+            opened = getattr(self, "_ball_gate_open", None)
+            if opened is None:
+                opened = self._ball_gate_open = {}
+            if opened.get(player_id) != result:
+                opened[player_id] = result
+                self.logger.info(
+                    f"Ball-Gate player={player_id} owner={owner} ed={edition}: "
+                    f"{'offen' if result else 'geschlossen'} (run_start={since})")
+            return result
         except Exception as err:
+            errors[player_id] = True
             self.logger.warning(
                 f"_run_active_for_local_player has_catching_balls failed: {err}"
             )
@@ -2638,6 +2846,42 @@ class Munchlax:
             self._notify_soullink_state_changed()
             await self.refresh_dead_pvs("lokaler Tod")
 
+    async def _unusable_pvs(self, player_id, alive_pvs: list) -> set:
+        """PVs lebender Team-Pokemon, die nach Nuzlocke-/Soullink-Regeln nicht
+        spielbar sind und beim Total-Wipe als tot zaehlen:
+        - Soullink: Link-Gruppe im Zustand failed/dead.
+        - Nuzlocke (und Soullink): eigener Encounter mit outcome not_caught.
+        Pokemon ohne Link/Encounter gelten als brauchbar (konservativ).
+        """
+        unusable: set = set()
+        wanted = {pv for pv in alive_pvs if pv is not None}
+        if not wanted:
+            return unusable
+        owner = PokedexDB.build_owner(self.pl.get('your_name', ''), str(player_id))
+        owner_root = PokedexDB.owner_root(owner)
+        mode = (self.soullink_config or {}).get("mode", "off")
+        if mode in ("coop", "versus"):
+            with self.state_lock:
+                links = list(self.soullink_links.values())
+            for link in links:
+                member = (link.get("members") or {}).get(owner_root)
+                if (member and member.get("personality") in wanted
+                        and link.get("state") in ("failed", "dead")):
+                    unusable.add(member.get("personality"))
+        if self.pokedex_db is not None and self.pokedex_db.connection is not None:
+            edition = self.editions.get(player_id)
+            loop = asyncio.get_event_loop()
+            try:
+                rows = await loop.run_in_executor(
+                    None, self.pokedex_db.get_encounters, owner, edition)
+            except Exception as err:
+                self.logger.warning(f"_unusable_pvs get_encounters failed: {err}")
+                rows = []
+            for row in rows:
+                if row.get("personality") in wanted and row.get("outcome") == "not_caught":
+                    unusable.add(row.get("personality"))
+        return unusable
+
     async def check_total_wipe(self, player_id, team, dead_infos: list[tuple] | None = None) -> bool:
         """Prüft rule_restart_on_total_wipe: alle Team-Slots tot → Broadcast Warning.
 
@@ -2659,7 +2903,20 @@ class Munchlax:
         if dead_infos is None:
             dead_infos = self._evaluate_team_deaths(player_id, team)
         any_pokemon = bool(dead_infos)
-        alive = sum(1 for (_pv, _dex, is_dead) in dead_infos if not is_dead)
+        alive_pvs = [pv for (pv, _dex, is_dead) in dead_infos if not is_dead]
+        alive = len(alive_pvs)
+        # Unbrauchbare Pokemon (Soullink: Gruppe failed/dead; Nuzlocke: Encounter
+        # verpasst) zaehlen fuer den Wipe als tot — aber nur, wenn mindestens
+        # ein Pokemon wirklich tot ist (kein Wipe nur aus Unbrauchbaren).
+        if alive and alive < len(dead_infos):
+            unusable = await self._unusable_pvs(player_id, alive_pvs)
+            if unusable:
+                alive = sum(1 for pv in alive_pvs if pv not in unusable)
+                if alive == 0 and not (getattr(self, "_wipe_signaled", None) or {}).get(player_id):
+                    self.logger.info(
+                        f"Total-Wipe-Pruefung player={player_id}: verbleibende "
+                        f"lebende Pokemon unbrauchbar (pvs={sorted(unusable)})"
+                    )
         if not any_pokemon:
             # Team leer (z.B. vor ROM-Load) — kein Wipe, aber auch nicht als Wipe zaehlen.
             return False
@@ -2668,11 +2925,23 @@ class Munchlax:
             if getattr(self, "_wipe_signaled", None) is None:
                 self._wipe_signaled = {}
             self._wipe_signaled.pop(player_id, None)
+            if getattr(self, "_wipe_debounce_logged", None):
+                self._wipe_debounce_logged.discard(player_id)
             return False
         # alive_count = 0 UND any_pokemon vorhanden → Wipe
         if getattr(self, "_wipe_signaled", None) is None:
             self._wipe_signaled = {}
         if self._wipe_signaled.get(player_id):
+            # Bereits gemeldet — einmal pro Episode loggen, damit ein haengender
+            # Marker (Testrunde 2026-11-02: Wipe still unterdrueckt) auffaellt.
+            logged = getattr(self, "_wipe_debounce_logged", None)
+            if logged is None:
+                logged = self._wipe_debounce_logged = set()
+            if player_id not in logged:
+                logged.add(player_id)
+                self.logger.info(
+                    f"Total Wipe player_id={player_id} bereits gemeldet — Debounce aktiv"
+                )
             return True  # bereits gemeldet
         self._wipe_signaled[player_id] = True
         self._last_wipe_player_id = player_id
@@ -2949,6 +3218,8 @@ class Munchlax:
 
         if getattr(self, "_wipe_signaled", None) is not None:
             self._wipe_signaled.clear()
+        if getattr(self, "_wipe_debounce_logged", None):
+            self._wipe_debounce_logged.clear()
         self._last_wipe_player_id = None
         # Drachenwut-Zustand gehoert zum beendeten Run (Rebind wie in den
         # Reset-Pfaden, unter state_lock).
@@ -3866,6 +4137,140 @@ class Munchlax:
                 f"eingefügt/aktualisiert")
             await self.refresh_dead_pvs("remote encounter_sync")
 
+    async def try_rebind_manual_encounter(self, owner: str, edition, new_pv: int,
+                                          dexnr, family: list[int] | None = None) -> bool:
+        """Auto-Bindung: passt ein neu aufgetauchtes echtes Pokemon eindeutig zu
+        einem manuell angelegten Encounter (Pseudo-PV), wird dieser auf die
+        echte PV umgeschluesselt — Server (encounter_rebind) bzw. Solo lokal.
+        True = Bindung angestossen; der Aufrufer behandelt das Pokemon dann
+        nicht mehr als Gift/Starter. Laeuft auf dem Munchlax-Loop."""
+        self._ensure_pokedex_db()
+        if self.pokedex_db is None or self.pokedex_db.connection is None:
+            return False
+        loop = asyncio.get_event_loop()
+        try:
+            existing = await loop.run_in_executor(
+                None, self.pokedex_db.get_encounter, int(new_pv), owner)
+            if existing is not None:
+                return False
+            rows = await loop.run_in_executor(
+                None, self.pokedex_db.get_encounters, owner, edition)
+        except Exception as err:
+            self.logger.warning(f"try_rebind_manual_encounter DB-Fehler: {err}")
+            return False
+        pending = getattr(self, "_pending_rebinds", None)
+        if pending is None:
+            pending = self._pending_rebinds = {}
+        rows = [r for r in rows if (owner, r.get("personality")) not in pending]
+        cand = find_rebind_candidate(rows, dexnr, family)
+        if cand is None:
+            return False
+        old_pv = cand["personality"]
+        if self.is_connected:
+            if (self._server_supports_resume is not True
+                    or "encounter_rebind" not in self._server_features):
+                self.logger.info(
+                    f"Auto-Bindung uebersprungen: Server kann encounter_rebind nicht "
+                    f"(owner={owner} pv={new_pv})")
+                return False
+            key = (owner, int(old_pv))
+            fut = loop.create_future()
+            pending[key] = fut
+            try:
+                async with self.writer_lock:
+                    await self.send_message({
+                        "type": "encounter_rebind", "owner": owner,
+                        "old_personality": int(old_pv), "new_personality": int(new_pv),
+                    })
+                self.logger.info(
+                    f"encounter_rebind gesendet: owner={owner} {old_pv} -> {new_pv} dex={dexnr}")
+                # Erst die Server-Antwort entscheidet: True nur bei echter Bindung,
+                # sonst laeuft die PV normal durch Gift/Starter (nichts geht verloren).
+                return bool(await asyncio.wait_for(asyncio.shield(fut), timeout=5.0))
+            except asyncio.TimeoutError:
+                self.logger.warning(
+                    f"encounter_rebind ohne Antwort (5s): owner={owner} {old_pv} -> {new_pv}")
+                return False
+            except Exception as err:
+                self.logger.warning(f"encounter_rebind failed: {err}")
+                return False
+            finally:
+                if pending.get(key) is fut:
+                    pending.pop(key, None)
+        if self.rem.get("start_server", False) or self.reconnecting:
+            # Host ohne laufenden Server / Reconnect: nicht am Server vorbei schreiben.
+            return False
+        try:
+            ok = await loop.run_in_executor(
+                None, self.pokedex_db.rebind_encounter, owner, int(old_pv), int(new_pv))
+        except Exception as err:
+            self.logger.warning(f"rebind_encounter lokal failed: {err}")
+            return False
+        if ok:
+            self.logger.info(f"Auto-Bindung lokal (Solo): owner={owner} {old_pv} -> {new_pv}")
+            await self.refresh_dead_pvs("Auto-Bindung")
+            self._notify_soullink_state_changed()
+        return bool(ok)
+
+    def _resolve_pending_rebind(self, data: dict, result: bool) -> None:
+        pending = getattr(self, "_pending_rebinds", None) or {}
+        try:
+            key = (data.get("owner") or "", int(data.get("old_personality")))
+        except (TypeError, ValueError):
+            return
+        fut = pending.get(key)
+        if fut is not None and not fut.done():
+            fut.set_result(result)
+
+    async def _handle_encounter_rebound(self, data: dict) -> None:
+        """Server hat einen manuellen Encounter auf die echte PV umgeschluesselt."""
+        owner = data.get("owner") or ""
+        old_pv = data.get("old_personality")
+        new_pv = data.get("new_personality")
+        enc = data.get("encounter")
+        if not owner or old_pv is None or new_pv is None:
+            return
+        self.logger.info(f"encounter_rebound empfangen: owner={owner} {old_pv} -> {new_pv}")
+        owner_root = PokedexDB.owner_root(owner)
+        with self.state_lock:
+            for link in self.soullink_links.values():
+                member = (link.get("members") or {}).get(owner_root)
+                if member and member.get("personality") == old_pv:
+                    member["personality"] = new_pv
+            death = self.soullink_deaths.pop((old_pv, owner_root), None)
+            if death is not None:
+                self.soullink_deaths[(new_pv, owner_root)] = dict(death, personality=new_pv)
+            if (old_pv, owner_root) in self.soullink_alive_locks:
+                self.soullink_alive_locks.discard((old_pv, owner_root))
+                self.soullink_alive_locks.add((new_pv, owner_root))
+        self._ensure_pokedex_db()
+        if self.pokedex_db is not None and self.pokedex_db.connection is not None:
+            loop = asyncio.get_event_loop()
+            try:
+                ok = await loop.run_in_executor(
+                    None, self.pokedex_db.rebind_encounter, owner, int(old_pv), int(new_pv))
+                if not ok:
+                    # Neue PV hatte lokal schon eine Zeile -> Pseudo-Zeile als
+                    # Duplikat entfernen (Server fuehrt sie nicht mehr).
+                    await loop.run_in_executor(
+                        None, self.pokedex_db.apply_encounter_edit, int(old_pv), owner,
+                        {}, None, True)
+                if isinstance(enc, dict):
+                    # Server-Stand der Zeile uebernehmen (auch wenn die alte Zeile
+                    # lokal fehlte, z.B. nach spaetem Join).
+                    await loop.run_in_executor(None, self.pokedex_db.sync_encounter, enc)
+                self.logger.info(f"encounter_rebound lokal angewendet: ok={ok}")
+            except Exception as err:
+                self.logger.warning(f"encounter_rebound DB-Fehler: {err}")
+        # Server hat gebunden — wartende Bindung sofort freigeben, unabhaengig
+        # davon, ob die folgenden UI-/Cache-Refreshes werfen.
+        self._resolve_pending_rebind(data, True)
+        try:
+            await self.refresh_dead_pvs("encounter_rebound")
+            self._notify_soullink_state_changed()
+        except Exception as err:
+            self.logger.warning(f"encounter_rebound Refresh-Fehler: {err}")
+
     async def _handle_remote_outcome(self, data: dict):
         self._ensure_pokedex_db()
         if self.pokedex_db is None or self.pokedex_db.connection is None:
@@ -3965,6 +4370,14 @@ class Munchlax:
                     # als Death oder Total-Wipe zählt. Async wegen DB-Call
                     # via run_in_executor (siehe Docstring).
                     if not await self._run_active_for_local_player(player, edition):
+                        # Run (noch) nicht scharf: alten Wipe-Marker loesen, sonst
+                        # unterdrueckt er den naechsten echten Wipe (Testrunde
+                        # 2026-11-02: Marker ueberlebte Session-Reset).
+                        if (not (getattr(self, "_gate_error_by_player", None) or {}).get(player, False)
+                                and getattr(self, "_wipe_signaled", None)):
+                            self._wipe_signaled.pop(player, None)
+                            if getattr(self, "_wipe_debounce_logged", None):
+                                self._wipe_debounce_logged.discard(player)
                         continue
                     # Ein _is_pokemon_dead-Pass pro Tick — Ergebnis geht an
                     # Wipe-Check UND Death-Report (Zähler darf nur 1x hochzählen).

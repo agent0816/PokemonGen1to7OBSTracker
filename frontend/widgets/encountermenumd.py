@@ -33,12 +33,13 @@ from backend.encounter_view import (
     group_soullink, group_title, is_soullink, unlinked_encounters,
 )
 from backend.logging_setup import get_logger
+from backend.player_display import button_text, labels_for_owners, labels_for_slots, owner_name
 from backend.player_colors import player_rgba
 from backend.pokedex_view import load_species_de, row_slot
 from frontend.widgets.encounter_create_md import EncounterCreateDialogMD, NewGroupDialogMD
 from frontend.widgets.encounter_import_md import EncounterImportDialogMD
 from frontend.widgets.encounter_edit_md import (
-    EncounterEditDialogMD, run_edit_request, spawn_task,
+    EncounterEditDialogMD, run_edit_request, send_munchlax_edit, spawn_task,
 )
 from frontend.widgets.md_common import confirm_dialog, show_snackbar
 
@@ -76,6 +77,7 @@ LINK_BADGE_COLOR = {
     "complete": (0.20, 0.60, 0.25, 1),
     "pending":  (0.85, 0.62, 0.05, 1),
     "failed":   (0.75, 0.20, 0.20, 1),
+    "dead":     (0.15, 0.15, 0.15, 1),
 }
 
 def _small_label(text: str, height: float, bold: bool = False, small: bool = True) -> MDLabel:
@@ -170,7 +172,8 @@ class MemberBlock(ButtonBehavior, MDBoxLayout):
 
     def __init__(self, slot: int | None, species: str, status_text: str,
                  sprite_source: str = "", locked: bool = False,
-                 on_tap: Callable[[], None] | None = None, **kwargs):
+                 on_tap: Callable[[], None] | None = None, label: str | None = None,
+                 **kwargs):
         super().__init__(orientation="horizontal", padding=dp(6), spacing=dp(6), **kwargs)
         self._on_tap = on_tap
         if on_tap is not None:
@@ -192,7 +195,7 @@ class MemberBlock(ButtonBehavior, MDBoxLayout):
             self.add_widget(MDBoxLayout(size_hint_x=None, width=dp(48)))
 
         text_box = MDBoxLayout(orientation="vertical", spacing=dp(2))
-        head = f"P{slot}" if slot is not None else "P?"
+        head = label or (f"Spieler {slot}" if slot is not None else "Spieler ?")
         head_row = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(20), spacing=dp(4))
         head_row.add_widget(self._lbl(head, role="small"))
         if locked:
@@ -225,7 +228,8 @@ class LinkGroupCard(MDCard):
     def __init__(self, group: dict, expected_count: int,
                  sprite_for: Callable[[dict], str] | None = None,
                  on_member_tap: Callable[[dict], None] | None = None,
-                 on_menu: Callable[[dict, object], None] | None = None, **kwargs):
+                 on_menu: Callable[[dict, object], None] | None = None,
+                 player_labels: dict | None = None, **kwargs):
         super().__init__(style="elevated", orientation="vertical", size_hint_y=None,
                          height=dp(132), padding=dp(8), spacing=dp(6),
                          radius=[dp(12)] * 4, **kwargs)
@@ -271,11 +275,13 @@ class LinkGroupCard(MDCard):
             sprite = sprite_for(m) if sprite_for is not None else ""
             tap = (lambda mem=m: on_member_tap(mem)) if on_member_tap is not None else None
             body.add_widget(MemberBlock(m["slot"], m["species"], text, sprite,
-                                        locked=bool(m.get("locks")), on_tap=tap))
+                                        locked=bool(m.get("locks")), on_tap=tap,
+                                        label=(player_labels or {}).get(m["slot"])))
         # Noch fehlende erwartete Mitglieder als Platzhalter "—"
         for slot in range(1, max(expected_count, 1) + 1):
             if slot not in present and len(body.children) < expected_count:
-                body.add_widget(MemberBlock(slot, "—", "—"))
+                body.add_widget(MemberBlock(slot, "—", "—",
+                                            label=(player_labels or {}).get(slot)))
         self.add_widget(body)
 
 
@@ -339,6 +345,11 @@ class EncounterMenu(MDScreen):
         self.import_button = MDButton(
             MDButtonIcon(icon="download"), MDButtonText(text="Aus Spiel"), style="tonal",
             pos_hint={"center_y": .5}, on_release=lambda _i: self._open_import())
+        # Host: Encounter bei allen verbundenen Clients aus Team + Boxen erfassen
+        self.sync_all_button = MDIconButton(
+            icon="account-sync", style="tonal",
+            pos_hint={"center_y": .5}, on_release=lambda _i: self._confirm_sync_all(),
+        )
         if self.munchlax is not None:
             header.add_widget(self.add_button)
         self._header = header
@@ -520,6 +531,37 @@ class EncounterMenu(MDScreen):
             self._header.add_widget(self.import_button, index=index)
         elif not show and attached:
             self._header.remove_widget(self.import_button)
+        # Sync-bei-allen nur fuer den Host (links neben Aktualisieren). Beim
+        # ersten Aufruf im Aufbau existiert refresh_button noch nicht → ans Ende;
+        # Refresh wird danach ebenfalls ans Ende gehaengt und steht rechts davon.
+        show_sync = self.munchlax is not None and self._is_host()
+        sync_attached = self.sync_all_button.parent is not None
+        if show_sync and not sync_attached:
+            refresh = getattr(self, "refresh_button", None)
+            index = (self._header.children.index(refresh) + 1
+                     if refresh is not None and refresh.parent else 0)
+            self._header.add_widget(self.sync_all_button, index=index)
+        elif not show_sync and sync_attached:
+            self._header.remove_widget(self.sync_all_button)
+
+    def _confirm_sync_all(self) -> None:
+        confirm_dialog(
+            "Encounter bei allen erfassen?",
+            "Alle verbundenen Clients lesen Team und Boxen aus und übernehmen neue "
+            "Pokemon als Encounter (erstes je Route automatisch). Bestehende "
+            "Encounter bleiben unverändert.",
+            on_confirm=lambda: spawn_task(self._request_sync_all()),
+            confirm_text="Erfassen", icon="account-sync")
+
+    async def _request_sync_all(self) -> None:
+        result = await send_munchlax_edit(
+            self.munchlax, lambda: self.munchlax.request_encounter_import(),
+            "request_encounter_import")
+        if result is None:
+            return
+        ok, msg = result
+        if not ok:
+            show_snackbar(msg or "Erfassung nicht möglich.", level='error')
 
     def _open_import(self) -> None:
         if self.munchlax is None or not self._has_owned_slot():
@@ -749,8 +791,29 @@ class EncounterMenu(MDScreen):
             m.dismiss()
         on_pick(value, text)
 
+    def _player_names(self) -> dict:
+        try:
+            return self.munchlax.snapshot_player_names() if self.munchlax is not None else {}
+        except Exception:
+            return {}
+
+    def _slot_labels(self) -> dict:
+        """{slot: Anzeigename} fuer die Gruppenkarten (Clientname statt P1)."""
+        slots = range(1, max(self._pending_expected or 0, 1) + 1)
+        # Verbundene Clients + Name aus den Encounter-Ownern fuer nicht
+        # verbundene Slots ("Bob_2" → Bob), gemeinsam nummeriert (Duplikate).
+        merged = {int(k): v for k, v in self._player_names().items() if str(k).isdigit()}
+        for owner in self._owners():
+            slot = row_slot({"owner": owner})
+            name = owner_name(owner)
+            if slot is not None and slot not in merged and name:
+                merged[slot] = name
+        return labels_for_slots(set(slots) | set(merged), merged)
+
     def _open_player_menu(self, caller) -> None:
-        entries = [("alle", "alle")] + [(o, o) for o in self._owners()]
+        owners = self._owners()
+        labels = labels_for_owners(owners, self._player_names())
+        entries = [("alle", "alle")] + [(labels[o], o) for o in owners]
         self._open_menu(caller, entries, self._pick_player)
 
     def _open_edition_menu(self, caller) -> None:
@@ -760,7 +823,7 @@ class EncounterMenu(MDScreen):
 
     def _pick_player(self, value, text) -> None:
         self._player_filter = str(value)
-        self.player_button_text.text = f"Spieler: {text}"
+        self.player_button_text.text = "Spieler: alle" if value == "alle" else button_text(text)
         self._apply_filters()
 
     def _pick_edition(self, value, text) -> None:
@@ -873,12 +936,14 @@ class EncounterMenu(MDScreen):
     def _render_batch(self, _dt) -> bool:
         batch = self._pending[:RENDER_BATCH]
         del self._pending[:RENDER_BATCH]
+        # Einmal pro Batch statt pro Karte (iteriert alle Encounter)
+        slot_labels = self._slot_labels() if self._pending_mode == "groups" else None
         for item in batch:
             if self._pending_mode == "groups":
                 self.cards_grid.add_widget(LinkGroupCard(
                     item, self._pending_expected, self._sprite_source, self._open_member_edit,
                     on_menu=self._open_group_menu if self._is_host() and self.munchlax is not None
-                    else None))
+                    else None, player_labels=slot_labels))
             else:
                 self.cards_grid.add_widget(EncounterCard(item, self._sprite_source(item), self._open_edit))
         if not self._pending:

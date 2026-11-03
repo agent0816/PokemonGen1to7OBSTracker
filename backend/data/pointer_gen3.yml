@@ -57,8 +57,9 @@
   # gBattlersCount alleine reicht NICHT — bleibt nach Kampfende non-zero und
   # macht die Battle-Detection stuck-true (Bug: keine Encounter mehr erkannt).
   # Adresse aus Ironmon-Tracker GameAddresses/Pokemon Ruby v1.0.json.
-  # TODO: vor Release mit tools/find_pointers.py auf DE-Rubin verifizieren
-  # (Session 2026-07-30, Ironmon-Cross-Check als Interim-Beleg).
+  # Live verifiziert 2026-11-03 (DE-Saphir, ghidra-bizhawk-MCP, Wildkampf Route 101):
+  # waehrend Kampf = 0 (gBattlersCount = 2, gBattleMons[0].species = 0x118 Flemmli),
+  # nach Sieg = 1. R/S teilen das EWRAM-Layout.
   battleoutcomepointer: 0x02024D26
   # gBattleMons[0].species (u16): erste Species im Battle. In "no battle"
   # meist 0/garbage → als Sanity-Check für Fake-Battle-Filter.
@@ -68,7 +69,14 @@
   # Ironmon-EN v1.0/1.1/1.2). Adresse ueberdeckt EN- und DE-ROMs.
   battletypeflagspointer: 0x020239F8
   battleopponentidpointer: 0x0202FF5E
-  battleopponentpointer: 0x030045C0
+  # gEnemyParty: direkt hinter gPlayerParty (0x3004370 + 6*100 = 0x30045D0).
+  # Vorher 0x030045C0 = US-Wert (US-Party liegt 0x10 tiefer) -> zeigte in den
+  # eigenen Party-Slot 6 ("Gegner-Slot leer", keine Wild-Encounter auf DE-R/S).
+  # Verifiziert 2026-11-03 auf DE-Saphir via ghidra-bizhawk-MCP im Wildkampf
+  # Route 101 (wildes FIFFYEN Lv2: Nickname C0 C3 C0 C0 D3 BF C8, Lang 05,
+  # Level-Byte 2, KP 13/13 ab 0x30045D0; 0x30045C0..CF = 0). Gilt fuer DE-R/S
+  # (beide gleiches Layout); EN-R/S: Party 0x3004360 / Gegner 0x30045C0.
+  battleopponentpointer: 0x030045D0
   # gPlayerPartyCount (u8) — Outcome-Check nach Kampfende
   partycountpointer: 0x03004360
   # currentBox (u8) — statisch bei R/S, box_pointer - 4
@@ -100,7 +108,8 @@
   # Siehe Edition 31 — Rubin/Saphir teilen EWRAM-Layout.
   battletypeflagspointer: 0x020239F8
   battleopponentidpointer: 0x0202FF5E
-  battleopponentpointer: 0x030045C0
+  # gEnemyParty — live verifiziert 2026-11-03 auf DE-Saphir (siehe ed 31).
+  battleopponentpointer: 0x030045D0
   partycountpointer: 0x03004360
   currentbox_pointer: 0x020300A0
   languages:

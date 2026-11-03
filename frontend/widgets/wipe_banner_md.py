@@ -26,6 +26,7 @@ from kivymd.uix.dialog import (
 from kivymd.uix.label import MDLabel
 
 from backend.logging_setup import get_logger
+from backend.player_display import labels_for_slots
 from backend.snapshot_manager import SnapshotManager
 from frontend.widgets.md_common import confirm_dialog
 
@@ -399,7 +400,13 @@ class TotalWipeBannerMD:
             roms = paths.get("roms", {})
             if not roms:
                 return "Neue ROM: (keine ROM im aktiven Run)."
-            rom_parts = [f"P{slot}: {entry.get('rom', '')}"
+            try:
+                names = self.munchlax.snapshot_player_names()
+            except Exception:
+                names = {}
+            labels = labels_for_slots(roms.keys(), names)
+            rom_parts = [f"{labels.get(int(slot)) if str(slot).isdigit() else f'P{slot}'}: "
+                         f"{entry.get('rom', '')}"
                          for slot, entry in sorted(roms.items())]
             return "Neue ROM(s): " + " | ".join(rom_parts) + "."
         except Exception as err:

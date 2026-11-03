@@ -563,6 +563,18 @@ class MainMenu(MDScreen):
                 or getattr(self.bizhawk, "is_connected", False)):
             with perf_span("main.disconnect_all"):
                 self.disconnect_all()
+        # Session-Inhalte der vorigen Session aus dem Munchlax-RAM werfen —
+        # sonst füllen die 1s-Ticks Team-Boxen/Boxen/Karte wieder mit altem Stand.
+        try:
+            # Sofort (UI leer) ohne Replay-Buffer; danach serialisiert mit dem
+            # Disconnect auf dem Munchlax-Loop noch einmal inkl. Buffer.
+            self.munchlax.clear_for_session_switch(clear_outbound=False)
+            self.munchlax.dispatch_cross_thread(
+                self.munchlax.clear_for_session_switch_async(),
+                name="clear_for_session_switch")
+        except Exception as err:
+            logger.error(f"Munchlax-Clear beim Session-Wechsel fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
         with perf_span("main.clear_client_rows"):
             self._clear_client_rows()
         with perf_span("main.sync_trainer_boxes"):
@@ -1077,11 +1089,32 @@ class MainMenu(MDScreen):
         finally:
             self.reset_session_button.disabled = False
 
+    def _alive_bizhawks(self) -> list:
+        """Noch laufende BizHawk-Prozesse. `bizhawk_instances` wird nach dem
+        Beenden nie geleert (stop_and_terminate terminiert nur) — daher per
+        poll() filtern statt auf die Listenlänge zu schauen. Nur lesend über
+        eine Kopie: die Liste teilt sich der BizHawk-Thread."""
+        alive = []
+        for proc in list(self.bizhawk_instances):
+            try:
+                if proc.poll() is None:
+                    alive.append(proc)
+            except Exception as err:
+                logger.debug(f"BizHawk-Prozessstatus nicht lesbar: {err}")
+        return alive
+
+    def _emulator_running(self) -> bool:
+        """True bei laufendem BizHawk-Prozess oder verbundenem Citra/Azahar —
+        nur dann ist der „Hast du gespeichert?"-Hinweis sinnvoll."""
+        if self._alive_bizhawks():
+            return True
+        return bool(getattr(self.citra, "is_connected", False))
+
     def _needs_safe_switch(self) -> bool:
         """True, wenn vor einem Session-Wechsel der sichere Pfad nötig ist:
-        laufende BizHawks oder eine aktive Verbindung (OBS/Overlay/Server/Client).
+        laufender Emulator oder eine aktive Verbindung (OBS/Overlay/Server/Client).
         Genutzt vom Rail-Navigations-Guard (appmd)."""
-        if self.bizhawk_instances:
+        if self._emulator_running():
             return True
         for obj in (self.munchlax, self.arceus, self.obs_websocket,
                     self.overlay_server, self.bizhawk):
@@ -1090,9 +1123,9 @@ class MainMenu(MDScreen):
         return False
 
     def change_session(self, *_args) -> None:
-        # Sicherer Pfad: vor dem Wechsel ggf. Save-Hinweis (laufende BizHawks),
+        # Sicherer Pfad: vor dem Wechsel ggf. Save-Hinweis (laufender Emulator),
         # dann trennen + speichern + zur SessionMenu navigieren.
-        if self.bizhawk_instances:
+        if self._emulator_running():
             confirm_dialog(
                 "Speichern nicht vergessen!",
                 "Hast du gespeichert? Die Session wird gewechselt.",

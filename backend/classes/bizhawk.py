@@ -1604,7 +1604,17 @@ class Bizhawk:
             else:
                 opp = pokedecoder.decode_opponent_gen45(opp_bytes, edition // 10)
             if opp is None:
-                self.logger.debug("Gegner-Slot leer oder ungültig")
+                # INFO statt DEBUG: tritt das bei jedem Wildkampf auf, zeigt
+                # battleopponentpointer falsch (DE-R/S-Bug 2026-11-02).
+                # Rate-Limit 30 s pro Edition: pro Kampf kommen mehrere Ticks.
+                last_logged = getattr(self, "_opp_empty_logged_at", None)
+                if last_logged is None:
+                    last_logged = self._opp_empty_logged_at = {}
+                now_mono = time.monotonic()
+                if now_mono - last_logged.get(edition, -1e9) >= 30.0:
+                    last_logged[edition] = now_mono
+                    self.logger.info(f"Gegner-Slot leer oder ungültig (edition={edition}) — "
+                                     f"battleopponentpointer prüfen, kein Wild-Encounter verbucht")
                 return
 
             route = opp["met_location"]
@@ -1848,6 +1858,32 @@ class Bizhawk:
         )
 
         loop = asyncio.get_event_loop()
+
+        # Auto-Bindung (Testrunde 2026-11-02): passt ein neues Pokemon eindeutig
+        # zu einem manuell angelegten Encounter (Pseudo-PV), bekommt dieser die
+        # echte PV — sonst wuerde der Tod des echten Pokemon ohne Link gemeldet
+        # und es faelschlich als Gift eingebucht. Gebundene PVs fallen raus.
+        bound: set[int] = set()
+        for pv in non_battle_pvs:
+            pokemon = next((p for p in pokemons[:6]
+                            if getattr(p, "personality", None) is not None
+                            and int(p.personality) == pv), None)
+            dex = getattr(pokemon, "dexnr", None)
+            if not dex or dex == "egg" or not str(dex).isdigit() or int(dex) == 0:
+                continue
+            try:
+                family = self.encounter_tracker.get_family_members(int(dex))
+                if await self.munchlax.submit_cross_thread(
+                        self.munchlax.try_rebind_manual_encounter(
+                            owner, int(edition), int(pv), int(dex), family)):
+                    bound.add(pv)
+            except Exception as err:
+                self.logger.warning(f"Auto-Bindung pv={pv} fehlgeschlagen: {err}")
+        if bound:
+            self.logger.info(f"Auto-Bindung: PVs {sorted(bound)} an manuelle Encounter gebunden")
+            non_battle_pvs = [pv for pv in non_battle_pvs if pv not in bound]
+            if not non_battle_pvs:
+                return
 
         # Starter-Detection: erster Encounter fuer owner+edition ist der
         # Starter. Wird VOR der Gift-Encounter-Schleife gecheckt, damit ein

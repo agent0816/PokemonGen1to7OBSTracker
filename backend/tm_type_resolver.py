@@ -25,8 +25,44 @@ _TM_MOVES_LUT: dict[int, dict] = _load_yaml("tm_moves.yml")
 _MOVES_LOWER: dict[str, str] = {k.lower(): v for k, v in _MOVES_LUT.items()}
 
 
+def _norm_de(name: str) -> str:
+    """Vergleichsschluessel fuer deutsche Namen: Case, ß/ss, Leer-/Bindestriche egal."""
+    return (str(name).casefold().replace("ß", "ss")
+            .replace(" ", "").replace("-", ""))
+
+
+def _build_de_lookup() -> dict[str, str]:
+    """Deutscher Attackenname (normalisiert) -> englischer Name.
+
+    Randomizer-Logs deutscher ROMs nennen die TM-Attacken mit dem ROM-Namen
+    (Gen 1–3: "SOLARSTRAHL", alte Namen wie "PFUND"/"GIFTBLICK"). Quellen:
+    moves_de_rom.yml (aus den DE-ROMs extrahiert, tools/extract_move_names_de.py)
+    hat Vorrang vor moves_de.yml (heutige Namen, deckt Gen 4+ ab).
+    """
+    id_to_en = {int(v): k for k, v in _load_yaml("moves_en_reverse.yml").items()}
+    lookup: dict[str, str] = {}
+    for move_id, name in (_load_yaml("moves_de.yml") or {}).items():
+        en = id_to_en.get(int(move_id))
+        if en and name:
+            lookup.setdefault(_norm_de(name), en)
+    for gen_table in (_load_yaml("moves_de_rom.yml") or {}).values():
+        for name, move_id in (gen_table or {}).items():
+            en = id_to_en.get(int(move_id))
+            if en:
+                lookup[_norm_de(name)] = en
+    return lookup
+
+
+_DE_TO_EN: dict[str, str] = _build_de_lookup()
+_unresolved_logged: set[str] = set()
+
+
 def move_type(move_name: str) -> str | None:
-    return _MOVES_LUT.get(move_name) or _MOVES_LOWER.get(move_name.lower())
+    mtype = _MOVES_LUT.get(move_name) or _MOVES_LOWER.get(move_name.lower())
+    if mtype:
+        return mtype
+    en = _DE_TO_EN.get(_norm_de(move_name))
+    return _MOVES_LUT.get(en) if en else None
 
 
 def resolve_tm_hm_sprite(edition: int, slug: str,
@@ -72,10 +108,14 @@ def resolve_tm_hm_sprite(edition: int, slug: str,
 
     mtype = move_type(move_name)
     if not mtype:
-        logger.debug(
-            f"resolve_tm_hm_sprite: unknown move type for '{move_name}' "
-            f"(edition={edition} slug={slug} source={source})"
-        )
+        # WARNING einmal pro Name: sonst fehlt das TM-Typ-Sprite unbemerkt
+        # (DE-Rando-Logs waren bis 2026-11-03 komplett unaufgeloest).
+        if move_name not in _unresolved_logged:
+            _unresolved_logged.add(move_name)
+            logger.warning(
+                f"resolve_tm_hm_sprite: unbekannter Attackenname '{move_name}' "
+                f"(edition={edition} slug={slug} source={source}) — kein Typ-Sprite"
+            )
         return slug
 
     result = f"{prefix}-{mtype}"

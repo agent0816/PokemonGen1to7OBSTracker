@@ -186,3 +186,18 @@ def build_encounters(groups: Iterable[RouteGroup], selected_pvs: set,
                 "dead": 0, "manual_fields": "", "timestamp": now,
             })
     return result
+
+
+def auto_select(groups: Iterable[RouteGroup]) -> tuple[set[int], set[int]]:
+    """Standard-Auswahl ohne Dialog (Host-Sync): alle Kandidaten uebernehmen,
+    erstes Encounter je Route = Vorschlag aus ``group_by_route``.
+
+    Entspricht dem Anfangszustand der Dialog-Vorschau (ImportSelection).
+    """
+    selected: set[int] = set()
+    first: set[int] = set()
+    for group in groups:
+        selected.update(c.pv for c in group.candidates)
+        if group.default_first_pv is not None:
+            first.add(group.default_first_pv)
+    return selected, first

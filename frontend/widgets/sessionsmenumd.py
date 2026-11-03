@@ -21,9 +21,6 @@ from kivymd.uix.fitimage import FitImage
 from kivymd.uix.label import MDLabel
 from kivymd.uix.label import MDIcon
 from kivymd.uix.menu import MDDropdownMenu
-from kivymd.uix.navigationbar import MDNavigationBar
-from kivymd.uix.navigationbar import MDNavigationItem
-from kivymd.uix.navigationbar import MDNavigationItemLabel
 from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.relativelayout import MDRelativeLayout
 from kivymd.uix.screen import MDScreen
@@ -82,28 +79,47 @@ class DeleteSessionDialog(MDDialog):
         self.session_menu.delete_session(self.session_name, self.session_card)
 
 
-class GameNavigationItem(MDNavigationItem):
-    screen_name = StringProperty()
+class GenButtonRow(MDBoxLayout):
+    """Generations-Auswahl als Button-Reihe (UX: sah als NavigationBar nicht nach
+    Knöpfen aus). Aktive Generation ``filled``, übrige ``tonal`` — wie die
+    Toolbar-Buttons in Box/Bag/Encounter."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.add_widget(MDNavigationItemLabel(text=self.screen_name))
-
-
-class GameNavigationBar(MDNavigationBar):
     def __init__(self, screen_manager, item_list: list[dict], *args, **kwargs):
+        kwargs.setdefault("orientation", "horizontal")
+        kwargs.setdefault("spacing", dp(4))
+        kwargs.setdefault("size_hint_y", None)
+        kwargs.setdefault("height", dp(44))
         super().__init__(*args, **kwargs)
         self.screen_manager = screen_manager
+        self._buttons: dict[str, MDButton] = {}
+        self._texts: dict[str, MDButtonText] = {}
         for item in item_list:
-            self.add_widget(GameNavigationItem(**item))
+            name = item["screen_name"]
+            # Feste Breite pro Button (7 Gens müssen in die Dialogbreite passen),
+            # Textfarbe explizit — beim Stilwechsel zieht MDButtonText sonst nicht nach.
+            txt = MDButtonText(text=name, theme_text_color="Custom",
+                               pos_hint={"center_x": .5, "center_y": .5})
+            txt.role = "medium"
+            btn = MDButton(txt, style="tonal", theme_width="Custom",
+                           size_hint_x=1, pos_hint={"center_y": .5})
+            btn.bind(on_release=lambda _b, n=name: self.select(n))
+            self._buttons[name] = btn
+            self._texts[name] = txt
+            self.add_widget(btn)
+        self._mark(getattr(screen_manager, "current", None))
 
-    def on_switch_tabs(
-        self,
-        item: GameNavigationItem,
-        item_icon: str,
-        item_display_name: str,
-    ):
-        self.screen_manager.current = item.screen_name
+    def select(self, screen_name: str) -> None:
+        self.screen_manager.current = screen_name
+        self._mark(screen_name)
+
+    def _mark(self, active: str | None) -> None:
+        theme = self._buttons and next(iter(self._buttons.values())).theme_cls
+        for name, btn in self._buttons.items():
+            on = name == active
+            btn.style = "filled" if on else "tonal"
+            if theme:
+                self._texts[name].text_color = (theme.onPrimaryColor if on
+                                                else theme.onSecondaryContainerColor)
 
 
 class GameCoverCard(MDCard):
@@ -317,7 +333,7 @@ class CreateSessionDialog(MDDialog):
         self.game_selection_manager = GameSelectionScreen(self.change_selected_game)
 
         item_list = [{"screen_name": generation} for generation in self.game_selection_manager.games]
-        self.navbar = GameNavigationBar(self.game_selection_manager, item_list, size_hint_y=.5)
+        self.navbar = GenButtonRow(self.game_selection_manager, item_list)
 
         self.screen_manager.add_widget(
             MDScreen(

@@ -48,6 +48,8 @@ class _DriveApp(MDApp):
     def build(self):
         self.theme_cls.theme_style = "Dark"
         self.theme_cls.primary_palette = "Orange"
+        from frontend.widgets.md_common import bind_window_background
+        bind_window_background(self.theme_cls)
         arceus, bizhawk, munchlax, obs_ws, overlay = _mock_backends()
         sp = {"common_path": "C:/sprites/pkmn", "items_path": "C:/sprites/items",
               "badges_path": "C:/sprites/badges", "single_path_check": True,
@@ -74,7 +76,7 @@ class _DriveApp(MDApp):
     def on_start(self):
         self.sm.current = "SettingsMenu"
         Clock.schedule_once(lambda dt: self.safe(self.s_render), 1.0)
-        Clock.schedule_once(lambda dt: self.stop(), 24)
+        Clock.schedule_once(lambda dt: self.stop(), 34)
 
     def _next(self, step, delay=1.2):
         Clock.schedule_once(lambda dt: self.safe(step), delay)
@@ -170,7 +172,39 @@ class _DriveApp(MDApp):
                    app_state.get_ui_preference())
 
         self.shot("06_logging")
-        self._next(self.s_finish, 0.8)
+        self._next(self.s_theme)
+
+    def s_theme(self):
+        # Theme-Auswahl (Testrunde 2026-11-03): Hell/Dunkel + Akzentfarbe live.
+        from backend import app_state
+        from kivymd.uix.dialog import MDDialog
+        for w in list(Window.children):
+            if isinstance(w, MDDialog):
+                w.dismiss()
+        s = self.settings
+        self.check("theme_dunkel_initial", s._theme_items[app_state.THEME_DARK].active)
+        s._on_theme_style(app_state.THEME_LIGHT, True)
+        s._palette_dd._choose("Blau")
+        theme = self.theme_cls
+        self.check("theme_live_hell", theme.theme_style == "Light"
+                   and theme.primary_palette == "Blue",
+                   (theme.theme_style, theme.primary_palette))
+        self.check("theme_persistiert", app_state.get_theme() == ("Light", "Blue"),
+                   app_state.get_theme())
+        self._next(self.s_theme_check, 0.8)
+
+    def s_theme_check(self):
+        # Sektionskarten folgen dem Theme (hell statt fest #211F26)
+        card = self.settings._palette_dd.parent.parent
+        bg = tuple(card.md_bg_color)
+        self.check("karte_folgt_theme", sum(bg[:3]) > 2.0, bg)
+        self.shot("07_theme_hell")
+        self._next(self.s_theme_verbindung)
+
+    def s_theme_verbindung(self):
+        self.settings.select_tab("Verbindung")
+        self.shot("08_verbindung_hell")
+        self._next(self.s_finish, 1.2)
 
     def s_finish(self):
         self.stop()
@@ -180,7 +214,9 @@ _EXPECTED = {"felder_vorhanden", "fuenf_panes", "bizhawk_geladen", "name_geladen
              "session_game_readonly", "count_segment_2", "overlay_links_gebaut",
              "kein_carousel", "obs2pc_expand", "obs2pc_save", "player_expand_2",
              "console_level_dd", "dropdown_oeffnet_menu",
-             "ui_segment_md_initial", "ui_switch_persists"}
+             "ui_segment_md_initial", "ui_switch_persists",
+             "theme_dunkel_initial", "theme_live_hell", "theme_persistiert",
+             "karte_folgt_theme"}
 
 
 @pytest.mark.gui

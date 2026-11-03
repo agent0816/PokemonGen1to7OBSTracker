@@ -89,13 +89,30 @@ class EncounterTracker:
         if not self.nuz.get("rule_run_start_on_ball", True):
             return True
         try:
-            return self.pokedex_db.has_catching_balls(owner, edition)
+            return self._has_balls(owner, edition)
         except Exception as err:
+            # Gleiche Semantik wie munchlax._run_active_for_local_player:
+            # bei Fehler gilt der Run als nicht gestartet.
             self.logger.warning(
                 f"_run_started_for_owner has_catching_balls failed: "
-                f"{type(err).__name__},{err} — fallback True (nicht blockieren)"
+                f"{type(err).__name__},{err} — fallback False"
             )
-            return True
+            return False
+
+    def _run_start_ts(self) -> str | None:
+        """Start des aktiven Runs (fuer das run-gebundene Ball-Gate)."""
+        getter = getattr(self.munchlax, "active_run_start_ts", None)
+        if getter is None:
+            return None
+        try:
+            return getter()
+        except Exception as err:
+            self.logger.warning(f"_run_start_ts failed: {type(err).__name__},{err}")
+            return None
+
+    def _has_balls(self, owner: str, edition) -> bool:
+        """Ball-Gate: Ball seit Start des aktiven Runs (ohne Run: jemals)."""
+        return self.pokedex_db.has_catching_balls(owner, edition, self._run_start_ts())
 
     def _has_active_token_credit(self, owner: str, edition, route) -> bool:
         if not self.nuz.get("rule_token_rule", False):
@@ -184,7 +201,7 @@ class EncounterTracker:
             is_first = not self.pokedex_db.has_encounter_on_route(owner, edition, route)
             return True, is_first, False, False
 
-        has_balls = self.pokedex_db.has_catching_balls(owner, edition)
+        has_balls = self._has_balls(owner, edition)
         if (self.nuz.get("rule_run_start_on_ball", True) and not has_balls
                 and method == "wild"):
             # Ohne Ball zählt kein Wild-Encounter — is_first=False verhindert
@@ -574,7 +591,7 @@ class EncounterTracker:
             with self.pokedex_db.access_lock:
                 if self.pokedex_db.has_any_encounter(owner, edition):
                     return None
-                has_balls = self.pokedex_db.has_catching_balls(owner, edition)
+                has_balls = self._has_balls(owner, edition)
                 inserted = self.pokedex_db.insert_encounter(
                     personality=personality,
                     owner=owner,

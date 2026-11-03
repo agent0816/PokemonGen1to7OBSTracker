@@ -77,7 +77,7 @@ def test_links_und_tode_ueberleben_neustart(tmp_path):
     b = asyncio.run(zweiter_lauf())
     assert set(b.soullink_links) == {link_id}
     link = b.soullink_links[link_id]
-    assert link["state"] == "failed"
+    assert link["state"] == "dead"
     assert set(link["members"]) == {"Alice", "Bob"}
     assert link["members"]["Alice"]["outcome"] == "dead"
     assert link["compensation_paid"] is True
@@ -148,3 +148,34 @@ def test_lesefehler_deaktiviert_persistenz(tmp_path, monkeypatch):
     a = asyncio.run(lauf())
     # Kein Pfad gesetzt → kein Ueberschreiben des unlesbaren Stands
     assert a._persist_path is None
+
+
+def test_session_wechsel_leert_live_caches_ohne_neue_db_zu_leeren(tmp_path):
+    """Session-Wechsel: Teams/Positionen der alten Session weg, Links der neuen
+    Session werden geladen und NICHT geloescht (Testrunde 2026-11-02)."""
+    s1 = tmp_path / "s1"
+    s2 = tmp_path / "s2"
+
+    async def vorbereiten_s2():
+        b = _make_arceus(s2)
+        await b.load_persistent_state()
+        b._assign_link_group(enc(300, "Alice_1"))
+        b._persist_link(next(iter(b.soullink_links.values())))
+        await _flush(b)
+
+    asyncio.run(vorbereiten_s2())
+
+    async def wechsel():
+        a = _make_arceus(s1)
+        await a.load_persistent_state()
+        a.teams = {1: ["alt"]}
+        a.positions = {1: {"x": 1}}
+        a.configsave = f"{s2}/"
+        reloaded = await a.load_persistent_state()
+        await _flush(a)
+        return a, reloaded
+
+    a, reloaded = asyncio.run(wechsel())
+    assert reloaded is True
+    assert a.teams == {} and a.positions == {}
+    assert len(a.soullink_links) == 1

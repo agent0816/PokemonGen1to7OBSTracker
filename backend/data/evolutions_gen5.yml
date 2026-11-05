@@ -1,0 +1,624 @@
+# Entwicklungen Generation 5 - generiert von tools/gen_evolutions.py am 2026-11-05
+# Quelle: https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/pokemon_evolution.csv (PokeAPI)
+# Regeln: Version-Groups <= Gen, ohne Colosseum/XD/Let's Go; je (Quelle, Ziel) nur die
+# Zeilen der hoechsten erlaubten Version-Group; Regional-/Alola-Formen ausgelassen.
+# Nicht von Hand editieren. Struktur: source_dex -> [{to, trigger, ...}]
+# trigger: level|item|trade|happiness|other; Items deutsch; party_type/move_type = PokeAPI-Typ-ID.
+1:
+- {level: 16, to: 2, trigger: level}
+2:
+- {level: 32, to: 3, trigger: level}
+4:
+- {level: 16, to: 5, trigger: level}
+5:
+- {level: 36, to: 6, trigger: level}
+7:
+- {level: 16, to: 8, trigger: level}
+8:
+- {level: 36, to: 9, trigger: level}
+10:
+- {level: 7, to: 11, trigger: level}
+11:
+- {level: 10, to: 12, trigger: level}
+13:
+- {level: 7, to: 14, trigger: level}
+14:
+- {level: 10, to: 15, trigger: level}
+16:
+- {level: 18, to: 17, trigger: level}
+17:
+- {level: 36, to: 18, trigger: level}
+19:
+- {level: 20, to: 20, trigger: level}
+21:
+- {level: 20, to: 22, trigger: level}
+23:
+- {level: 22, to: 24, trigger: level}
+25:
+- {item: Donnerstein, to: 26, trigger: item}
+27:
+- {level: 22, to: 28, trigger: level}
+29:
+- {level: 16, to: 30, trigger: level}
+30:
+- {item: Mondstein, to: 31, trigger: item}
+32:
+- {level: 16, to: 33, trigger: level}
+33:
+- {item: Mondstein, to: 34, trigger: item}
+35:
+- {item: Mondstein, to: 36, trigger: item}
+37:
+- {item: Feuerstein, to: 38, trigger: item}
+39:
+- {item: Mondstein, to: 40, trigger: item}
+41:
+- {level: 22, to: 42, trigger: level}
+42:
+- {to: 169, trigger: happiness}
+43:
+- {level: 21, to: 44, trigger: level}
+44:
+- {item: Blattstein, to: 45, trigger: item}
+- {item: Sonnenstein, to: 182, trigger: item}
+46:
+- {level: 24, to: 47, trigger: level}
+48:
+- {level: 31, to: 49, trigger: level}
+50:
+- {level: 26, to: 51, trigger: level}
+52:
+- {level: 28, to: 53, trigger: level}
+54:
+- {level: 33, to: 55, trigger: level}
+56:
+- {level: 28, to: 57, trigger: level}
+58:
+- {item: Feuerstein, to: 59, trigger: item}
+60:
+- {level: 25, to: 61, trigger: level}
+61:
+- {item: Wasserstein, to: 62, trigger: item}
+- {held_item: King-Stein, to: 186, trigger: trade}
+63:
+- {level: 16, to: 64, trigger: level}
+64:
+- {to: 65, trigger: trade}
+66:
+- {level: 28, to: 67, trigger: level}
+67:
+- {to: 68, trigger: trade}
+69:
+- {level: 21, to: 70, trigger: level}
+70:
+- {item: Blattstein, to: 71, trigger: item}
+72:
+- {level: 30, to: 73, trigger: level}
+74:
+- {level: 25, to: 75, trigger: level}
+75:
+- {to: 76, trigger: trade}
+77:
+- {level: 40, to: 78, trigger: level}
+79:
+- {level: 37, to: 80, trigger: level}
+- {held_item: King-Stein, to: 199, trigger: trade}
+81:
+- {level: 30, to: 82, trigger: level}
+82:
+- {location: true, to: 462, trigger: other}
+84:
+- {level: 31, to: 85, trigger: level}
+86:
+- {level: 34, to: 87, trigger: level}
+88:
+- {level: 38, to: 89, trigger: level}
+90:
+- {item: Wasserstein, to: 91, trigger: item}
+92:
+- {level: 25, to: 93, trigger: level}
+93:
+- {to: 94, trigger: trade}
+95:
+- {held_item: Metallmantel, to: 208, trigger: trade}
+96:
+- {level: 26, to: 97, trigger: level}
+98:
+- {level: 28, to: 99, trigger: level}
+100:
+- {level: 30, to: 101, trigger: level}
+102:
+- {item: Blattstein, to: 103, trigger: item}
+104:
+- {level: 28, to: 105, trigger: level}
+108:
+- {known_move: 205, to: 463, trigger: other}
+109:
+- {level: 35, to: 110, trigger: level}
+111:
+- {level: 42, to: 112, trigger: level}
+112:
+- {held_item: Schützer, to: 464, trigger: trade}
+113:
+- {to: 242, trigger: happiness}
+114:
+- {known_move: 246, to: 465, trigger: other}
+116:
+- {level: 32, to: 117, trigger: level}
+117:
+- {held_item: Drachenschuppe, to: 230, trigger: trade}
+118:
+- {level: 33, to: 119, trigger: level}
+120:
+- {item: Wasserstein, to: 121, trigger: item}
+123:
+- {held_item: Metallmantel, to: 212, trigger: trade}
+125:
+- {held_item: Stromisierer, to: 466, trigger: trade}
+126:
+- {held_item: Magmaisierer, to: 467, trigger: trade}
+129:
+- {level: 20, to: 130, trigger: level}
+133:
+- {item: Wasserstein, to: 134, trigger: item}
+- {item: Donnerstein, to: 135, trigger: item}
+- {item: Feuerstein, to: 136, trigger: item}
+- {time: day, to: 196, trigger: happiness}
+- {time: night, to: 197, trigger: happiness}
+- {location: true, to: 470, trigger: other}
+- {location: true, to: 471, trigger: other}
+137:
+- {held_item: Upgrade, to: 233, trigger: trade}
+138:
+- {level: 40, to: 139, trigger: level}
+140:
+- {level: 40, to: 141, trigger: level}
+147:
+- {level: 30, to: 148, trigger: level}
+148:
+- {level: 55, to: 149, trigger: level}
+152:
+- {level: 16, to: 153, trigger: level}
+153:
+- {level: 32, to: 154, trigger: level}
+155:
+- {level: 14, to: 156, trigger: level}
+156:
+- {level: 36, to: 157, trigger: level}
+158:
+- {level: 18, to: 159, trigger: level}
+159:
+- {level: 30, to: 160, trigger: level}
+161:
+- {level: 15, to: 162, trigger: level}
+163:
+- {level: 20, to: 164, trigger: level}
+165:
+- {level: 18, to: 166, trigger: level}
+167:
+- {level: 22, to: 168, trigger: level}
+170:
+- {level: 27, to: 171, trigger: level}
+172:
+- {to: 25, trigger: happiness}
+173:
+- {to: 35, trigger: happiness}
+174:
+- {to: 39, trigger: happiness}
+175:
+- {to: 176, trigger: happiness}
+176:
+- {item: Leuchtstein, to: 468, trigger: item}
+177:
+- {level: 25, to: 178, trigger: level}
+179:
+- {level: 15, to: 180, trigger: level}
+180:
+- {level: 30, to: 181, trigger: level}
+183:
+- {level: 18, to: 184, trigger: level}
+187:
+- {level: 18, to: 188, trigger: level}
+188:
+- {level: 27, to: 189, trigger: level}
+190:
+- {known_move: 458, to: 424, trigger: other}
+191:
+- {item: Sonnenstein, to: 192, trigger: item}
+193:
+- {known_move: 246, to: 469, trigger: other}
+194:
+- {level: 20, to: 195, trigger: level}
+198:
+- {item: Finsterstein, to: 430, trigger: item}
+200:
+- {item: Finsterstein, to: 429, trigger: item}
+204:
+- {level: 31, to: 205, trigger: level}
+207:
+- {held_item: Scharfzahn, time: night, to: 472, trigger: other}
+209:
+- {level: 23, to: 210, trigger: level}
+215:
+- {held_item: Scharfklaue, time: night, to: 461, trigger: other}
+216:
+- {level: 30, to: 217, trigger: level}
+218:
+- {level: 38, to: 219, trigger: level}
+220:
+- {level: 33, to: 221, trigger: level}
+221:
+- {known_move: 246, to: 473, trigger: other}
+223:
+- {level: 25, to: 224, trigger: level}
+228:
+- {level: 24, to: 229, trigger: level}
+231:
+- {level: 25, to: 232, trigger: level}
+233:
+- {held_item: Dubiosdisc, to: 474, trigger: trade}
+236:
+- {level: 20, stats_cmp: 1, to: 106, trigger: level}
+- {level: 20, stats_cmp: -1, to: 107, trigger: level}
+- {level: 20, stats_cmp: 0, to: 237, trigger: level}
+238:
+- {level: 30, to: 124, trigger: level}
+239:
+- {level: 30, to: 125, trigger: level}
+240:
+- {level: 30, to: 126, trigger: level}
+246:
+- {level: 30, to: 247, trigger: level}
+247:
+- {level: 55, to: 248, trigger: level}
+252:
+- {level: 16, to: 253, trigger: level}
+253:
+- {level: 36, to: 254, trigger: level}
+255:
+- {level: 16, to: 256, trigger: level}
+256:
+- {level: 36, to: 257, trigger: level}
+258:
+- {level: 16, to: 259, trigger: level}
+259:
+- {level: 36, to: 260, trigger: level}
+261:
+- {level: 18, to: 262, trigger: level}
+263:
+- {level: 20, to: 264, trigger: level}
+265:
+- {level: 7, to: 266, trigger: level}
+- {level: 7, to: 268, trigger: level}
+266:
+- {level: 10, to: 267, trigger: level}
+268:
+- {level: 10, to: 269, trigger: level}
+270:
+- {level: 14, to: 271, trigger: level}
+271:
+- {item: Wasserstein, to: 272, trigger: item}
+273:
+- {level: 14, to: 274, trigger: level}
+274:
+- {item: Blattstein, to: 275, trigger: item}
+276:
+- {level: 22, to: 277, trigger: level}
+278:
+- {level: 25, to: 279, trigger: level}
+280:
+- {level: 20, to: 281, trigger: level}
+281:
+- {level: 30, to: 282, trigger: level}
+- {gender: male, item: Funkelstein, to: 475, trigger: item}
+283:
+- {level: 22, to: 284, trigger: level}
+285:
+- {level: 23, to: 286, trigger: level}
+287:
+- {level: 18, to: 288, trigger: level}
+288:
+- {level: 36, to: 289, trigger: level}
+290:
+- {level: 20, to: 291, trigger: level}
+- {to: 292, trigger: other}
+293:
+- {level: 20, to: 294, trigger: level}
+294:
+- {level: 40, to: 295, trigger: level}
+296:
+- {level: 24, to: 297, trigger: level}
+298:
+- {to: 183, trigger: happiness}
+299:
+- {location: true, to: 476, trigger: other}
+300:
+- {item: Mondstein, to: 301, trigger: item}
+304:
+- {level: 32, to: 305, trigger: level}
+305:
+- {level: 42, to: 306, trigger: level}
+307:
+- {level: 37, to: 308, trigger: level}
+309:
+- {level: 26, to: 310, trigger: level}
+315:
+- {item: Leuchtstein, to: 407, trigger: item}
+316:
+- {level: 26, to: 317, trigger: level}
+318:
+- {level: 30, to: 319, trigger: level}
+320:
+- {level: 40, to: 321, trigger: level}
+322:
+- {level: 33, to: 323, trigger: level}
+325:
+- {level: 32, to: 326, trigger: level}
+328:
+- {level: 35, to: 329, trigger: level}
+329:
+- {level: 45, to: 330, trigger: level}
+331:
+- {level: 32, to: 332, trigger: level}
+333:
+- {level: 35, to: 334, trigger: level}
+339:
+- {level: 30, to: 340, trigger: level}
+341:
+- {level: 30, to: 342, trigger: level}
+343:
+- {level: 36, to: 344, trigger: level}
+345:
+- {level: 40, to: 346, trigger: level}
+347:
+- {level: 40, to: 348, trigger: level}
+349:
+- {held_item: Schönschuppe, to: 350, trigger: trade}
+353:
+- {level: 37, to: 354, trigger: level}
+355:
+- {level: 37, to: 356, trigger: level}
+356:
+- {held_item: Düsterumhang, to: 477, trigger: trade}
+360:
+- {level: 15, to: 202, trigger: level}
+361:
+- {level: 42, to: 362, trigger: level}
+- {gender: female, item: Funkelstein, to: 478, trigger: item}
+363:
+- {level: 32, to: 364, trigger: level}
+364:
+- {level: 44, to: 365, trigger: level}
+366:
+- {held_item: Abysszahn, to: 367, trigger: trade}
+- {held_item: Abyssschuppe, to: 368, trigger: trade}
+371:
+- {level: 30, to: 372, trigger: level}
+372:
+- {level: 50, to: 373, trigger: level}
+374:
+- {level: 20, to: 375, trigger: level}
+375:
+- {level: 45, to: 376, trigger: level}
+387:
+- {level: 18, to: 388, trigger: level}
+388:
+- {level: 32, to: 389, trigger: level}
+390:
+- {level: 14, to: 391, trigger: level}
+391:
+- {level: 36, to: 392, trigger: level}
+393:
+- {level: 16, to: 394, trigger: level}
+394:
+- {level: 36, to: 395, trigger: level}
+396:
+- {level: 14, to: 397, trigger: level}
+397:
+- {level: 34, to: 398, trigger: level}
+399:
+- {level: 15, to: 400, trigger: level}
+401:
+- {level: 10, to: 402, trigger: level}
+403:
+- {level: 15, to: 404, trigger: level}
+404:
+- {level: 30, to: 405, trigger: level}
+406:
+- {time: day, to: 315, trigger: happiness}
+408:
+- {level: 30, to: 409, trigger: level}
+410:
+- {level: 30, to: 411, trigger: level}
+412:
+- {gender: male, level: 20, to: 414, trigger: level}
+415:
+- {gender: female, level: 21, to: 416, trigger: level}
+418:
+- {level: 26, to: 419, trigger: level}
+420:
+- {level: 25, to: 421, trigger: level}
+425:
+- {level: 28, to: 426, trigger: level}
+427:
+- {to: 428, trigger: happiness}
+431:
+- {level: 38, to: 432, trigger: level}
+433:
+- {time: night, to: 358, trigger: happiness}
+434:
+- {level: 34, to: 435, trigger: level}
+436:
+- {level: 33, to: 437, trigger: level}
+438:
+- {known_move: 102, to: 185, trigger: other}
+439:
+- {known_move: 102, to: 122, trigger: other}
+440:
+- {held_item: Ovaler Stein, time: day, to: 113, trigger: other}
+443:
+- {level: 24, to: 444, trigger: level}
+444:
+- {level: 48, to: 445, trigger: level}
+446:
+- {to: 143, trigger: happiness}
+447:
+- {time: day, to: 448, trigger: happiness}
+449:
+- {level: 34, to: 450, trigger: level}
+451:
+- {level: 40, to: 452, trigger: level}
+453:
+- {level: 37, to: 454, trigger: level}
+456:
+- {level: 31, to: 457, trigger: level}
+458:
+- {party_species: 223, to: 226, trigger: other}
+459:
+- {level: 40, to: 460, trigger: level}
+495:
+- {level: 17, to: 496, trigger: level}
+496:
+- {level: 36, to: 497, trigger: level}
+498:
+- {level: 17, to: 499, trigger: level}
+499:
+- {level: 36, to: 500, trigger: level}
+501:
+- {level: 17, to: 502, trigger: level}
+502:
+- {level: 36, to: 503, trigger: level}
+504:
+- {level: 20, to: 505, trigger: level}
+506:
+- {level: 16, to: 507, trigger: level}
+507:
+- {level: 32, to: 508, trigger: level}
+509:
+- {level: 20, to: 510, trigger: level}
+511:
+- {item: Blattstein, to: 512, trigger: item}
+513:
+- {item: Feuerstein, to: 514, trigger: item}
+515:
+- {item: Wasserstein, to: 516, trigger: item}
+517:
+- {item: Mondstein, to: 518, trigger: item}
+519:
+- {level: 21, to: 520, trigger: level}
+520:
+- {level: 32, to: 521, trigger: level}
+522:
+- {level: 27, to: 523, trigger: level}
+524:
+- {level: 25, to: 525, trigger: level}
+525:
+- {to: 526, trigger: trade}
+527:
+- {to: 528, trigger: happiness}
+529:
+- {level: 31, to: 530, trigger: level}
+532:
+- {level: 25, to: 533, trigger: level}
+533:
+- {to: 534, trigger: trade}
+535:
+- {level: 25, to: 536, trigger: level}
+536:
+- {level: 36, to: 537, trigger: level}
+540:
+- {level: 20, to: 541, trigger: level}
+541:
+- {to: 542, trigger: happiness}
+543:
+- {level: 22, to: 544, trigger: level}
+544:
+- {level: 30, to: 545, trigger: level}
+546:
+- {item: Sonnenstein, to: 547, trigger: item}
+548:
+- {item: Sonnenstein, to: 549, trigger: item}
+551:
+- {level: 29, to: 552, trigger: level}
+552:
+- {level: 40, to: 553, trigger: level}
+554:
+- {level: 35, to: 555, trigger: level}
+557:
+- {level: 34, to: 558, trigger: level}
+559:
+- {level: 39, to: 560, trigger: level}
+562:
+- {level: 34, to: 563, trigger: level}
+564:
+- {level: 37, to: 565, trigger: level}
+566:
+- {level: 37, to: 567, trigger: level}
+568:
+- {level: 36, to: 569, trigger: level}
+570:
+- {level: 30, to: 571, trigger: level}
+572:
+- {item: Leuchtstein, to: 573, trigger: item}
+574:
+- {level: 32, to: 575, trigger: level}
+575:
+- {level: 41, to: 576, trigger: level}
+577:
+- {level: 32, to: 578, trigger: level}
+578:
+- {level: 41, to: 579, trigger: level}
+580:
+- {level: 35, to: 581, trigger: level}
+582:
+- {level: 35, to: 583, trigger: level}
+583:
+- {level: 47, to: 584, trigger: level}
+588:
+- {to: 589, trade_species: 616, trigger: trade}
+590:
+- {level: 39, to: 591, trigger: level}
+592:
+- {level: 40, to: 593, trigger: level}
+595:
+- {level: 36, to: 596, trigger: level}
+597:
+- {level: 40, to: 598, trigger: level}
+599:
+- {level: 38, to: 600, trigger: level}
+600:
+- {level: 49, to: 601, trigger: level}
+602:
+- {level: 39, to: 603, trigger: level}
+603:
+- {item: Donnerstein, to: 604, trigger: item}
+605:
+- {level: 42, to: 606, trigger: level}
+607:
+- {level: 41, to: 608, trigger: level}
+608:
+- {item: Finsterstein, to: 609, trigger: item}
+610:
+- {level: 38, to: 611, trigger: level}
+611:
+- {level: 48, to: 612, trigger: level}
+613:
+- {level: 37, to: 614, trigger: level}
+616:
+- {to: 617, trade_species: 588, trigger: trade}
+619:
+- {level: 50, to: 620, trigger: level}
+622:
+- {level: 43, to: 623, trigger: level}
+624:
+- {level: 52, to: 625, trigger: level}
+627:
+- {level: 54, to: 628, trigger: level}
+629:
+- {level: 54, to: 630, trigger: level}
+633:
+- {level: 50, to: 634, trigger: level}
+634:
+- {level: 64, to: 635, trigger: level}
+636:
+- {level: 59, to: 637, trigger: level}

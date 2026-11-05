@@ -196,6 +196,8 @@ class TrackerCoreMixin:
         # ihn als Target einhaengt. Munchlax selbst wird mit
         # `set_kivy_loop` zusaetzlich das OBS/Overlay-Target bekommen.
         self.munchlax = Munchlax(ip_to_connect, port_to_connect, self.rem, self.sp, self.pl, self.configsave, self.nuz)
+        # Host-Erkennung im Server an die Runtime-ID koppeln (nicht nur rem).
+        self.arceus.set_local_client_id(self.munchlax.client_id)
         self.munchlax_thread = MunchlaxThread()
         self.munchlax_thread.start()
         # get_running_loop() statt get_event_loop(): Kivy's async_run garantiert

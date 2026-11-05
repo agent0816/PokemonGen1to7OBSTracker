@@ -1,7 +1,7 @@
 """KivyMD-Dialoge zum manuellen Anlegen eines Encounters bzw. einer Soullink-Gruppe.
 
 ``EncounterCreateDialogMD``: Spieler (nur lokale Slots) -> Quelle (Team / Box /
-Freitext) -> Route, Methode, Status, Level. Gesendet wird ueber
+letzter Gegner / Freitext) -> Route, Methode, Status, Level. Gesendet wird ueber
 ``munchlax.edit_encounter(..., create=...)``.
 ``NewGroupDialogMD`` (nur Host): pro erwartetem Spieler einen Encounter waehlen,
 mindestens zwei -> ``munchlax.edit_soullink_link("create", members=[...])``.
@@ -27,7 +27,7 @@ from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
 from backend.classes.pokedex_db import PokedexDB
-from backend.encounter_edit import new_manual_personality, pokemon_gender_form
+from backend.encounter_edit import new_manual_personality, opponent_pokemon, pokemon_gender_form
 from backend.logging_setup import get_logger
 from backend.player_display import labels_for_slots
 from backend.pokedex_view import location_name, species_name
@@ -40,7 +40,8 @@ from frontend.widgets.md_common import show_snackbar
 logger = get_logger(__name__, 'logs/encountermenu.log')
 
 SOURCE_OPTIONS: list[tuple[str, str]] = [
-    ("Aus Team", "team"), ("Aus Box", "box"), ("Freitext", "free"),
+    ("Aus Team", "team"), ("Aus Box", "box"), ("Letzter Gegner", "opponent"),
+    ("Freitext", "free"),
 ]
 
 
@@ -244,7 +245,7 @@ class _DialogBase:
 
 
 class EncounterCreateDialogMD(_DialogBase):
-    """Neuen Encounter anlegen (aus Team, Box oder Freitext)."""
+    """Neuen Encounter anlegen (aus Team, Box, letztem Gegner oder Freitext)."""
 
     headline = "Encounter hinzufügen"
 
@@ -311,6 +312,18 @@ class EncounterCreateDialogMD(_DialogBase):
             return []
         return [(pokemon_label(p, self.species_de, f"Platz {i + 1}: "), i)
                 for i, p in enumerate(boxes[idx] or []) if is_real_pokemon(p)]
+
+    def last_opponent(self) -> dict | None:
+        """Zuletzt erkannter Wild-Gegner des gewaehlten Spielers (Snapshot)."""
+        try:
+            entry = self.munchlax.snapshot_last_opponents().get(self.state["pid"])
+        except Exception:
+            logger.error(f"Create-Dialog: letzter Gegner nicht lesbar: {traceback.format_exc()}")
+            return None
+        # Edition gewechselt (anderes Spiel geladen) → alter Gegner passt nicht
+        if entry and entry.get("edition") not in (None, self._edition()):
+            return None
+        return entry
 
     def _team_pokemon(self, idx: int):
         team = self.munchlax.snapshot_sorted_teams().get(self.state["pid"]) or []
@@ -399,6 +412,8 @@ class EncounterCreateDialogMD(_DialogBase):
                                 "Pokemon wählen" if entries else "Team leer / nicht verbunden")
             self._fields["pokemon"] = field
             self._src_holder.add_widget(labeled("Pokemon aus dem Team", field.button, dp(48)))
+        elif source == "opponent":
+            self._add_opponent_info()
         elif source == "box":
             boxes = self.box_entries()
             bfield = ChoiceField(boxes, self.state["box"] if boxes else None,
@@ -413,6 +428,39 @@ class EncounterCreateDialogMD(_DialogBase):
             self._src_holder.add_widget(labeled("Spezies (Name oder Nr. eintippen)",
                                                 self._species_picker.field, dp(56)))
         self._src_holder.height = self._src_holder.minimum_height
+
+    def _add_opponent_info(self) -> None:
+        """Quelle "Letzter Gegner": Anzeige + Vorbelegung von Pokemon/Level/Route."""
+        entry = self.last_opponent()
+        pokemon = opponent_pokemon(entry)
+        if pokemon is None:
+            text = "Noch kein Wild-Gegner erkannt (Spiel verbunden?)."
+        else:
+            text = pokemon_label(pokemon, self.species_de)
+            route = entry.get("route")
+            if route is not None:
+                text += f" - {location_name(int(route), self._edition())}"
+        # Hinweise im Label statt Snackbar: _rebuild_source laeuft bei jedem
+        # Quellen-/Spielerwechsel, Snackbars wuerden sich wiederholen
+        notes: list[str] = []
+        if pokemon is not None and not has_real_pv(pokemon):
+            self.chosen = None
+            notes.append("ohne PV - bitte Freitext nutzen")
+        elif pokemon is not None:
+            self.chosen = pokemon
+            lvl = _to_int(getattr(pokemon, "lvl", None))
+            self.set_value("lvl", str(lvl) if lvl else "")
+            route = entry.get("route")
+            if route is not None and self._route_picker is not None and int(route) in [
+                    v for _t, v in self._route_picker.entries]:
+                self.set_route(int(route))
+            else:
+                notes.append("Route nicht zuordenbar - bitte wählen")
+        if notes:
+            text += f"  ({'; '.join(notes)})"
+        label = MDLabel(text=text, role="small", valign="center", size_hint_y=None)
+        label.bind(texture_size=lambda inst, ts: setattr(inst, "height", max(dp(32), ts[1])))
+        self._src_holder.add_widget(label)
 
     def _add_slot_field(self) -> None:
         old = self._fields.pop("slot", None)

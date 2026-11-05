@@ -151,7 +151,7 @@ class Screens(ScreenManager):
             # in der klassischen UI verdrahten. Banner + Slot-Kollision sind seit
             # Phase E MDDialog (wipe_banner_md / md_common.confirm_dialog).
             self._active_wipe_banner = None
-            self._wire_safety_callbacks(munchlax, configsave, bh, bizhawk, rnd, pl, rem)
+            self._wire_safety_callbacks(munchlax, configsave, bh, bizhawk, rnd, pl, rem, citra)
 
             # Start auf dem Ladescreen; die Boot-Sequenz lädt IPs + Update-Check
             # nicht-blockierend und navigiert danach weiter (Update-Popup bzw.
@@ -267,7 +267,7 @@ class Screens(ScreenManager):
         if self.current_screen is not None:
             self.current_screen.pos = pos
 
-    def _wire_safety_callbacks(self, munchlax, configsave, bh, bizhawk, rnd, pl, rem) -> None:
+    def _wire_safety_callbacks(self, munchlax, configsave, bh, bizhawk, rnd, pl, rem, citra) -> None:
         from frontend.widgets.wipe_banner_md import TotalWipeBannerMD
 
         def _open_wipe_banner(violation):
@@ -377,12 +377,25 @@ class Screens(ScreenManager):
                 munchlax, "last_import_request_id", None)
             try:
                 try:
-                    results = await run_auto_import(munchlax, self.pl, self.citra, self.bizhawk)
+                    # Screens haelt pl/citra/bizhawk nicht als Attribute —
+                    # Closure-Referenzen aus _wire_safety_callbacks nutzen.
+                    results = await run_auto_import(munchlax, pl, citra, bizhawk)
                 except Exception as err:
                     logger.error(f"Auto-Import fehlgeschlagen: {type(err)},{err}")
                     logger.error(traceback.format_exc())
                     show_snackbar("Encounter-Erfassung fehlgeschlagen (siehe Log).",
                                   level='error')
+                    # Host trotzdem antworten, sonst wartet er bis zum Timeout
+                    # auf "keine Antwort" (keine silent async-Dropouts).
+                    results = [{"player": None, "ok": False, "count": 0,
+                                "msg": "Fehler beim Einlesen"}]
+                    coro = munchlax.send_encounter_import_result(request_id, results)
+                    try:
+                        future = munchlax.submit_cross_thread(coro)
+                        future.add_done_callback(lambda f: f.cancelled() or f.exception())
+                    except Exception as send_err:
+                        coro.close()  # nie gestartet → kein "never awaited"
+                        logger.warning(f"Fehler-Rückmeldung an Host fehlgeschlagen: {send_err}")
                     return
                 total = sum(int(r.get("count") or 0) for r in results)
                 if not own_request:

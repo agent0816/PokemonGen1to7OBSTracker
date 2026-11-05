@@ -1529,6 +1529,30 @@ class Bizhawk:
             self.logger.error(f"_process_dragon_rage_read failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
 
+    def _ensure_encounter_tracker(self) -> bool:
+        """Tracker anlegen bzw. an die AKTUELLE PokedexDB binden.
+
+        Munchlax.disconnect schliesst die DB (close_pokedex_db) und baut beim
+        naechsten _ensure_pokedex_db ein neues Objekt. Ein einmal gebauter
+        Tracker hielt sonst das geschlossene Objekt: has_catching_balls lieferte
+        False → jeder Wild-Encounter "Run nicht gestartet" bis zum Neustart
+        (Live-Test 2026-11-04 ab 20:28, nach Reconnect 20:25).
+        """
+        self.munchlax._ensure_pokedex_db()
+        db = self.munchlax.pokedex_db
+        if db is None:
+            return False
+        if self.encounter_tracker is None:
+            self.encounter_tracker = EncounterTracker(db, self.munchlax.nuz, munchlax=self.munchlax)
+        elif self.encounter_tracker.pokedex_db is not db:
+            # Ein evtl. noch laufender Executor-Job liest pokedex_db pro Zugriff
+            # neu und kann so alt/neu mischen — in Kauf genommen: Rebind nur
+            # beim (seltenen) DB-Wechsel, die alte DB ist dann ohnehin zu.
+            self.logger.info("EncounterTracker an neue PokedexDB gebunden "
+                             "(Reconnect/Session-Wechsel)")
+            self.encounter_tracker.pokedex_db = db
+        return True
+
     async def _read_encounter_data(self, client_id: str, player: int,
                                     edition: int):
         """Liest Gegner-Daten bei Kampfbeginn und prüft Nuzlocke-Regeln.
@@ -1671,6 +1695,9 @@ class Bizhawk:
             self._last_battle_pv[client_id] = opp["personality"]
             if map_header is not None:
                 self._last_map_header[client_id] = map_header
+            # Fuer den Anlegen-Dialog ("Letzter Gegner") — vor Regel-Check, damit
+            # auch verworfene Encounter (Ball-Gate o.ae.) nachtragbar sind
+            self.munchlax.set_last_opponent(player, edition, route, opp)
 
             # Party-Groesse vor dem Kampf einfrieren — der Outcome-Check
             # vergleicht spaeter gegen den Wert nach Kampfende (Fix 2).
@@ -1679,16 +1706,7 @@ class Bizhawk:
                 if pc_before is not None:
                     self._last_party_count[client_id] = pc_before
 
-            if self.encounter_tracker is None:
-                self.munchlax._ensure_pokedex_db()
-                if self.munchlax.pokedex_db is not None:
-                    self.encounter_tracker = EncounterTracker(
-                        self.munchlax.pokedex_db,
-                        self.munchlax.nuz,
-                        munchlax=self.munchlax,
-                    )
-
-            if self.encounter_tracker is None:
+            if not self._ensure_encounter_tracker():
                 self.logger.warning("PokedexDB nicht verfügbar, Encounter wird übersprungen")
                 return
 
@@ -1836,15 +1854,7 @@ class Bizhawk:
         # EncounterTracker lazy initialisieren — bisher nur in _read_encounter_data,
         # das aber nur bei Wild-Kaempfen laeuft. Ohne vorherigen Wild-Kampf war
         # der Tracker None und Starter/Gift-Encounter wurden komplett verworfen.
-        if self.encounter_tracker is None:
-            self.munchlax._ensure_pokedex_db()
-            if self.munchlax.pokedex_db is not None:
-                self.encounter_tracker = EncounterTracker(
-                    self.munchlax.pokedex_db,
-                    self.munchlax.nuz,
-                    munchlax=self.munchlax,
-                )
-        if self.encounter_tracker is None:
+        if not self._ensure_encounter_tracker():
             self.logger.warning(
                 "PokedexDB nicht verfuegbar, Starter/Gift-Encounter uebersprungen"
             )
@@ -2200,7 +2210,8 @@ class Bizhawk:
         try:
             battle_pv = self._last_battle_pv.pop(client_id, None)
             party_count_before = self._last_party_count.pop(client_id, None)
-            if battle_pv is None or self.encounter_tracker is None:
+            # Rebind auch hier: update_outcome auf geschlossener DB ginge verloren
+            if battle_pv is None or not self._ensure_encounter_tracker():
                 return
 
             outcome: str | None = None

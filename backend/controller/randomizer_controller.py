@@ -51,6 +51,10 @@ class RandomizerController:
         from backend.rando_sync import local_player_slots
         return local_player_slots(self.pl, self.logger)
 
+    def get_run_manager(self) -> RunManager | None:
+        """Oeffentlicher Zugriff fuer das Frontend (z.B. ROM-Pfad kopieren)."""
+        return self._get_run_manager()
+
     def _get_run_manager(self) -> RunManager | None:
         if self.configsave is None:
             self.logger.error("configsave nicht gesetzt — RunManager nicht verfügbar")

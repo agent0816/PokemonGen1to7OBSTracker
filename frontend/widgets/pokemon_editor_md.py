@@ -24,7 +24,9 @@ from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.textfield import MDTextField
 from kivy.uix.widget import Widget
 
+from backend.evolution_info import evolution_text
 from backend.logging_setup import get_logger
+from backend.pokedex_view import edition_to_gen, load_species_de
 from backend.pokemon_detail_view import moves_de
 from backend.pokemon_editor_logic import (
     LEVEL_MAX, LEVEL_MIN, MOVE_SLOTS, build_edit, clamp_level, current_move_ids,
@@ -126,6 +128,14 @@ class PokemonEditorDialogMD:
         if self.is_party:
             content.add_widget(self.preview_label)
 
+        # Entwicklungs-Info (umbrechend, Höhe folgt der Texthöhe -> sicher bei 800 px)
+        self.evolution_label = MDLabel(text=self._evolution_text(), size_hint_y=None)
+        self.evolution_label.role = "small"
+        self.evolution_label.bind(texture_size=lambda inst, size: setattr(
+            inst, "height", max(dp(20), size[1])))
+        if self.evolution_label.text:
+            content.add_widget(self.evolution_label)
+
         hint = MDLabel(text=HINT_TEXT, size_hint_y=None, height=dp(40))
         hint.role = "small"
         content.add_widget(hint)
@@ -146,6 +156,27 @@ class PokemonEditorDialogMD:
             auto_dismiss=False,
         )
         self._dialog.bind(on_dismiss=self._handle_dismiss)
+
+    def _evolution_text(self) -> str:
+        """Entwicklungs-Einzeiler; bei randomisierten Entwicklungen mit Rando-Zielen."""
+        try:
+            rando_targets: list[int] | None = None
+            data = self.rando_data
+            if data is not None and getattr(data, "evolutions_randomized", False):
+                names = getattr(data, "evolutions", {}).get(int(self.dexnr), [])
+                lookup = getattr(data, "pokemon_name_to_id", {})
+                rando_targets = [lookup[n.lower()] for n in names if n.lower() in lookup]
+                if len(rando_targets) < len(names):
+                    # Nicht aufloesbare Log-Namen: sonst "nicht weiter" bzw.
+                    # falsche Index-Paarung → Log-Namen roh anzeigen
+                    logger.warning(f"Rando-Entwicklungsziele nicht aufloesbar: dex={self.dexnr} "
+                                   f"names={names} aufgeloest={rando_targets}")
+                    return f"Entwickelt sich zu {', '.join(names)} (Randomizer)"
+            return evolution_text(self.dexnr, edition_to_gen(self.edition),
+                                  load_species_de(), rando_targets)
+        except Exception:
+            logger.error(f"Pokemon-Editor Entwicklungs-Info fehlgeschlagen: {traceback.format_exc()}")
+            return ""
 
     def open(self) -> None:
         self._dialog.open()

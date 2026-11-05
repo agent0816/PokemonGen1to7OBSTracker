@@ -119,6 +119,19 @@ def new_encounter(personality: int, owner: str, create: dict) -> dict:
         base, {k: v for k, v in create.items() if k in EDITABLE_FIELDS})
 
 
+def opponent_pokemon(entry: dict | None):
+    """Snapshot-Eintrag aus ``Munchlax.last_opponents`` als Pokemon-aehnliches
+    Objekt (dexnr, lvl, personality, shiny, female, form) fuer den Anlegen-
+    Dialog; None ohne gueltige Spezies."""
+    from types import SimpleNamespace
+    if not entry or int(entry.get("dexnr") or 0) <= 0:
+        return None
+    return SimpleNamespace(
+        dexnr=int(entry["dexnr"]), lvl=int(entry.get("lvl") or 0),
+        personality=entry.get("personality"), shiny=bool(entry.get("shiny")),
+        female=entry.get("female"), form=str(entry.get("form") or ""), nickname="")
+
+
 def pokemon_gender_form(pokemon) -> tuple[bool | None, str]:
     """Geschlecht (None = unbekannt) und Form (gestrippt, "" = keine) eines
     dekodierten Pokemon — gemeinsam fuer Anlegen-Dialog und Import."""

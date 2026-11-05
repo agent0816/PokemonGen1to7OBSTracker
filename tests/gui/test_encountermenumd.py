@@ -140,6 +140,11 @@ class _DriveApp(MDApp):
         self.check("soullink_1_gruppe", len(cards) == 1, len(cards))
         self.check("soullink_2_member", bool(cards) and len(cards[0].group["members"]) == 2)
         self.check("soullink_keine_flat_zeilen", not self._rows())
+        # Unveraenderte Gruppe: Karte wird beim Neu-Filtern wiederverwendet
+        before = cards[0] if cards else None
+        self.menu._apply_filters()
+        after = self._cards()
+        self.check("karte_wiederverwendet", before is not None and after and after[0] is before)
         self.shot("02_encounter_soullink")
         self._next(self.s_finish, 0.8)
 
@@ -150,6 +155,7 @@ class _DriveApp(MDApp):
 _EXPECTED = {"host_sync_button",
     "flat_5_zeilen", "flat_keine_karten", "spieler_filter_bob",
     "soullink_1_gruppe", "soullink_2_member", "soullink_keine_flat_zeilen",
+    "karte_wiederverwendet",
 }
 
 

@@ -213,3 +213,25 @@ def test_result_text_ohne_slot():
     text, _ = summary_text([("Ash", [{"player": 1, "ok": True, "count": 2}]),
                             ("Bob", [{"player": None, "ok": False, "msg": "läuft bereits"}])])
     assert text == "Encounter-Erfassung: Ash – Slot 1: 2 übernommen | Bob – läuft bereits"
+
+
+# ---------------------------------------------------------------- Host-Erkennung
+# Live-Test 2026-11-04: nach Session-Wechsel stand in rem client_id=0 →
+# Host-Aktionen wurden abgelehnt.
+
+def test_is_host_client_nach_session_load_mit_null_in_rem():
+    rem = {"client_port": "43886", "client_id": "0aed"}
+    a = Arceus("localhost", 43886, rem)
+    a.set_local_client_id("0aed")
+    rem["client_id"] = 0  # simulierter Session-Load (Altverhalten)
+    assert a._is_host_client("0aed")
+    assert not a._is_host_client("c2")
+    assert not a._is_host_client(0)
+
+
+def test_is_host_client_fallback_rem_ohne_setter():
+    a = Arceus("localhost", 43886, {"client_port": "43886", "client_id": "0aed"})
+    assert a._is_host_client("0aed")
+    assert not a._is_host_client("x")
+    b = Arceus("localhost", 43886, {"client_port": "43886", "client_id": 0})
+    assert not b._is_host_client(0)

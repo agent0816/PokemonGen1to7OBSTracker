@@ -413,6 +413,11 @@ class MainMenu(MDScreen):
         self.randomize_button = _full_button("Randomisieren", self.start_randomization)
         card.add_widget(self.randomize_button)
 
+        self.copy_rom_button = MDButton(MDButtonText(text="ROM-Pfad kopieren"),
+                                        style="outlined", theme_width="Custom",
+                                        size_hint_x=1, on_release=self._on_copy_rom_path)
+        card.add_widget(self.copy_rom_button)
+
         logs_row = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44),
                                spacing=dp(8))
         self.pack_logs_button = MDButton(MDButtonText(text="Logs packen"), style="outlined",
@@ -952,6 +957,25 @@ class MainMenu(MDScreen):
                                     on_release=lambda *_: dialog.dismiss()))
         dialog.add_widget(buttons)
         dialog.open()
+
+    def _on_copy_rom_path(self, *_args) -> None:
+        """Kopiert den ROM-Pfad des aktiven Runs (erster lokaler Slot mit ROM)."""
+        try:
+            from backend.rando_sync import local_player_slots
+            from backend.rom_path import resolve_own_rom_path
+            # Kleiner YAML-Read (meta/active-Marker) — wie andere Aktionen hier synchron.
+            rom = resolve_own_rom_path(self.randomizer.get_run_manager(),
+                                       local_player_slots(self.pl, logger))
+        except Exception as err:
+            logger.error(f"ROM-Pfad ermitteln fehlgeschlagen: {type(err)}, {err}")
+            logger.error(traceback.format_exc())
+            show_snackbar(f"ROM-Pfad nicht ermittelbar: {err}", level='error', duration=4.0)
+            return
+        if not rom:
+            show_snackbar("Kein aktiver Run mit ROM für deinen Slot.", level='info')
+            return
+        Clipboard.copy(rom)
+        show_snackbar(f"ROM-Pfad kopiert: {Path(rom).name}", level='success')
 
     # -- Aktionen: Logs --------------------------------------------------------
 

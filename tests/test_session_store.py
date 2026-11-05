@@ -130,3 +130,34 @@ def test_save_session_list(config_root: str):
     session_store.save_session_list(config_root, ["A", "B c"])
     list_file = Path(config_root).parent / "session_list.yml"
     assert yaml.safe_load(list_file.read_text()) == ["A", "B c"]
+
+
+# ---------------------------------------------------------------- client_id
+# Live-Test 2026-11-04: Session-Wechsel ueberschrieb rem["client_id"] mit dem
+# YAML-Wert 0 → Arceus erkannte den Host nicht mehr ("Abgelehnt").
+
+def test_load_behaelt_laufende_client_id_bei_yaml_null(config_root: str):
+    rem_path = Path(f"{config_root}remote.yml")
+    rem_path.write_text(yaml.dump({"client_port": 43886, "client_id": 0}))
+    live = _configs("live")
+    live.rem["client_id"] = "0aed1234"
+    session_store.load_session_into(config_root, live)
+    assert live.rem["client_id"] == "0aed1234"
+    assert live.rem["client_port"] == 43886
+
+
+def test_load_behaelt_laufende_client_id_bei_fremder_id(config_root: str):
+    Path(f"{config_root}remote.yml").write_text(yaml.dump({"client_id": "fremd"}))
+    live = _configs("live")
+    live.rem["client_id"] = "0aed1234"
+    session_store.load_session_into(config_root, live)
+    assert live.rem["client_id"] == "0aed1234"
+
+
+def test_load_uebernimmt_yaml_id_ohne_laufende(config_root: str):
+    Path(f"{config_root}remote.yml").write_text(yaml.dump({"client_id": "abc"}))
+    live = _configs("live")
+    session_store.load_session_into(config_root, live)
+    assert live.rem["client_id"] == "abc"
+    # read_session (frische Dicts, z.B. Template) liefert den YAML-Wert
+    assert session_store.read_session(config_root).rem["client_id"] == "abc"

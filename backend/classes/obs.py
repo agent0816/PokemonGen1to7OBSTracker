@@ -4,7 +4,7 @@ import traceback
 from types import SimpleNamespace
 from websockets.exceptions import WebSocketException
 
-from backend.party_rules import first_type_dupe_slots, is_marked_dead
+from backend.party_rules import is_marked_dead, party_blocked_slots
 from backend.tm_type_resolver import resolve_tm_hm_sprite
 from backend.logging_setup import get_logger
 
@@ -461,7 +461,7 @@ class OBS():
         return HP_COLOR_RED
 
     def _build_hp_bar_updates(self, player: int, slots, team) -> list:
-        blocked = first_type_dupe_slots(team, self.munchlax.nuz)
+        blocked = party_blocked_slots(self.munchlax, player, team)
         batch = []
         for slot in slots:
             pokemon = team[slot]
@@ -647,7 +647,7 @@ class OBS():
         return sequence
 
     def _build_slot_content_batch(self, player: int, slots, team, edition) -> list:
-        blocked = first_type_dupe_slots(team, self.munchlax.nuz)
+        blocked = party_blocked_slots(self.munchlax, player, team)
         batch = []
         for slot in slots:
             src = _EMPTY_POKEMON_STUB if slot in blocked else team[slot]
@@ -1184,7 +1184,7 @@ class OBS():
         return None
 
     def _build_filter_updates(self, player: int, slots, team) -> list:
-        blocked = first_type_dupe_slots(team, self.munchlax.nuz)
+        blocked = party_blocked_slots(self.munchlax, player, team)
         dead_pvs = self.munchlax.snapshot_dead_pvs().get(player)
         batch = []
         for slot in slots:

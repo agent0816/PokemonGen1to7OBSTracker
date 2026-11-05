@@ -1,0 +1,148 @@
+# Entwicklungen Generation 1 - generiert von tools/gen_evolutions.py am 2026-11-05
+# Quelle: https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/pokemon_evolution.csv (PokeAPI)
+# Regeln: Version-Groups <= Gen, ohne Colosseum/XD/Let's Go; je (Quelle, Ziel) nur die
+# Zeilen der hoechsten erlaubten Version-Group; Regional-/Alola-Formen ausgelassen.
+# Nicht von Hand editieren. Struktur: source_dex -> [{to, trigger, ...}]
+# trigger: level|item|trade|happiness|other; Items deutsch; party_type/move_type = PokeAPI-Typ-ID.
+1:
+- {level: 16, to: 2, trigger: level}
+2:
+- {level: 32, to: 3, trigger: level}
+4:
+- {level: 16, to: 5, trigger: level}
+5:
+- {level: 36, to: 6, trigger: level}
+7:
+- {level: 16, to: 8, trigger: level}
+8:
+- {level: 36, to: 9, trigger: level}
+10:
+- {level: 7, to: 11, trigger: level}
+11:
+- {level: 10, to: 12, trigger: level}
+13:
+- {level: 7, to: 14, trigger: level}
+14:
+- {level: 10, to: 15, trigger: level}
+16:
+- {level: 18, to: 17, trigger: level}
+17:
+- {level: 36, to: 18, trigger: level}
+19:
+- {level: 20, to: 20, trigger: level}
+21:
+- {level: 20, to: 22, trigger: level}
+23:
+- {level: 22, to: 24, trigger: level}
+25:
+- {item: Donnerstein, to: 26, trigger: item}
+27:
+- {level: 22, to: 28, trigger: level}
+29:
+- {level: 16, to: 30, trigger: level}
+30:
+- {item: Mondstein, to: 31, trigger: item}
+32:
+- {level: 16, to: 33, trigger: level}
+33:
+- {item: Mondstein, to: 34, trigger: item}
+35:
+- {item: Mondstein, to: 36, trigger: item}
+37:
+- {item: Feuerstein, to: 38, trigger: item}
+39:
+- {item: Mondstein, to: 40, trigger: item}
+41:
+- {level: 22, to: 42, trigger: level}
+43:
+- {level: 21, to: 44, trigger: level}
+44:
+- {item: Blattstein, to: 45, trigger: item}
+46:
+- {level: 24, to: 47, trigger: level}
+48:
+- {level: 31, to: 49, trigger: level}
+50:
+- {level: 26, to: 51, trigger: level}
+52:
+- {level: 28, to: 53, trigger: level}
+54:
+- {level: 33, to: 55, trigger: level}
+56:
+- {level: 28, to: 57, trigger: level}
+58:
+- {item: Feuerstein, to: 59, trigger: item}
+60:
+- {level: 25, to: 61, trigger: level}
+61:
+- {item: Wasserstein, to: 62, trigger: item}
+63:
+- {level: 16, to: 64, trigger: level}
+64:
+- {to: 65, trigger: trade}
+66:
+- {level: 28, to: 67, trigger: level}
+67:
+- {to: 68, trigger: trade}
+69:
+- {level: 21, to: 70, trigger: level}
+70:
+- {item: Blattstein, to: 71, trigger: item}
+72:
+- {level: 30, to: 73, trigger: level}
+74:
+- {level: 25, to: 75, trigger: level}
+75:
+- {to: 76, trigger: trade}
+77:
+- {level: 40, to: 78, trigger: level}
+79:
+- {level: 37, to: 80, trigger: level}
+81:
+- {level: 30, to: 82, trigger: level}
+84:
+- {level: 31, to: 85, trigger: level}
+86:
+- {level: 34, to: 87, trigger: level}
+88:
+- {level: 38, to: 89, trigger: level}
+90:
+- {item: Wasserstein, to: 91, trigger: item}
+92:
+- {level: 25, to: 93, trigger: level}
+93:
+- {to: 94, trigger: trade}
+96:
+- {level: 26, to: 97, trigger: level}
+98:
+- {level: 28, to: 99, trigger: level}
+100:
+- {level: 30, to: 101, trigger: level}
+102:
+- {item: Blattstein, to: 103, trigger: item}
+104:
+- {level: 28, to: 105, trigger: level}
+109:
+- {level: 35, to: 110, trigger: level}
+111:
+- {level: 42, to: 112, trigger: level}
+116:
+- {level: 32, to: 117, trigger: level}
+118:
+- {level: 33, to: 119, trigger: level}
+120:
+- {item: Wasserstein, to: 121, trigger: item}
+129:
+- {level: 20, to: 130, trigger: level}
+133:
+- {item: Wasserstein, to: 134, trigger: item}
+- {item: Donnerstein, to: 135, trigger: item}
+- {item: Feuerstein, to: 136, trigger: item}
+138:
+- {level: 40, to: 139, trigger: level}
+140:
+- {level: 40, to: 141, trigger: level}
+147:
+- {level: 30, to: 148, trigger: level}
+148:
+- {level: 55, to: 149, trigger: level}

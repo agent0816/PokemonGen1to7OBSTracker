@@ -26,7 +26,7 @@ class EncounterResult:
     outcome: str
     is_first: bool
     is_shiny_override: bool
-    is_dupes_skip: bool
+    is_dupes_skip: int  # 0 | RETRY_DUPE | RETRY_TYPE_CLASH (pokedex_db)
     has_balls: bool
     already_logged: bool
     female: bool = False
@@ -187,8 +187,10 @@ class EncounterTracker:
 
     def _check_nuzlocke_flags(self, owner: str, edition: int,
                                route: int, dexnr: int,
-                               shiny: bool, method: str) -> tuple[bool, bool, bool, bool]:
+                               shiny: bool, method: str) -> tuple[bool, bool, bool, int]:
         """Prüft Nuzlocke-Regeln. Gibt (has_balls, is_first, is_shiny_override, is_dupes_skip) zurück.
+
+        ``is_dupes_skip`` ist 0, ``RETRY_DUPE`` oder ``RETRY_TYPE_CLASH``.
 
         Rule-Mapping (Task #10):
         - rule_shiny_clause_always_catchable → überschreibt shiny_clause (Preset-Kompat)
@@ -251,7 +253,7 @@ class EncounterTracker:
         # gefangen hat, gilt der Encounter als Retry (nicht als verbrauchter Slot).
         is_type_clash_retry = False
         if (is_first or is_shiny_override) and self._has_type_clash_with_linked(
-            owner, dexnr, method
+            owner, dexnr, method, route=route, edition=edition
         ):
             is_type_clash_retry = True
 
@@ -259,21 +261,38 @@ class EncounterTracker:
         # NICHT — Encounter wird zwar geloggt (für Statistik), aber mit
         # is_first=False, damit der echte First-Encounter noch ansteht.
         # is_dupes_skip wird als gemeinsamer "Retry"-Marker in der DB verwendet.
-        if is_dupes_skip or is_type_clash_retry:
+        # Retry-Grund im Marker: Dupes hat Vorrang (Anzeige "dupe"), sonst
+        # Ersttyp ("Retry (Ersttyp)") — vorher landete beides als "dupe".
+        from backend.classes.pokedex_db import RETRY_DUPE, RETRY_TYPE_CLASH
+        retry_marker = 0
+        if is_dupes_skip:
+            retry_marker = RETRY_DUPE
+        elif is_type_clash_retry:
+            retry_marker = RETRY_TYPE_CLASH
+        if retry_marker:
             is_first = False
             is_shiny_override = False
-            is_dupes_skip = True  # Marker vereinheitlichen
             if is_type_clash_retry:
                 self.logger.info(
-                    f"Ersttyp-Clause-Retry: owner={owner} dex={dexnr} method={method}"
+                    f"Ersttyp-Clause-Retry: owner={owner} dex={dexnr} method={method} "
+                    f"marker={retry_marker}"
                 )
 
-        return has_balls, is_first, is_shiny_override, is_dupes_skip
+        return has_balls, is_first, is_shiny_override, retry_marker
 
-    def _has_type_clash_with_linked(self, owner: str, dexnr, method: str) -> bool:
-        """Prüft ob ein verlinkter Partner bereits einen Pokemon mit gleichem
-        Ersttyp angetroffen hat. Wenn ja → Encounter darf zurückgewiesen werden
-        (Retry-Regel), ohne die Route zu verbrauchen.
+    def _has_type_clash_with_linked(self, owner: str, dexnr, method: str,
+                                    route: int | None = None,
+                                    edition: int | None = None) -> bool:
+        """Prüft ob ein Partner IN DER GRUPPE, in die dieser Encounter fällt,
+        bereits ein Pokemon mit gleichem Ersttyp angetroffen hat. Wenn ja →
+        Encounter darf zurückgewiesen werden (Retry-Regel), ohne die Route zu
+        verbrauchen.
+
+        Zielgruppe wie ``Arceus._assign_link_group``: gleiche Route + Gen,
+        ``link_index`` = bisherige Gruppen dieses Spielers auf der Route + 1,
+        nicht manuell. Existiert sie noch nicht (Spieler ist Erster auf der
+        Route), gibt es keinen Konflikt. Live-Test 2026-11-04: vorher zählten
+        Partner aus ALLEN Gruppen (inkl. Importe) → fast jeder Typ belegt.
 
         - rule_first_type_clause_linked muss aktiv sein
         - method ∈ {gift, fossil, static, egg} zählt als exempt (bekommt Token
@@ -297,7 +316,10 @@ class EncounterTracker:
         my_type = first_type(dexnr)
         if my_type is None:
             return False
-        links = getattr(self.munchlax, "soullink_links", None)
+        # Snapshot unter state_lock: der Aufruf kommt aus dem BizHawk-Thread,
+        # der Munchlax-Loop schreibt parallel neue Links (Dict-Size-Change).
+        snapshot = getattr(self.munchlax, "snapshot_soullink_links", None)
+        links = snapshot() if callable(snapshot) else getattr(self.munchlax, "soullink_links", None)
         if not isinstance(links, dict):
             return False
         # expected_owners und link.members verwenden Root-Namen ohne
@@ -305,10 +327,8 @@ class EncounterTracker:
         # übergibt owner im build_owner-Format. Vor dem Vergleich normalisieren.
         from backend.classes.pokedex_db import PokedexDB
         owner_key = PokedexDB.owner_root(owner)
-        for link in links.values():
-            expected = link.get("expected_owners", []) or []
-            if owner_key not in expected:
-                continue
+        link = self._target_link(links, owner_key, route, edition)
+        if link is not None:
             for other_owner, member in (link.get("members") or {}).items():
                 if other_owner == owner_key:
                     continue
@@ -318,10 +338,33 @@ class EncounterTracker:
                         f"type_clash retry: owner={owner_key} dex={dexnr} "
                         f"type={my_type} partner={other_owner} "
                         f"partner_dex={member.get('dexnr')} "
-                        f"partner_outcome={member.get('outcome')}"
+                        f"partner_outcome={member.get('outcome')} "
+                        f"link={link.get('link_id')} route={route}"
                     )
                     return True
         return False
+
+    @staticmethod
+    def _target_link(links: dict, owner_key: str, route, edition) -> dict | None:
+        """Gruppe, der ``Arceus._assign_link_group`` den Encounter zuordnen würde."""
+        if route is None or edition is None:
+            return None
+        from backend.classes.arceus import Arceus
+        edition_gen = Arceus._edition_to_gen(edition)
+        if edition_gen == 0:
+            return None
+        same_route = [lk for lk in links.values()
+                      if isinstance(lk, dict) and lk.get("route") == route
+                      and lk.get("edition_gen") == edition_gen]
+        prior = sum(1 for lk in same_route if owner_key in (lk.get("members") or {}))
+        for lk in same_route:
+            if lk.get("manual"):
+                continue
+            if (lk.get("link_index") == prior + 1
+                    and owner_key in (lk.get("expected_owners") or [])
+                    and owner_key not in (lk.get("members") or {})):
+                return lk
+        return None
 
     def process_wild_encounter(self, owner: str, edition: int,
                                 opponent: dict, route: int) -> EncounterResult | None:

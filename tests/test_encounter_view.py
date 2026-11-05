@@ -221,9 +221,23 @@ def test_group_soullink_edition_filter_und_query():
 
 
 def test_group_soullink_sortierung_nach_route():
-    links = {1: _link(1, 300, {}), 2: _link(2, -1, {}), 3: _link(3, 50, {})}
+    # Nicht-pending Gruppen: reine Route-Sortierung (state=complete, damit nicht pending)
+    links = {1: _link(1, 300, {}, state="complete"),
+             2: _link(2, -1, {}, state="complete"),
+             3: _link(3, 50, {}, state="complete")}
     groups = ev.group_soullink(links, [], SPECIES_DE)
     assert [g["route"] for g in groups] == [-1, 50, 300]
+
+
+def test_group_soullink_pending_zuerst_neueste_oben():
+    # Pending-Gruppen stehen vor allen anderen, absteigend nach link_id
+    links = {1: _link(1, -1, {}, state="complete"),
+             2: _link(2, 300, {}, state="pending"),
+             3: _link(3, 50, {}, state="failed"),
+             4: _link(4, 120, {}, state="pending"),
+             5: _link(5, 10, {}, state="pending")}
+    groups = ev.group_soullink(links, [], SPECIES_DE)
+    assert [g["link_id"] for g in groups] == [5, 4, 2, 1, 3]
 
 
 def test_group_soullink_members_sorted_by_slot():
@@ -276,6 +290,12 @@ def test_link_targets_filtert_owner_und_vorhandene_mitglieder():
     assert "Route 101" in targets[0][0] and "Misty" in targets[0][0]
     assert ev.link_targets(groups, "Ash", exclude_link_id=2) == []
     assert ev.link_targets(groups, "Fremd") == []
+
+
+def test_group_title_nur_ortsname_ohne_route_id():
+    assert ev.group_title({"location": "Digdas Höhle", "route": 131}) == "Digdas Höhle"
+    # Fallback nur, wenn kein Name vorhanden ist
+    assert ev.group_title({"location": "", "route": 131}) == "Route 131"
 
 
 def test_aggregate_link_status_dead_wins():

@@ -8,7 +8,7 @@ from aiohttp import web
 
 from backend.classes.pokedex_db import PokedexDB
 from backend.logging_setup import get_logger
-from backend.party_rules import first_type_dupe_slots, is_marked_dead
+from backend.party_rules import is_marked_dead, party_blocked_slots
 from backend.team_id import slug_team_id
 from backend.tm_type_resolver import resolve_tm_hm_sprite
 
@@ -228,7 +228,7 @@ class OverlayServer:
         owner = self._owner_root_for_player(player_id)
         hide_incomplete = self._soullink_filter_active()
         link_id_by_pv = self._link_id_by_personality(owner)
-        blocked_slots = first_type_dupe_slots(team[:6], self.munchlax.nuz)
+        blocked_slots = party_blocked_slots(self.munchlax, player_id, team[:6])
         dead_pvs = self.munchlax.snapshot_dead_pvs().get(player_id)
 
         team_data = []

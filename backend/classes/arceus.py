@@ -252,6 +252,10 @@ class Arceus:
         # Lock-Haltezeit minimal: Writes/Pops im Lock, Netz-Awaits ausserhalb.
         self.arc_state_lock = threading.Lock()
         self.rem = rem
+        # client_id des In-Process-Munchlax (Host). Per Setter vom App-Core
+        # gesetzt — robust gegen ein rem-Dict, dessen client_id durch einen
+        # Session-Load ersetzt wurde.
+        self.local_client_id = None
 
         # Diagnose-State pro Client (Phase B). session_started_at, recv/sent-
         # Counter, letzter Message-Typ und Timestamp — alles pro client_id.
@@ -1746,10 +1750,18 @@ class Arceus:
     # ALLE Clients (inkl. Sender) gebroadcastet. Alle Handler sind synchron
     # (kein await zwischen Pruefung und Mutation), Sends laufen als Tasks.
 
+    def set_local_client_id(self, client_id) -> None:
+        """client_id des In-Process-Munchlax merken (Host-Erkennung)."""
+        self.local_client_id = client_id
+        self.logger.info(f"Lokale (Host-)client_id gesetzt: {client_id}")
+
     def _is_host_client(self, client_id) -> bool:
-        """Host = In-Process-Munchlax (gleiche client_id wie in rem)."""
-        local = self.rem.get("client_id") if isinstance(self.rem, dict) else None
-        return local not in (None, 0, "") and str(local) == str(client_id)
+        """Host = In-Process-Munchlax (Runtime-ID, Fallback client_id aus rem)."""
+        candidates = [self.local_client_id]
+        if isinstance(self.rem, dict):
+            candidates.append(self.rem.get("client_id"))
+        return any(local not in (None, 0, "") and str(local) == str(client_id)
+                   for local in candidates)
 
     def _client_owns_owner(self, client_id, owner: str) -> bool:
         """Darf ``client_id`` Daten von ``owner`` ('name_<slot>') aendern?"""

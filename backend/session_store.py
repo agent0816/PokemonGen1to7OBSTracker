@@ -89,9 +89,20 @@ def load_session_into(config_path: str, configs: SessionConfigs) -> None:
             if new_values and "soullink_mode" in new_values:
                 old_mode = new_values.pop("soullink_mode")
                 new_values.setdefault("run_mode", old_mode)
+        # client_id ist die Identitaet dieser Installation, nicht der Session:
+        # Munchlax liest sie einmalig beim Start (Munchlax.__init__). Eine
+        # Session-YAML mit 0 bzw. fremder ID darf die laufende ID nicht
+        # ueberschreiben, sonst erkennt Arceus._is_host_client den Host
+        # nicht mehr ("Abgelehnt" fuer Host-Aktionen nach Session-Wechsel).
+        runtime_client_id = target.get("client_id") if attr == "rem" else None
         if new_values:
             for key, value in new_values.items():
                 target[key] = value
+        if runtime_client_id not in (None, 0, ""):
+            if target.get("client_id") != runtime_client_id:
+                logger.info(f"Session-Load: client_id {target.get('client_id')!r} aus "
+                            f"{config_path}remote.yml ignoriert, laufende ID bleibt")
+            target["client_id"] = runtime_client_id
     logger.info(f"Session-Config geladen: {config_path}")
 
 

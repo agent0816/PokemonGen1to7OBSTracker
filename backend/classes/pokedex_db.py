@@ -12,6 +12,12 @@ from backend.logging_setup import get_logger
 
 
 CURRENT_SCHEMA_VERSION = 12
+
+# Werte der Spalte encounters.is_dupes_skip (Retry-Marker, truthy = Retry).
+# 2 unterscheidet den Ersttyp-Clause-Retry vom Dupes-Retry ohne Schema-Bump;
+# alle Schreibpfade nutzen int(...), der Wert bleibt erhalten.
+RETRY_DUPE = 1
+RETRY_TYPE_CLASH = 2
 # Marker fuer Legacy-Gift/Fossil/Static/Egg/Token-Encounter aus Sessions vor
 # der Migration auf route=map_header_id. Diese Zeilen hatten alle route=0
 # und wuerden nach dem Fix sonst mit den frisch geloggten Wilds auf MAPSEC=0
@@ -1628,6 +1634,9 @@ class PokedexDB:
         vs. ...Z, beide UTC).
         """
         if self.connection is None:
+            # Geschlossene DB = Gate zu; vorher still (Live-Test 2026-11-04)
+            self.logger.warning(f"has_catching_balls: keine DB-Verbindung "
+                                f"(owner={owner}, edition={edition}) → Gate zu")
             return False
         ball_ids = catching_ball_ids(edition)
         if not ball_ids:

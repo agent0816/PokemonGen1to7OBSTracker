@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import traceback
 
-from backend.classes.pokedex_db import LEGACY_GIFT_ROUTE_MARKER, PokedexDB
+from backend.classes.pokedex_db import LEGACY_GIFT_ROUTE_MARKER, RETRY_TYPE_CLASH, PokedexDB
 from backend.encounter_edit import parse_locks
 from backend.logging_setup import get_logger
 from backend.pokedex_view import (
@@ -47,6 +47,7 @@ STATUS_TEXT = {
     "not_caught": "verpasst",
     "unknown":    "offen",
     "dupes":      "dupe",
+    "type_retry": "Retry (Ersttyp)",
     "open":       "offen",
     "dead":       "tot",
 }
@@ -83,8 +84,9 @@ def determine_status(enc: dict) -> str:
     """Status-Schlüssel eines Encounters (tot > dupes > outcome > unknown)."""
     if enc.get("dead", 0):
         return "dead"
-    if enc.get("is_dupes_skip", 0):
-        return "dupes"
+    retry = enc.get("is_dupes_skip", 0)
+    if retry:
+        return "type_retry" if retry == RETRY_TYPE_CLASH else "dupes"
     outcome = enc.get("outcome", "unknown")
     return outcome if outcome in STATUS_TEXT else "unknown"
 
@@ -264,20 +266,20 @@ def _as_int(value, default: int = 0) -> int:
 _MEMBER_OUTCOMES = frozenset({"caught", "obtained", "not_caught", "unknown"})
 
 
-def _find_member_encounter(encounters: list[dict], root: str, personality) -> dict | None:
-    """Passender (nicht gelöschter) Encounter: gleiche PV und Owner-Root."""
-    if personality is None:
-        # Ohne PV kein eindeutiger Treffer (sonst matcht None == None den
-        # erstbesten Encounter des Spielers).
-        return None
+def _member_index(encounters: list[dict]) -> dict[tuple, dict]:
+    """{(PV, Owner-Root): erster nicht gelöschter Encounter} für die Mitglieder-
+    Zuordnung. Encounter ohne PV fehlen bewusst (sonst matcht None == None den
+    erstbesten Encounter des Spielers)."""
+    index: dict[tuple, dict] = {}
     for enc in encounters:
         if enc.get("deleted", 0):
             continue
-        if enc.get("personality") != personality:
+        personality = enc.get("personality")
+        if personality is None:
             continue
-        if PokedexDB.owner_root(str(enc.get("owner", "") or "")) == root:
-            return enc
-    return None
+        root = PokedexDB.owner_root(str(enc.get("owner", "") or ""))
+        index.setdefault((personality, root), enc)
+    return index
 
 
 def group_soullink(
@@ -291,11 +293,13 @@ def group_soullink(
     """Soullink-Gruppen aus den Server-Links (``Arceus.soullink_links``) aufbauen.
 
     Jedes Mitglied wird mit seinem Encounter (gleiche PV + Owner-Root) angereichert;
-    fehlt der Encounter, zeigen die Link-Daten das Mitglied trotzdem. Nach
-    Route-Buckets sortiert, Mitglieder nach Slot.
+    fehlt der Encounter, zeigen die Link-Daten das Mitglied trotzdem. Sortierung:
+    offene (agg 'pending') Gruppen zuerst, neueste (höchste link_id) oben; danach
+    die übrigen nach Route-Buckets. Mitglieder nach Slot.
     """
     query = (query or "").strip().lower()
     result: list[dict] = []
+    member_index = _member_index(encounters)
     for key, link in (links or {}).items():
         if not isinstance(link, dict):
             continue
@@ -305,7 +309,8 @@ def group_soullink(
         for root, mem in (link.get("members") or {}).items():
             mem = mem if isinstance(mem, dict) else {}
             personality = mem.get("personality")
-            enc = _find_member_encounter(encounters, str(root), personality)
+            enc = (member_index.get((personality, str(root)))
+                   if personality is not None else None)
             dexnr = enc.get("dexnr", 0) if enc else mem.get("dexnr", 0)
             edition = _as_int(enc.get("edition") if enc else mem.get("edition", 0))
             outcome = mem.get("outcome")
@@ -364,7 +369,13 @@ def group_soullink(
             return any(query in m["species"].lower() for m in group["members"])
         result = [g for g in result if _match(g)]
 
-    result.sort(key=lambda g: _route_sort_key(g["route"], False))
+    def _group_sort_key(g: dict) -> tuple:
+        # Offene Gruppen oben, neueste (höchste link_id) zuerst; Rest nach Route
+        if g["agg_status"] == "pending":
+            return (0, -_as_int(g["link_id"]))
+        return (1, *_route_sort_key(g["route"], False))
+
+    result.sort(key=_group_sort_key)
     return result
 
 
@@ -372,7 +383,7 @@ def unlinked_encounters(links: dict[int, dict], encounters: list[dict]) -> list[
     """Nicht gelöschte Encounter, die in keinem Link-Member stecken.
 
     Ein Encounter gilt als gruppiert, wenn ein Link-Member unter seinem Owner-Root
-    dieselbe PV trägt (wie ``_find_member_encounter``). ``is_first`` ist egal.
+    dieselbe PV trägt (wie ``_member_index``). ``is_first`` ist egal.
     """
     linked: set[tuple] = set()
     for link in (links or {}).values():
@@ -394,10 +405,8 @@ def unlinked_encounters(links: dict[int, dict], encounters: list[dict]) -> list[
 
 
 def group_title(group: dict) -> str:
-    """'Ort (Route N)' bzw. 'Route N' einer Gruppe."""
-    loc = group.get("location", "")
-    route = group.get("route", 0)
-    return loc if loc == f"Route {route}" else f"{loc} (Route {route})"
+    """Nur der Ortsname einer Gruppe (ohne Routen-ID); Fallback 'Route N', wenn kein Name da ist."""
+    return group.get("location", "") or f"Route {group.get('route', 0)}"
 
 
 def link_targets(groups: list[dict], root_owner: str,
@@ -418,5 +427,9 @@ def link_targets(groups: list[dict], root_owner: str,
         if any(m.get("root_owner") == root_owner for m in members):
             continue
         names = ", ".join(f"{m.get('root_owner')}: {m.get('species')}" for m in members)
-        result.append((f"{group_title(group)} - {names or 'leer'}", group["link_id"]))
+        # Auswahl-Dropdown: Routen-ID behalten (mehrere Gruppen am selben Ort)
+        loc = group_title(group)
+        route = group.get("route", 0)
+        title = loc if loc == f"Route {route}" else f"{loc} (Route {route})"
+        result.append((f"{title} - {names or 'leer'}", group["link_id"]))
     return result

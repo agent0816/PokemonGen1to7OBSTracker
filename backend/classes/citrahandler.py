@@ -705,17 +705,28 @@ class CitraHandler:
             self.logger.warning(f"Zone-Mapping laden fehlgeschlagen: {path}: {err}")
 
     def _ensure_encounter_tracker(self) -> bool:
-        if self._encounter_tracker is not None:
-            return True
+        """Tracker anlegen bzw. an die AKTUELLE PokedexDB binden.
+
+        Munchlax.disconnect schliesst die DB (close_pokedex_db) und baut beim
+        naechsten _ensure_pokedex_db ein neues Objekt. Ein einmal gebauter
+        Tracker hielt sonst das geschlossene Objekt: has_catching_balls lieferte
+        False → jeder Wild-Encounter "Run nicht gestartet" bis zum Neustart
+        (Live-Test 2026-11-04 ab 20:28, nach Reconnect 20:25).
+        """
         self.munchlax._ensure_pokedex_db()
-        if self.munchlax.pokedex_db is not None:
-            self._encounter_tracker = EncounterTracker(
-                self.munchlax.pokedex_db,
-                self.munchlax.nuz,
-                munchlax=self.munchlax,
-            )
-            return True
-        return False
+        db = self.munchlax.pokedex_db
+        if db is None:
+            return False
+        if self._encounter_tracker is None:
+            self._encounter_tracker = EncounterTracker(db, self.munchlax.nuz, munchlax=self.munchlax)
+        elif self._encounter_tracker.pokedex_db is not db:
+            # Ein evtl. noch laufender Executor-Job liest pokedex_db pro Zugriff
+            # neu und kann so alt/neu mischen — in Kauf genommen: Rebind nur
+            # beim (seltenen) DB-Wechsel, die alte DB ist dann ohnehin zu.
+            self.logger.info("EncounterTracker an neue PokedexDB gebunden "
+                             "(Reconnect/Session-Wechsel)")
+            self._encounter_tracker.pokedex_db = db
+        return True
 
     def _read_zone_id(self) -> int:
         zone_ptr = self.pointer.get("encounter_zone_pointer", 0)
@@ -803,6 +814,9 @@ class CitraHandler:
             route = opp["met_location"] or self._met_for_index(zone_idx, has_idx_ptr)
 
             self._last_battle_pv = opp["personality"]
+            # Fuer den Anlegen-Dialog ("Letzter Gegner"), auch bei verworfenem Encounter
+            if self.player_number:
+                self.munchlax.set_last_opponent(self.player_number, self.edition, route, opp)
 
             if not self._ensure_encounter_tracker():
                 self.logger.warning("PokedexDB nicht verfügbar, Encounter wird übersprungen")
@@ -864,7 +878,8 @@ class CitraHandler:
         try:
             battle_pv = self._last_battle_pv
             self._last_battle_pv = None
-            if battle_pv is None or self._encounter_tracker is None:
+            # Rebind auch hier: update_outcome auf geschlossener DB ginge verloren
+            if battle_pv is None or not self._ensure_encounter_tracker():
                 return
 
             team = self.munchlax.bizhawk_teams.get(self.player_number, [])

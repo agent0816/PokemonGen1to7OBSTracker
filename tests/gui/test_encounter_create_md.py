@@ -86,6 +86,11 @@ class _FakeMunchlax:
     def snapshot_editions(self) -> dict:
         return {1: 34}
 
+    def snapshot_last_opponents(self) -> dict:
+        # Letzter Wild-Gegner (z.B. vom Ball-Gate verworfen): Raupy Lv. 3, Route 1
+        return {1: {"dexnr": 10, "lvl": 3, "personality": 0x5151, "shiny": False,
+                    "female": False, "form": "", "route": 1, "edition": 34}}
+
     def owned_player_ids(self) -> list[int]:
         return [1]
 
@@ -261,6 +266,25 @@ class _DriveApp(MDApp):
         c = self.fake.calls[-1]
         self.check("freitext_negative_pv", c["personality"] < 0 and c["create"]["dexnr"] == 25
                    and c["create"]["lvl"] == 5, c)
+        self._next(self.s_create_opponent, 0.8)
+
+    def s_create_opponent(self):
+        self.menu._open_create()
+        dlg = self.menu._aux_dialog
+        dlg.set_source("opponent")
+        self.check("gegner_vorbelegt", dlg.chosen is not None
+                   and dlg.chosen.personality == 0x5151 and dlg.state["lvl"] == "3",
+                   (dlg.chosen, dlg.state))
+        if dlg.state["route"] is None:
+            dlg.set_route(1)
+        self.shot("create_dialog_gegner")
+        dlg.save()
+        self._next(self.s_after_create_opponent, 1.2)
+
+    def s_after_create_opponent(self):
+        c = self.fake.calls[-1]
+        self.check("gegner_pv_uebernommen", c["personality"] == 0x5151
+                   and c["create"]["dexnr"] == 10 and c["create"]["lvl"] == 3, c)
         self._next(self.s_group_move, 0.8)
 
     # --- Gruppen-Aktionen im Edit-Dialog ------------------------------------------------
@@ -385,6 +409,7 @@ _EXPECTED = {
     "create_dialog_offen", "spieler_vorbelegt", "ohne_pv_nicht_gewaehlt", "team_gewaehlt",
     "team_pv_uebernommen", "team_felder", "create_dialog_zu", "box_gewaehlt",
     "box_pv_uebernommen", "freitext_ohne_angaben_kein_senden", "freitext_negative_pv",
+    "gegner_vorbelegt", "gegner_pv_uebernommen",
     "edit_dialog_mit_gruppe_button", "menue_hinzufuegen", "zielgruppe_nur_link2",
     "move_gesendet", "edit_dialog_nach_move_zu", "unlink_dialog_alice", "in_gruppe",
     "unlink_confirm", "unlink_gesendet", "dissolve_confirm", "dissolve_gesendet",

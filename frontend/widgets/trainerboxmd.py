@@ -18,7 +18,7 @@ from kivymd.uix.label import MDLabel
 from backend.logging_setup import get_logger
 from backend.player_display import slot_label
 from backend.perf_probe import perf_span
-from backend.party_rules import first_type_dupe_slots, is_marked_dead
+from backend.party_rules import is_marked_dead, party_blocked_slots
 from backend.player_colors import hex8_to_rgba, player_rgba
 from frontend.widgets.md_common import bind_theme_color, player_names_of
 from frontend.widgets.status_labels import STATUS_LABELS, STATUS_PRIORITY
@@ -365,7 +365,7 @@ class TrainerBoxMD(MDBoxLayout):
             return
 
         new_team = self.munchlax.sorted_teams[self.player_id]
-        blocked_slots = first_type_dupe_slots(new_team, self.munchlax.nuz)
+        blocked_slots = party_blocked_slots(self.munchlax, self.player_id, new_team)
         dead_pvs = self.munchlax.snapshot_dead_pvs().get(self.player_id)
 
         for slot, pokemon in enumerate(new_team):

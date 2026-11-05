@@ -11,7 +11,7 @@ from kivy.uix.progressbar import ProgressBar
 from backend.classes.munchlax import Munchlax
 from backend.classes.obs import OBS
 from backend.logging_setup import get_logger
-from backend.party_rules import first_type_dupe_slots
+from backend.party_rules import party_blocked_slots
 
 logger = get_logger(__name__, 'logs/frontend.log')
 
@@ -282,7 +282,7 @@ class TrainerBox(BoxLayout):
             self.old_team = self.munchlax.sorted_teams[self.player_id]
 
         new_team = self.munchlax.sorted_teams[self.player_id]
-        blocked_slots = first_type_dupe_slots(new_team, self.munchlax.nuz)
+        blocked_slots = party_blocked_slots(self.munchlax, self.player_id, new_team)
 
         for slot, pokemon in enumerate(new_team):
             slot_box = self.pokemon_boxes[f"slot{slot}"]

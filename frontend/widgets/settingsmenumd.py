@@ -19,6 +19,7 @@ import asyncio
 import os
 import traceback
 from pathlib import Path
+from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 from kivy.metrics import dp
 
@@ -108,6 +109,7 @@ class SettingsMenu(MDScreen):
         self.app_version = app_version
 
         self._suspend_save = False
+        self._saved_snack_ev = None  # Debounce-Event der Speichern-Bestätigung
         self._tasks: set = set()
         # Zuletzt gespeicherter Stand je Sektion — verhindert redundante
         # controller.save_* (und damit redundante redraw_obs/Server-Reconfigure)
@@ -1344,7 +1346,12 @@ class SettingsMenu(MDScreen):
             if self._last_saved.get(section) == values:
                 return
             prev = self._last_saved.get(section)
-            getattr(self.controller, f"save_{section}")(values)
+            ok = getattr(self.controller, f"save_{section}")(values)
+            if ok is False:
+                # Controller hat den Fehler geloggt; Baseline nicht setzen, damit ein
+                # erneuter Versuch möglich bleibt.
+                self._snack_save_error()
+                return
             # Baseline erst NACH dem Save setzen (controller.save_* fängt Fehler
             # intern ab; bei einem Fehler vor Rückkehr bliebe sonst ein nicht
             # geschriebener Wert als "gespeichert" markiert).
@@ -1354,9 +1361,37 @@ class SettingsMenu(MDScreen):
                 # aber nur bei echter Änderung (sonst unnötiges redraw_obs).
                 if prev is None or prev.get('animation_duration_ms') != values['animation_duration_ms']:
                     self.controller.save_sprites({'obs_animation_duration_ms': values['animation_duration_ms']})
+            self._schedule_saved_snack()
         except Exception as err:
             logger.error(f"Settings _save('{section}') fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
+            self._snack_save_error()
+
+    def _schedule_saved_snack(self) -> None:
+        """Bündelt schnelle Folge-Saves zu einer einzigen Bestätigung (1,5 s Debounce)."""
+        try:
+            if self._saved_snack_ev is not None:
+                self._saved_snack_ev.cancel()
+            self._saved_snack_ev = Clock.schedule_once(self._show_saved_snack, 1.5)
+        except Exception as err:
+            logger.debug(f"Settings saved-snack schedule fehlgeschlagen: {err}")
+
+    def _show_saved_snack(self, _dt: float = 0) -> None:
+        self._saved_snack_ev = None
+        try:
+            show_snackbar("Einstellungen gespeichert", 'success')
+        except Exception as err:
+            logger.debug(f"Settings saved-snack fehlgeschlagen: {err}")
+
+    def _snack_save_error(self) -> None:
+        """Fehler sofort melden und eine ausstehende Erfolgs-Bestätigung verwerfen."""
+        try:
+            if self._saved_snack_ev is not None:
+                self._saved_snack_ev.cancel()
+                self._saved_snack_ev = None
+            show_snackbar("Speichern fehlgeschlagen (siehe Log)", 'error')
+        except Exception as err:
+            logger.debug(f"Settings error-snack fehlgeschlagen: {err}")
 
     def _collect_sprites(self) -> dict:
         values = {
@@ -1543,6 +1578,13 @@ class SettingsMenu(MDScreen):
             self._refresh_run_history()
         except Exception as err:
             logger.debug(f"refresh_run_history on_pre_enter failed: {err}")
+        # Overlay-Links hängen von nuz (Soullink-Teams) ab, das im Nuzlocke-Menü
+        # geändert wird -> beim Betreten neu aufbauen.
+        try:
+            self._rebuild_overlay_links()
+        except Exception as err:
+            logger.error(f"Settings _rebuild_overlay_links on_pre_enter fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
         perf_log(f"settings.widgets={count_widgets(self)}")
 
     @perf_span("settings._reload_sprite_paths")

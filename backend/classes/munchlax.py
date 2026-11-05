@@ -128,6 +128,10 @@ UNBUFFERED_DICT_TYPES = frozenset({
 #   2. Initial-Read-Guard (state is None -> False beim allerersten Read)
 WIPE_ZERO_READ_THRESHOLD = 1
 
+# Mindestabstand zwischen zwei Neuaufbau-Versuchen einer PokedexDB, deren
+# Verbindung fehlt (siehe Munchlax._ensure_pokedex_db)
+POKEDEX_DB_REBUILD_BACKOFF_S = 5.0
+
 class Munchlax:
     # Drachenwut-Klausel: so lange wird ein Tod zurueckgehalten, bis die
     # KO-Meldung des BizHawk-Threads da ist (BH meldet ~1 Frame nach dem
@@ -187,6 +191,13 @@ class Munchlax:
         self.configsave = configsave
         self.nuz = nuz or {}
         self.pokedex_db: PokedexDB | None = None
+        # Serialisiert Check-then-create/close der PokedexDB: _ensure_pokedex_db
+        # laeuft aus Munchlax-Loop, BizHawk- und Citra-Thread (Encounter-Tracker
+        # bindet pro Encounter neu) — sonst Doppel-Create/Leak nach Disconnect.
+        self._pokedex_db_lock = threading.RLock()
+        # Backoff fuer den Neuaufbau einer DB ohne Verbindung (connect scheitert
+        # dauerhaft, z.B. File-Lock) — sonst Warn-/Traceback-Flut pro Tick
+        self._pokedex_db_rebuild_at: float = 0.0
         self.host = host
         self.port = port
         self.is_connected = False
@@ -265,6 +276,13 @@ class Munchlax:
         # Als tot markierte Encounter je Spieler-Slot (player_id → PVs) fuer
         # das Ausgrauen in Overlay/OBS/TrainerBox/Boxen. Quelle: encounters.dead.
         self.dead_pvs: dict[int, frozenset] = {}
+        # Letzte gesperrte Slots je Spieler (rule_single_type_per_team), siehe
+        # _refresh_party_rule_consumers — Vergleichswert gegen Doppel-Redraws
+        self._last_blocked_slots: dict[int, frozenset] = {}
+        # Zuletzt erkannter Wild-Gegner je lokalem Spieler-Slot (auch wenn der
+        # Encounter verworfen wurde, z.B. Ball-Gate) — Quelle "Letzter Gegner"
+        # im Anlegen-Dialog. Schreiber: BizHawk-/Citra-Thread (state_lock).
+        self.last_opponents: dict[int, dict] = {}
         self._dead_pvs_stale = True
         # Serialisiert refresh_dead_pvs (sonst schreibt ein aelterer SQL-
         # Snapshot nach einem neueren zurueck). Lazy auf dem Munchlax-Loop.
@@ -275,6 +293,11 @@ class Munchlax:
         # on_soullink_state_changed_callback()
         self.on_edit_rejected_callback = None
         self.on_soullink_state_changed_callback = None
+        # Weitere Frontend-Listener fuer Encounter-/Link-Aenderungen (Liste
+        # statt Einzel-Slot; der Einzel-Slot gehoert dem Encounter-Menue).
+        # Aufruf im Munchlax-Thread mit reason ("soullink"/"encounter"),
+        # Listener wechseln selbst per Clock in den UI-Thread.
+        self._state_listeners: list = []
         self.soullink_versus_state: dict[str, dict] = {}
         self.soullink_versus_battles: list[dict] = []
         # Team-State (modus-unabhängig) fürs Overlay. Owner-Rohdaten pro Team;
@@ -483,6 +506,8 @@ class Munchlax:
             self.soullink_alive_locks = set()
             self.dead_pvs = {}
             self._dead_pvs_stale = True
+            self._last_blocked_slots = {}
+            self.last_opponents = {}
             self.soullink_versus_state = {}
             self.soullink_versus_battles = []
             self.soullink_team_state = {}
@@ -529,6 +554,8 @@ class Munchlax:
             self.soullink_alive_locks = set()
             self.dead_pvs = {}
             self._dead_pvs_stale = True
+            self._last_blocked_slots = {}
+            self.last_opponents = {}
             self.soullink_versus_state = {}
             self.soullink_versus_battles = []
             self.soullink_team_state = {}
@@ -673,10 +700,42 @@ class Munchlax:
         with self.state_lock:
             return dict(self.countdown_state)
 
-    def snapshot_soullink_links(self) -> dict:
+    def set_last_opponent(self, player_id, edition, route, opponent: dict) -> None:
+        """Zuletzt erkannten Wild-Gegner merken (Aufruf aus BH-/Citra-Thread)."""
+        try:
+            entry = {
+                "dexnr": int(opponent.get("dexnr") or 0),
+                "lvl": int(opponent.get("lvl") or 0),
+                "personality": opponent.get("personality"),
+                "shiny": bool(opponent.get("shiny")),
+                "female": opponent.get("female"),
+                "form": str(opponent.get("form") or ""),
+                "route": int(route) if route is not None else None,
+                "edition": int(edition) if edition is not None else None,
+                "seen_at": time.time(),
+            }
+            with self.state_lock:
+                self.last_opponents[int(player_id)] = entry
+        except Exception as err:
+            self.logger.warning(f"set_last_opponent fehlgeschlagen: {type(err).__name__},{err}")
+
+    def snapshot_last_opponents(self) -> dict:
         with self.state_lock:
-            return {pid: dict(v) if isinstance(v, dict) else v
-                    for pid, v in self.soullink_links.items()}
+            return {pid: dict(v) for pid, v in getattr(self, "last_opponents", {}).items()}
+
+    def snapshot_soullink_links(self) -> dict:
+        # members mitkopieren: Leser (party_rules, encounter_tracker)
+        # iterieren sie ausserhalb des Locks.
+        with self.state_lock:
+            result = {}
+            for pid, v in self.soullink_links.items():
+                if isinstance(v, dict):
+                    v = dict(v)
+                    if isinstance(v.get("members"), dict):
+                        v["members"] = {k: dict(m) if isinstance(m, dict) else m
+                                        for k, m in v["members"].items()}
+                result[pid] = v
+            return result
 
     def snapshot_soullink_team_state(self) -> dict:
         with self.state_lock:
@@ -1354,6 +1413,7 @@ class Munchlax:
                         await self._handle_remote_session_reset()
                     elif msg_type == "encounter_sync":
                         await self._handle_remote_encounters(data.get("encounters", []))
+                        self._notify_state_listeners("encounter")
                     elif msg_type == "encounter_rebound":
                         await self._handle_encounter_rebound(data)
                     elif msg_type == "encounter_import_request":
@@ -1379,6 +1439,7 @@ class Munchlax:
                         self._resolve_pending_rebind(data, False)
                     elif msg_type == "encounter_outcome":
                         await self._handle_remote_outcome(data)
+                        self._notify_state_listeners("encounter")
                     elif msg_type == "bag_sync":
                         await self._handle_remote_bag(data)
                     elif msg_type == "rando_moves_sync":
@@ -1558,6 +1619,7 @@ class Munchlax:
                             )
                             await self._notify_overlay_session("soullink_link_state", link)
                             self._notify_soullink_state_changed()
+                            await self._refresh_party_rule_consumers("soullink_link_state")
                     elif msg_type == "soullink_death":
                         death = data.get("death") or {}
                         self._handle_remote_death(death)
@@ -1687,12 +1749,16 @@ class Munchlax:
                         self.logger.info(f"soullink_link_removed empfangen: link={link_id}")
                         await self._notify_overlay_session("soullink_link_removed", {"link_id": link_id})
                         self._notify_soullink_state_changed()
+                        await self._refresh_party_rule_consumers("soullink_link_removed")
                     elif msg_type == "soullink_death_state":
                         self._handle_remote_death_state(data)
                         await self.force_overlay_broadcast("soullink_death_state")
+                        await self._refresh_party_rule_consumers("soullink_death_state")
                     elif msg_type == "soullink_state_snapshot":
                         self._handle_soullink_state_snapshot(data)
                         await self.force_overlay_broadcast("soullink_state_snapshot")
+                        # Links komplett ersetzt (Reconnect/Resync) → Vergleichswert nachziehen
+                        await self._refresh_party_rule_consumers("soullink_state_snapshot")
                     else:
                         self.logger.warning(f"Unbekannter Message-Typ vom Server: {msg_type}")
                     continue
@@ -1820,13 +1886,28 @@ class Munchlax:
             return
         try:
             current_path = Path(str(self.configsave)).resolve()
-            if self.pokedex_db is None or self.pokedex_db.session_path.resolve() != current_path:
-                if self.pokedex_db is not None:
-                    self.pokedex_db.close()
-                self.pokedex_db = PokedexDB(current_path)
-                self.pokedex_db.connect()
-                # Neue Session/DB → Tot-Cache beim naechsten Team-Tick neu laden
-                self._dead_pvs_stale = True
+            with self._pokedex_db_lock:
+                db = self.pokedex_db
+                if db is not None and db.connection is None:
+                    # Gleiches Objekt, aber Verbindung weg (connect fehlgeschlagen
+                    # o.ae.) → neu aufbauen statt geschlossen weiterzureichen,
+                    # hoechstens alle POKEDEX_DB_REBUILD_BACKOFF_S
+                    now = time.monotonic()
+                    if now - self._pokedex_db_rebuild_at < POKEDEX_DB_REBUILD_BACKOFF_S:
+                        return
+                    self._pokedex_db_rebuild_at = now
+                    self.logger.warning("_ensure_pokedex_db: Verbindung geschlossen, baue neu auf")
+                    db = None
+                if db is None or db.session_path.resolve() != current_path:
+                    if db is not None:
+                        db.close()
+                    # Erst nach connect() zuweisen: lock-freie Leser sollen kein
+                    # halb initialisiertes Objekt (connection None) sehen
+                    new_db = PokedexDB(current_path)
+                    new_db.connect()
+                    self.pokedex_db = new_db
+                    # Neue Session/DB → Tot-Cache beim naechsten Team-Tick neu laden
+                    self._dead_pvs_stale = True
         except Exception as err:
             self.logger.error(f"_ensure_pokedex_db failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
@@ -1844,14 +1925,15 @@ class Munchlax:
         Die Referenz wird in jedem Fall auf ``None`` gesetzt, damit der
         naechste ``_ensure_pokedex_db``-Call eine frische Verbindung baut.
         """
-        if self.pokedex_db is None:
-            return False
-        try:
-            self.pokedex_db.close()
-        except Exception as err:
-            self.logger.warning(f"close_pokedex_db: close failed: {err}")
-        self.pokedex_db = None
-        return True
+        with self._pokedex_db_lock:
+            if self.pokedex_db is None:
+                return False
+            try:
+                self.pokedex_db.close()
+            except Exception as err:
+                self.logger.warning(f"close_pokedex_db: close failed: {err}")
+            self.pokedex_db = None
+            return True
 
     async def update_bag(self, player, edition, pockets):
         """Persistiert die ausgelesenen Bag-Pockets pro Player in die PokedexDB.
@@ -1900,6 +1982,9 @@ class Munchlax:
 
     async def send_encounter_sync(self, encounter_dict: dict):
         """Sendet einen Encounter-Record an Arceus zur Weiterverteilung."""
+        # Eigener Encounter ist bereits lokal persistiert → Listener (Karte)
+        # auch ohne Server-Verbindung informieren
+        self._notify_state_listeners("encounter")
         if not self.is_connected:
             return
         try:
@@ -1913,6 +1998,7 @@ class Munchlax:
 
     async def send_encounter_outcome(self, personality: int, owner: str, outcome: str):
         """Sendet ein Outcome-Update an Arceus zur Weiterverteilung."""
+        self._notify_state_listeners("encounter")
         if not self.is_connected:
             return
         try:
@@ -2324,6 +2410,44 @@ class Munchlax:
                     # Nur die "besiegt"-Filter, kein Neuaufbau der Slots
                     self._dispatch_on_kivy(self.obs._obs_serial(
                         self.obs.refresh_dead_filters(pid, team)))
+        await self._refresh_party_rule_consumers(f"dead_pvs: {reason}")
+
+    async def _refresh_party_rule_consumers(self, reason: str) -> None:
+        """Party-Sperre (rule_single_type_per_team) haengt an Link-/Tot-Zustand,
+        Overlay + OBS rendern aber nur bei Team-Diff neu. Gesperrte Slots pro
+        Spieler neu berechnen und nur bei Aenderung nachziehen (TrainerBox
+        pollt selbst jede Sekunde)."""
+        try:
+            if not (self.nuz or {}).get("rule_single_type_per_team", False):
+                self._last_blocked_slots = {}
+                return
+            from backend.party_rules import party_blocked_slots
+            teams = self.snapshot_sorted_teams()
+            editions = self.snapshot_editions()
+            last = getattr(self, "_last_blocked_slots", None) or {}
+            current = {pid: frozenset(party_blocked_slots(self, pid, list(team)[:6]))
+                       for pid, team in teams.items() if team}
+            # Default leeres Set: erster Lauf ohne Sperre loest keinen Redraw aus
+            changed = [pid for pid in current
+                       if current[pid] != last.get(pid, frozenset())]
+            self._last_blocked_slots = current
+            if not changed:
+                return
+            self.logger.info(
+                f"Party-Sperre geaendert ({reason}): "
+                f"{ {pid: sorted(current[pid]) for pid in changed} }")
+            await self.force_overlay_broadcast(f"party_rule: {reason}")
+            if self.obs and self.obs.is_connected:
+                for pid in changed:
+                    edition = editions.get(pid)
+                    if edition is None:
+                        continue
+                    self._dispatch_on_kivy(self.obs._obs_serial(
+                        self.obs.changeSource(pid, range(6), teams[pid], edition)))
+        except Exception as err:
+            self.logger.error(f"_refresh_party_rule_consumers ({reason}) fehlgeschlagen: "
+                              f"{type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
 
     def _notify_soullink_state_changed(self) -> None:
         cb = self.on_soullink_state_changed_callback
@@ -2332,6 +2456,23 @@ class Munchlax:
                 cb()
             except Exception as err:
                 self.logger.warning(f"on_soullink_state_changed_callback failed: {err}")
+        self._notify_state_listeners("soullink")
+
+    def add_state_listener(self, callback) -> None:
+        """Frontend-Listener fuer Encounter-/Link-Aenderungen registrieren."""
+        if callback not in self._state_listeners:
+            self._state_listeners.append(callback)
+
+    def remove_state_listener(self, callback) -> None:
+        if callback in self._state_listeners:
+            self._state_listeners.remove(callback)
+
+    def _notify_state_listeners(self, reason: str) -> None:
+        for cb in list(getattr(self, "_state_listeners", ())):
+            try:
+                cb(reason)
+            except Exception as err:
+                self.logger.warning(f"state_listener ({reason}) failed: {err}")
 
     async def send_soullink_config(self, config: dict):
         """Setzt/aktualisiert die Soullink-Config auf dem Server."""

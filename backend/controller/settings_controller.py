@@ -114,7 +114,7 @@ class SettingsController:
     # Die View sammelt alle Werte und übergibt sie als plain dict. Der Controller entscheidet nicht,
     # welche Keys vorhanden sein müssen — er schreibt nur, was übergeben wird.
 
-    def save_sprites(self, values: dict) -> None:
+    def save_sprites(self, values: dict) -> bool:
         """Aktualisiert sp-Dict und speichert sprites.yml. Löst anschließend OBS-Neuzeichnung aus."""
         try:
             self.sp.update(values)
@@ -122,11 +122,13 @@ class SettingsController:
                 yaml.dump(self.sp, file)
             asyncio.create_task(self.obs_websocket.redraw_obs())
             self.logger.info("sprites.yml gespeichert.")
+            return True
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der Sprite-Einstellungen: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
+        return False
 
-    def save_bizhawk(self, values: dict) -> None:
+    def save_bizhawk(self, values: dict) -> bool:
         """Aktualisiert bh-Dict, speichert bh_config.yml und synchronisiert das BizHawk-Objekt."""
         try:
             self.bh.update(values)
@@ -134,11 +136,13 @@ class SettingsController:
             with open(f"{self.configsave}bh_config.yml", 'w') as file:
                 yaml.dump(self.bh, file)
             self.logger.info("bh_config.yml gespeichert.")
+            return True
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der BizHawk-Einstellungen: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
+        return False
 
-    def save_obs(self, values: dict) -> None:
+    def save_obs(self, values: dict) -> bool:
         """Aktualisiert obs-Dict, speichert obs_config.yml und synchronisiert den OBS-Websocket."""
         try:
             self.obs.update(values)
@@ -146,11 +150,13 @@ class SettingsController:
             with open(f"{self.configsave}obs_config.yml", 'w') as file:
                 yaml.dump(self.obs, file)
             self.logger.info("obs_config.yml gespeichert.")
+            return True
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der OBS-Einstellungen: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
+        return False
 
-    def save_remote(self, values: dict) -> None:
+    def save_remote(self, values: dict) -> bool:
         """Aktualisiert rem-Dict, speichert remote.yml und synchronisiert Arceus und Munchlax."""
         try:
             self.rem.update(values)
@@ -159,33 +165,39 @@ class SettingsController:
             with open(f"{self.configsave}remote.yml", 'w') as file:
                 yaml.dump(self.rem, file)
             self.logger.info("remote.yml gespeichert.")
+            return True
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der Remote-Einstellungen: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
+        return False
 
-    def save_player(self, values: dict) -> None:
+    def save_player(self, values: dict) -> bool:
         """Aktualisiert pl-Dict und speichert player.yml."""
         try:
             self.pl.update(values)
             with open(f"{self.configsave}player.yml", 'w') as file:
                 yaml.dump(self.pl, file)
             self.logger.info("player.yml gespeichert.")
+            return True
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der Spieler-Einstellungen: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
+        return False
 
-    def save_randomizer(self, values: dict) -> None:
+    def save_randomizer(self, values: dict) -> bool:
         """Aktualisiert rnd-Dict und speichert randomizer.yml."""
         try:
             self.rnd.update(values)
             with open(f"{self.configsave}randomizer.yml", 'w') as file:
                 yaml.dump(self.rnd, file)
             self.logger.info("randomizer.yml gespeichert.")
+            return True
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der Randomizer-Einstellungen: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
+        return False
 
-    def save_overlay(self, values: dict) -> None:
+    def save_overlay(self, values: dict) -> bool:
         """Aktualisiert ov-Dict, speichert overlay.yml und synchronisiert den Overlay-Server."""
         try:
             self.ov.update(values)
@@ -195,19 +207,23 @@ class SettingsController:
             if self.overlay_server and self.overlay_server.is_connected:
                 asyncio.create_task(self.overlay_server.notify_config_change())
             self.logger.info("overlay.yml gespeichert.")
+            return True
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der Overlay-Einstellungen: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
+        return False
 
-    def save_nuzlocke(self, values: dict) -> None:
+    def save_nuzlocke(self, values: dict) -> bool:
         try:
             self.nuz.update(values)
             with open(f"{self.configsave}nuzlocke.yml", 'w') as file:
                 yaml.dump(self.nuz, file)
             self.logger.info("nuzlocke.yml gespeichert.")
+            return True
         except Exception as err:
             self.logger.error(f"Fehler beim Speichern der Nuzlocke-Einstellungen: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())
+        return False
 
     def save_main_menu_settings(self, values: dict) -> None:
         """Speichert Anzeigeoptionen und Server-Modus aus dem Hauptmenü.

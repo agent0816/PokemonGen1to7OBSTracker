@@ -6,6 +6,7 @@ nicht, siehe Memory reference_recycleview_screenmanager).
 """
 import asyncio
 import os
+import time
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -52,6 +53,13 @@ ENC_CARD_MIN_WIDTH = dp(240)
 MEMBER_MIN_WIDTH = dp(160)
 ENC_CARD_HEIGHT = dp(96)
 RENDER_BATCH = 12
+# Trailing-Debounce: Suche erst filtern, wenn das Tippen pausiert; Link-Event-
+# Bursts (Gruppe anlegen, Remote-Batch) zu einem Reload zusammenfassen.
+SEARCH_DEBOUNCE_S = 0.3
+LINK_RELOAD_DEBOUNCE_S = 0.3
+# Max-Wait: bei Dauerfeuer (Events < Debounce-Abstand) spätestens nach dieser
+# Zeit seit dem ersten verschobenen Event trotzdem laden.
+LINK_RELOAD_MAX_WAIT_S = 1.5
 
 # Dezente Kartentönung pro Status (Alpha-Tönung, trägt in Dark und Light)
 STATUS_TINT = {
@@ -60,6 +68,7 @@ STATUS_TINT = {
     "not_caught": (0.80, 0.20, 0.20, 0.22),
     "unknown":    (0.90, 0.70, 0.10, 0.20),
     "dupes":      (0.55, 0.55, 0.55, 0.20),
+    "type_retry": (0.55, 0.55, 0.55, 0.20),
     "open":       (0.55, 0.55, 0.55, 0.12),
     "dead":       (0.25, 0.25, 0.25, 0.40),
 }
@@ -70,6 +79,7 @@ STATUS_CHIP_COLOR = {
     "not_caught": (0.75, 0.20, 0.20, 1),
     "unknown":    (0.85, 0.62, 0.05, 1),
     "dupes":      (0.45, 0.45, 0.45, 1),
+    "type_retry": (0.45, 0.45, 0.45, 1),
     "open":       (0.45, 0.45, 0.45, 1),
     "dead":       (0.15, 0.15, 0.15, 1),
 }
@@ -98,9 +108,8 @@ def _lock_icon() -> MDIcon:
 
 
 def _route_text(row: dict) -> str:
-    """'Ort (Route N)' — location_name liefert bei unbekannter Route schon 'Route N'."""
-    loc = row["location"]
-    return loc if loc == f"Route {row['route']}" else f"{loc} (Route {row['route']})"
+    """Nur der Ortsname — location_name liefert bei unbekannter Route schon 'Route N'."""
+    return row["location"] or f"Route {row['route']}"
 
 
 class EncounterCard(MDCard):
@@ -236,10 +245,8 @@ class LinkGroupCard(MDCard):
         self.group = group
 
         head = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(32), spacing=dp(8))
-        # location_name liefert bei unbekannter Route bereits "Route N" — dann
-        # nicht noch einmal "(Route N)" anhängen.
-        loc = group["location"]
-        head_text = loc if loc == f"Route {group['route']}" else f"{loc}  (Route {group['route']})"
+        # Nur der Ortsname (group_title), ohne Routen-ID.
+        head_text = group_title(group)
         title = MDLabel(text=head_text, bold=True,
                         halign="left", valign="center", shorten=True, shorten_from="right")
         title.bind(width=lambda w, v: setattr(w, "text_size", (v, None)))
@@ -295,6 +302,17 @@ class EncounterMenu(MDScreen):
         self.munchlax = munchlax
         self.rem = rem
         self._link_reload_scheduled: bool = False
+        self._link_reload_event = None
+        self._link_reload_first_ts: float | None = None
+        self._filter_event = None
+        # Inhalts-Schlüssel → Karte; unveränderte Karten überleben Reload/Suche.
+        # Mark-and-Sweep: _card_cache = Karten des letzten fertigen Renders,
+        # _card_cache_next = im laufenden Render benutzte Karten.
+        self._card_cache: dict[tuple, object] = {}
+        self._card_cache_next: dict[tuple, object] = {}
+        self._pending_labels_key: str = ""
+        self._pending_slot_labels: dict | None = None
+        self._pending_on_menu: Callable | None = None
         self._show_deleted: bool = False
         self._edit_dialog: EncounterEditDialogMD | None = None
         # Anlegen-/Neue-Gruppe-Dialog (nie zusammen mit dem Edit-Dialog offen)
@@ -317,7 +335,6 @@ class EncounterMenu(MDScreen):
         self._load_gen: int = 0
         self._render_event = None
         self._pending: list = []
-        self._pending_mode: str = "flat"
         self._pending_expected: int = 2
         self._menus: list[MDDropdownMenu] = []
 
@@ -373,8 +390,7 @@ class EncounterMenu(MDScreen):
         filter_bar.add_widget(self.edition_button)
         self.search_input = MDTextField(MDTextFieldHintText(text="Route, Ort, Art …"),
                                         mode="outlined", size_hint_x=0.4)
-        self._filter_trigger = Clock.create_trigger(lambda _dt: self._apply_filters(), 0.15)
-        self.search_input.bind(text=lambda _i, _v: self._filter_trigger())
+        self.search_input.bind(text=lambda _i, _v: self._schedule_filter())
         filter_bar.add_widget(self.search_input)
         self.count_label = MDLabel(text="", valign="center", halign="right")
         filter_bar.add_widget(self.count_label)
@@ -633,21 +649,50 @@ class EncounterMenu(MDScreen):
             f"edit_soullink_link(dissolve, {link_id})", self._on_edit_sent))
 
     def _on_edit_sent(self) -> None:
-        """Nach erfolgreichem Senden: sofort (Solo) und nach dem Server-Echo neu laden."""
-        self._force_reload()
-        Clock.schedule_once(lambda _dt: self._force_reload(), 0.8)
+        """Nach erfolgreichem Senden: sofort (Solo) und nach dem Server-Echo neu laden.
+
+        Der Nachlade-Reload läuft über den Debounce — Echo-Events im Fenster
+        verschieben ihn, statt je einen eigenen Rebuild auszulösen."""
+        self._reload()
+        self._schedule_reload(0.8)
+
+    def _is_visible(self) -> bool:
+        return self.manager is not None and self.manager.current == self.name
 
     def _on_soullink_state_changed(self) -> None:
         """Callback läuft im Munchlax-Thread: nur per Clock in den UI-Thread wechseln."""
         if self._link_reload_scheduled:
             return
         self._link_reload_scheduled = True
-        Clock.schedule_once(self._reload_after_link_change, 0)
+        Clock.schedule_once(self._on_link_event_ui, 0)
+
+    def _on_link_event_ui(self, _dt) -> None:
+        self._link_reload_scheduled = False
+        if not self._is_visible():
+            # Unsichtbar kein Rebuild (Live-Test 2026-11-04: Reload-Stalls bei
+            # jedem Link-Event ließen BizHawk laggen) — on_pre_enter lädt
+            # beim nächsten Eintritt ohnehin frisch.
+            return
+        self._schedule_reload()
+
+    def _schedule_reload(self, delay: float = LINK_RELOAD_DEBOUNCE_S) -> None:
+        """Trailing-Debounce: jeder Aufruf verschiebt den Reload ans Burst-Ende."""
+        now = time.monotonic()
+        if self._link_reload_first_ts is None:
+            self._link_reload_first_ts = now
+        elif now - self._link_reload_first_ts >= LINK_RELOAD_MAX_WAIT_S:
+            delay = 0  # Max-Wait erreicht: nicht weiter verschieben
+        if self._link_reload_event is not None:
+            self._link_reload_event.cancel()
+        self._link_reload_event = Clock.schedule_once(self._reload_after_link_change, delay)
 
     def _reload_after_link_change(self, _dt) -> None:
-        self._link_reload_scheduled = False
+        self._link_reload_event = None
+        self._link_reload_first_ts = None
+        if not self._is_visible():
+            return  # inzwischen verlassen — on_pre_enter lädt nach
         try:
-            self._force_reload()
+            self._reload()
         except Exception as err:
             logger.error(f"EncounterMenu Link-Reload fehlgeschlagen: {type(err)},{err}")
             logger.error(f"{traceback.format_exc()}")
@@ -667,20 +712,30 @@ class EncounterMenu(MDScreen):
         # (Parität zur Klassik, die bei jedem Eintritt neu lädt). _reload ist
         # async + gebatcht, der DB-Round-Trip ist günstig. Sprite-Cache mit
         # leeren: Sprite-Pfad/-Repo kann in den Settings in-place geändert sein.
-        self._sprite_cache.clear()
+        self._clear_caches()
         self._update_import_button()
         self._reload()
 
     def load_from_session(self) -> None:
-        """Session-Wechsel-Hook: Filter zurücksetzen, DB neu laden."""
+        """Session-Wechsel-Hook: Filter zurücksetzen, DB neu laden (unsichtbar: lazy)."""
         self._player_filter = "alle"
         self._edition_filter = None
         self.player_button_text.text = "Spieler: alle"
         self.edition_button_text.text = "Edition: alle"
-        self._force_reload()
+        if self._is_visible():
+            self._force_reload()
+        else:
+            self._clear_caches()  # on_pre_enter lädt beim Eintritt
+
+    def _clear_caches(self) -> None:
+        # Sprite-Repo könnte sich geändert haben (Settings); Karten tragen den
+        # Sprite-Pfad in sich → Karten-Cache mit leeren.
+        self._sprite_cache.clear()
+        self._card_cache.clear()
+        self._card_cache_next.clear()
 
     def _force_reload(self) -> None:
-        self._sprite_cache.clear()  # Sprite-Repo könnte sich geändert haben (Settings)
+        self._clear_caches()
         self._reload()
 
     def _reload(self) -> None:
@@ -717,6 +772,8 @@ class EncounterMenu(MDScreen):
             self._reload_pending = True
             return
         self._encounters = rows
+        if not self._is_visible():
+            return  # inzwischen verlassen: kein Render, on_pre_enter lädt neu
         self._after_load()
 
     def _on_load_done(self, task: asyncio.Task) -> None:
@@ -741,7 +798,7 @@ class EncounterMenu(MDScreen):
         db = PokedexDB(Path(session))
         try:
             with db.access_lock:
-                db.connect()
+                db.connect(quiet=True)  # Kurzverbindung pro Reload, nicht loggen
                 if db.connection is None:
                     return []
                 cursor = db.connection.cursor()
@@ -849,6 +906,16 @@ class EncounterMenu(MDScreen):
         elif not visible and present:
             self.filter_bar.remove_widget(self.player_button)
 
+    def _schedule_filter(self) -> None:
+        """Trailing-Debounce für die Suche (vorher: Rebuild alle 150 ms beim Tippen)."""
+        if self._filter_event is not None:
+            self._filter_event.cancel()
+        self._filter_event = Clock.schedule_once(self._run_filter, SEARCH_DEBOUNCE_S)
+
+    def _run_filter(self, _dt) -> None:
+        self._filter_event = None
+        self._apply_filters()
+
     def _apply_filters(self) -> None:
         query = (self.search_input.text or "").strip()
         self._set_player_filter_visible(not is_soullink(self.nuz))
@@ -867,8 +934,7 @@ class EncounterMenu(MDScreen):
                 self.count_label.text = f"{len(groups)} Routen, {len(unlinked)} ohne Gruppe"
                 self._set_hint("Noch keine verlinkten Encounter."
                                if not groups and not unlinked else "")
-                self._render("groups", groups)
-                self._render_unlinked(unlinked)
+                self._render("groups", groups, unlinked)
             else:
                 rows, enc_count, open_count = build_encounter_rows(
                     self._encounters, self._species_de, edition_filter=self._edition_filter,
@@ -877,13 +943,11 @@ class EncounterMenu(MDScreen):
                 self.count_label.text = f"{enc_count} Encounter, {open_count} offen"
                 self._set_hint("Keine Encounter gefunden." if not rows else "")
                 self._render("flat", rows)
-                self._render_unlinked([])
         except Exception as err:
             logger.error(f"EncounterMenu Aufbereitung fehlgeschlagen: {type(err)},{err}")
             logger.error(f"{traceback.format_exc()}")
             self._set_hint("Fehler beim Aufbereiten der Encounter (siehe Log).")
             self._render("flat", [])
-            self._render_unlinked([])
 
     def _unlinked_rows(self, links: dict, query: str) -> list[dict]:
         """Encounter ohne Gruppe als Karten-Zeilen (Edition-Filter + Suche wie bei Gruppen)."""
@@ -901,55 +965,83 @@ class EncounterMenu(MDScreen):
         elif not visible and present:
             self._header.remove_widget(self.new_group_button)
 
-    def _render_unlinked(self, rows: list[dict]) -> None:
-        """Abschnitt "Ohne Gruppe" (nur Soullink-Ansicht, wenige Karten: ohne Batching)."""
-        self.unlinked_grid.clear_widgets()
-        for row in rows:
-            self.unlinked_grid.add_widget(
-                EncounterCard(row, self._sprite_source(row), self._open_edit))
-        self.unlinked_header.text = f"Ohne Gruppe ({len(rows)})"
-        self.unlinked_header.height = dp(32) if rows else 0
-        self.unlinked_header.opacity = 1 if rows else 0
-        self._update_cols()
-
     def _set_hint(self, text: str) -> None:
         self.empty_hint.text = text
         self.empty_hint.height = dp(50) if text else 0
         self.empty_hint.opacity = 1 if text else 0
 
-    def _render(self, mode: str, items: list) -> None:
+    def _render(self, mode: str, items: list, unlinked: list | None = None) -> None:
+        """Hauptgrid (Gruppen/flach) + Abschnitt "Ohne Gruppe" gemeinsam gebatcht."""
         if self._render_event is not None:
             self._render_event.cancel()
             self._render_event = None
+        unlinked = unlinked or []
+        # Vorheriger Render abgebrochen: dessen Karten weiter als Kandidaten
+        # behalten, dann neu markieren.
+        self._card_cache.update(self._card_cache_next)
+        self._card_cache_next = {}
         self.cards_grid.clear_widgets()
+        self.unlinked_grid.clear_widgets()
         if mode == "flat":
             self._card_min_width = ENC_CARD_MIN_WIDTH
         else:
             self._card_min_width = max(CARD_MIN_WIDTH, MEMBER_MIN_WIDTH * self._expected_count())
+        self.unlinked_header.text = f"Ohne Gruppe ({len(unlinked)})"
+        self.unlinked_header.height = dp(32) if unlinked else 0
+        self.unlinked_header.opacity = 1 if unlinked else 0
         self._update_cols()
-        self._pending = list(items)
-        self._pending_mode = mode
         self._pending_expected = self._expected_count()
+        # Einmal pro Render (nicht pro Batch/Karte): iterieren alle Encounter
+        groups = mode == "groups"
+        self._pending_slot_labels = self._slot_labels() if groups else None
+        self._pending_labels_key = repr(sorted((self._pending_slot_labels or {}).items(),
+                                               key=lambda kv: str(kv[0])))
+        self._pending_on_menu = (self._open_group_menu
+                                 if groups and self._is_host() and self.munchlax is not None
+                                 else None)
+        kind = "groups" if groups else "flat"
+        self._pending = ([(self.cards_grid, kind, it) for it in items]
+                         + [(self.unlinked_grid, "flat", row) for row in unlinked])
         if self._render_batch(0):
             self._render_event = Clock.schedule_interval(self._render_batch, 0)
 
     def _render_batch(self, _dt) -> bool:
         batch = self._pending[:RENDER_BATCH]
         del self._pending[:RENDER_BATCH]
-        # Einmal pro Batch statt pro Karte (iteriert alle Encounter)
-        slot_labels = self._slot_labels() if self._pending_mode == "groups" else None
-        for item in batch:
-            if self._pending_mode == "groups":
-                self.cards_grid.add_widget(LinkGroupCard(
-                    item, self._pending_expected, self._sprite_source, self._open_member_edit,
-                    on_menu=self._open_group_menu if self._is_host() and self.munchlax is not None
-                    else None, player_labels=slot_labels))
-            else:
-                self.cards_grid.add_widget(EncounterCard(item, self._sprite_source(item), self._open_edit))
+        for grid, kind, item in batch:
+            grid.add_widget(self._card_for(kind, item))
         if not self._pending:
             self._render_event = None
+            # Sweep: nur Karten des fertigen Renders behalten (kein Leck)
+            self._card_cache = self._card_cache_next
+            self._card_cache_next = {}
             return False
         return True
+
+    def _card_for(self, kind: str, item: dict):
+        """Karte aus dem Cache (gleicher Inhalt) oder neu bauen."""
+        if kind == "groups":
+            # Mitglieder-Sprites sind in die Karte eingebacken → in den Key
+            sprites = tuple(self._sprite_source(m) for m in item.get("members", ()))
+            key = ("g", repr(item), sprites, self._pending_expected,
+                   self._pending_on_menu is not None, self._pending_labels_key)
+        else:
+            sprite = self._sprite_source(item)
+            key = ("f", repr(item), sprite)
+        if key not in self._card_cache_next:
+            card = self._card_cache.get(key)
+            if card is not None and card.parent is None:
+                self._card_cache_next[key] = card
+                return card
+        if kind == "groups":
+            card = LinkGroupCard(item, self._pending_expected, self._sprite_source,
+                                 self._open_member_edit, on_menu=self._pending_on_menu,
+                                 player_labels=self._pending_slot_labels)
+        else:
+            card = EncounterCard(item, sprite, self._open_edit)
+        # Doppelter Inhalt im selben Render: zweite Karte nicht cachen
+        self._card_cache_next.setdefault(key, card)
+        return card
 
     def _sprite_source(self, row: dict) -> str:
         """Sprite-Pfad via OBS.get_sprite; leer bei offenen Routen/Fehlern.

@@ -308,6 +308,11 @@ class MapMenu(MDScreen):
         self._loaded_edition: int | None = None
         # Generationszähler gegen out-of-order Encounter-Loads (Spielerwechsel).
         self._load_gen = 0
+        # Encounter-/Link-Änderungen (auch synchronisierte Gruppen anderer
+        # Spieler) live nachladen — Live-Test 2026-11-04: Karte blieb alt.
+        self._catch_reload_ev = None
+        if self.munchlax is not None and hasattr(self.munchlax, "add_state_listener"):
+            self.munchlax.add_state_listener(self._on_state_changed)
 
         root = MDBoxLayout(orientation="vertical", padding="10dp", spacing="8dp")
 
@@ -678,6 +683,28 @@ class MapMenu(MDScreen):
         self.map_canvas.set_current_section(section)
 
     # --- Legende (Encounter pro Route) ---------------------------------------
+
+    def _on_state_changed(self, _reason: str) -> None:
+        """Listener aus dem Munchlax-Thread: nur per Clock in den UI-Thread."""
+        Clock.schedule_once(self._on_state_changed_ui, 0)
+
+    def _on_state_changed_ui(self, _dt) -> None:
+        # Unsichtbar nichts tun: on_pre_enter lädt beim Eintritt ohnehin neu
+        if self.manager is None or self.manager.current != self.name:
+            return
+        # Trailing-Debounce: Event-Bursts (Remote-Batch, Gruppe anlegen) → 1 Load
+        if self._catch_reload_ev is not None:
+            self._catch_reload_ev.cancel()
+        self._catch_reload_ev = Clock.schedule_once(self._reload_catches_debounced, 0.5)
+
+    def _reload_catches_debounced(self, _dt) -> None:
+        self._catch_reload_ev = None
+        if self.manager is None or self.manager.current != self.name:
+            return
+        try:
+            self._schedule_catch_load()
+        except Exception:
+            logger.error(f"MapMenu Live-Reload fehlgeschlagen: {traceback.format_exc()}")
 
     def _schedule_catch_load(self):
         """Lädt die Encounter des aktuellen Spielers gruppiert nach Route im

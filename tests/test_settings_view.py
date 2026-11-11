@@ -93,3 +93,16 @@ def test_build_overlay_links_lan_equals_localhost_not_added():
     )
     # 'localhost' als LAN-IP wird nicht als zweiter Host dupliziert
     assert data["hosts"] == [("Lokal", "localhost")]
+
+
+def test_build_overlay_links_todescounter():
+    data = sv.build_overlay_links(
+        port="43888", layout="horizontal", badge_layout="horizontal",
+        player_count=2, two_pc=True, nuz={}, pl={"your_name": "Alice"},
+        rem={"client_id": 0}, lan_ip="192.168.1.5",
+    )
+    deaths = data["deaths"]
+    assert [d["label"] for d in deaths] == ["Alle + Gesamt", "Spieler 1", "Spieler 2"]
+    assert deaths[0]["links"][0]["url"] == "http://localhost:43888/deaths"
+    assert deaths[1]["links"][0]["url"] == "http://localhost:43888/deaths/player/1"
+    assert deaths[2]["links"][1]["url"] == "http://192.168.1.5:43888/deaths/player/2"

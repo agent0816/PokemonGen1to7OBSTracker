@@ -1228,6 +1228,26 @@ class PokedexDB:
             return None
 
     @_serialized
+    def find_encounter_by_root(self, personality: int, owner_root: str) -> dict | None:
+        """Encounter zu ``personality`` mit passendem Root-Owner ('name' zu
+        'name_<slot>'). Für Server-Meldungen, deren Owner keinen Slot trägt
+        (Soullink-Death-Broadcast). Nicht gelöschte Zeilen bevorzugt."""
+        if self.connection is None:
+            return None
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT * FROM encounters WHERE personality = ?",
+                           (int(personality),))
+            rows = [dict(r) for r in cursor.fetchall()
+                    if self.owner_root(r["owner"]) == owner_root]
+            rows.sort(key=lambda r: bool(r.get("deleted")))
+            return rows[0] if rows else None
+        except Exception as err:
+            self.logger.error(f"find_encounter_by_root failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return None
+
+    @_serialized
     def apply_encounter_edit(self, personality: int, owner: str, changes: dict,
                              unlock: list[str] | None = None,
                              delete: bool | None = None) -> dict | None:

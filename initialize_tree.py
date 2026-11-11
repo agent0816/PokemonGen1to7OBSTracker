@@ -92,8 +92,13 @@ def init_config_folder():
         save_config(session_list, sessions)
     if not default_session.exists():
         default_session.mkdir(parents=True, exist_ok=True)
+    # App-weiter Friedhof (backend/graveyard.py) inkl. SQLite-Begleitdateien —
+    # sonst würde die Aufräum-Schleife ihn bei jedem Start löschen.
+    graveyard_files = {config / f'graveyard.db{suffix}'
+                       for suffix in ('', '-wal', '-shm', '-journal')}
     for entry in config.iterdir():
-        if entry.is_file() and entry not in (session_list, log_settings, app_state):
+        if entry.is_file() and entry not in (session_list, log_settings, app_state) \
+                and entry not in graveyard_files:
             files.append(entry)
         elif not entry.is_file():
             sessions.append(entry)

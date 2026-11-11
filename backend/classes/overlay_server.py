@@ -64,6 +64,8 @@ class OverlayServer:
         self._session_sse_queues: list[asyncio.Queue] = []
         # Team-SSE-Queues für Team-Badge-Overlay pro team_id.
         self._team_sse_queues: dict[str, list[asyncio.Queue]] = {}
+        # Todescounter-Overlay (/deaths), Zahlen aus dem lokalen Friedhof
+        self._deaths_sse_queues: list[asyncio.Queue] = []
 
         self.logger = get_logger(__name__, './logs/overlay_server.log')
 
@@ -102,6 +104,7 @@ class OverlayServer:
             self._sse_queues.clear()
             self._session_sse_queues.clear()
             self._team_sse_queues.clear()
+            self._deaths_sse_queues.clear()
 
     def _setup_routes(self):
         self.app.router.add_get('/player/{player_id}', self._handle_team_page)
@@ -120,6 +123,11 @@ class OverlayServer:
         self.app.router.add_get('/session/events', self._handle_session_sse)
         self.app.router.add_get('/session/state', self._handle_session_state)
         self.app.router.add_get('/timer', self._handle_timer_page)
+        # Todescounter: alle Spieler + Gesamt, bzw. ein Spieler-Slot
+        self.app.router.add_get('/deaths', self._handle_deaths_page)
+        self.app.router.add_get('/deaths/data', self._handle_deaths_data)
+        self.app.router.add_get('/deaths/events', self._handle_deaths_sse)
+        self.app.router.add_get('/deaths/player/{slot}', self._handle_deaths_page)
 
     # --- Notify (aufgerufen von Munchlax) ---
 
@@ -178,6 +186,47 @@ class OverlayServer:
         for q in dead:
             if q in queues:
                 queues.remove(q)
+
+    async def _build_deaths_payload(self) -> dict:
+        """Zähler aus dem Friedhof (blockierender SQLite-Read → Executor)."""
+        from backend.death_counter import build_death_payload
+        m = self.munchlax
+        counts = {}
+        getter = getattr(m, "snapshot_death_counts", None)
+        if callable(getter):
+            try:
+                counts = await asyncio.get_running_loop().run_in_executor(None, getter)
+            except Exception as err:
+                self.logger.warning(f"Todescounter lesen fehlgeschlagen: {err}")
+        names = {}
+        snap_names = getattr(m, "snapshot_player_names", None)
+        try:
+            names = snap_names() if callable(snap_names) else dict(getattr(m, "player_names", {}) or {})
+        except Exception as err:
+            self.logger.debug(f"Todescounter: player_names nicht lesbar: {err}")
+        return build_death_payload(counts, names)
+
+    async def notify_deaths_update(self):
+        """Pusht den aktuellen Todescounter an alle /deaths-Overlays."""
+        if not self._deaths_sse_queues:
+            self.logger.debug("notify_deaths_update skip: keine /deaths-SSE-Clients")
+            return
+        payload = await self._build_deaths_payload()
+        try:
+            data = json.dumps(payload, ensure_ascii=False)
+        except Exception as err:
+            self.logger.warning(f"notify_deaths_update serialize failed: {err}")
+            return
+        event = f"event: deaths\ndata: {data}\n\n"
+        dead = []
+        for q in list(self._deaths_sse_queues):
+            try:
+                q.put_nowait(event)
+            except asyncio.QueueFull:
+                dead.append(q)
+        for q in dead:
+            if q in self._deaths_sse_queues:
+                self._deaths_sse_queues.remove(q)
 
     async def notify_session_event(self, event_type: str, payload: dict):
         """Verteilt Session-Events (Timer/Countdown/Soullink) an alle /session/events-Clients."""
@@ -761,6 +810,111 @@ class OverlayServer:
                 self._session_sse_queues.remove(queue)
             self.logger.info("Session-SSE-Client getrennt")
         return response
+
+    async def _handle_deaths_data(self, request: web.Request) -> web.Response:
+        return web.json_response(await self._build_deaths_payload(),
+                                 headers={'Cache-Control': 'no-store'})
+
+    async def _handle_deaths_page(self, request: web.Request) -> web.Response:
+        raw = request.match_info.get('slot')
+        slot = None
+        if raw is not None:
+            try:
+                slot = int(raw)
+            except ValueError:
+                return web.Response(status=404, text="unbekannter Spieler-Slot")
+        return web.Response(text=self._render_deaths_html(slot), content_type='text/html')
+
+    async def _handle_deaths_sse(self, request: web.Request) -> web.StreamResponse:
+        response = web.StreamResponse(
+            status=200, reason='OK',
+            headers={
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*',
+            },
+        )
+        await response.prepare(request)
+        queue: asyncio.Queue = asyncio.Queue(maxsize=50)
+        # append + Snapshot im try: auch ein Cancel während des Initial-
+        # Snapshots räumt die Queue im finally weg (sonst Leak)
+        try:
+            self._deaths_sse_queues.append(queue)
+            self.logger.info("Todescounter-SSE-Client verbunden")
+            # Initial-Snapshot (sonst leer bis zum nächsten Tod)
+            try:
+                payload = await self._build_deaths_payload()
+                init = f"event: deaths\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                await response.write(init.encode('utf-8'))
+            except Exception as err:
+                self.logger.warning(f"deaths SSE initial snapshot failed: {err}")
+            while True:
+                event = await queue.get()
+                await response.write(event.encode('utf-8'))
+        except (asyncio.CancelledError, ConnectionResetError):
+            pass
+        finally:
+            if queue in self._deaths_sse_queues:
+                self._deaths_sse_queues.remove(queue)
+            self.logger.info("Todescounter-SSE-Client getrennt")
+        return response
+
+    def _render_deaths_html(self, slot: int | None) -> str:
+        slot_js = "null" if slot is None else str(int(slot))
+        return """<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: transparent; font-family: 'Segoe UI', Arial, sans-serif; color: #fff; overflow: hidden; }
+#wrap { padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.row { display: flex; align-items: baseline; gap: 10px; text-shadow: 2px 2px 4px #000, 0 0 8px #000; }
+.skull { font-size: 26px; }
+.name { font-size: 22px; }
+.count { font-size: 28px; font-weight: bold; font-family: 'Consolas', 'Courier New', monospace; }
+.total { margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.4); padding-top: 4px; }
+.total .name { opacity: 0.85; }
+</style>
+</head>
+<body>
+<div id="wrap"></div>
+<script>
+const SLOT = __SLOT__;
+function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+function row(name, count, cls) {
+    return '<div class="row ' + (cls || '') + '"><span class="skull">\u2620</span>'
+        + '<span class="name">' + esc(name) + '</span>'
+        + '<span class="count">' + esc(count) + '</span></div>';
+}
+function render(p) {
+    const wrap = document.getElementById('wrap');
+    const players = (p && p.players) || [];
+    if (SLOT !== null) {
+        const me = players.find(x => (x.slots || []).includes(SLOT));
+        wrap.innerHTML = me ? row(me.name, me.count) : row('Spieler ' + SLOT, 0);
+        return;
+    }
+    let html = players.map(x => row(x.name, x.count)).join('');
+    html += row('Gesamt', (p && p.total) || 0, 'total');
+    wrap.innerHTML = html;
+}
+function load() {
+    fetch('/deaths/data').then(r => r.json()).then(render).catch(() => {});
+}
+function connect() {
+    const es = new EventSource('/deaths/events');
+    es.addEventListener('deaths', e => { try { render(JSON.parse(e.data)); } catch (err) {} });
+    es.onerror = () => { es.close(); setTimeout(connect, 3000); };
+}
+load();
+connect();
+// Fallback: Session-Wechsel/Namensänderung ohne Tod-Event
+setInterval(load, 30000);
+</script>
+</body>
+</html>""".replace("__SLOT__", slot_js)
 
     async def _handle_timer_page(self, request: web.Request) -> web.Response:
         html = self._render_timer_html()

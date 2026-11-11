@@ -63,6 +63,7 @@ class Screens(ScreenManager):
                 from frontend.widgets.bagmenumd import BagMenu
                 from frontend.widgets.boxmenumd import BoxMenu
                 from frontend.widgets.encountermenumd import EncounterMenu
+                from frontend.widgets.graveyardmenu_md import GraveyardMenu
                 from frontend.widgets.mainmenumd import MainMenu
                 from frontend.widgets.mapmenumd import MapMenu
                 from frontend.widgets.nuzlockemenu_md import NuzlockeMenu
@@ -133,6 +134,9 @@ class Screens(ScreenManager):
             with perf_span("build.NuzlockeMenu"):
                 self.nuzlocke_menu = NuzlockeMenu(munchlax, configsave, nuz, rem, bh, bizhawk, rnd)
                 self.add_widget(self.nuzlocke_menu)
+            with perf_span("build.GraveyardMenu"):
+                self.graveyard_menu = GraveyardMenu(munchlax, obs_websocket)
+                self.add_widget(self.graveyard_menu)
             # Detail-Drilldown (kein Rail-Ziel): aus Pokedex per Karten-Klick erreicht,
             # navigiert über return_screen zurück. Box/Main nutzen ihn später mit.
             with perf_span("build.PokemonDetailMD"):
@@ -562,6 +566,12 @@ class Screens(ScreenManager):
         except Exception as err:
             logger.error(f"NuzlockeMenu.load_from_session fehlgeschlagen: {err}")
             logger.error(traceback.format_exc())
+        try:
+            with perf_span("session_changed.graveyard"):
+                self.graveyard_menu.load_from_session()
+        except Exception as err:
+            logger.error(f"GraveyardMenu.load_from_session fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
 
 
 class MainWindow(MDBoxLayout):
@@ -582,6 +592,7 @@ class MainWindow(MDBoxLayout):
             {"icon": "bag-personal-outline", "display_name": "Tasche", "screen_name": "BagMenu"},
             {"icon": "map-outline", "display_name": "Karte", "screen_name": "MapMenu"},
             {"icon": "skull-outline", "display_name": "Nuzlocke", "screen_name": "NuzlockeMenu"},
+            {"icon": "grave-stone", "display_name": "Friedhof", "screen_name": "GraveyardMenu"},
             {"icon": "cog", "display_name": "Settings", "screen_name": "SettingsMenu"},
         ]
         self.navrail = TrackerNavigationRail(

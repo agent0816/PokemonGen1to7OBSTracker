@@ -115,6 +115,8 @@ def build_overlay_links(
                       "links": [ {"host_label","team_url","badge_url"} ]} ],
         "teams":   [ {"label": "Team …",
                       "links": [ {"host_label","badge_url"} ]} ],
+        "deaths":  [ {"label": "Alle + Gesamt" | "Spieler n",
+                      "links": [ {"host_label","url"} ]} ],   # Todescounter
       }
 
     `lan_ip` kann fuer Tests injiziert werden; sonst wird es bei two_pc via
@@ -165,6 +167,18 @@ def build_overlay_links(
         } for host_label, host in hosts]
         teams.append({"label": team_label, "links": links})
 
+    # Todescounter (/deaths = alle + Gesamt, /deaths/player/<n> = ein Spieler)
+    deaths: list[dict] = [{
+        "label": "Alle + Gesamt",
+        "links": [{"host_label": hl, "url": f"http://{h}:{port}/deaths"} for hl, h in hosts],
+    }]
+    for p in range(1, player_count + 1):
+        deaths.append({
+            "label": f"Spieler {p}",
+            "links": [{"host_label": hl, "url": f"http://{h}:{port}/deaths/player/{p}"}
+                      for hl, h in hosts],
+        })
+
     return {
         "hint": hint,
         "two_pc": two_pc,
@@ -172,4 +186,5 @@ def build_overlay_links(
         "hosts": hosts,
         "players": players,
         "teams": teams,
+        "deaths": deaths,
     }

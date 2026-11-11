@@ -434,6 +434,17 @@ class SettingsMenu(MDScreen):
                     row.add_widget(self._copy_button(f"Team-Badges ({link['host_label']})",
                                                      link["badge_url"]))
                 box.add_widget(row)
+        if data.get("deaths"):
+            box.add_widget(MDLabel(text="Todescounter", role="small", bold=True,
+                                   adaptive_height=True))
+            for entry in data["deaths"]:
+                row = MDBoxLayout(orientation="horizontal", size_hint_y=None,
+                                  adaptive_height=True, spacing=dp(6))
+                row.add_widget(MDLabel(text=entry["label"], size_hint_x=0.25,
+                                       role="small", valign="center"))
+                for link in entry["links"]:
+                    row.add_widget(self._copy_button(f"Tode ({link['host_label']})", link["url"]))
+                box.add_widget(row)
 
     def _copy_button(self, text: str, url: str) -> MDButton:
         return MDButton(MDButtonText(text=text), style="outlined",

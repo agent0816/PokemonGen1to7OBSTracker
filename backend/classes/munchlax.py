@@ -19,6 +19,7 @@ from backend.classes.pokedex_db import PokedexDB
 from backend.controller.run_manager import RunManager
 from backend.dragon_rage import DRAGON_RAGE_FLAG
 from backend.encounter_edit import find_rebind_candidate, new_encounter
+from backend.graveyard import GraveyardDB, graveyard_path
 from backend.logging_setup import get_logger
 from backend.nuzlocke_view import dragon_rage_badge_limit
 
@@ -201,6 +202,10 @@ class Munchlax:
         # Backoff fuer den Neuaufbau einer DB ohne Verbindung (connect scheitert
         # dauerhaft, z.B. File-Lock) — sonst Warn-/Traceback-Flut pro Tick
         self._pokedex_db_rebuild_at: float = 0.0
+        # App-weiter Friedhof (backend/graveyard.py), lazy; nicht session-
+        # gebunden → überlebt Session-Wechsel/-Reset, kein Rebind nötig.
+        self._graveyard: GraveyardDB | None = None
+        self._graveyard_lock = threading.Lock()
         self.host = host
         self.port = port
         self.is_connected = False
@@ -997,6 +1002,8 @@ class Munchlax:
             db_ok = False
 
         self._clear_session_runtime_state()
+        # Friedhof bleibt, nur der Todescounter der Session startet bei 0
+        await self._graveyard_reset_counter()
 
         if self.is_connected:
             try:
@@ -1026,6 +1033,7 @@ class Munchlax:
             self.logger.error(f"remote session_reset DB failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
         self._clear_session_runtime_state()
+        await self._graveyard_reset_counter()
         await self._refresh_overlay_after_reset()
 
     async def _refresh_overlay_after_reset(self):
@@ -1630,6 +1638,7 @@ class Munchlax:
                     elif msg_type == "soullink_death":
                         death = data.get("death") or {}
                         self._handle_remote_death(death)
+                        await self._graveyard_record_server_death(death)
                         await self._notify_overlay_session("soullink_death", death)
                         self._notify_soullink_state_changed()
                     elif msg_type == "soullink_versus_state":
@@ -1759,10 +1768,17 @@ class Munchlax:
                         await self._refresh_party_rule_consumers("soullink_link_removed")
                     elif msg_type == "soullink_death_state":
                         self._handle_remote_death_state(data)
+                        if not data.get("dead") and data.get("manual"):
+                            # Manuell „lebendig" = Fehlalarm-Korrektur → aus dem Counter
+                            await self._graveyard_remove(data.get("personality"),
+                                                         data.get("owner"))
                         await self.force_overlay_broadcast("soullink_death_state")
                         await self._refresh_party_rule_consumers("soullink_death_state")
                     elif msg_type == "soullink_state_snapshot":
                         self._handle_soullink_state_snapshot(data)
+                        # Tode, die während eines Disconnects passiert sind,
+                        # nachtragen (idempotent, Original-Zeitstempel)
+                        await self._graveyard_record_server_deaths(data.get("deaths"))
                         await self.force_overlay_broadcast("soullink_state_snapshot")
                         # Links komplett ersetzt (Reconnect/Resync) → Vergleichswert nachziehen
                         await self._refresh_party_rule_consumers("soullink_state_snapshot")
@@ -3040,6 +3056,10 @@ class Munchlax:
                     {"personality": pv, "owner": owner, "edition": edition}
                 )
                 await self._mark_encounter_dead_local(pv, owner)
+                # Friedhof auch ohne Server (Solo/Offline); Server-Broadcast
+                # ergänzt später Ursache/Link (authoritative).
+                if self._nuzlocke_rules_active():
+                    await self._graveyard_record(pv, owner, edition=edition, cause="faint")
             else:
                 self._reported_deaths.discard(key)
         if self.is_connected and self._pending_death_reports:
@@ -3048,6 +3068,278 @@ class Munchlax:
                 await self.send_soullink_death(
                     report["personality"], report["owner"], edition=report["edition"]
                 )
+
+    # ----- Friedhof (backend/graveyard.py, app-weit) -----
+
+    def _get_graveyard(self) -> GraveyardDB | None:
+        with self._graveyard_lock:
+            if self._graveyard is None:
+                try:
+                    self._graveyard = GraveyardDB(graveyard_path())
+                except Exception as err:
+                    self.logger.error(f"Friedhof-DB nicht verfügbar: {type(err).__name__}: {err}")
+                    self.logger.error(traceback.format_exc())
+                    return None
+            return self._graveyard
+
+    def _notify_graveyard_changed(self) -> None:
+        """Friedhof/Counter geändert → Listener + Todescounter-Overlay
+        (Browser-Source) + OBS-Textquellen. Overlay/OBS laufen auf dem
+        Kivy-Loop → _dispatch_on_kivy."""
+        self._notify_state_listeners("graveyard")
+        srv = self.overlay_server
+        if srv is not None and getattr(srv, "is_connected", False):
+            notifier = getattr(srv, "notify_deaths_update", None)
+            if callable(notifier):
+                self._dispatch_on_kivy(notifier())
+        obs = self.obs
+        if obs is not None and getattr(obs, "is_connected", False):
+            updater = getattr(obs, "change_death_counter", None)
+            if callable(updater):
+                self._dispatch_on_kivy(obs._obs_serial(updater()))
+
+    def graveyard_session_name(self) -> str:
+        """Session-Ordnername = Projektname im Friedhof."""
+        try:
+            return os.path.basename(str(self.configsave).rstrip("/\\")) or "default"
+        except Exception:
+            return "default"
+
+    def _graveyard_run_id(self) -> str:
+        try:
+            rm = self.get_run_manager()
+            active = rm.get_active_run() if rm is not None else None
+            return str((active or {}).get("run_id") or "")
+        except Exception as err:
+            self.logger.debug(f"Friedhof: run_id nicht ermittelbar: {err}")
+            return ""
+
+    def _find_team_pokemon(self, pv) -> tuple:
+        """(player_id, Pokemon|dict) mit dieser PV aus den Teams, sonst (None, None)."""
+        # Listen selbst unter Lock kopieren — der BH-Thread mutiert sie
+        sources = []
+        with self.state_lock:
+            for teams in (self.sorted_teams, self.bizhawk_teams):
+                snap = {}
+                for pid, team in teams.items():
+                    try:
+                        snap[pid] = list(team)[:6]
+                    except TypeError:
+                        continue
+                sources.append(snap)
+        for teams in sources:
+            for pid, members in teams.items():
+                for mon in members:
+                    mpv = (mon.get("personality") if isinstance(mon, dict)
+                           else getattr(mon, "personality", None))
+                    if mpv is not None and mpv == pv:
+                        return pid, mon
+        return None, None
+
+    def _graveyard_team_of(self, owner_name: str) -> str | None:
+        """Versus-Team (soullink_team_state) des Spielers, sonst None."""
+        with self.state_lock:
+            state = dict(self.soullink_team_state or {})
+        for team_id, bucket in state.items():
+            if owner_name in ((bucket or {}).get("owners") or []):
+                return str(team_id)
+        return None
+
+    def _build_grave_entry(self, pv, owner: str, edition=None, cause=None, ts=None,
+                           link_id=None, partners=None) -> dict:
+        """Blockierend (DB-Reads) → nur im Executor. Daten aus Encounter-Zeile
+        (Route, Methode, Fang-Level) + aktuellem Team (Level/Nickname beim Tod)."""
+        owner_name = PokedexDB.owner_root(owner) or str(owner)
+        slot = PokedexDB.owner_slot(owner)
+        enc = None
+        # pro Nutzung frisch lesen (Memory: Stale-Referenz nach Reconnect);
+        # Lookup-Fehler kosten nur Zusatzdaten, nicht den Friedhofseintrag
+        pdb = self.pokedex_db
+        try:
+            if pdb is not None and pdb.connection is not None:
+                if slot is not None:
+                    enc = pdb.get_encounter(pv, owner)
+                if enc is None:
+                    enc = pdb.find_encounter_by_root(pv, owner_name)
+        except Exception as err:
+            self.logger.warning(f"Friedhof: Encounter-Lookup fehlgeschlagen pv={pv}: {err}")
+            enc = None
+        enc = enc or {}
+        if slot is None and enc.get("owner"):
+            slot = PokedexDB.owner_slot(enc["owner"])
+        pid, mon = self._find_team_pokemon(pv)
+        if slot is None and pid is not None:
+            try:
+                slot = int(pid)
+            except (TypeError, ValueError):
+                pass
+
+        def _mon(name):
+            if mon is None:
+                return None
+            return mon.get(name) if isinstance(mon, dict) else getattr(mon, name, None)
+
+        dexnr = _mon("dexnr")
+        if dexnr in (None, 0, "", "egg"):
+            dexnr = enc.get("dexnr")
+        return {
+            "session": self.graveyard_session_name(),
+            "run_id": self._graveyard_run_id(),
+            "personality": pv,
+            "owner_name": owner_name,
+            "owner_slot": slot,
+            "ts": ts,
+            "edition": edition if edition is not None else enc.get("edition"),
+            "dexnr": dexnr,
+            "form": _mon("form") or enc.get("form"),
+            "female": _mon("female") if mon is not None else enc.get("female"),
+            "shiny": _mon("shiny") if mon is not None else enc.get("shiny"),
+            "nickname": _mon("nickname"),
+            "level": _mon("lvl") or enc.get("lvl"),
+            "route": enc.get("route"),
+            "method": enc.get("method"),
+            "cause": cause,
+            "link_id": link_id,
+            "partners": [p.get("owner") for p in (partners or []) if isinstance(p, dict)],
+            "team": self._graveyard_team_of(owner_name),
+        }
+
+    def _graveyard_record_sync(self, gy: GraveyardDB, pv, owner: str, edition=None,
+                               cause=None, ts=None, link_id=None, partners=None,
+                               authoritative: bool = False) -> bool:
+        """Blockierend (Executor). Bekannter Eintrag → ohne Enrichment-Reads
+        upserten (nur Ursache/Link/Partner), sonst voll aufbauen."""
+        session = self.graveyard_session_name()
+        owner_name = PokedexDB.owner_root(owner) or str(owner)
+        if gy.has_grave(session, pv, owner_name):
+            entry = {
+                "session": session, "personality": pv, "owner_name": owner_name,
+                "run_id": self._graveyard_run_id(), "cause": cause,
+                "link_id": link_id, "ts": ts,
+                "partners": [p.get("owner") for p in (partners or []) if isinstance(p, dict)],
+            }
+        else:
+            entry = self._build_grave_entry(pv, owner, edition, cause, ts, link_id, partners)
+        return gy.record_death(entry, authoritative=authoritative)
+
+    async def _graveyard_record(self, pv, owner: str, edition=None, cause=None, ts=None,
+                                link_id=None, partners=None,
+                                authoritative: bool = False) -> None:
+        """Tod in den Friedhof schreiben (idempotent). Fehler nur loggen."""
+        if pv is None or not owner:
+            return
+        try:
+            def _work():
+                gy = self._get_graveyard()
+                if gy is None:
+                    return False
+                return self._graveyard_record_sync(gy, pv, owner, edition, cause, ts,
+                                                   link_id, partners, authoritative)
+            changed = await asyncio.get_event_loop().run_in_executor(None, _work)
+            if changed:
+                self._notify_graveyard_changed()
+        except Exception as err:
+            self.logger.error(f"Friedhof-Eintrag fehlgeschlagen owner={owner} pv={pv}: "
+                              f"{type(err).__name__}: {err}")
+            self.logger.error(traceback.format_exc())
+
+    async def _graveyard_remove(self, pv, owner: str) -> None:
+        """Manuell „lebendig": Eintrag zählt nicht mehr (Fehlalarm-Korrektur)."""
+        if pv is None or not owner:
+            return
+        try:
+            def _work():
+                gy = self._get_graveyard()
+                if gy is None:
+                    return False
+                return gy.mark_removed(self.graveyard_session_name(), int(pv),
+                                       PokedexDB.owner_root(owner) or str(owner))
+            changed = await asyncio.get_event_loop().run_in_executor(None, _work)
+            if changed:
+                self._notify_graveyard_changed()
+        except Exception as err:
+            self.logger.error(f"Friedhof-Entfernen fehlgeschlagen owner={owner} pv={pv}: {err}")
+            self.logger.error(traceback.format_exc())
+
+    async def _graveyard_reset_counter(self) -> None:
+        """Manueller Session-Reset → Todescounter 0 (Friedhof bleibt)."""
+        try:
+            def _work():
+                gy = self._get_graveyard()
+                if gy is not None:
+                    gy.reset_counter(self.graveyard_session_name())
+            await asyncio.get_event_loop().run_in_executor(None, _work)
+            self._notify_graveyard_changed()
+        except Exception as err:
+            self.logger.error(f"Friedhof-Counter-Reset fehlgeschlagen: {err}")
+            self.logger.error(traceback.format_exc())
+
+    def snapshot_death_counts(self) -> dict[str, int]:
+        """{Spielername: Tode} der aktuellen Session. Blockierend (Lock +
+        ggf. DB-Anlage) → aus asyncio nur per run_in_executor aufrufen."""
+        gy = self._get_graveyard()
+        return gy.death_counts(self.graveyard_session_name()) if gy is not None else {}
+
+    def snapshot_graves(self, session: str | None = None) -> list[dict]:
+        """Friedhof-Einträge (ohne manuell wiederbelebte); ``session=None`` =
+        alle Projekte. Blockierend → Frontend per run_in_executor."""
+        gy = self._get_graveyard()
+        return gy.list_graves(session) if gy is not None else []
+
+    def graveyard_sessions(self) -> list[str]:
+        """Alle Projekte (Session-Namen) mit Friedhof-Einträgen. Blockierend."""
+        gy = self._get_graveyard()
+        return gy.sessions() if gy is not None else []
+
+    @staticmethod
+    def _is_recordable_server_death(death) -> bool:
+        return (isinstance(death, dict) and death.get("personality") is not None
+                and bool(death.get("owner"))
+                and death.get("cause") != "manual_alive" and bool(death.get("dead", 1)))
+
+    async def _graveyard_record_server_deaths(self, deaths) -> None:
+        """Snapshot nach (Re-)Connect: alle Tode in EINEM Executor-Job, damit
+        der Receive-Loop nicht pro Tod auf DB-Reads wartet."""
+        todo = [d for d in (deaths or []) if self._is_recordable_server_death(d)]
+        if not todo:
+            return
+        try:
+            def _work():
+                gy = self._get_graveyard()
+                if gy is None:
+                    return False
+                changed = False
+                for d in todo:
+                    # Pro Eintrag absichern: ein kaputter Tod darf den Rest
+                    # des Nachtrags (und die Notification) nicht kosten
+                    try:
+                        if self._graveyard_record_sync(
+                                gy, d.get("personality"), d.get("owner"), d.get("edition"),
+                                d.get("cause"), d.get("timestamp"), d.get("link_id"),
+                                d.get("partners"), True):
+                            changed = True
+                    except Exception as err:
+                        self.logger.error(
+                            f"Friedhof-Nachtrag fehlgeschlagen pv={d.get('personality')} "
+                            f"owner={d.get('owner')}: {type(err).__name__}: {err}")
+                        self.logger.error(traceback.format_exc())
+                return changed
+            if await asyncio.get_event_loop().run_in_executor(None, _work):
+                self._notify_graveyard_changed()
+        except Exception as err:
+            self.logger.error(f"Friedhof-Snapshot-Nachtrag fehlgeschlagen: {err}")
+            self.logger.error(traceback.format_exc())
+
+    async def _graveyard_record_server_death(self, death: dict) -> None:
+        """Server-Broadcast → authoritative Eintrag."""
+        if not self._is_recordable_server_death(death):
+            return
+        await self._graveyard_record(
+            death.get("personality"), death.get("owner"), edition=death.get("edition"),
+            cause=death.get("cause"), ts=death.get("timestamp"),
+            link_id=death.get("link_id"), partners=death.get("partners"),
+            authoritative=True,
+        )
 
     async def _mark_encounter_dead_local(self, pv: int, owner: str) -> None:
         """Tot-Markierung am Encounter (klebt, Sperre "dead" = manuell lebendig

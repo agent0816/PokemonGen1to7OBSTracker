@@ -11,3 +11,8 @@ import os
 import tempfile
 
 os.environ.setdefault("TRACKER_PYTEST_LOG_DIR", tempfile.mkdtemp(prefix="tracker-test-logs-"))
+# Friedhof-DB (backend/graveyard.py) nie im echten backend/config anlegen
+os.environ.setdefault(
+    "TRACKER_GRAVEYARD_DB",
+    os.path.join(tempfile.mkdtemp(prefix="tracker-test-graveyard-"), "graveyard.db"),
+)

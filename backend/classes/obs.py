@@ -52,6 +52,10 @@ class OBS():
         self._hp_bar_widths: dict[str, int] = {}
         self._filters_initialized: set[str] = set()
         self._hp_bars_initialized: set[str] = set()
+        # Todescounter-Textquellen (deaths_total, deaths_<name>), die es in
+        # OBS schon gibt bzw. die wir angelegt haben; Text-Input-Kind gecacht.
+        self._death_inputs_ready: set[str] = set()
+        self._text_input_kind: str | None = None
         self._glow_available: bool = True
         self._slot_positions: dict[str, dict] = {}
         self._slot_item_info: dict[str, tuple[str, int]] = {}
@@ -127,6 +131,8 @@ class OBS():
                 self._hp_bar_widths.clear()
                 self._filters_initialized.clear()
                 self._hp_bars_initialized.clear()
+                self._death_inputs_ready.clear()
+                self._text_input_kind = None
                 self._glow_available = True
                 self._slot_positions.clear()
                 self._slot_item_info.clear()
@@ -240,6 +246,7 @@ class OBS():
                     continue
                 await self.changeSource(player, range(6), team, edition)
                 await self.change_badges(player)
+            await self._change_death_counter_impl()
 
     # ── Scene-Auto-Detection ─────────────────────────────────────────
 
@@ -1559,6 +1566,106 @@ class OBS():
                 )
         if batch:
             await self.ws.call_batch(batch)
+
+    # ── Todescounter (Textquellen) ───────────────────────────────────
+
+    async def change_death_counter(self):
+        """Setzt Text der Todescounter-Quellen. Aufruf über _obs_serial
+        (Munchlax._notify_graveyard_changed) bzw. aus dem Redraw."""
+        await self._change_death_counter_impl()
+
+    async def _change_death_counter_impl(self):
+        from backend.death_counter import build_death_payload, obs_texts
+        if not self.ws or not self.ws.is_identified():
+            return
+        try:
+            getter = getattr(self.munchlax, "snapshot_death_counts", None)
+            counts = (await asyncio.get_running_loop().run_in_executor(None, getter)
+                      if callable(getter) else {})
+            names = self.munchlax.snapshot_player_names()
+            payload = build_death_payload(counts, names)
+            texts = obs_texts(payload)
+            # Automatisch anlegen erst ab dem ersten Tod der Session und nur
+            # mit aktiven Nuzlocke-Regeln - sonst taucht bei jedem OBS-Nutzer
+            # ungefragt "Gesamt: 0" im Stream auf. Vorhandene Quellen
+            # (selbst angelegt) werden immer befuellt.
+            rules_active = getattr(self.munchlax, "_nuzlocke_rules_active", None)
+            allow_create = bool(payload.get("total")) and callable(rules_active) and rules_active()
+            for index, input_name in enumerate(texts):
+                await self._ensure_death_input(input_name, index, allow_create)
+            names = [n for n in texts if n in self._death_inputs_ready]
+            batch = [
+                simpleobsws.Request("SetInputSettings", {
+                    "inputName": n, "inputSettings": {"text": texts[n]}})
+                for n in names
+            ]
+            if batch:
+                results = await self.ws.call_batch(batch) or []
+                for n, res in zip(names, results):
+                    if res is not None and not res.ok():
+                        # Quelle in OBS gelöscht/umbenannt → nächster Lauf prüft neu
+                        self._death_inputs_ready.discard(n)
+                        self.logger.warning(f"Todescounter-Quelle '{n}' nicht setzbar: {res}")
+            self.logger.debug(f"Todescounter OBS: {texts}")
+        except Exception as err:
+            self.logger.error(f"change_death_counter fehlgeschlagen: {type(err).__name__}: {err}")
+            self.logger.error(traceback.format_exc())
+
+    async def _resolve_text_input_kind(self) -> str | None:
+        """Text-Quellen-Typ dieser OBS-Installation (Windows: text_gdiplus*,
+        sonst text_ft2_source*), per GetInputKindList statt geraten."""
+        if self._text_input_kind:
+            return self._text_input_kind
+        resp = await self.ws.call(simpleobsws.Request("GetInputKindList", {"unversioned": False}))
+        kinds = (resp.responseData or {}).get("inputKinds", []) if resp and resp.ok() else []
+        for prefix in ("text_gdiplus", "text_ft2_source"):
+            matches = sorted(k for k in kinds if k.startswith(prefix))
+            if matches:
+                self._text_input_kind = matches[-1]   # neueste Version (v2 < v3)
+                break
+        if not self._text_input_kind:
+            self.logger.warning(f"Todescounter: kein Text-Input-Typ in OBS gefunden ({kinds})")
+        return self._text_input_kind
+
+    async def _ensure_death_input(self, input_name: str, index: int,
+                                  allow_create: bool) -> None:
+        """Vorhandene Quelle nutzen (Streamer hat sie evtl. selbst angelegt/
+        gestylt), sonst in der Tracker-Szene anlegen — untereinander gestapelt.
+        Nur auf Szenen, nie in Gruppen (OBS-WebSocket-Limit)."""
+        if input_name in self._death_inputs_ready:
+            return
+        resp = await self.ws.call(simpleobsws.Request("GetInputSettings", {"inputName": input_name}))
+        if resp and resp.ok():
+            self._death_inputs_ready.add(input_name)
+            return
+        if not allow_create:
+            return
+        await self._find_scene()
+        scene = self._scene_name
+        if not scene:
+            cur = await self.ws.call(simpleobsws.Request("GetCurrentProgramScene"))
+            scene = (cur.responseData or {}).get("sceneName") if cur and cur.ok() else None
+        kind = await self._resolve_text_input_kind()
+        if not scene or not kind:
+            return
+        resp = await self.ws.call(simpleobsws.Request("CreateInput", {
+            "sceneName": scene,
+            "inputName": input_name,
+            "inputKind": kind,
+            "inputSettings": {"text": ""},
+            "sceneItemEnabled": True,
+        }))
+        if not resp or not resp.ok():
+            self.logger.warning(f"Todescounter-Quelle '{input_name}' nicht anlegbar: {resp}")
+            return
+        item_id = (resp.responseData or {}).get("sceneItemId")
+        if item_id is not None:
+            await self.ws.call(simpleobsws.Request("SetSceneItemTransform", {
+                "sceneName": scene, "sceneItemId": item_id,
+                "sceneItemTransform": {"positionX": 20.0, "positionY": 20.0 + 50.0 * index},
+            }))
+        self._death_inputs_ready.add(input_name)
+        self.logger.info(f"Todescounter-Quelle '{input_name}' ({kind}) in Szene '{scene}' angelegt")
 
     def get_sprite(self, pokemon, anim, edition, two_pc=False):
         if two_pc:

@@ -230,7 +230,7 @@ class SettingsController:
 
         Erwartet folgende Keys in values:
           sprites:  order, animated, show_nicknames, show_items, show_badges, show_hp_bars, show_status_effects, animate_obs_reorder
-          bizhawk:  save_automatically
+          bizhawk:  save_automatically, start_with_run_rom
           remote:   start_server
         """
         try:
@@ -254,8 +254,10 @@ class SettingsController:
                 if self.overlay_server and self.overlay_server.is_connected:
                     asyncio.create_task(self.overlay_server.notify_config_change())
 
-            if 'save_automatically' in values:
-                self.bh['save_automatically'] = values['save_automatically']
+            bh_keys = {'save_automatically', 'start_with_run_rom'}
+            bh_values = {k: v for k, v in values.items() if k in bh_keys}
+            if bh_values:
+                self.bh.update(bh_values)
                 with open(f"{self.configsave}bh_config.yml", 'w') as file:
                     yaml.dump(self.bh, file)
                 self.logger.info("bh_config.yml (Hauptmenü) gespeichert.")

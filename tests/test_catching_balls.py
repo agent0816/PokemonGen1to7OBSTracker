@@ -102,6 +102,75 @@ def test_ball_gate_run_gebunden_ball_wieder_in_tasche(tmp_path):
     assert db.has_catching_balls("Ash_1", 33, "2026-11-02T18:00:00Z") is True
 
 
+def _v13_alt(db, ts="2026-01-01T00:00:00+00:00"):
+    """Feature-Zeitpunkt v13 in die Vergangenheit legen → neue Semantik greift."""
+    db.connection.execute(
+        "UPDATE schema_version SET applied_at = ? WHERE version = 13", (ts,))
+    db.connection.commit()
+
+
+_SINCE = "2026-11-11T10:00:00Z"
+
+
+def test_ball_gate_ohne_ballfreie_tasche_bleibt_zu(tmp_path):
+    # Smaragd/Feuerrot: alter Spielstand samt Baellen am Titelbild geladen
+    db = _db(tmp_path)
+    _v13_alt(db)
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [BagItem(id=4, qty=5)])
+    assert db.has_catching_balls("Ash_1", 33, _SINCE) is False
+
+
+def test_ball_gate_alter_save_dann_neues_spiel(tmp_path):
+    db = _db(tmp_path)
+    _v13_alt(db)
+    # 1. Alter Spielstand: Baelle gesehen (vor dem Marker)
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [BagItem(id=7, qty=11)])
+    _set_ts(db, "bag_first_seen", "first_seen", "2026-11-11T10:05:00+00:00")
+    _set_ts(db, "bag_inventory", "last_seen", "2026-11-11T10:05:00+00:00")
+    # 2. Neues Spiel: Tasche leer → Gate scharf
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [])
+    assert db.mark_bag_ball_free("Ash_1", 33, _SINCE) is True
+    assert db.mark_bag_ball_free("Ash_1", 33, _SINCE) is False  # idempotent
+    db.connection.execute("UPDATE rule_flags SET set_at = '2026-11-11T10:10:00+00:00'")
+    db.connection.commit()
+    assert db.has_catching_balls("Ash_1", 33, _SINCE) is False
+    # 3. Erster echter Ball (gleiche ID wie im Alt-Save: first_seen bleibt alt,
+    #    der Bestand ist aber frisch)
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [BagItem(id=7, qty=1)])
+    _set_ts(db, "bag_inventory", "last_seen", "2026-11-11T10:20:00+00:00")
+    assert db.has_catching_balls("Ash_1", 33, _SINCE) is True
+
+
+def test_ball_gate_marker_gilt_nur_fuer_seinen_run(tmp_path):
+    db = _db(tmp_path)
+    _v13_alt(db)
+    db.mark_bag_ball_free("Ash_1", 33, "2026-11-10T09:00:00Z")
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [BagItem(id=4, qty=5)])
+    assert db.has_catching_balls("Ash_1", 33, _SINCE) is False
+
+
+def test_session_reset_behaelt_ball_gate_marker(tmp_path):
+    # Reset mitten im Run: Spieler hat schon Baelle, ball-frei kommt nie wieder
+    db = _db(tmp_path)
+    _v13_alt(db)
+    db.mark_bag_ball_free("Ash_1", 33, _SINCE)
+    db.set_rule_flag("Ash_1", 33, "dragon_rage_used")
+    assert db.reset_all_data() is True
+    assert db.has_rule_flag("Ash_1", 33, "dragon_rage_used") is False
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [BagItem(id=4, qty=5)])
+    _set_ts(db, "bag_first_seen", "first_seen", "2099-01-01T00:00:00+00:00")
+    assert db.has_catching_balls("Ash_1", 33, _SINCE) is True
+
+
+def test_ball_gate_run_vor_v13_alte_semantik(tmp_path):
+    # Laufende Runs vom Update nicht aussperren: Run-Start < v13 → kein Marker noetig
+    db = _db(tmp_path)
+    _v13_alt(db, "2026-11-11T12:00:00+00:00")
+    db.upsert_bag_pocket("Ash_1", 33, "baelle", [BagItem(id=4, qty=5)])
+    _set_ts(db, "bag_first_seen", "first_seen", "2026-11-11T10:30:00+00:00")
+    assert db.has_catching_balls("Ash_1", 33, _SINCE) is True
+
+
 def test_ball_gate_run_gebunden_neuer_ball(tmp_path):
     db = _db(tmp_path)
     db.upsert_bag_pocket("Ash_1", 33, "baelle", [BagItem(id=4, qty=5)])

@@ -40,3 +40,5 @@ support_bundles/
 backend/lua/verify_battletypeflags.lua
 backend/lua/verify_bf_*.log
 spikes/
+# Config-Backups vor Update (backend/config_backup.py)
+config_backups/

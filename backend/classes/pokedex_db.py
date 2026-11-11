@@ -11,7 +11,12 @@ from backend.encounter_edit import merge_encounter_edit, parse_locks
 from backend.logging_setup import get_logger
 
 
-CURRENT_SCHEMA_VERSION = 12
+CURRENT_SCHEMA_VERSION = 13
+
+# rule_flags-Praefix: "Ball-freie Tasche im Run gesehen" (Ball-Gate scharf).
+# Voller Flag-Name = Praefix + erste 19 Zeichen des Run-Start-Zeitstempels,
+# damit ein Marker nie in einen spaeteren Run hinueberreicht.
+BALL_FREE_FLAG_PREFIX = "ball_free_seen@"
 
 # Werte der Spalte encounters.is_dupes_skip (Retry-Marker, truthy = Retry).
 # 2 unterscheidet den Ersttyp-Clause-Retry vom Dupes-Retry ohne Schema-Bump;
@@ -116,6 +121,8 @@ class PokedexDB:
             self._apply_v11(cursor)
         if current_version < 12:
             self._apply_v12(cursor)
+        if current_version < 13:
+            self._apply_v13(cursor)
 
         self.connection.commit()
 
@@ -535,6 +542,18 @@ class PokedexDB:
         )
         self.logger.info("PokedexDB Schema v12 angewendet (encounters.dead)")
 
+    def _apply_v13(self, cursor):
+        # Keine Tabellenaenderung: v13 markiert nur, AB WANN das Ball-Gate eine
+        # ball-freie Tasche im Run verlangt (rule_flags BALL_FREE_FLAG_PREFIX).
+        # Runs, die vor diesem Zeitpunkt gestartet sind, behalten die alte
+        # Semantik — sonst ginge bei laufenden Runs das Gate nach dem Update zu.
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (13, datetime.now(timezone.utc).isoformat()),
+        )
+        self.logger.info("PokedexDB Schema v13 angewendet (Ball-Gate scharf erst "
+                         "nach ball-freier Tasche)")
+
     # -- Regel-Marker (Schema v9) ----------------------------------------------
 
     @_serialized
@@ -594,12 +613,19 @@ class PokedexDB:
             "bag_first_seen",
             "bag_inventory",
             "pokemon",
-            "rule_flags",
         )
         try:
             cursor = self.connection.cursor()
             for tbl in tables:
                 cursor.execute(f"DELETE FROM {tbl}")
+            # Ball-Gate-Marker ueberleben den Reset: der Run (active.txt)
+            # laeuft weiter, und hat der Spieler schon Baelle, kaeme nie wieder
+            # eine ball-freie Tasche → Gate bliebe fuer immer zu. Marker sind
+            # per Run-Start-Zeitstempel gebunden, wirken also nicht in Folge-Runs.
+            cursor.execute(
+                "DELETE FROM rule_flags WHERE flag NOT LIKE ?",
+                (f"{BALL_FREE_FLAG_PREFIX}%",),
+            )
             self.connection.commit()
             # VACUUM darf nicht in einer Transaction laufen — isolation_level
             # kurzzeitig auf None schalten, dann restaurieren.
@@ -867,6 +893,32 @@ class PokedexDB:
             self.logger.error(f"upsert_bag_pocket failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
             return False
+
+    @_serialized
+    def mark_bag_ball_free(self, owner: str, edition, since_ts: str) -> bool | None:
+        """Merkt sich: im Run (since_ts) wurde eine Tasche OHNE Fang-Ball gesehen.
+
+        Idempotent (INSERT OR IGNORE) — set_at bleibt der ERSTE ball-freie
+        Read, has_catching_balls zaehlt nur Baelle ab dort. True = neu gesetzt,
+        False = existierte schon, None = nicht geschrieben (keine DB/Fehler) —
+        der Aufrufer darf dann nicht als "erledigt" cachen.
+        """
+        if self.connection is None or not since_ts:
+            return None
+        try:
+            edition_str = str(edition) if edition is not None else ""
+            cursor = self.connection.execute(
+                "INSERT OR IGNORE INTO rule_flags (owner, edition, flag, set_at) "
+                "VALUES (?, ?, ?, ?)",
+                (owner, edition_str, f"{BALL_FREE_FLAG_PREFIX}{str(since_ts)[:19]}",
+                 datetime.now(timezone.utc).isoformat()),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
+        except Exception as err:
+            self.logger.error(f"mark_bag_ball_free failed: {type(err)},{err}")
+            self.logger.error(f"{traceback.format_exc()}")
+            return None
 
     @_serialized
     def get_bag_inventory(self, owner: str, edition=None,
@@ -1632,6 +1684,14 @@ class PokedexDB:
         wurde und jetzt wieder in der Tasche liegt, oeffnet das Gate auch.
         Verglichen werden die ersten 19 Zeichen (Formate: ISO mit +00:00
         vs. ...Z, beide UTC).
+
+        Scharf-Schwelle (Schema v13, Testrunde 2026-11-10): mit since_ts zaehlen
+        Baelle erst, nachdem im Run eine ball-freie Tasche gesehen wurde
+        (mark_bag_ball_free). Smaragd/Feuerrot laden am Titelbild/Menue den
+        ALTEN Spielstand samt Baellen und Party — "Neues Spiel" darueber haette
+        das Gate sonst sofort geoeffnet. Ein neues Spiel startet immer mit
+        leerer Tasche, der Marker entsteht also im normalen Ablauf. Runs, die
+        vor v13 gestartet sind, behalten die alte Semantik (kein Marker noetig).
         """
         if self.connection is None:
             # Geschlossene DB = Gate zu; vorher still (Live-Test 2026-11-04)
@@ -1655,6 +1715,20 @@ class PokedexDB:
                 )
                 return cursor.fetchone() is not None
             since = str(since_ts)[:19]
+            cursor.execute(
+                "SELECT applied_at FROM schema_version WHERE version = 13")
+            row = cursor.fetchone()
+            v13_at = str(row[0])[:19] if row and row[0] else ""
+            if v13_at and since >= v13_at:
+                cursor.execute(
+                    "SELECT set_at FROM rule_flags "
+                    "WHERE owner = ? AND edition = ? AND flag = ? LIMIT 1",
+                    (owner, edition_str, f"{BALL_FREE_FLAG_PREFIX}{since}"),
+                )
+                armed = cursor.fetchone()
+                if armed is None:
+                    return False
+                since = max(since, str(armed[0])[:19])
             cursor.execute(
                 "SELECT 1 FROM bag_first_seen "
                 f"WHERE owner = ? AND edition = ? AND item_id IN ({placeholders}) "

@@ -912,6 +912,23 @@ class Arceus:
                 sess = self._client_sessions.get(client_id, {})
                 last_at = sess.get("last_recv_at", 0)
                 last_age = time.time() - last_at if last_at else -1.0
+                disconnect_reason = f"recv_{type(exc).__name__}"
+                if isinstance(exc, asyncio.IncompleteReadError) and not exc.partial:
+                    # EOF mit 0 Bytes im letzten readexactly = in aller Regel
+                    # normales Trennen des Clients (App zu, "Client beenden").
+                    # Unscharf: ein Abbruch genau an einer Chunk-Grenze mitten
+                    # in einer Nachricht sieht gleich aus — nur Logging,
+                    # Disconnect-Pfad identisch. INFO-Einzeiler ohne Traceback,
+                    # der Traceback mit Nuitka-Pfad wirkte in Tester-Logs wie
+                    # ein Fehler. partial > 0 bleibt WARNING mit Traceback.
+                    self.logger.info(
+                        f"Client {client_id} "
+                        f"({self.munchlax_names.get(client_id, '')}) hat "
+                        f"Verbindung beendet (EOF) "
+                        f"(letzte_msg={sess.get('last_recv_type', '')!r}, "
+                        f"vor_{last_age:.1f}s, recv={sess.get('recv', 0)})"
+                    )
+                    break
                 self._log_dedup(
                     f"handle_munchlax_{type(exc).__name__}",
                     f"handle_munchlax Netz-Fehler fuer {client_id} "
@@ -921,7 +938,6 @@ class Arceus:
                     f"vor_{last_age:.1f}s, recv={sess.get('recv', 0)})",
                     exc=exc,
                 )
-                disconnect_reason = f"recv_{type(exc).__name__}"
                 break
             except pickle.UnpicklingError as exc:
                 self.logger.error(f"Fehler beim Entpacken der Daten: {type(exc)},{exc}")

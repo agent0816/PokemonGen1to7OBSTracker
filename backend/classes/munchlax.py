@@ -10,7 +10,10 @@ import uuid
 from collections import deque
 from pathlib import Path
 from pickle import UnpicklingError
-from backend.bag_decoder import BagItem
+from backend.bag_decoder import (
+    BagItem, bag_has_catching_ball, bag_read_plausible, ball_pockets_for_edition,
+)
+from backend.bag_view import item_lut_for_edition
 from backend.classes.obs import OBS
 from backend.classes.pokedex_db import PokedexDB
 from backend.controller.run_manager import RunManager
@@ -1608,6 +1611,10 @@ class Munchlax:
                             f"host={is_host}, nuz_mirrored={mirrored_count}"
                         )
                         await self._notify_overlay_session("soullink_config", self.soullink_config)
+                        # Modus-/Regelwechsel des Hosts sofort im offenen
+                        # Encounter-Menue sichtbar machen (Routen-Gruppierung
+                        # haengt an run_mode, Testrunde 2026-11-10).
+                        self._notify_soullink_state_changed()
                     elif msg_type == "soullink_link_state":
                         link = data.get("link") or {}
                         if link.get("link_id") is not None:
@@ -1862,13 +1869,22 @@ class Munchlax:
                 last_msg_age = (
                     time.time() - self._last_recv_at if self._last_recv_at else -1.0
                 )
+                # EOF mit 0 Bytes im letzten readexactly = meist Server hat
+                # die Verbindung geschlossen (Host beendet/trennt). Unscharf
+                # bei Abbruch genau an einer Chunk-Grenze (nur Logging).
+                # Einzeiler ohne Traceback; partial > 0 + andere Fehler mit
+                # Traceback.
+                clean_eof = (isinstance(err, asyncio.IncompleteReadError)
+                             and not err.partial)
                 self._log_dedup(
                     type(err).__name__,
-                    f"alter_teams Netz-Fehler: {type(err).__name__}: {err} "
-                    f"(letzte_msg_type={self._last_recv_type!r}, "
+                    (f"alter_teams: Server hat Verbindung beendet (EOF) "
+                     if clean_eof else
+                     f"alter_teams Netz-Fehler: {type(err).__name__}: {err} ")
+                    + f"(letzte_msg_type={self._last_recv_type!r}, "
                     f"letzte_msg_vor={last_msg_age:.1f}s, "
                     f"recv_total={self._msg_counters['recv']})",
-                    exc=err,
+                    exc=None if clean_eof else err,
                     level="warning",
                 )
                 self._record_disconnect(f"recv_{type(err).__name__}", expected_session=my_session)
@@ -1961,16 +1977,22 @@ class Munchlax:
             owner = PokedexDB.build_owner(
                 self.pl.get('your_name', ''), str(player)
             )
+            # ROM-Boot-Garbage (Testrunde 2026-11-10): unplausiblen Read
+            # komplett verwerfen — kein upsert, kein bag_first_seen, kein Sync.
+            if not self._bag_read_ok(owner, edition, pockets, "lokal"):
+                return
             loop = asyncio.get_event_loop()
+            pdb = self.pokedex_db
             for pocket_key, items in pockets.items():
                 await loop.run_in_executor(
                     None,
-                    self.pokedex_db.upsert_bag_pocket,
+                    pdb.upsert_bag_pocket,
                     owner,
                     edition,
                     pocket_key,
                     items,
                 )
+            await self._mark_ball_free_if_empty(pdb, owner, edition, pockets)
             bag_key = f"{owner}_{edition}"
             current_hash = self._bag_hash(pockets)
             if current_hash != self._last_bag_hash.get(bag_key):
@@ -1979,6 +2001,70 @@ class Munchlax:
         except Exception as err:
             self.logger.error(f"update_bag failed: {type(err)},{err}")
             self.logger.error(f"{traceback.format_exc()}")
+
+    def _bag_read_ok(self, owner: str, edition, pockets: dict, source: str) -> bool:
+        """Plausibilitaets-Check (bag_decoder.bag_read_plausible) mit
+        rate-limitiertem Log (1x pro 60 s und owner/edition), damit ein
+        30-s-Garbage-Fenster mit 5-s-Polling die Logs nicht flutet."""
+        ok, reason = bag_read_plausible(pockets, edition, item_lut_for_edition(edition))
+        if ok:
+            return True
+        last = getattr(self, "_bag_reject_log_ts", None)
+        if last is None:
+            last = self._bag_reject_log_ts = {}
+        key = f"{owner}_{edition}"
+        now = time.monotonic()
+        if now - last.get(key, 0.0) >= 60.0:
+            last[key] = now
+            self.logger.warning(
+                f"Bag-Read verworfen ({source}) owner={owner} ed={edition}: {reason} "
+                f"— vermutlich Spielstand noch nicht geladen (RAM-Muell)")
+        return False
+
+    async def _mark_ball_free_if_empty(self, pdb, owner: str, edition,
+                                       pockets: dict) -> None:
+        """Ball-Gate scharf schalten: Read ohne Fang-Ball im aktiven Run merken.
+
+        Nur wenn die ball-relevanten Pockets im Read vorhanden sind — ein
+        Teil-Read (Pocket-Read fehlgeschlagen) ist kein Beleg fuer "leer".
+        """
+        if bag_has_catching_ball(pockets, edition):
+            return
+        required = ball_pockets_for_edition(edition)
+        if not required <= set(pockets.keys()):
+            missing_logged = getattr(self, "_ball_free_missing_logged", None)
+            if missing_logged is None:
+                missing_logged = self._ball_free_missing_logged = set()
+            key = (owner, str(edition))
+            if key not in missing_logged:
+                missing_logged.add(key)
+                self.logger.info(
+                    f"Ball-Gate-Marker nicht gesetzt owner={owner} ed={edition}: "
+                    f"Pockets {sorted(required - set(pockets.keys()))} fehlen im Read")
+            return
+        loop = asyncio.get_event_loop()
+        since = await loop.run_in_executor(None, self.active_run_start_ts)
+        if not since:
+            return
+        # Pro (DB-Objekt, owner, edition, Run) nur einmal schreiben — sonst bis
+        # zum ersten Ball alle 5 s INSERT OR IGNORE + commit. Cache haengt am
+        # PokedexDB-Objekt: neue DB (Session-Wechsel/Reconnect) startet leer,
+        # Finalize aendert since.
+        marked = getattr(pdb, "_ball_free_marked", None)
+        if marked is None:
+            marked = set()
+            pdb._ball_free_marked = marked
+        mark_key = (owner, str(edition), str(since)[:19])
+        if mark_key in marked:
+            return
+        newly = await loop.run_in_executor(
+            None, pdb.mark_bag_ball_free, owner, edition, since)
+        if newly is not None:
+            marked.add(mark_key)
+        if newly:
+            self.logger.info(
+                f"Ball-Gate scharf: ball-freie Tasche gesehen owner={owner} "
+                f"ed={edition} (run_start={since})")
 
     async def send_encounter_sync(self, encounter_dict: dict):
         """Sendet einen Encounter-Record an Arceus zur Weiterverteilung."""
@@ -4432,14 +4518,30 @@ class Munchlax:
         edition = data.get("edition", "")
         pockets = data.get("pockets", {})
         loop = asyncio.get_event_loop()
-        for pocket_key, items_raw in pockets.items():
-            bag_items = [BagItem(id=item_id, qty=qty) for item_id, qty in items_raw]
+        pdb = self.pokedex_db
+        try:
+            decoded = {
+                pocket_key: [BagItem(id=int(item_id), qty=int(qty))
+                             for item_id, qty in items_raw]
+                for pocket_key, items_raw in pockets.items()
+            }
+        except (TypeError, ValueError) as err:
+            self.logger.warning(f"Remote-Bag unlesbar owner={owner}: {err}")
+            return
+        # Alt-Clients ohne eigenen Filter duerfen keinen RAM-Muell einspielen.
+        if not self._bag_read_ok(owner, edition, decoded, "remote"):
+            return
+        for pocket_key, bag_items in decoded.items():
             try:
                 await loop.run_in_executor(
-                    None, self.pokedex_db.upsert_bag_pocket,
+                    None, pdb.upsert_bag_pocket,
                     owner, edition, pocket_key, bag_items)
             except Exception as err:
                 self.logger.warning(f"upsert_bag_pocket failed: {err}")
+        # Kein Ball-Gate-Marker fuer Remote-Owner: has_catching_balls wird nur
+        # fuer lokale Spieler gefragt (_run_active_for_local_player,
+        # EncounterTracker pro lokalem Emulator) — jeder Client schaltet sein
+        # eigenes Gate in update_bag scharf.
         self.logger.info(
             f"Remote-Bag empfangen: owner={owner} edition={edition} "
             f"pockets={list(pockets.keys())}"

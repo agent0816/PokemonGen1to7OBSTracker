@@ -3,7 +3,7 @@ import re
 import time
 import traceback
 from backend.classes.munchlax import Munchlax
-from backend.classes.Pokemon import Pokemon
+from backend.classes.Pokemon import Pokemon, party_has_valid_pokemon
 import backend.pokedecoder as pokedecoder
 import backend.bh_pointers as bh_pointers
 import backend.bag_decoder as bag_decoder
@@ -103,6 +103,12 @@ class Bizhawk:
         self.box_request_queues: dict[str, list] = {}
         # Verhindert ueberlappende Bag-Refreshs pro Client.
         self._bag_refresh_inflight: dict[str, bool] = {}
+        # Readiness-Gate fuer den Bag-Refresh: True, sobald der letzte
+        # Party-Read SEIT DIESEM HANDSHAKE >= 1 gueltiges Pokemon enthielt.
+        # Vor dem Starter gibt es in keiner Gen Baelle; am Titelbild/Intro
+        # steht im Bag-Bereich RAM-Muell (Testrunde 2026-11-10).
+        self._team_ready: dict[str, bool] = {}
+        self._bag_skip_logged: dict[str, bool] = {}
         # Verhindert ueberlappende Encounter-Reads pro Client.
         self._encounter_inflight: dict[str, bool] = {}
         self._last_battle_pv: dict[str, int | None] = {}
@@ -187,6 +193,7 @@ class Bizhawk:
                 ev = self._team_updated_events.get(client_id)
                 if ev is not None:
                     ev.set()
+                self._team_ready[client_id] = party_has_valid_pokemon(team, edition)
                 # Writes auf shared Munchlax-Dicts unter state_lock serialisieren,
                 # damit Kivy-seitige Iterationen (overlay-Broadcast, _persist_teams)
                 # keine Dict-Size-Changes mitten im Loop sehen.
@@ -291,6 +298,10 @@ class Bizhawk:
             self.language_per_client[client_id] = language
             # Frisch initialisiertes Event pro Client — braucht laufenden Loop.
             self._team_updated_events[client_id] = asyncio.Event()
+            # Neuer Handshake (ROM-Wechsel/Reset): altes Team zaehlt nicht als
+            # "Spielstand bereit" — erst der naechste Party-Read entscheidet.
+            self._team_ready[client_id] = False
+            self._bag_skip_logged.pop(client_id, None)
 
             # Pointer-Satz aus YAML bestimmen und an Lua zurückschicken (Phase 3)
             pointers = bh_pointers.get_pointers(edition, language if language else None)
@@ -1225,6 +1236,16 @@ class Bizhawk:
             edition = self.edition_per_client.get(client_id)
             if edition is None:
                 return
+            if not self._team_ready.get(client_id):
+                # Einmal pro Phase loggen, nicht alle 5 s.
+                if not self._bag_skip_logged.get(client_id):
+                    self._bag_skip_logged[client_id] = True
+                    self.logger.info(
+                        f"Bag-Refresh player={player} pausiert: kein gueltiges "
+                        f"Team seit Handshake (Spielstand nicht bereit)")
+                return
+            if self._bag_skip_logged.pop(client_id, None):
+                self.logger.info(f"Bag-Refresh player={player} aktiv: Team gueltig")
             pockets = await self.read_and_decode_bag(client_id)
             if not pockets:
                 return
@@ -2363,6 +2384,8 @@ class Bizhawk:
         self._flush_requested.pop(client_id, None)
         self._flush_done.pop(client_id, None)
         self._bag_refresh_inflight.pop(client_id, None)
+        self._team_ready.pop(client_id, None)
+        self._bag_skip_logged.pop(client_id, None)
 
         # Writer explizit schliessen, sonst bleibt der TCP-Socket OS-seitig
         # offen, obwohl der Python-Task endet — BizHawk/Lua sieht kein FIN und

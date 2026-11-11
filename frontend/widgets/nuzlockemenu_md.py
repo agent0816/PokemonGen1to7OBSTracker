@@ -236,6 +236,14 @@ class NuzlockeMenu(MDScreen):
     def _build_regeln_tab(self) -> MDBoxLayout:
         box = MDBoxLayout(orientation="vertical", size_hint_y=None, adaptive_height=True)
 
+        # Spielmodus auch hier (UX-Falle: Regeln einzeln gesetzt, Modus blieb Nuzlocke)
+        regeln_mode_card = _card("Spielmodus")
+        self._mode_dd_regeln = self._make_mode_row(regeln_mode_card)
+        regeln_mode_card.add_widget(MDLabel(
+            text="Soullink (Coop/Versus) gruppiert Encounter nach Route.",
+            role="small", adaptive_height=True))
+        box.add_widget(regeln_mode_card)
+
         preset_card = _card("Preset")
         preset_row = _row(height=dp(56))
         preset_row.add_widget(MDLabel(text="Regelwerk", size_hint_x=None, width=LABEL_W,
@@ -300,19 +308,31 @@ class NuzlockeMenu(MDScreen):
         box.add_widget(token_card)
         return box
 
+    def _make_mode_row(self, card: MDBoxLayout) -> DropdownField:
+        """Baut die Zeile "Spielmodus" + Dropdown in `card` (gemeinsamer Handler)."""
+        mode_val = normalize_mode(self.nuz.get("run_mode"))
+        mrow = _row(height=dp(56))
+        mrow.add_widget(MDLabel(text="Spielmodus", size_hint_x=None, width=LABEL_W,
+                                role="small", valign="center"))
+        dd = DropdownField(list(MODE_LABELS.values()), MODE_LABELS[mode_val],
+                           self._on_mode_select)
+        mrow.add_widget(dd)
+        card.add_widget(mrow)
+        return dd
+
+    def _set_mode_label(self, label: str) -> None:
+        """Setzt beide Modus-Dropdowns (Regeln + Spieler & Modus) ohne Callback."""
+        for dd in (getattr(self, "_mode_dd", None), getattr(self, "_mode_dd_regeln", None)):
+            if dd is not None and dd.value != label:
+                dd.set_value(label)
+
     # -------------------------------------------------------- Tab: Spieler & Modus
     def _build_spieler_tab(self) -> MDBoxLayout:
         box = MDBoxLayout(orientation="vertical", size_hint_y=None, adaptive_height=True)
 
         mode_card = _card("Modus")
         mode_val = normalize_mode(self.nuz.get("run_mode"))
-        mrow = _row(height=dp(56))
-        mrow.add_widget(MDLabel(text="Spielmodus", size_hint_x=None, width=LABEL_W,
-                                role="small", valign="center"))
-        self._mode_dd = DropdownField(list(MODE_LABELS.values()),
-                                      MODE_LABELS[mode_val], self._on_mode_select)
-        mrow.add_widget(self._mode_dd)
-        mode_card.add_widget(mrow)
+        self._mode_dd = self._make_mode_row(mode_card)
         crow = _row(height=dp(56))
         crow.add_widget(MDLabel(text="Spieleranzahl", size_hint_x=None, width=LABEL_W,
                                 role="small", valign="center"))
@@ -426,7 +446,8 @@ class NuzlockeMenu(MDScreen):
         erlaubt — das sind keine Soullink-Config-Writes."""
         host = self._is_host()
         for w in (getattr(self, "_preset_dd", None), getattr(self, "_preset_apply_btn", None),
-                  getattr(self, "_mode_dd", None), getattr(self, "_count_dd", None)):
+                  getattr(self, "_mode_dd", None), getattr(self, "_mode_dd_regeln", None),
+                  getattr(self, "_count_dd", None)):
             if w is not None:
                 w.disabled = not host
         for cb in self._rule_checkboxes.values():
@@ -530,7 +551,10 @@ class NuzlockeMenu(MDScreen):
             self._preset_dd.set_value(label)
         self.nuz["soullink_preset_id"] = pid
 
-    def _on_mode_select(self, _label: str) -> None:
+    def _on_mode_select(self, label: str) -> None:
+        # Beide Dropdowns synchron halten (Auswahl kann aus jedem der beiden kommen)
+        if label in MODE_LABEL_TO_VALUE:
+            self._set_mode_label(label)
         mode_value = self._mode_value()
         show_team = (mode_value == "versus")
         for row in self._owner_rows:
@@ -1019,7 +1043,7 @@ class NuzlockeMenu(MDScreen):
             self._preset_dd.set_value(self._preset_id_to_label.get(
                 initial_id, CUSTOM_PRESET_LABEL))
             mode_val = normalize_mode(self.nuz.get("run_mode"))
-            self._mode_dd.set_value(MODE_LABELS[mode_val])
+            self._set_mode_label(MODE_LABELS[mode_val])
             self._count_dd.set_value(str(clamp_player_count(
                 self.nuz.get("soullink_player_count", 2))))
             for rule_key, _label in RULE_CHECKBOXES:
@@ -1045,7 +1069,7 @@ class NuzlockeMenu(MDScreen):
         self._suspend = True
         try:
             mode_val = normalize_mode(cfg.get("mode"))
-            self._mode_dd.set_value(MODE_LABELS[mode_val])
+            self._set_mode_label(MODE_LABELS[mode_val])
             self._count_dd.set_value(str(clamp_player_count(cfg.get("player_count", 2))))
             show_team = (mode_val == "versus")
             # Row-Anzahl an Server-Count anpassen.

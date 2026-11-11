@@ -117,6 +117,10 @@ class _DriveApp(MDApp):
             return
         self.check("flat_5_zeilen", len(rows) == 5, len(rows))
         self.check("flat_keine_karten", not self._cards())
+        # 2 Spieler (Owner) im Flat-Modus -> Hinweis auf fehlende Routen-Gruppierung
+        self.check("flat_hinweis_sichtbar",
+                   "keine Routen-Gruppierung" in self.menu.empty_hint.text
+                   and self.menu.empty_hint.opacity == 1, self.menu.empty_hint.text)
         # Host: "bei allen erfassen" links neben Aktualisieren
         hdr = self.menu._header.children
         self.check("host_sync_button",
@@ -140,6 +144,9 @@ class _DriveApp(MDApp):
         self.check("soullink_1_gruppe", len(cards) == 1, len(cards))
         self.check("soullink_2_member", bool(cards) and len(cards[0].group["members"]) == 2)
         self.check("soullink_keine_flat_zeilen", not self._rows())
+        self.check("soullink_hinweis_weg",
+                   "keine Routen-Gruppierung" not in self.menu.empty_hint.text,
+                   self.menu.empty_hint.text)
         # Unveraenderte Gruppe: Karte wird beim Neu-Filtern wiederverwendet
         before = cards[0] if cards else None
         self.menu._apply_filters()
@@ -152,7 +159,7 @@ class _DriveApp(MDApp):
         self.stop()
 
 
-_EXPECTED = {"host_sync_button",
+_EXPECTED = {"host_sync_button", "flat_hinweis_sichtbar", "soullink_hinweis_weg",
     "flat_5_zeilen", "flat_keine_karten", "spieler_filter_bob",
     "soullink_1_gruppe", "soullink_2_member", "soullink_keine_flat_zeilen",
     "karte_wiederverwendet",

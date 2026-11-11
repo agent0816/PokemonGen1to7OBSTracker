@@ -4,6 +4,32 @@ from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, './logs/PokemonObjects.log')
 
+
+def party_has_valid_pokemon(team, edition) -> bool:
+    """True, wenn die Party (Slots 0-5) mindestens ein echtes Pokemon enthaelt.
+
+    Readiness-Signal fuer den Bag-Refresh: vor dem Starter gibt es in keiner
+    Gen Baelle, am Titelbild/Intro steht im RAM Muell. Leere Slots haben
+    dexnr 0; Gen 3+ verlangt zusaetzlich eine passende Checksumme (ein
+    komplett genullter Gen-3-Slot hat Checksumme 0 == 0, faellt aber ueber
+    dexnr 0 raus). Eier zaehlen als gueltig.
+    """
+    try:
+        edition_int = int(edition)
+    except (TypeError, ValueError):
+        edition_int = 0
+    for pokemon in list(team or [])[:6]:
+        if not isinstance(pokemon, Pokemon):
+            continue
+        if pokemon.dexnr in (0, None, '', '0'):
+            continue
+        if edition_int > 30 and (
+                pokemon.checksum_given < 0
+                or pokemon.checksum_given != pokemon.checksum_calculated):
+            continue
+        return True
+    return False
+
 class Pokemon:
     def __init__(self, dexnr: int, shiny: bool = False, female = False, form = '', **kwargs):
         self.dexnr: int | Literal['egg'] = dexnr

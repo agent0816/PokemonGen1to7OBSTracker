@@ -280,3 +280,22 @@ def client_verify_diff(expected_pairs, connected):
                      if name not in connected_set]
     extra = [c for c in connected if c not in expected_set]
     return matched, missing_pairs, extra
+
+
+def modus_warnung_faellig(last_key: tuple | None, session_key: str, run_mode,
+                          player_count: int) -> tuple[bool, tuple | None]:
+    """Einmal-Logik fuer den Hinweis "Modus ist Nuzlocke trotz mehrerer Spieler".
+
+    Rueckgabe: (anzeigen, neuer_last_key). `last_key` = (session_key, modus) der
+    letzten Anzeige. Nach Modus-Wechsel weg von nuzlocke wird der Key
+    zurueckgesetzt, damit ein erneutes Umschalten auf nuzlocke wieder warnt.
+    """
+    mode = normalize_mode(run_mode)
+    if mode != "nuzlocke" or player_count < 2:
+        if mode != "nuzlocke":
+            return False, None
+        return False, last_key
+    key = (session_key, mode)
+    if last_key == key:
+        return False, last_key
+    return True, key

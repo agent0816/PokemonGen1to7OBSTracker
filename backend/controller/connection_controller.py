@@ -144,6 +144,27 @@ class ConnectionController:
 
     # --- BizHawk ---
 
+    def _run_rom_for_slot(self, slot: int) -> str | None:
+        """ROM des aktiven Randomizer-Runs für ``slot``, wenn ``start_with_run_rom``
+        an ist. ``None`` → BizHawk startet wie bisher ohne ROM (User lädt selbst).
+        Fehler beim Auflösen dürfen den BizHawk-Start nie verhindern."""
+        if not self.bh.get("start_with_run_rom", True):
+            return None
+        try:
+            from backend.rom_path import resolve_slot_rom_path
+            getter = getattr(self.munchlax, "get_run_manager", None)
+            run_manager = getter() if callable(getter) else None
+            rom = resolve_slot_rom_path(run_manager, slot)
+        except Exception as err:
+            self.logger.warning(
+                f"Run-ROM für Spieler {slot} nicht ermittelbar ({type(err).__name__}: {err}) "
+                f"— BizHawk startet ohne ROM.\n{traceback.format_exc()}"
+            )
+            return None
+        if rom is None:
+            self.logger.info(f"Kein aktiver Run mit ROM für Spieler {slot} — BizHawk startet ohne ROM.")
+        return rom
+
     def start_bizhawk(self):
         """Startet den BizHawk-Server und spawnt Emulator-Prozesse für lokale Spieler."""
         try:
@@ -157,14 +178,22 @@ class ConnectionController:
                     env = os.environ.copy()
                     env["TRACKER_PLAYER"] = str(i + 1)
                     env["TRACKER_LOG_DIR"] = log_dir
-                    process = subprocess.Popen([
+                    args = [
                         self.bh["path"],
                         f'--lua={os.path.abspath("./backend/lua/tracker.lua")}',
                         f'--socket_ip={self.bh["host"]}',
                         f'--socket_port={self.bh["port"]}',
-                    ], env=env)
+                    ]
+                    rom = self._run_rom_for_slot(i + 1)
+                    if rom:
+                        # EmuHawk-CLI: ROM-Pfad als Positionsargument (nach den Flags)
+                        args.append(rom)
+                    process = subprocess.Popen(args, env=env)
                     self.bizhawk_instances.append(process)
-                    self.logger.info(f"BizHawk-Prozess für Spieler {i+1} gestartet (PID {process.pid}).")
+                    self.logger.info(
+                        f"BizHawk-Prozess für Spieler {i+1} gestartet (PID {process.pid}, "
+                        f"ROM={rom or '-'})."
+                    )
         except Exception as err:
             self.logger.error(f"Fehler beim Starten von BizHawk: {type(err)}, {err}")
             self.logger.error(traceback.format_exc())

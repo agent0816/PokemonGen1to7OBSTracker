@@ -15,6 +15,8 @@ from kivy.uix.progressbar import ProgressBar
 from kivy.uix.screenmanager import Screen
 from tufup.client import Client
 from tuf.api.exceptions import ExpiredMetadataError
+from backend.app_state import get_config_backup_keep
+from backend.config_backup import create_config_backup
 from backend.logging_setup import get_logger
 
 logger = get_logger(__name__, 'logs/frontend.log')
@@ -246,7 +248,8 @@ class Update(Screen):
     def show_update_popup(self, new_archive):
         box = BoxLayout(orientation='vertical')
         text = f'Update verfügbar: Version {new_archive.version}'
-        box.add_widget(Label(text=text))
+        self._status_label = Label(text=text)
+        box.add_widget(self._status_label)
 
         self.progress_bar = ProgressBar(max=100)
         box.add_widget(self.progress_bar)
@@ -254,10 +257,12 @@ class Update(Screen):
         btn_layout = BoxLayout()
         download_btn = Button(text='Download')
         download_btn.bind(on_press=lambda x: self.download_update())  # type: ignore
+        self._download_btn = download_btn
         btn_layout.add_widget(download_btn)
 
         cancel_btn = Button(text='Abbrechen')
         cancel_btn.bind(on_press=self.cancel_update)  # type: ignore
+        self._cancel_btn = cancel_btn
         btn_layout.add_widget(cancel_btn)
 
         box.add_widget(btn_layout)
@@ -266,11 +271,90 @@ class Update(Screen):
                            size_hint=(None, None), size=(600, 300), auto_dismiss=False)
         self.popup.open()
 
-    async def async_download_update(self):
+    def _set_status(self, text):
+        label = getattr(self, "_status_label", None)
+        if label is not None:
+            label.text = text
+
+    def _set_download_enabled(self, enabled):
+        # Download UND Abbrechen gemeinsam: Abbrechen während Backup/Download
+        # würde nur das Popup schließen, der Task liefe unsichtbar weiter und
+        # beendete am Ende die App (App.stop nach Install-Start).
+        for attr in ("_download_btn", "_cancel_btn"):
+            btn = getattr(self, attr, None)
+            if btn is not None:
+                btn.disabled = not enabled
+
+    def _start_update_task(self, skip_backup=False):
+        """Update-Task mit Strong-Ref starten (Projektmuster, kein GC-Verlust)."""
+        task = asyncio.ensure_future(self.async_download_update(skip_backup=skip_backup))
+        self._update_task = task
+
+        def _done(t):
+            if getattr(self, "_update_task", None) is t:
+                self._update_task = None
+        task.add_done_callback(_done)
+
+    async def _run_config_backup(self) -> bool:
+        """Zip von backend/config vor dem Update (Executor, blockiert die UI nicht)."""
+        self._set_status("Sichere Konfiguration …")
+        try:
+            target = await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: create_config_backup(keep=get_config_backup_keep()),
+            )
+        except Exception as err:
+            logger.error(f"Config-Backup vor Update fehlgeschlagen: {err}\n{traceback.format_exc()}")
+            return False
+        logger.info(f"Config-Backup vor Update: {target}")
+        self._set_status(f"Konfiguration gesichert: {target.name}\nUpdate wird geladen …")
+        return True
+
+    def _ask_update_without_backup(self):
+        box = BoxLayout(orientation='vertical', spacing=10, padding=10)
+        box.add_widget(Label(
+            text="Config-Backup fehlgeschlagen (Details in logs/frontend.log).\n"
+                 "Update trotzdem installieren?",
+            halign='center'))
+        btns = BoxLayout(size_hint_y=None, height=44, spacing=10)
+        popup = Popup(title='Backup fehlgeschlagen', content=box,
+                      size_hint=(None, None), size=(560, 220), auto_dismiss=False)
+
+        def _go(*_args):
+            popup.dismiss()
+            self._start_update_task(skip_backup=True)
+
+        def _abort(*_args):
+            popup.dismiss()
+            self._set_status("Update abgebrochen: Backup fehlgeschlagen.")
+            self._set_download_enabled(True)
+
+        go_btn = Button(text='Trotzdem updaten')
+        go_btn.bind(on_press=_go)  # type: ignore
+        abort_btn = Button(text='Abbrechen')
+        abort_btn.bind(on_press=_abort)  # type: ignore
+        btns.add_widget(go_btn)
+        btns.add_widget(abort_btn)
+        box.add_widget(btns)
+        popup.open()
+
+    async def async_download_update(self, skip_backup=False):
+        # Doppelklick auf Download verhindern, solange Backup/Download laufen
+        self._set_download_enabled(False)
+        try:
+            if not skip_backup and not await self._run_config_backup():
+                self._ask_update_without_backup()
+                return
+        except Exception as err:
+            # z.B. Popup-Aufbau — Task darf nicht still sterben (Buttons gesperrt)
+            logger.error(f"Backup-Schritt vor Update fehlgeschlagen: {err}\n{traceback.format_exc()}")
+            self._set_status("Update abgebrochen: Fehler beim Backup (siehe Log).")
+            self._set_download_enabled(True)
+            return
         install_started = False
         try:
             logger.info("tufup-Download und -Install gestartet.")
-            await asyncio.get_event_loop().run_in_executor(
+            await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: self.client.download_and_apply_update(
                     skip_confirmation=True,
@@ -287,11 +371,16 @@ class Update(Screen):
         except Exception as err:
             logger.error(f"Update-Download fehlgeschlagen: {err}\n{traceback.format_exc()}")
 
+        if not install_started:
+            self._set_download_enabled(True)
         if install_started:
             App.get_running_app().stop()
 
     def download_update(self):
-        asyncio.ensure_future(self.async_download_update())
+        if getattr(self, "_update_task", None) is not None:
+            logger.info("Update läuft bereits — zweiter Download-Klick ignoriert.")
+            return
+        self._start_update_task()
 
     def cancel_update(self, instance):
         self.popup.dismiss()

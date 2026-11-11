@@ -56,6 +56,7 @@ RENDER_BATCH = 12
 # Trailing-Debounce: Suche erst filtern, wenn das Tippen pausiert; Link-Event-
 # Bursts (Gruppe anlegen, Remote-Batch) zu einem Reload zusammenfassen.
 SEARCH_DEBOUNCE_S = 0.3
+FLAT_MODE_HINT = "Modus Nuzlocke: keine Routen-Gruppierung (Soullink im Nuzlocke-Menü)."
 LINK_RELOAD_DEBOUNCE_S = 0.3
 # Max-Wait: bei Dauerfeuer (Events < Debounce-Abstand) spätestens nach dieser
 # Zeit seit dem ersten verschobenen Event trotzdem laden.
@@ -941,13 +942,26 @@ class EncounterMenu(MDScreen):
                     player_filter=self._player_filter, query=query,
                     show_deleted=self._show_deleted)
                 self.count_label.text = f"{enc_count} Encounter, {open_count} offen"
-                self._set_hint("Keine Encounter gefunden." if not rows else "")
+                base = "Keine Encounter gefunden." if not rows else ""
+                if self._multi_player_known():
+                    base = f"{base} {FLAT_MODE_HINT}".strip()
+                self._set_hint(base)
                 self._render("flat", rows)
         except Exception as err:
             logger.error(f"EncounterMenu Aufbereitung fehlgeschlagen: {type(err)},{err}")
             logger.error(f"{traceback.format_exc()}")
             self._set_hint("Fehler beim Aufbereiten der Encounter (siehe Log).")
             self._render("flat", [])
+
+    def _multi_player_known(self) -> bool:
+        """True, wenn mind. 2 Spieler bekannt sind (verbundene Clients oder Encounter-Owner)."""
+        try:
+            if len(self._player_names()) >= 2:
+                return True
+            return len(self._owners()) >= 2
+        except Exception:
+            logger.error(f"_multi_player_known fehlgeschlagen: {traceback.format_exc()}")
+            return False
 
     def _unlinked_rows(self, links: dict, query: str) -> list[dict]:
         """Encounter ohne Gruppe als Karten-Zeilen (Edition-Filter + Suche wie bei Gruppen)."""

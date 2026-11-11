@@ -47,6 +47,8 @@ DEFAULT_STATE = {
     'onboarding_done': False,
     'theme_style': THEME_DARK,
     'primary_palette': 'Orange',
+    # Config-Backup vor Update: so viele config_*.zip bleiben liegen.
+    'config_backup_keep': 5,
 }
 
 
@@ -110,6 +112,14 @@ def get_theme() -> tuple[str, str]:
     if palette not in ACCENT_PALETTES:
         palette = 'Orange'
     return style, palette
+
+
+def get_config_backup_keep() -> int:
+    """Anzahl aufzubewahrender Config-Backups; ungueltig → 5, minimal 1."""
+    try:
+        return max(1, int(load_app_state().get('config_backup_keep', 5)))
+    except (TypeError, ValueError):
+        return 5
 
 
 def set_theme(style: str | None = None, palette: str | None = None) -> None:

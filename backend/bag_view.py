@@ -86,6 +86,14 @@ def edition_to_gen(edition_str) -> int | None:
         return None
 
 
+def item_lut_for_edition(edition) -> dict:
+    """{item_id: slug} der Gen zur Edition (leer bei unbekannter Edition)."""
+    gen = edition_to_gen(edition)
+    if gen is None:
+        return {}
+    return _ITEM_LUTS.get(gen) or {}
+
+
 def item_slug(edition_str, item_id: int) -> str | None:
     """Roher Slug aus der items*.yml ('master-ball') oder None."""
     gen = edition_to_gen(edition_str)

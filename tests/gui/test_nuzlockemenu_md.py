@@ -138,6 +138,21 @@ class _DriveApp(MDApp):
         cb.active = True
         self.check("regel_in_nuz", self.nuz.get("rule_token_rule") is True)
         self.check("config_gepusht", "send_soullink_config" in self.munchlax.sent)
+        # Zweites Modus-Dropdown (Tab Regeln) startet synchron zum ersten (versus)
+        self.check("modus_dd_initial_synchron",
+                   m._mode_dd_regeln.value == m._mode_dd.value, m._mode_dd_regeln.value)
+        # Auswahl im Regeln-Dropdown -> Handler, nuz + anderes Dropdown folgen
+        m._mode_dd_regeln._choose("Coop (Soullink)")
+        self.check("modus_regeln_schreibt_nuz", self.nuz.get("run_mode") == "coop",
+                   self.nuz.get("run_mode"))
+        self.check("modus_dd_synchron_nach_regeln",
+                   m._mode_dd.value == m._mode_dd_regeln.value == "Coop (Soullink)",
+                   (m._mode_dd.value, m._mode_dd_regeln.value))
+        # Umgekehrt: Spieler-Tab-Dropdown -> Regeln-Dropdown folgt
+        m._mode_dd._choose("Nuzlocke")
+        self.check("modus_dd_synchron_nach_spieler",
+                   m._mode_dd_regeln.value == "Nuzlocke" and self.nuz.get("run_mode") == "nuzlocke",
+                   (m._mode_dd_regeln.value, self.nuz.get("run_mode")))
         self.shot("02_nuzlocke_regeln")
         self._next(self.s_timer)
 
@@ -166,7 +181,9 @@ class _DriveApp(MDApp):
 
 _EXPECTED = {
     "vier_tabs", "kein_carousel", "drei_owner_zeilen", "versus_team_sichtbar",
-    "tab_regeln_aktiv", "regel_in_nuz", "config_gepusht",
+    "tab_regeln_aktiv", "regel_in_nuz", "config_gepusht", "modus_dd_initial_synchron",
+    "modus_regeln_schreibt_nuz", "modus_dd_synchron_nach_regeln",
+    "modus_dd_synchron_nach_spieler",
     "tab_timer_aktiv", "race_display_da", "tab_snapshots_aktiv",
 }
 

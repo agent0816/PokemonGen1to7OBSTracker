@@ -94,6 +94,7 @@ _SNACKBAR_COLORS = {
     'info': None,
     'success': (0.18, 0.49, 0.20, 1),
     'error': (0.72, 0.11, 0.11, 1),
+    'warning': (0.70, 0.33, 0.0, 1),
 }
 
 

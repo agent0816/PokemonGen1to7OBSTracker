@@ -289,6 +289,115 @@ def catching_ball_ids(edition) -> frozenset[int]:
         return frozenset()
 
 
+# ---------------------------------------------------------------------------
+# Plausibilitaet eines kompletten Bag-Reads (ROM-Boot-Garbage-Filter)
+# ---------------------------------------------------------------------------
+
+# Pockets, in denen Fang-Baelle legal liegen duerfen, sofern die Edition eine
+# eigene Ball-Tasche hat (Gen 2-4). PC-Ablage nimmt jedes Item.
+_BALL_POCKETS = frozenset({"baelle", "pc"})
+
+
+def bag_read_plausible(pockets: dict, edition,
+                       item_lut: dict | None = None) -> tuple[bool, str]:
+    """Prueft einen KOMPLETTEN dekodierten Bag-Read auf RAM-Garbage.
+
+    Hintergrund (Live-Dumps 2026-11-11, DE-Saphir): zwischen ROM-Boot und
+    geladenem/neuem Spielstand steht im Bag-Bereich Muell — R/S: alle Slots
+    von pc/items/keyitems = id 0 + qty 6802, in 'beeren' Fang-Ball-IDs. Der
+    Decoder bricht nur bei id == 0 UND qty == 0 ab und liefert den Muell als
+    Items; bag_first_seen merkte sich die "Baelle" → Ball-Gate offen.
+
+    Ein einziger unplausibler Slot verwirft den ganzen Read (Whole-Read-
+    Reject) — Teil-Uebernahme wuerde Muell-Baelle trotzdem durchlassen.
+
+    Regeln (bewusst nur sichere, damit echte Taschen nie verworfen werden —
+    sonst bliebe das Ball-Gate fuer immer zu):
+      1. id == 0 ist nie ein Item.
+      2. qty > Spiel-Cap der Gen (Gen 1/2: 99, sonst 999); Gen 3 zusaetzlich
+         qty == 0 (kompakte Pockets, leerer Slot hat id 0).
+      3. Gen 1-5: id groesser als die hoechste ID der Gen-LUT.
+      4. Hat die Edition eine Ball-Tasche: Fang-Baelle nur dort oder im PC;
+         in 'baelle' nur Fang-Baelle bzw. Slugs '*-ball'.
+      5. 'beeren' nur Slugs '*-berry'/'*-mulch'/'*-apricorn', 'tmvm' nur Slugs 'tm*'/'hm*' — nur
+         geprueft, wenn die LUT die ID kennt.
+
+    pockets: {pocket_key: list[BagItem]} (lokal) — Remote-Pfad baut BagItems
+    aus den (id, qty)-Tupeln. item_lut: {item_id: slug} der Gen; ohne LUT
+    entfallen die Regeln 3 + 5 + Slug-Teil von 4.
+
+    Rueckgabe (ok, grund). grund ist leer bei ok=True.
+    """
+    try:
+        edition_int = int(edition)
+    except (TypeError, ValueError):
+        return True, ""  # unbekannte Edition: nicht bewertbar, nicht blocken
+    gen = edition_to_gen(edition_int)
+    cap = QTY_CAP_PER_GEN.get(gen, 999)
+    balls = catching_ball_ids(edition_int)
+    has_ball_pocket = "baelle" in POCKET_MAX_SLOTS.get(edition_int, {})
+    lut = item_lut or {}
+    max_lut_id = max((k for k in lut if isinstance(k, int)), default=None)
+
+    for pocket_key, items in pockets.items():
+        for it in items or ():
+            item_id = int(it.id)
+            qty = int(it.qty)
+            where = f"{pocket_key}: id={item_id} qty={qty}"
+            if item_id == 0:
+                return False, f"{where} (id 0)"
+            if qty > cap:
+                return False, f"{where} (qty > {cap})"
+            # Nur Gen 3: kompakte Pockets, leerer Slot = id 0 + qty 0. Gen 4-6
+            # TM-Taschen koennten feste Listen mit qty 0 sein (unbelegt) —
+            # dort wuerde die Regel echte Taschen dauerhaft verwerfen.
+            if qty == 0 and gen == 3:
+                return False, f"{where} (qty 0)"
+            if max_lut_id is not None and gen <= 5 and item_id > max_lut_id:
+                return False, f"{where} (id ausserhalb LUT)"
+            slug = lut.get(item_id)
+            slug = str(slug) if slug else ""
+            if has_ball_pocket:
+                if item_id in balls and pocket_key not in _BALL_POCKETS:
+                    return False, f"{where} (Ball ausserhalb Ball-Tasche)"
+                if (pocket_key == "baelle" and item_id not in balls
+                        and slug and not slug.endswith("-ball")):
+                    return False, f"{where} (kein Ball in Ball-Tasche)"
+            # DPPt legt Mulch in die Beeren-Tasche; Aprikokos vorsorglich mit.
+            if (pocket_key == "beeren" and slug
+                    and not slug.endswith(("-berry", "-mulch", "-apricorn"))):
+                return False, f"{where} (keine Beere in Beeren-Tasche)"
+            if (pocket_key == "tmvm" and slug
+                    and not slug.startswith(("tm", "hm"))):
+                return False, f"{where} (keine TM/VM in TM-Tasche)"
+    return True, ""
+
+
+def ball_pockets_for_edition(edition) -> frozenset[str]:
+    """Pockets, die in einem Read vorhanden sein muessen, damit "kein Ball"
+    belastbar ist: Ball-Tasche (Gen 2-4) bzw. Items (Gen 5-7) bzw. Tasche
+    (Gen 1), plus PC, falls die Edition einen hat."""
+    try:
+        edition_int = int(edition)
+    except (TypeError, ValueError):
+        return frozenset()
+    caps = POCKET_MAX_SLOTS.get(edition_int, {})
+    if "baelle" in caps:
+        main = "baelle"
+    elif "tasche" in caps:
+        main = "tasche"
+    else:
+        main = "items"
+    return frozenset({main, "pc"} if "pc" in caps else {main})
+
+
+def bag_has_catching_ball(pockets: dict, edition) -> bool:
+    """True wenn irgendeine Pocket einen Fang-Ball enthaelt (qty > 0)."""
+    balls = catching_ball_ids(edition)
+    return any(int(it.id) in balls and int(it.qty) > 0
+               for items in pockets.values() for it in (items or ()))
+
+
 # Pocket-Keys, die im Pointer-YAML als "bag_<key>" auftauchen koennen.
 # Reihenfolge ist beliebig; der Reader iteriert und ueberspringt fehlende Keys.
 KNOWN_POCKET_KEYS = (

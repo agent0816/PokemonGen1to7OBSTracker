@@ -39,10 +39,12 @@ from kivymd.uix.selectioncontrol import MDSwitch
 from kivy.uix.widget import Widget
 
 from backend.classes.obs import OBS
+from backend.connect_errors import describe_connect_error
 from backend.controller.connection_controller import ConnectionController
 from backend.controller.randomizer_controller import RandomizerController
 from backend.controller.settings_controller import SettingsController
 from backend.logging_setup import get_logger
+from backend.nuzlocke_view import modus_warnung_faellig
 from backend.perf_probe import perf_span
 from backend.player_colors import PLAYER_COLORS
 from backend.rando_sync import apply_rando_to_munchlax
@@ -418,7 +420,17 @@ class MainMenu(MDScreen):
                                         size_hint_x=1, on_release=self._on_copy_rom_path)
         card.add_widget(self.copy_rom_button)
 
-        logs_row = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44),
+        # BizHawk mit Run-ROM starten (bh['start_with_run_rom'], auch in Einstellungen)
+        rom_row = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40),
+                              spacing=dp(6))
+        self.run_rom_switch = MDSwitch()
+        self.run_rom_switch.bind(active=self._on_run_rom_switch)
+        rom_row.add_widget(self.run_rom_switch)
+        rom_row.add_widget(MDLabel(text="BizHawk mit Run-ROM starten", role="small",
+                                   valign="center"))
+        card.add_widget(rom_row)
+
+        logs_row =MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44),
                                spacing=dp(8))
         self.pack_logs_button = MDButton(MDButtonText(text="Logs packen"), style="outlined",
                                          theme_width="Custom", size_hint_x=1,
@@ -625,6 +637,7 @@ class MainMenu(MDScreen):
                 self._connect_client_action()
                 self._set_button_text(self.role_button, "Server beenden")
             elif text == "Server beenden":
+                self._connect_task = None
                 self.connection.stop_server()
                 self._set_button_text(self.role_button, "Server starten")
         else:
@@ -636,11 +649,44 @@ class MainMenu(MDScreen):
             self._connect_client_action()
             self._set_button_text(self.role_button, "Client beenden")
         elif text == "Client beenden":
+            self._connect_task = None  # Fehler des laufenden Connects nicht mehr melden
             self.connection.disconnect_client()
             self._set_button_text(self.role_button, "Client starten")
 
     def _connect_client_action(self) -> None:
-        self._track(self.connection.connect_client())
+        task = self.connection.connect_client()
+        self._track(task)
+        if task is not None:
+            # Nur der jüngste Connect darf melden: ein laufendes
+            # open_connection wird bei Trennen nicht abgebrochen und kann
+            # ~21 s später scheitern, während schon ein neuer Connect läuft.
+            self._connect_task = task
+            task.add_done_callback(self._on_connect_done)
+
+    def _on_connect_done(self, task) -> None:
+        """Connect gescheitert → Klartext-Snackbar + Client-Button sofort zurück.
+
+        Läuft auf dem Kivy-Loop (wrap_future). Gecancelt = User-Trennen bzw.
+        neuere Connect-Generation → kein Hinweis. Logging übernimmt _on_task_done.
+        """
+        if task is not getattr(self, "_connect_task", None):
+            return  # veraltet: neuerer Connect oder User hat getrennt
+        self._connect_task = None
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is None:
+            return
+        # Inzwischen (Auto-Reconnect) verbunden → veraltet
+        if self.munchlax.is_connected or self.munchlax.reconnecting:
+            return
+        text = describe_connect_error(exc, local_server=self._server_mode)
+        logger.info(f"Connect-Fehler an User gemeldet: {type(exc).__name__}: {exc} → {text!r}")
+        show_snackbar(text, level='error', duration=6.0)
+        if (not self._server_mode
+                and self._get_button_text(self.role_button) == "Client beenden"):
+            self._set_button_text(self.role_button, "Client starten")
+            self._btn_sync_strikes["client"] = 0
 
     def clear_clients(self, *_args) -> None:
         self.munchlax.clear_everything()
@@ -735,6 +781,13 @@ class MainMenu(MDScreen):
             seen = set()
             if self.rem.get("start_server"):
                 clients = self.arceus.snapshot_clients()
+                # Spieler statt Clients zaehlen: ein Client kann mehrere Slots
+                # (2 BizHawks) stellen; player_names kennt alle Netz-Slots.
+                try:
+                    slot_count = len(self.munchlax.snapshot_player_names())
+                except Exception:
+                    slot_count = 0
+                self._check_modus_warnung(max(len(clients), slot_count))
                 for client_id, (name, _status) in clients.items():
                     seen.add(client_id)
                     self._ensure_client_row(
@@ -759,6 +812,22 @@ class MainMenu(MDScreen):
                     self._remove_client_row(client_id)
         except Exception:
             logger.error(f"_refresh_client_list fehlgeschlagen: {traceback.format_exc()}")
+
+    def _check_modus_warnung(self, player_count: int) -> None:
+        """Einmaliger Hinweis (Host): >=2 Spieler, aber Modus noch Nuzlocke."""
+        try:
+            nuz = getattr(self.munchlax, "nuz", None) or {}
+            session_key = str(self.configsave) if self.configsave is not None else ""
+            show, self._modus_warn_key = modus_warnung_faellig(
+                getattr(self, "_modus_warn_key", None), session_key,
+                nuz.get("run_mode"), player_count)
+            if show:
+                show_snackbar(
+                    "Modus ist Nuzlocke – Encounter werden nicht nach Route verknüpft. "
+                    "Für Soullink im Nuzlocke-Menü Coop/Versus wählen.",
+                    level='warning', duration=6)
+        except Exception:
+            logger.error(f"_check_modus_warnung fehlgeschlagen: {traceback.format_exc()}")
 
     def _clear_client_rows(self) -> None:
         for client_id in list(self._client_rows.keys()):
@@ -860,6 +929,7 @@ class MainMenu(MDScreen):
                 self._switches["badges"].disabled = False
                 self._switches["badges"].active = bool(sp["show_badges"])
             self._switches["saveram"].active = bool(bh["save_automatically"])
+            self.run_rom_switch.active = bool(bh.get("start_with_run_rom", True))
 
             # Sortierung
             self._current_sort = sp["order"]
@@ -957,6 +1027,29 @@ class MainMenu(MDScreen):
                                     on_release=lambda *_: dialog.dismiss()))
         dialog.add_widget(buttons)
         dialog.open()
+
+    def _on_run_rom_switch(self, _switch, active) -> None:
+        # Kivy dispatcht auch beim programmatischen Setzen → _suspend_save-Guard
+        if getattr(self, "_suspend_save", False):
+            return
+        if bool(self.bh.get("start_with_run_rom", True)) == bool(active):
+            return
+        self.controller.save_main_menu_settings({'start_with_run_rom': bool(active)})
+        logger.info(f"BizHawk mit Run-ROM starten: {'an' if active else 'aus'}")
+
+    def on_pre_enter(self, *args) -> None:
+        super().on_pre_enter(*args)
+        # Einstellungen können bh['start_with_run_rom'] geändert haben
+        if hasattr(self, "run_rom_switch"):
+            self.sync_run_rom_switch()
+
+    def sync_run_rom_switch(self) -> None:
+        """Switch an bh-Dict angleichen (z.B. nach Änderung in den Einstellungen)."""
+        self._suspend_save = True
+        try:
+            self.run_rom_switch.active = bool(self.bh.get("start_with_run_rom", True))
+        finally:
+            self._suspend_save = False
 
     def _on_copy_rom_path(self, *_args) -> None:
         """Kopiert den ROM-Pfad des aktiven Runs (erster lokaler Slot mit ROM)."""

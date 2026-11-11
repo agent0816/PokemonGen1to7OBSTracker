@@ -248,7 +248,7 @@ def test_death_roundtrip_und_reset(tmp_path):
 
 def test_v12_dead_spalte_und_migration(tmp_path):
     db = _db(tmp_path)
-    assert CURRENT_SCHEMA_VERSION == 12
+    assert CURRENT_SCHEMA_VERSION >= 12
     assert "dead" in _cols(db, "encounters")
     assert db.sync_encounter(_enc())
     conn = db.connection

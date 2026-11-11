@@ -8,6 +8,14 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def resolve_slot_rom_path(run_manager, slot: int) -> str | None:
+    """ROM-Pfad des aktiven Runs für genau einen Slot (BizHawk-Start pro Spieler).
+
+    ``None`` ohne RunManager, ohne aktiven Run oder ohne ROM-Datei für den Slot.
+    """
+    return resolve_own_rom_path(run_manager, [slot])
+
+
 def resolve_own_rom_path(run_manager, slots: list[int]) -> str | None:
     """Liefert den ROM-Pfad des ersten lokalen Slots mit existierender ROM-Datei.
 

@@ -101,6 +101,7 @@ Konfiguration liegt pro Session unter `backend/config/<session_name>/` mit acht 
 
 ### Infrastruktur
 
+- [ ] Config-Backup vor Update: Zip von `backend/config` nach `config_backups/` (ohne ROMs, DBs per `VACUUM INTO`, neueste 5 bleiben); umgesetzt + Unit-Tests, offen: Live-Test mit echtem Alpha-Update
 - [ ] `Arceus` als Headless-Server (ohne GUI-Abhängigkeit)
 - [ ] Twitch Extension
 - [ ] Vollständige Umstellung auf asyncio (Rest-Blocking eliminieren)

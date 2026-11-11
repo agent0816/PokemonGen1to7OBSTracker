@@ -256,6 +256,15 @@ class SettingsMenu(MDScreen):
         self._bizhawk_port = make_textfield("Port", is_port=True,
                                             on_validate=lambda: self._save("bizhawk"))
         card.add_widget(labeled_row("Port", self._bizhawk_port))
+        # ROM des aktiven Randomizer-Runs beim BizHawk-Start laden (auch im Hauptmenü)
+        sw_row = MDBoxLayout(orientation="horizontal", size_hint_y=None,
+                             adaptive_height=True, spacing=dp(8))
+        sw_row.add_widget(MDLabel(text="Mit ROM des aktiven Runs starten",
+                                  role="small", valign="center"))
+        self._bizhawk_run_rom_switch = MDSwitch()
+        self._bizhawk_run_rom_switch.bind(active=self._on_bizhawk_run_rom_switch)
+        sw_row.add_widget(self._bizhawk_run_rom_switch)
+        card.add_widget(sw_row)
         pane.add_widget(card)
 
         # OBS Websocket
@@ -1269,6 +1278,23 @@ class SettingsMenu(MDScreen):
             return path
         return path.replace(common, "", 1) if common else path
 
+    def _resync_bizhawk_run_rom(self) -> None:
+        value = bool(self.controller.load_bizhawk().get('start_with_run_rom', True))
+        self._loading_switches = True
+        try:
+            self._bizhawk_run_rom_switch.active = value
+        finally:
+            self._loading_switches = False
+        saved = self._last_saved.get('bizhawk')
+        if saved is not None:
+            saved['start_with_run_rom'] = value
+
+    def _on_bizhawk_run_rom_switch(self, _switch, _active) -> None:
+        # Kivy dispatcht auch beim Laden → Guard (Memory kivy_disabled_property_dispatch)
+        if getattr(self, "_loading_switches", False):
+            return
+        self._save("bizhawk")
+
     def _save_for_field(self, field: MDTextField) -> None:
         """Speichert die Sektion, zu der ein (per Browse gesetztes) Feld gehoert."""
         if field in (self._bizhawk_exe,):
@@ -1299,7 +1325,8 @@ class SettingsMenu(MDScreen):
         if section == "bizhawk":
             if not self._bizhawk_port.text:
                 return None
-            return {'path': self._bizhawk_exe.text, 'port': self._bizhawk_port.text}
+            return {'path': self._bizhawk_exe.text, 'port': self._bizhawk_port.text,
+                    'start_with_run_rom': bool(self._bizhawk_run_rom_switch.active)}
         if section == "obs":
             if not self._obs_port.text:
                 return None
@@ -1476,6 +1503,11 @@ class SettingsMenu(MDScreen):
             bh = self.controller.load_bizhawk()
             self._bizhawk_exe.text = bh.get('path', '')
             self._bizhawk_port.text = bh.get('port', '')
+            self._loading_switches = True
+            try:
+                self._bizhawk_run_rom_switch.active = bool(bh.get('start_with_run_rom', True))
+            finally:
+                self._loading_switches = False
 
             obs = self.controller.load_obs()
             self._obs_host.text = obs.get('host', '')
@@ -1573,6 +1605,13 @@ class SettingsMenu(MDScreen):
                 self._reload_sprite_paths()
             except Exception as err:
                 logger.debug(f"reload_sprite_paths on_pre_enter failed: {err}")
+            # Run-ROM-Switch kann im Hauptmenü umgestellt worden sein → aus bh
+            # angleichen + Baseline mitziehen, sonst schreibt der nächste
+            # Fokus-Verlust im Bizhawk-Abschnitt den alten Wert zurück.
+            try:
+                self._resync_bizhawk_run_rom()
+            except Exception as err:
+                logger.error(f"Run-ROM-Switch-Resync fehlgeschlagen: {err}\n{traceback.format_exc()}")
         # Run-Historie beim Öffnen neu einlesen (wie Klassik on_enter).
         try:
             self._refresh_run_history()

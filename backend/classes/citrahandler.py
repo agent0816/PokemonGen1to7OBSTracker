@@ -5,7 +5,7 @@ import yaml
 from backend.classes.citra import Citra
 from backend.classes.azahar_writer import AzaharWriter
 from backend.classes.munchlax import Munchlax
-from backend.classes.Pokemon import Pokemon
+from backend.classes.Pokemon import Pokemon, party_has_valid_pokemon
 import backend.pokedecoder as pokedecoder
 import backend.bag_decoder as bag_decoder
 from backend.encounter_tracker import EncounterTracker
@@ -40,6 +40,10 @@ class CitraHandler:
         self.bag_write_queue: list[tuple[int, bytes, "asyncio.Future[bool]"]] = []
         self._last_bag_refresh: float = 0.0
         self._bag_refresh_inflight: bool = False
+        # Readiness-Gate wie bizhawk.py: Bag erst lesen, wenn der letzte Party-
+        # Read seit start() >= 1 gueltiges Pokemon hatte (Titelbild-RAM-Muell).
+        self._team_ready: bool = False
+        self._bag_skip_logged: bool = False
         # Encounter-Tracking
         self._encounter_tracker: EncounterTracker | None = None
         self._current_battle_kind: int = 0
@@ -275,6 +279,7 @@ class CitraHandler:
 
     def update_teams(self, team):
         team: list[Pokemon] = pokedecoder.team(team, self.edition)
+        self._team_ready = party_has_valid_pokemon(team, self.edition)
         teams = self.munchlax.bizhawk_teams
         # Vor dem Update den alten Dex-Stand merken — bei Tupel-Änderung
         # triggern wir später einen gedrosselten Auto-Box-Refresh.
@@ -593,6 +598,16 @@ class CitraHandler:
         try:
             if not self.started or not self.is_connected:
                 return
+            if not self._team_ready:
+                if not self._bag_skip_logged:
+                    self._bag_skip_logged = True
+                    self.logger.info(
+                        f"Bag-Refresh player={self.player_number} pausiert: kein "
+                        f"gueltiges Team (Spielstand nicht bereit)")
+                return
+            if self._bag_skip_logged:
+                self._bag_skip_logged = False
+                self.logger.info(f"Bag-Refresh player={self.player_number} aktiv: Team gueltig")
             pockets = await self.read_and_decode_bag()
             if not pockets:
                 return
@@ -616,6 +631,8 @@ class CitraHandler:
         self.munchlax: Munchlax = munchlax
         self.logger.info("Citra verbunden.")
         self.started = True
+        self._team_ready = False
+        self._bag_skip_logged = False
 
         self.start_button = button
 

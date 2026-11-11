@@ -58,6 +58,7 @@ def init_config_folder():
             'onboarding_done': bool(preexisting),
             'theme_style': 'Dark',
             'primary_palette': 'Orange',
+            'config_backup_keep': 5,
         })
     else:
         # Migration fehlender Keys (z.B. frühe F0/F1-Datei ohne onboarding_done):
@@ -78,6 +79,10 @@ def init_config_folder():
             changed = True
         if 'primary_palette' not in state:
             state['primary_palette'] = 'Orange'
+            changed = True
+        # Config-Backup vor Update (Testrunde 2026-11-10): Anzahl behaltener Zips.
+        if 'config_backup_keep' not in state:
+            state['config_backup_keep'] = 5
             changed = True
         if changed:
             save_config(app_state, state)
@@ -220,7 +225,9 @@ def update_session(sessionpath, default=False):
         "host":'127.0.0.1',
         "path":'',
         "port":'43885',
-        "save_automatically" : False
+        "save_automatically" : False,
+        # BizHawk mit der ROM des aktiven Randomizer-Runs starten (pro Slot)
+        "start_with_run_rom": True,
     }
     if not biz.exists():
         if not default:

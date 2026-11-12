@@ -21,6 +21,7 @@ from backend.dragon_rage import DRAGON_RAGE_FLAG
 from backend.encounter_edit import find_rebind_candidate, new_encounter
 from backend.graveyard import GraveyardDB, graveyard_path
 from backend.logging_setup import get_logger
+from backend.msg_log_throttle import MessageLogThrottle
 from backend.nuzlocke_view import dragon_rage_badge_limit
 
 # Mindestabstand zwischen automatischen Box-Refreshs pro Spieler.
@@ -478,6 +479,8 @@ class Munchlax:
         self._bundle_request_notify = None
 
         self.logger = get_logger(__name__, './logs/munchlax.log')
+        # Hochfrequenz-Nachrichten nur als 60-s-Summary loggen (siehe Arceus).
+        self._msg_log = MessageLogThrottle(self.logger, "munchlax")
 
     def clear_everything(self):
         # state_lock schuetzt den Rebind: BH-Thread und (seit Phase 3)
@@ -5689,6 +5692,7 @@ class Munchlax:
             wrapped = {"__seq__": seq, "__payload__": message}
             serialized_message = pickle.dumps(wrapped)
             msg_type_log = message.get("type", "")
+            msg_type_plain = msg_type_log
             msg_type_wire = f"seq={seq},type={msg_type_log}"
         else:
             serialized_message = pickle.dumps(message)
@@ -5696,9 +5700,13 @@ class Munchlax:
                 message.get("type", "teams") if isinstance(message, dict)
                 else (message if isinstance(message, str) else type(message).__name__)
             )
+            msg_type_plain = msg_type_wire
         CHUNK_SIZE = 500  # Die Größe jedes Chunks in Bytes
 
-        self.logger.debug(f"Sende: type={msg_type_wire}, {len(serialized_message)} Bytes")
+        if self._msg_log.is_high_freq(msg_type_plain):
+            self._msg_log.count("send", msg_type_plain, len(serialized_message))
+        else:
+            self.logger.debug(f"Sende: type={msg_type_wire}, {len(serialized_message)} Bytes")
 
         # Gesamtlänge der Nachricht senden
         length = len(serialized_message).to_bytes(4, 'big')
@@ -5940,7 +5948,12 @@ class Munchlax:
 
         result = pickle.loads(message)
         msg_desc = result.get("type", f"{len(result)} Spieler") if isinstance(result, dict) else type(result).__name__
-        self.logger.debug(f"Empfangen: {msg_desc}, {total_length} Bytes")
+        # Teams-Broadcast (Dict ohne "type") zählt als "teams"
+        msg_kind = result.get("type", "teams") if isinstance(result, dict) else msg_desc
+        if self._msg_log.is_high_freq(msg_kind):
+            self._msg_log.count("recv", msg_kind, total_length)
+        else:
+            self.logger.debug(f"Empfangen: {msg_desc}, {total_length} Bytes")
         return result
     
     def generate_hashed_id(self):

@@ -11,6 +11,7 @@ from backend.encounter_edit import (
     is_locked, keep_locked, merge_encounter_edit, new_encounter, parse_locks,
 )
 from backend.logging_setup import get_logger
+from backend.msg_log_throttle import MessageLogThrottle
 from backend.team_id import slug_team_id
 from backend.type_lookup import first_type, type_name
 
@@ -302,6 +303,9 @@ class Arceus:
         self._bundle_response_notify = None
 
         self.logger = get_logger(__name__, './logs/arceus.log')
+        # Hochfrequenz-Nachrichten (position_sync/teams/heartbeat/...) nur als
+        # 60-s-Summary loggen statt pro Nachricht (main.log-Flut 2026-11-11).
+        self._msg_log = MessageLogThrottle(self.logger, "arceus")
     
     def _log_dedup(self, err_type: str, msg: str, *, exc: BaseException | None = None,
                    level: str = "warning") -> None:
@@ -501,8 +505,16 @@ class Arceus:
                         continue
                     current_seq = seq
                     data = payload
-                msg_desc = data.get("type") if isinstance(data, dict) else (data if isinstance(data, str) else f"{len(data)} Spieler")
-                self.logger.debug(f"Empfangen von {client_id}: {msg_desc}")
+                # Teams-Dict hat kein "type"-Feld (Legacy-Format) → "teams"
+                # statt "None" loggen.
+                msg_desc = data.get("type", "teams") if isinstance(data, dict) else (data if isinstance(data, str) else f"{len(data)} Spieler")
+                if self._msg_log.is_high_freq(msg_desc):
+                    # Pro Client zählen, damit die Summary Ausfälle einzelner
+                    # Spieler (z.B. fehlende Heartbeats) weiter zeigt.
+                    who = self.munchlax_names.get(client_id) or str(client_id)[:8]
+                    self._msg_log.count("recv", f"{msg_desc}@{who}", 0)
+                else:
+                    self.logger.debug(f"Empfangen von {client_id}: {msg_desc}")
                 sess = self._client_sessions.get(client_id)
                 if sess is not None:
                     sess["recv"] += 1
@@ -3773,7 +3785,10 @@ class Arceus:
         # Gesamtlänge der Nachricht senden
         msg_type = message.get("type", "teams") if isinstance(message, dict) else type(message).__name__
         chunk_count = (len(serialized_message) + CHUNK_SIZE - 1) // CHUNK_SIZE
-        self.logger.debug(f"Sende Nachricht: type={msg_type}, {len(serialized_message)} Bytes, {chunk_count} Chunks")
+        if self._msg_log.is_high_freq(msg_type):
+            self._msg_log.count("send", msg_type, len(serialized_message))
+        else:
+            self.logger.debug(f"Sende Nachricht: type={msg_type}, {len(serialized_message)} Bytes, {chunk_count} Chunks")
         length = len(serialized_message).to_bytes(4, 'big')
         writer.write(length)
         await writer.drain()

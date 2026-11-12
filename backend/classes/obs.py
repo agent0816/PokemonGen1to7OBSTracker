@@ -1746,5 +1746,6 @@ class OBS():
         # Redraw-Task killt (log-detektiv Session 2026-09-16).
         file = str(pokemon.dexnr) + str(pokemon.form) + filetype
         full_path = path + file
-        self.logger.debug(f"Sprite: dex={pokemon.dexnr}, shiny={pokemon.shiny}, path={full_path}")
+        # Kein Per-Aufruf-Log: get_sprite läuft ~20×/s (Team-Redraws, Screens)
+        # und machte 75 % von main.log aus (Live-Session 2026-11-11).
         return full_path

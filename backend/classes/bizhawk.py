@@ -113,6 +113,13 @@ class Bizhawk:
         self._encounter_inflight: dict[str, bool] = {}
         self._last_battle_pv: dict[str, int | None] = {}
         self._last_map_header: dict[str, int] = {}
+        # Box-Gift-Watch (Phase 3, Live-Session 2026-11-11): zuletzt gesehenes
+        # Layout pro Client + offene Watch {layout, baseline-Task} beim
+        # Aufenthalt in einem Gift-Layout. Tasks stark halten (GC-Schutz).
+        self._box_gift_last_layout: dict[str, int] = {}
+        self._box_gift_watch: dict[str, dict] = {}
+        self._box_gift_tasks: set = set()
+        self._box_gift_busy: dict[str, asyncio.Task] = {}
         # Diagnose-Counter (Fix E): zaehlt wie oft process_wild_encounter
         # erfolgreich fuer diesen Client aufgerufen wurde. Bleibt 0, wenn
         # in_battle-Detection kaputt ist (Lua liest gBattlersCount falsch)
@@ -1312,6 +1319,7 @@ class Bizhawk:
                 if edition in (31, 32) and layout_id > 107:
                     layout_id -= 1
                 self._last_map_header[client_id] = layout_id
+                self._track_box_gift_layout(client_id, edition, player, layout_id)
                 await self._refresh_player_position(
                     client_id, edition, player, pointers, queue, loop, layout_id
                 )
@@ -2009,33 +2017,331 @@ class Bizhawk:
                 self.logger.error(f"process_gift_encounter async failed: {err}")
                 self.logger.error(traceback.format_exc())
                 continue
-            if result and not result.already_logged:
-                self.logger.info(
-                    f"Gift erkannt: dex={dexnr} lv={pokemon.lvl} "
-                    f"method={result.method} map_header={map_header}"
+            self._dispatch_gift_result(owner, edition, pv, result, map_header, "team")
+
+    def _dispatch_gift_result(self, owner: str, edition, pv: int, result,
+                              map_header, source: str) -> None:
+        """Gift-Ergebnis loggen + per Munchlax broadcasten (Team- und Box-Pfad)."""
+        if result and not result.already_logged:
+            self.logger.info(
+                f"Gift erkannt ({source}): dex={result.dexnr} lv={result.lvl} "
+                f"method={result.method} map_header={map_header}"
+            )
+            self._dispatch_on_munchlax(self.munchlax.send_encounter_sync({
+                "personality": int(pv),
+                "owner": owner,
+                "edition": int(edition),
+                "route": int(result.route),
+                "dexnr": int(result.dexnr),
+                "lvl": int(result.lvl),
+                "shiny": int(result.shiny),
+                "is_first": int(result.is_first),
+                "is_shiny_override": int(result.is_shiny_override),
+                "is_dupes_skip": int(result.is_dupes_skip),
+                "has_balls": int(result.has_balls),
+                "method": result.method,
+                "outcome": result.outcome,
+                "female": int(result.female),
+                "form": str(result.form or ""),
+            }))
+        if result and result.token_earned:
+            # Trigger auf dem Kivy-Loop — Munchlax-Writer lebt dort. Executor-Worker
+            # von process_gift_encounter konnte kein asyncio.create_task rufen.
+            self.logger.info(f"Token-Earn ausgelöst für {owner}")
+            self._dispatch_on_munchlax(self.munchlax.send_soullink_token_earned(owner))
+
+    # --- Geschenke direkt in die PC-Box (volle Party) -------------------------
+    # Live-Session 2026-11-11: Bei voller Party landete Evoli (Prismania-Villa)
+    # in der PC-Box. Der Gift-Pfad sieht nur neue Team-PVs und die Box wird nur
+    # bei Team-Aenderung gelesen → Geschenk fehlte. Daher (Gen 3): beim Betreten
+    # eines Gift-Layouts mit voller Party Baseline aller Box- + Team-PVs; beim
+    # Verlassen Boxen neu lesen, neue PVs als Gift dieses Layouts verbuchen.
+    #
+    # Absicherungen (sync-review R1): Baseline nur mit 6 bekannten Team-PVs
+    # (Einlagern eines Teammitglieds ≠ Gift), Kandidaten nur mit gueltiger
+    # Checksumme + Dex 1..386 (halb geschriebene Slots), leere/abweichende
+    # Box-Reads verwerfen, Verbindungs-Token gegen Reconnect-Races, Timeouts
+    # gegen haengende Box-Futures, max. ein laufender Watch pro Client.
+
+    # Mehr neue Box-PVs als das an einem Gift-Ort ist unplausibel (Baseline
+    # kaputt / Box-Read-Garbage) → nichts verbuchen statt Fehlbuchungen.
+    _BOX_GIFT_MAX_NEW = 2
+    _BOX_GIFT_READ_TIMEOUT = 30.0
+    # Baseline wartet ggf. auf den vorherigen Diff (Kette) + eigene Reads.
+    _BOX_GIFT_CHAIN_TIMEOUT = 150.0
+    _BOX_GIFT_TRACKER_RETRY_S = 10.0
+    _GEN3_MAX_DEX = 386
+
+    def _gift_layouts_for(self, edition: int) -> set[int] | None:
+        """Layouts mit Gift-Definition fuer diese Edition.
+        ``None``, wenn der Tracker (noch) nicht verfuegbar ist → Caller retried
+        (gedrosselt auf alle 10 s, sonst 1-Hz-DB-Aufbau + Log-Flut)."""
+        if self.encounter_tracker is None:
+            now = time.monotonic()
+            if now < getattr(self, "_box_gift_tracker_retry_at", 0.0):
+                return None
+            if not self._ensure_encounter_tracker():
+                self._box_gift_tracker_retry_at = now + self._BOX_GIFT_TRACKER_RETRY_S
+                return None
+        defs = self.encounter_tracker._load_gifts(int(edition)) or {}
+        layouts: set[int] = set()
+        for layout, gifts in defs.items():
+            for gift in gifts or []:
+                editions = gift.get("edition")
+                if not editions or int(edition) in editions:
+                    layouts.add(int(layout))
+                    break
+        return layouts
+
+    def _spawn_box_gift_task(self, coro, name: str):
+        task = asyncio.create_task(coro, name=name)
+        self._box_gift_tasks.add(task)
+
+        def _done(t):
+            self._box_gift_tasks.discard(t)
+            if t.cancelled():
+                return
+            err = t.exception()
+            if err is not None:
+                self.logger.error(
+                    f"{name} fehlgeschlagen: {type(err).__name__},{err}\n"
+                    + "".join(traceback.format_exception(type(err), err, err.__traceback__))
                 )
-                self._dispatch_on_munchlax(self.munchlax.send_encounter_sync({
-                    "personality": int(pv),
-                    "owner": owner,
-                    "edition": int(edition),
-                    "route": int(result.route),
-                    "dexnr": int(result.dexnr),
-                    "lvl": int(result.lvl),
-                    "shiny": int(result.shiny),
-                    "is_first": int(result.is_first),
-                    "is_shiny_override": int(result.is_shiny_override),
-                    "is_dupes_skip": int(result.is_dupes_skip),
-                    "has_balls": int(result.has_balls),
-                    "method": result.method,
-                    "outcome": result.outcome,
-                    "female": int(result.female),
-                    "form": str(result.form or ""),
-                }))
-            if result and result.token_earned:
-                # Trigger auf dem Kivy-Loop — Munchlax-Writer lebt dort. Executor-Worker
-                # von process_gift_encounter konnte kein asyncio.create_task rufen.
-                self.logger.info(f"Token-Earn ausgelöst für {owner}")
-                self._dispatch_on_munchlax(self.munchlax.send_soullink_token_earned(owner))
+
+        task.add_done_callback(_done)
+        return task
+
+    def _track_box_gift_layout(self, client_id: str, edition: int,
+                               player: int | None, layout_id: int) -> None:
+        """Erkennt Betreten/Verlassen von Gift-Layouts (nur Gen 3, nur bei Wechsel)."""
+        try:
+            if player is None or not (30 < int(edition) < 40):
+                return
+            if self._box_gift_last_layout.get(client_id) == layout_id:
+                return
+            layouts = self._gift_layouts_for(edition)
+            if layouts is None:
+                return  # Tracker noch nicht da: Layout nicht merken → spaeter erneut
+            entering = layout_id in layouts
+            if entering and not self._team_ready.get(client_id):
+                # Layout nicht merken: Baseline wird nachgeholt, sobald der
+                # Spielstand bereit ist (Spielstand startet im Gift-Layout).
+                self.logger.debug(f"Box-Gift-Watch layout={layout_id}: Spielstand nicht bereit")
+                return
+            self._box_gift_last_layout[client_id] = layout_id
+            # Kette pro Client: neue Baseline wartet auf den vorherigen Diff
+            # (statt ihn zu ueberspringen) → max. ein Box-Read-Paar gleichzeitig,
+            # Gift-Layout A → B und schnelles Wieder-Betreten bleiben abgedeckt.
+            previous = self._box_gift_busy.get(client_id)
+            watch = self._box_gift_watch.pop(client_id, None)
+            if watch is not None:
+                previous = self._spawn_box_gift_task(
+                    self._finish_box_gift_watch(client_id, edition, player, watch),
+                    "box_gift_diff",
+                )
+                self._box_gift_busy[client_id] = previous
+            if not entering:
+                return
+            token = self._team_updated_events.get(client_id)
+            baseline = self._spawn_box_gift_task(
+                self._box_gift_baseline(client_id, edition, player, layout_id, token,
+                                        after=previous),
+                "box_gift_baseline",
+            )
+            self._box_gift_busy[client_id] = baseline
+            self._box_gift_watch[client_id] = {
+                "layout": layout_id, "baseline": baseline, "token": token,
+            }
+        except Exception as err:
+            self.logger.error(f"_track_box_gift_layout fehlgeschlagen: {type(err).__name__},{err}")
+            self.logger.error(traceback.format_exc())
+
+    def _same_connection(self, client_id: str, token) -> bool:
+        """Token = per Handshake frisch angelegtes Event (_team_updated_events)."""
+        return token is not None and self._team_updated_events.get(client_id) is token
+
+    def _team_pvs(self, player: int) -> set[int]:
+        team = self.munchlax.snapshot_unsorted_teams().get(player) or []
+        pvs: set[int] = set()
+        for p in list(team)[:6]:
+            pv = getattr(p, "personality", None)
+            if pv:
+                pvs.add(int(pv))
+        return pvs
+
+    @staticmethod
+    def _box_pokemon_by_pv(boxes: list) -> dict[int, object]:
+        result: dict[int, object] = {}
+        for box in boxes or []:
+            for p in box or []:
+                pv = getattr(p, "personality", None) if p is not None else None
+                if pv:
+                    result[int(pv)] = p
+        return result
+
+    def _is_valid_box_gift_mon(self, p) -> bool:
+        dex = getattr(p, "dexnr", None)
+        if dex in (None, 0, "egg") or not str(dex).isdigit():
+            return False
+        if not (1 <= int(dex) <= self._GEN3_MAX_DEX):
+            return False
+        given = getattr(p, "checksum_given", -1)
+        calc = getattr(p, "checksum_calculated", -1)
+        return given >= 0 and given == calc
+
+    async def _read_boxes_for_gift(self, client_id: str) -> list | None:
+        """Box-Read mit Disconnect-Guard + Timeout. ``None`` bei Fehler/leer."""
+        if self.edition_per_client.get(client_id) is None:
+            return None  # disconnected: read_all_boxes wuerde eine Waisen-Queue anlegen
+        boxes = await asyncio.wait_for(self.read_and_decode_boxes(client_id),
+                                       timeout=self._BOX_GIFT_READ_TIMEOUT)
+        return boxes or None
+
+    async def _box_gift_baseline(self, client_id: str, edition: int, player: int,
+                                 layout_id: int, token, after=None) -> dict | None:
+        """Baseline (Box- + Team-PVs) beim Betreten eines Gift-Layouts.
+
+        ``after``: vorheriger Diff/Baseline-Task dieses Clients — erst danach
+        lesen (Kette statt Parallel-Reads bzw. uebersprungener Watches).
+        ``None`` bei freier Party (Geschenk landet im Team → Team-Pfad) oder
+        wenn keine verlaessliche Baseline moeglich ist."""
+        try:
+            if after is not None and not after.done():
+                await asyncio.wait_for(asyncio.shield(after),
+                                       timeout=self._BOX_GIFT_CHAIN_TIMEOUT)
+            party_count = await asyncio.wait_for(
+                self._read_party_count(client_id, edition),
+                timeout=self._BOX_GIFT_READ_TIMEOUT)
+            if party_count is None or party_count < 6:
+                self.logger.debug(
+                    f"Box-Gift-Watch layout={layout_id} player={player}: Party nicht voll "
+                    f"({party_count}) — Team-Pfad zustaendig"
+                )
+                return None
+            team_pvs = self._team_pvs(player)
+            if len(team_pvs) < 6:
+                self.logger.info(
+                    f"Box-Gift-Watch layout={layout_id} player={player}: nur "
+                    f"{len(team_pvs)}/6 Team-PVs bekannt — keine Baseline"
+                )
+                return None
+            boxes = await self._read_boxes_for_gift(client_id)
+            if boxes is None or not self._same_connection(client_id, token):
+                self.logger.info(
+                    f"Box-Gift-Watch layout={layout_id} player={player}: Box-Read leer/"
+                    f"Verbindung gewechselt — keine Baseline"
+                )
+                return None
+            pvs = set(self._box_pokemon_by_pv(boxes)) | team_pvs
+            self.logger.info(
+                f"Box-Gift-Watch gestartet: player={player} layout={layout_id} "
+                f"baseline={len(pvs)} PVs, {len(boxes)} Boxen"
+            )
+            return {"pvs": pvs, "nbox": len(boxes)}
+        except Exception as err:
+            self.logger.warning(
+                f"Box-Gift-Baseline fehlgeschlagen (player={player} layout={layout_id}): "
+                f"{type(err).__name__},{err}"
+            )
+            return None
+
+    async def _finish_box_gift_watch(self, client_id: str, edition: int, player: int,
+                                     watch: dict) -> None:
+        """Beim Verlassen des Gift-Layouts: Boxen diffen und neue PVs verbuchen."""
+        layout_id = watch.get("layout")
+        token = watch.get("token")
+        try:
+            baseline = await asyncio.wait_for(asyncio.shield(watch["baseline"]),
+                                              timeout=2 * self._BOX_GIFT_CHAIN_TIMEOUT)
+            if baseline is None:
+                return
+            if not self._same_connection(client_id, token):
+                self.logger.info(f"Box-Gift-Watch layout={layout_id}: Verbindung gewechselt, kein Diff")
+                return
+            boxes = await self._read_boxes_for_gift(client_id)
+            if boxes is None or not self._same_connection(client_id, token):
+                self.logger.info(f"Box-Gift-Watch layout={layout_id}: Box-Read leer/Verbindung weg, kein Diff")
+                return
+            if len(boxes) != baseline["nbox"]:
+                self.logger.warning(
+                    f"Box-Gift-Watch layout={layout_id}: Boxanzahl {len(boxes)} != "
+                    f"Baseline {baseline['nbox']} — kein Diff"
+                )
+                return
+            team_now = self._team_pvs(player)
+            candidates = {
+                pv: p for pv, p in self._box_pokemon_by_pv(boxes).items()
+                if pv not in baseline["pvs"] and pv not in team_now
+                and self._is_valid_box_gift_mon(p)
+            }
+            if len(candidates) > self._BOX_GIFT_MAX_NEW:
+                self.logger.warning(
+                    f"Box-Gift-Watch layout={layout_id} player={player}: "
+                    f"{len(candidates)} neue Box-PVs — unplausibel, nichts verbucht "
+                    f"(PVs/Dex: {[(f'{pv:#x}', p.dexnr) for pv, p in candidates.items()]})"
+                )
+                candidates = {}
+            if not candidates:
+                self.logger.info(f"Box-Gift-Watch beendet: player={player} layout={layout_id}, keine neuen PVs")
+            elif not self._ensure_encounter_tracker():
+                self.logger.warning("PokedexDB nicht verfuegbar, Box-Gift uebersprungen")
+            else:
+                await self._book_box_gifts(client_id, token, edition, player, layout_id,
+                                           candidates)
+            if not self._same_connection(client_id, token):
+                return  # Reconnect waehrend des Buchens: keine alten Boxen pushen
+            # Box-Ansicht aktuell halten (Box wird sonst nur bei Team-Aenderung gelesen)
+            await self._call_on_munchlax(self.munchlax.update_boxes(player, boxes))
+        except Exception as err:
+            self.logger.error(
+                f"Box-Gift-Diff fehlgeschlagen (player={player} layout={layout_id}): "
+                f"{type(err).__name__},{err}"
+            )
+            self.logger.error(traceback.format_exc())
+
+    async def _book_box_gifts(self, client_id: str, token, edition: int, player: int,
+                              layout_id: int, candidates: dict) -> None:
+        from backend.classes.pokedex_db import PokedexDB
+        owner = PokedexDB.build_owner(self.munchlax.pl.get('your_name', ''), str(player))
+        loop = asyncio.get_running_loop()
+        db = self.encounter_tracker.pokedex_db
+
+        def _known_pvs() -> set:
+            with db.access_lock:
+                return db.encounter_import_context(owner, int(edition))[0]
+
+        known = await loop.run_in_executor(None, _known_pvs)
+        for pv, pokemon in candidates.items():
+            # Nach jedem Executor-await: Reconnect → nicht mit alter Verbindung buchen
+            if not self._same_connection(client_id, token):
+                self.logger.info(f"Box-Gift layout={layout_id}: Verbindung gewechselt, Buchung abgebrochen")
+                return
+            if pv in known:
+                self.logger.info(f"Box-Gift: PV={pv:#x} dex={pokemon.dexnr} schon in der DB — uebersprungen")
+                continue
+            result = await loop.run_in_executor(
+                None,
+                lambda pv=pv, p=pokemon: self.encounter_tracker.process_gift_encounter(
+                    owner=owner,
+                    edition=int(edition),
+                    personality=pv,
+                    dexnr=int(p.dexnr),
+                    lvl=p.lvl or 1,
+                    shiny=bool(p.shiny),
+                    route=getattr(p, "route", 0) or 0,
+                    map_header_id=int(layout_id),
+                    female=bool(getattr(p, "female", False)),
+                    form=getattr(p, "form", "") or "",
+                ),
+            )
+            if result is None:
+                # Warning: dieser PV steht ab jetzt in jeder Baseline und wird
+                # nie nachgebucht → bei "Geschenk fehlt" hier suchen.
+                self.logger.warning(
+                    f"Box-Gift: neue Box-PV={pv:#x} dex={pokemon.dexnr} an layout={layout_id} "
+                    f"NICHT verbucht (keine passende Definition oder Non-repeatable-Dedupe)"
+                )
+            self._dispatch_gift_result(owner, edition, pv, result, layout_id, "box")
 
     def _process_new_pokemon_sync(self, client_id: str, player: int, edition,
                                     pokemons, new_pvs: list[int]):
@@ -2376,6 +2682,9 @@ class Bizhawk:
         self._in_battle.pop(client_id, None)
         self._last_battle_pv.pop(client_id, None)
         self._last_map_header.pop(client_id, None)
+        self._box_gift_last_layout.pop(client_id, None)
+        self._box_gift_watch.pop(client_id, None)
+        self._box_gift_busy.pop(client_id, None)
         # Konsistenz-Cleanup: die per-Client-Inflight-/Flush-Flags werden bei
         # sauberem Coroutine-Ende jeweils selbst zurueckgesetzt (finally-
         # Bloecke in flush_saveram und _auto_refresh_bag), aber bei einem

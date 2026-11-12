@@ -158,6 +158,15 @@
     count: 1
     edition: [34, 35]
 
+# Prismania-Villa Dachzimmer — Evoli
+# 188 = LAYOUT_CELADON_CITY_CONDOMINIUMS_ROOF_ROOM (pokefirered layouts.json,
+# Position 188; Live-Log 2026-11-11: Villa 1F..Dach = 184..187, dann 188)
+188:
+  - type: gift
+    name: Evoli
+    count: 1
+    edition: [34, 35]
+
 # Mondberg B2F — Fossil-Wahl
 116:
   - type: fossil
@@ -218,7 +227,6 @@
     condition: event_transfer
 
 # TODO: Folgende FRLG-Gifts fehlen (mapLayoutId unbekannt, mit BizHawk verifizieren):
-# - Evoli (Prismania City Dachgeschoss)
 # - Fossil-Wiederbelebung (Pokémon-Labor Zinnoberinsel)
 # - Togepi-Ei (NPC im Wasserirrgarten, mapLayoutId 247 hat aber Wild-Encounters)
 # - Relaxo (Route 12 / Route 16, STATIC in Ironmon bei mapLayoutId 100/104)

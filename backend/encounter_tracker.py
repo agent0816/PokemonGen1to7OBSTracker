@@ -367,8 +367,16 @@ class EncounterTracker:
         return None
 
     def process_wild_encounter(self, owner: str, edition: int,
-                                opponent: dict, route: int) -> EncounterResult | None:
-        """Prüft Nuzlocke-Regeln und persistiert Wild-Encounter.
+                                opponent: dict, route: int,
+                                method: str = "wild") -> EncounterResult | None:
+        """Prüft Nuzlocke-Regeln und persistiert Kampf-Encounter.
+
+        ``method="static"`` (Phase 3b, Gen 3 per gBattleTypeFlags): Relaxo,
+        Legendaere, Roamer. Kein Ball-Gate und — solange
+        ``gifts_are_additional`` aktiv ist — keine "Route belegt"-Pruefung;
+        stattdessen Dedupe pro (owner, edition, route, static, dexnr): der
+        erste Versuch zaehlt, Wiederholungen (Flucht, Soft-Reset) werden
+        verworfen — auch wenn der Fang erst beim Retry gelingt.
 
         Läuft komplett unter ``pokedex_db.access_lock`` (RLock), damit
         ``_check_nuzlocke_flags`` (mehrere einzelne @_serialized-Reads) und
@@ -381,7 +389,34 @@ class EncounterTracker:
         (Regel rule_run_start_on_ball aktiv + keine Baelle) — Wild-Encounter
         vor dem ersten Ball werden nicht persistiert.
         """
-        if not self._run_started_for_owner(owner, edition):
+        if method != "static":
+            method = "wild"
+        is_static = method == "static"
+        if is_static:
+            try:
+                static_known = self.pokedex_db.has_encounter_with_method_at_route(
+                    owner, edition, route, "static", dexnr=opponent.get("dexnr")
+                )
+            except Exception as err:
+                self.logger.warning(
+                    f"Static-Dedupe-Check fehlgeschlagen: "
+                    f"{type(err).__name__},{err} — fahre mit Insert fort"
+                )
+                static_known = False
+            if static_known:
+                # User-Entscheidung 2026-11-12: erster Versuch zaehlt
+                # (Nuzlocke-strikt wie Wild-Routen) — Flucht/Soft-Reset und
+                # erneuter Kampf werden NICHT verbucht, auch kein Fang danach.
+                self.logger.info(
+                    f"Static-Encounter verworfen (erster Versuch zaehlt, "
+                    f"Static bereits geloggt): "
+                    f"owner={owner} edition={edition} dex={opponent.get('dexnr')} "
+                    f"route={route} pv={opponent.get('personality')}"
+                )
+                return None
+        statics_additional = is_static and self.nuz.get("gifts_are_additional", True)
+
+        if not is_static and not self._run_started_for_owner(owner, edition):
             self.logger.info(
                 f"Wild-Encounter uebersprungen (Run nicht gestartet): "
                 f"owner={owner} edition={edition} dex={opponent.get('dexnr')} "
@@ -403,7 +438,7 @@ class EncounterTracker:
         # nachfolgende _check_nuzlocke_flags markiert es als is_shiny_override.
         # Sonst wuerden shiny-Encounter auf belegten Routen verloren gehen,
         # obwohl der User sie explizit erlaubt haben will.
-        if self._nuzlocke_rules_active():
+        if self._nuzlocke_rules_active() and not statics_additional:
             shiny_exception = bool(opponent.get("shiny")) and self.nuz.get(
                 "rule_shiny_clause_always_catchable",
                 self.nuz.get("shiny_clause", True),
@@ -432,7 +467,6 @@ class EncounterTracker:
         personality = opponent["personality"]
         female = bool(opponent.get("female", False))
         form = opponent.get("form") or ""
-        method = "wild"
         outcome = "unknown"
         already_logged = False
         is_first = False

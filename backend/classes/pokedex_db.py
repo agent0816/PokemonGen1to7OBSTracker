@@ -1593,7 +1593,8 @@ class PokedexDB:
 
     @_serialized
     def has_encounter_with_method_at_route(self, owner: str, edition: int,
-                                             route: int, method: str) -> bool:
+                                             route: int, method: str,
+                                             dexnr: int | None = None) -> bool:
         """True wenn (owner, edition, route, method) bereits einen Encounter hat.
 
         Dedupe-Basis für non-repeatable Gift-/Static-/Fossil-Encounter: das
@@ -1604,18 +1605,23 @@ class PokedexDB:
         Ohne diesen Check würde jeder neue PV am selben Ort erneut als
         derselbe Gift eingebucht (Bug: Wild-Pokemon fielen durch, weil
         _read_encounter_data nicht gefeuert hat).
+
+        ``dexnr`` (optional) engt auf eine Species ein — Static-Kaempfe
+        teilen sich die MAPSEC (Kraftwerk: Lektrobal + Zapdos), deshalb
+        dedupliziert der Static-Pfad pro (Ort, Species).
         """
         if self.connection is None:
             return False
         try:
             cursor = self.connection.cursor()
-            cursor.execute(
-                "SELECT 1 FROM encounters "
-                "WHERE owner = ? AND edition = ? AND route = ? AND method = ? "
-                "  AND deleted = 0 "
-                "LIMIT 1",
-                (owner, int(edition), int(route), method),
-            )
+            sql = ("SELECT 1 FROM encounters "
+                   "WHERE owner = ? AND edition = ? AND route = ? AND method = ? "
+                   "  AND deleted = 0 ")
+            params: tuple = (owner, int(edition), int(route), method)
+            if dexnr is not None:
+                sql += "  AND dexnr = ? "
+                params += (int(dexnr),)
+            cursor.execute(sql + "LIMIT 1", params)
             return cursor.fetchone() is not None
         except Exception as err:
             self.logger.error(f"has_encounter_with_method_at_route failed: {type(err)},{err}")

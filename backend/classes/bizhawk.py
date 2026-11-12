@@ -12,6 +12,9 @@ from backend.dragon_rage import (
     DragonRageTracker, GEN3_BATTLE_RESULTS_READ_SIZE, parse_gen3_battle_results,
 )
 from backend.encounter_tracker import EncounterTracker
+from backend.battle_type_flags import (
+    classify_gen3_battle, KLASSE_SKIP, KLASSE_TRAINER,
+)
 from backend.logging_setup import get_logger
 
 # Mindest-BizHawk-Version für die genutzten Lua-APIs (KeraLua-Baseline ab 2.9).
@@ -1616,16 +1619,31 @@ class Bizhawk:
             # Fallback auf opp_id fuer alte pointer_gen3.yml-Sets ohne den
             # neuen battletypeflagspointer bleibt vorhanden, gibt aber Warning
             # damit User erkennt dass die Detection unzuverlaessig ist.
+            # Phase 3b (2026-11-12): dieselben Flags trennen Static-Kaempfe
+            # (Relaxo, Legendaere, Roamer) und nicht fangbare Sonderkaempfe
+            # (Alter Mann, Turm-Geister) — siehe backend/battle_type_flags.py.
+            method = "wild"
             if flags_ptr:
                 flags_fut = loop.create_future()
                 queue.append(("boxw", flags_ptr, 4, flags_fut, ""))
                 flags_bytes = await flags_fut
                 battle_flags = int.from_bytes(flags_bytes, "little")
-                if battle_flags & 0x08:
-                    self.logger.debug(
-                        f"Trainer-Kampf erkannt (flags=0x{battle_flags:08X}), kein Encounter"
+                klasse = classify_gen3_battle(edition, battle_flags)
+                # Immer INFO (1x pro Kampfstart): Live-Bestaetigung der
+                # Decomp-Flagwerte in den naechsten Sessions.
+                self.logger.info(
+                    f"Kampfstart: client={client_id} player={player} "
+                    f"edition={edition} flags=0x{battle_flags:08X} -> {klasse}"
+                )
+                if klasse == KLASSE_TRAINER:
+                    return
+                if klasse == KLASSE_SKIP:
+                    self.logger.info(
+                        f"Sonderkampf ohne Encounter (Tutorial/Geist): "
+                        f"client={client_id} flags=0x{battle_flags:08X}"
                     )
                     return
+                method = klasse
             else:
                 oid_fut = loop.create_future()
                 queue.append(("boxw", opp_id_ptr, 2, oid_fut, ""))
@@ -1745,7 +1763,7 @@ class Bizhawk:
             )
             result = await loop.run_in_executor(
                 None, self.encounter_tracker.process_wild_encounter,
-                owner, edition, opp, route
+                owner, edition, opp, route, method
             )
             # Fix E: Counter fuer Diagnose-Warning in _handle_new_pokemon.
             # Auch bei uebersprungenen Encountern hochzaehlen — der
@@ -1766,7 +1784,7 @@ class Bizhawk:
             else:
                 map_info = f" map_header={map_header}" if map_header is not None else ""
                 self.logger.info(
-                    f"Encounter: route={route}{map_info} dex={opp['dexnr']} "
+                    f"Encounter ({result.method}): route={route}{map_info} dex={opp['dexnr']} "
                     f"lv={opp['lvl']} shiny={opp['shiny']} first={result.is_first} "
                     f"shiny_override={result.is_shiny_override} "
                     f"dupes={result.is_dupes_skip} balls={result.has_balls}"

@@ -631,18 +631,12 @@ class Arceus:
                     existing = self.soullink_deaths.get(death_key)
                     death_enc_key = self._find_encounter_key(*death_key)
                     death_enc = self.encounters.get(death_enc_key) if death_enc_key else None
-                    if death_key in self.soullink_alive_locks or (
-                            death_enc is not None and is_locked(death_enc, "dead")
-                            and not death_enc.get("dead")):
+                    skip_reason = self._death_report_skip_reason(death_key, existing, death_enc)
+                    if skip_reason is not None:
                         self.logger.info(
                             f"soullink_death von {client_id} ignoriert: "
-                            f"pv={death_key[0]} owner={death_key[1]} manuell lebendig"
-                        )
-                        payload = None
-                    elif existing is not None and existing.get("manual"):
-                        self.logger.info(
-                            f"soullink_death von {client_id} ignoriert: "
-                            f"pv={death_key[0]} owner={death_key[1]} schon manuell tot"
+                            f"pv={death_key[0]} owner={death_key[1]} "
+                            f"cause={data.get('cause')} {skip_reason}"
                         )
                         payload = None
                     else:
@@ -2529,6 +2523,33 @@ class Arceus:
                 await self.send_to_client(client_id, message)
             except Exception as exc:
                 self.logger.error(f"broadcast_soullink_link_state an {client_id} failed: {exc}")
+
+    def _death_report_skip_reason(self, death_key: tuple, existing: dict | None,
+                                  death_enc: dict | None) -> str | None:
+        """Grund, eine eingehende Todesmeldung zu verwerfen, sonst None.
+
+        - manuell lebendig gesperrt
+        - schon manuell tot
+        - schon als Soullink-Partner tot: die spätere Eigen-Meldung des
+          Clients (Pokemon fällt nach dem Partner-Tod auch im Spiel) darf den
+          Partner-Tod nicht zum Ersttod machen — sonst zählt der Todescounter
+          denselben Soullink-Tod doppelt (Live-Test 2026-11-11, Link 4).
+        """
+        if death_key in self.soullink_alive_locks or (
+                death_enc is not None and is_locked(death_enc, "dead")
+                and not death_enc.get("dead")):
+            return "manuell lebendig"
+        if existing is not None and existing.get("manual"):
+            return "schon manuell tot"
+        if existing is not None and existing.get("cause") == "soullink_partner":
+            # Nur solange das Pokemon noch Mitglied des Links ist, der den
+            # Partner-Tod ausgelöst hat. Nach unlink/move/dissolve ist der
+            # Eintrag stale → echte spätere Meldung ist ein Ersttod.
+            link = self.soullink_links.get(existing.get("link_id"))
+            member = link["members"].get(death_key[1]) if link is not None else None
+            if member is not None and member.get("personality") == death_key[0]:
+                return f"schon als Soullink-Partner tot (link={existing.get('link_id')})"
+        return None
 
     def _process_death(self, data: dict) -> dict | None:
         """Verarbeitet eine Todesmeldung: markiert Link-Members als dead und sammelt Partner.

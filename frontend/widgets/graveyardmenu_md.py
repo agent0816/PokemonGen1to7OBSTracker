@@ -28,7 +28,7 @@ from backend.graveyard_view import (
 )
 from backend.logging_setup import get_logger
 from backend.pokedex_view import load_species_de
-from frontend.widgets.md_common import bind_theme_color, show_snackbar
+from frontend.widgets.md_common import bind_theme_color, confirm_dialog, show_snackbar
 
 logger = get_logger(__name__, 'logs/graveyardmenu.log')
 
@@ -126,6 +126,7 @@ class GraveyardMenu(MDScreen):
         self._menus: list[MDDropdownMenu] = []
         self._sprite_cache: dict[tuple, str] = {}
         self._export_running: bool = False
+        self._counter_reset_running: bool = False
 
         root = MDBoxLayout(orientation="vertical", padding="10dp", spacing="8dp")
         header = MDBoxLayout(orientation="horizontal", size_hint_y=None, height="48dp", spacing="10dp")
@@ -138,6 +139,11 @@ class GraveyardMenu(MDScreen):
             MDButtonIcon(icon="file-export-outline"), MDButtonText(text="CSV exportieren"),
             style="tonal", pos_hint={"center_y": .5}, on_release=lambda _i: self._start_export())
         header.add_widget(self.export_button)
+        self.counter_reset_button = MDButton(
+            MDButtonIcon(icon="counter"), MDButtonText(text="Counter auf 0"),
+            style="tonal", pos_hint={"center_y": .5},
+            on_release=lambda _i: self._confirm_counter_reset())
+        header.add_widget(self.counter_reset_button)
         root.add_widget(header)
 
         filter_bar = MDBoxLayout(orientation="horizontal", size_hint_y=None, height="56dp", spacing="10dp")
@@ -379,6 +385,57 @@ class GraveyardMenu(MDScreen):
             self.cards_box.add_widget(GraveGroupCard(rows, soullink=group["link_id"] is not None))
 
     # --- CSV-Export -----------------------------------------------------------
+
+    def _confirm_counter_reset(self) -> None:
+        if self._counter_reset_running:
+            return
+        if self.munchlax is None or not hasattr(self.munchlax, "reset_death_counter_blocking"):
+            show_snackbar("Todescounter nicht verfügbar", "warning")
+            return
+        # Gleiche Quelle wie der Reset selbst (configsave), nicht der UI-Cache
+        try:
+            session = self.munchlax.graveyard_session_name()
+        except Exception:
+            session = self._current_session or "aktuelle Session"
+        confirm_dialog(
+            "Todescounter zurücksetzen?",
+            f"Der Todescounter aller Spieler im Projekt „{session}“ startet wieder bei 0 "
+            "(Browser-Source /deaths und OBS-Textquellen). Die Friedhof-Einträge bleiben, "
+            "Session-Daten werden nicht gelöscht. Gilt nur für diesen Tracker.",
+            on_confirm=self._start_counter_reset, confirm_text="Zurücksetzen",
+            icon="counter")
+
+    def _start_counter_reset(self) -> None:
+        if self._counter_reset_running:
+            return
+        self._counter_reset_running = True
+        try:
+            self._spawn(self._counter_reset())
+        except Exception:
+            self._counter_reset_running = False
+            raise
+
+    async def _counter_reset(self) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+            ok = await loop.run_in_executor(None, self.munchlax.reset_death_counter_blocking)
+            if ok:
+                # DB steht schon auf 0 → Notify-Fehler nicht als Reset-Fehler melden
+                try:
+                    self.munchlax.notify_graveyard_changed()
+                except Exception as notify_err:
+                    logger.error(f"Todescounter-Reset: Overlay/OBS-Update fehlgeschlagen: {notify_err}")
+                    logger.error(traceback.format_exc())
+                logger.info(f"Todescounter per Knopf zurückgesetzt (Projekt {self._current_session!r})")
+                show_snackbar("Todescounter auf 0 gesetzt", "success")
+            else:
+                show_snackbar("Todescounter-Reset fehlgeschlagen (siehe Log)", "error")
+        except Exception as err:
+            logger.error(f"Todescounter-Reset fehlgeschlagen: {err}")
+            logger.error(traceback.format_exc())
+            show_snackbar(f"Todescounter-Reset fehlgeschlagen: {err}", "error")
+        finally:
+            self._counter_reset_running = False
 
     def _start_export(self) -> None:
         if self._export_running:

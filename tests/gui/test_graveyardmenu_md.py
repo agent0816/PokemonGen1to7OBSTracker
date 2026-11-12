@@ -57,6 +57,16 @@ class _FakeMunchlax:
     def add_state_listener(self, cb) -> None:
         pass
 
+    reset_calls = 0
+    notify_calls = 0
+
+    def reset_death_counter_blocking(self) -> bool:
+        self.reset_calls += 1
+        return True
+
+    def notify_graveyard_changed(self) -> None:
+        self.notify_calls += 1
+
 
 class _DriveApp(MDApp):
     def __init__(self, out: str, graves: list[dict], **kw):
@@ -133,6 +143,18 @@ class _DriveApp(MDApp):
         self.check("bob_button_text", self.menu.owner_text.text == "Spieler: Bob", self.menu.owner_text.text)
         self.menu._pick_owner(None, "Alle")
         self.check("alle_wieder_3", len(self._rows()) == 3, len(self._rows()))
+        # Header passt noch mit Counter-Knopf (kein Overflow nach rechts)
+        btn = self.menu.counter_reset_button
+        self.check("counter_knopf_sichtbar", btn.right <= Window.width + 1 and btn.x >= 0,
+                   (btn.x, btn.right, Window.width))
+        self.menu._start_counter_reset()
+        self._next(self.s_counter_reset, 0.6)
+
+    def s_counter_reset(self):
+        fm = self.menu.munchlax
+        self.check("counter_reset_aufgerufen", fm.reset_calls == 1 and fm.notify_calls == 1,
+                   (fm.reset_calls, fm.notify_calls))
+        self.check("counter_reset_frei", self.menu._counter_reset_running is False)
         self._next(self.s_finish, 0.5)
 
     def s_finish(self):
@@ -142,6 +164,7 @@ class _DriveApp(MDApp):
 _EXPECTED_FULL = {
     "zwei_gruppen", "drei_zeilen", "soullink_untertitel", "zaehlt_nicht", "count_3",
     "alice_2_zeilen", "alice_2_gruppen", "bob_1_zeile", "bob_button_text", "alle_wieder_3",
+    "counter_knopf_sichtbar", "counter_reset_aufgerufen", "counter_reset_frei",
 }
 
 

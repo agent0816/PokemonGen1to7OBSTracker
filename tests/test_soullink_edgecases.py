@@ -168,6 +168,32 @@ def test_late_outcome_does_not_override_partner_death():
     a, death = asyncio.run(run())
     assert a.soullink_links[death["link_id"]]["members"]["Bob_c2"]["outcome"] == "dead"
 
+def test_late_own_report_does_not_override_partner_death():
+    # Live-Test 2026-11-11: Partner fällt nach dem Partner-Tod auch im Spiel,
+    # Client meldet cause=faint → darf nicht zum Ersttod werden (Counter doppelt).
+    import asyncio
+
+    async def run():
+        a = _arceus_with_encounters(enc(100, "Alice_c1"), enc(200, "Bob_c2", dex=12))
+        death = a._process_death({"personality": 100, "owner": "Alice_c1", "edition": 51})
+        a._propagate_partner_deaths(death)
+        await asyncio.sleep(0)
+        return a
+    a = asyncio.run(run())
+    key = (200, "Bob_c2")
+    reason = a._death_report_skip_reason(key, a.soullink_deaths.get(key), a.encounters.get(key))
+    assert reason is not None and reason.startswith("schon als Soullink-Partner tot")
+    assert a.soullink_deaths[key]["cause"] == "soullink_partner"
+    # Stale nach Link-Auflösung: Bob nicht mehr Mitglied → echte Meldung zählt
+    link_id = a.soullink_deaths[key]["link_id"]
+    a.soullink_links[link_id]["members"].pop("Bob_c2")
+    assert a._death_report_skip_reason(key, a.soullink_deaths.get(key), a.encounters.get(key)) is None
+    # Ersttod selbst: erneute Meldung wird weiter verarbeitet (idempotent)
+    first_key = (100, "Alice_c1")
+    assert a._death_report_skip_reason(
+        first_key, a.soullink_deaths.get(first_key), a.encounters.get(first_key)) is None
+
+
 def test_mode_off_no_link():
     a = _make_arceus()
     a.soullink_config["mode"] = "off"

@@ -177,3 +177,14 @@ def test_munchlax_ignoriert_manual_alive_im_snapshot(tmp_path, gy):
     asyncio.run(m._graveyard_record_server_death(
         {"personality": 1, "owner": "web", "cause": "manual_alive", "dead": 0}))
     assert gy.list_graves() == []
+
+
+def test_reset_counter_rueckgabe_und_eintraege_bleiben(gy):
+    """Knopf "Todescounter auf 0": True, Counter 0, Einträge bleiben."""
+    import time
+    gy.record_death({"session": "S", "personality": 1, "owner_name": "A", "cause": "faint"})
+    assert gy.death_counts("S") == {"A": 1}
+    time.sleep(0.05)
+    assert gy.reset_counter("S") is True
+    assert gy.death_counts("S") == {}
+    assert len(gy.list_graves("S")) == 1

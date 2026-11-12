@@ -3277,6 +3277,21 @@ class Munchlax:
             self.logger.error(f"Friedhof-Counter-Reset fehlgeschlagen: {err}")
             self.logger.error(traceback.format_exc())
 
+    def reset_death_counter_blocking(self) -> bool:
+        """Knopf im Friedhof: nur Todescounter der aktuellen Session auf 0,
+        Friedhof und Session-Daten bleiben. Lokal (jede Instanz hat eigenen
+        Friedhof/Counter). Blockierend → per run_in_executor; danach auf dem
+        Kivy-Loop ``notify_graveyard_changed()`` aufrufen."""
+        gy = self._get_graveyard()
+        if gy is None:
+            self.logger.warning("Todescounter-Reset: Friedhof nicht verfügbar")
+            return False
+        return gy.reset_counter(self.graveyard_session_name())
+
+    def notify_graveyard_changed(self) -> None:
+        """Öffentlicher Trigger für Listener + Counter-Overlay + OBS."""
+        self._notify_graveyard_changed()
+
     def snapshot_death_counts(self) -> dict[str, int]:
         """{Spielername: Tode} der aktuellen Session. Blockierend (Lock +
         ggf. DB-Anlage) → aus asyncio nur per run_in_executor aufrufen."""

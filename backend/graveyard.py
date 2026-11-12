@@ -239,9 +239,9 @@ class GraveyardDB:
                         f"owner={owner_name} pv={personality}")
         return changed
 
-    def reset_counter(self, session: str, ts: float | None = None) -> None:
-        """Manueller Session-Reset: Counter der Session ab jetzt bei 0.
-        Einträge selbst bleiben (Friedhof)."""
+    def reset_counter(self, session: str, ts: float | None = None) -> bool:
+        """Manueller Session-Reset bzw. Knopf im Friedhof: Counter der Session
+        ab jetzt bei 0. Einträge selbst bleiben (Friedhof). True bei Erfolg."""
         try:
             with self._lock:
                 self.connection.execute(
@@ -249,8 +249,10 @@ class GraveyardDB:
                     (session, float(ts if ts is not None else time.time())))
                 self.connection.commit()
             logger.info(f"Friedhof: Todescounter der Session {session!r} zurückgesetzt")
+            return True
         except Exception as err:
             logger.error(f"reset_counter failed: {type(err).__name__}: {err}\n{traceback.format_exc()}")
+            return False
 
     # ------------------------------------------------------------ Lesen
 

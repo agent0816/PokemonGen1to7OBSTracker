@@ -137,3 +137,103 @@ def test_apply_ohne_rando_leert_slots(monkeypatch):
     assert mun.dispatched[0][0][2] == {}
     # Abilities zurückgesetzt
     assert calls == [None]
+
+
+# -- apply_rando_after_session_load -----------------------------------------
+
+def test_after_session_load_mit_daten_pusht(monkeypatch):
+    monkeypatch.setattr(pokedecoder, "set_gen3_abilities", lambda lut: None)
+    mun = FakeMunchlax()
+    rando_sync.apply_rando_after_session_load(
+        mun, FakeRandomizer(_rando_data(tm={1: "ember"})),
+        {"player_count": 1}, logging.getLogger("x"))
+    assert mun.rando_tm_moves == {1: {1: "ember"}}
+    assert len(mun.dispatched) == 1
+
+
+def test_after_session_load_ohne_daten_app_start_kein_push(monkeypatch):
+    calls = []
+    monkeypatch.setattr(pokedecoder, "set_gen3_abilities", lambda lut: calls.append(lut))
+    mun = FakeMunchlax()
+    # Remote-Slot 2 hat Maps (vom Server), lokaler Slot 1 nicht
+    mun.rando_tm_moves = {2: {9: "a"}}
+    rando_sync.apply_rando_after_session_load(
+        mun, FakeRandomizer(None), {"player_count": 1}, logging.getLogger("x"))
+    assert mun.rando_tm_moves == {2: {9: "a"}}
+    assert mun.dispatched == []
+    assert calls == [None]
+
+
+def test_after_session_load_ohne_daten_leert_alte_lokale_maps(monkeypatch):
+    monkeypatch.setattr(pokedecoder, "set_gen3_abilities", lambda lut: None)
+    mun = FakeMunchlax()
+    mun.rando_tm_moves = {1: {9: "a"}, 2: {9: "b"}}
+    rando_sync.apply_rando_after_session_load(
+        mun, FakeRandomizer(None), {"player_count": 1}, logging.getLogger("x"))
+    # Session-Wechsel aus Rando-Session: lokaler Slot geleert + leerer Push
+    assert 1 not in mun.rando_tm_moves
+    assert mun.rando_tm_moves[2] == {9: "b"}
+    assert len(mun.dispatched) == 1
+    assert mun.dispatched[0][0][2] == {}
+
+
+# -- RandomizerController.load_active_run_log --------------------------------
+
+def _make_run(tmp_path, slots, write_log_for=()):
+    from backend.controller.run_manager import RunManager
+    rom = tmp_path / "src.gba"
+    rom.write_bytes(b"ROM" * 16)
+    run = RunManager(tmp_path / "session").create_run(rom, player_slots=slots)
+    assert run is not None
+    for target in run["rom_targets"]:
+        if target["player_slot"] in write_log_for:
+            with open(target["log_path"], "w", encoding="utf-8") as f:
+                f.write("Randomizer Version: 4.6.1\n\n--TM Moves--\n"
+                        "TM01 TRAUMFRESSER\nTM02 HAERTNER\n\n")
+    return tmp_path / "session"
+
+
+def test_load_active_run_log_parst_lokalen_slot(tmp_path):
+    from backend.controller.randomizer_controller import RandomizerController
+    session = _make_run(tmp_path, [2], write_log_for=(2,))
+    ctrl = RandomizerController({}, {"player_count": 2, "remote_1": True},
+                                configsave=str(session))
+    old_parser = ctrl.log_parser
+    parser, log_path = ctrl.load_active_run_log([2], str(session))
+    assert log_path is not None and log_path.endswith("randomizer.log")
+    # Executor-tauglich: self bleibt unveraendert bis adopt
+    assert ctrl.log_parser is old_parser
+    assert ctrl.get_log_data() is None
+    ctrl.adopt_log_parser(parser)
+    data = ctrl.get_log_data()
+    assert data is not None
+    assert len(data.tm_moves) == 2
+
+
+def test_load_active_run_log_ohne_log_liefert_leeren_parser(tmp_path):
+    from backend.controller.randomizer_controller import RandomizerController
+    session = _make_run(tmp_path, [1], write_log_for=())
+    ctrl = RandomizerController({}, {"player_count": 1}, configsave=str(session))
+    parser, log_path = ctrl.load_active_run_log([1], str(session))
+    assert log_path is None
+    assert parser.get_data() is None
+
+
+def test_load_active_run_log_ohne_run(tmp_path):
+    from backend.controller.randomizer_controller import RandomizerController
+    leer = tmp_path / "leer"
+    leer.mkdir()
+    ctrl = RandomizerController({}, {"player_count": 1}, configsave=str(leer))
+    parser, log_path = ctrl.load_active_run_log([1], str(leer))
+    assert log_path is None
+    assert parser.get_data() is None
+    # Kein RunManager ohne runs/ -> Ordner wird NICHT angelegt
+    assert not (leer / "runs").exists()
+
+
+def test_load_active_run_log_fremder_slot_ignoriert(tmp_path):
+    from backend.controller.randomizer_controller import RandomizerController
+    session = _make_run(tmp_path, [1, 2], write_log_for=(2,))
+    ctrl = RandomizerController({}, {"player_count": 1}, configsave=str(session))
+    _parser, log_path = ctrl.load_active_run_log([1], str(session))
+    assert log_path is None

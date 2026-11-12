@@ -47,7 +47,8 @@ from backend.logging_setup import get_logger
 from backend.nuzlocke_view import modus_warnung_faellig
 from backend.perf_probe import perf_span
 from backend.player_colors import PLAYER_COLORS
-from backend.rando_sync import apply_rando_to_munchlax
+from backend.rando_sync import (apply_rando_after_session_load, apply_rando_to_munchlax,
+                                local_player_slots)
 from frontend.widgets.md_common import confirm_dialog, show_snackbar
 from frontend.widgets.statusbarmd import PollingStatusDot
 from frontend.widgets.trainerboxmd import TrainerBoxMD
@@ -151,6 +152,10 @@ class MainMenu(MDScreen):
                                                bizhawk_thread=_bh_thread, arceus_thread=_arc_thread,
                                                munchlax_thread=_mun_thread)
         self.randomizer = RandomizerController(rnd, pl, configsave=configsave)
+        # Generation für den Rando-Log-Load beim Session-Wechsel: neuer Load
+        # oder Randomize macht ein laufendes Ergebnis ungültig.
+        self._rando_load_gen = 0
+        self._randomizing = False
 
         # Transparenz-Toasts für host-angefragte Log-Bundles (Backend-Threads →
         # Kivy-Thread via Clock).
@@ -600,7 +605,48 @@ class MainMenu(MDScreen):
             self.init_config()
         with perf_span("main.update_munchlax_connections"):
             self.update_munchlax_connections()
+        # Nach clear_for_session_switch: Rando-Log des aktiven Runs einlesen,
+        # sonst bleiben TM-Typen/Abilities nach Neustart + Session-Wahl vanilla.
+        self._schedule_rando_log_load()
         Clock.schedule_once(lambda dt: self._apply_responsive(Window.width), 0)
+
+    # -- Rando-Log beim Session-Load -------------------------------------------
+
+    def _schedule_rando_log_load(self) -> None:
+        self._rando_load_gen += 1
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # Nur Testkontexte (Produktion läuft immer unter async_run) —
+            # dort keinen RunManager auf echten Session-Pfaden anlegen.
+            logger.debug("Rando-Log-Load übersprungen: kein laufender Event-Loop")
+            return
+        # Session-Pfad hier auf dem Kivy-Thread einfrieren und an den Executor
+        # übergeben (configsave mutiert bei Session-Wechsel in-place).
+        session = str(self.configsave) if self.configsave is not None else ""
+        self._track(asyncio.create_task(
+            self._load_rando_log_async(self._rando_load_gen, session)))
+
+    async def _load_rando_log_async(self, gen: int, session: str) -> None:
+        try:
+            slots = local_player_slots(self.pl, logger)
+            loop = asyncio.get_running_loop()
+            # Parsen (~700 KB Log) im Executor, nicht im Kivy-Loop.
+            parser, log_path = await loop.run_in_executor(
+                None, self.randomizer.load_active_run_log, slots, session)
+            current = str(self.configsave) if self.configsave is not None else ""
+            if gen != self._rando_load_gen or session != current or self._randomizing:
+                logger.info(
+                    f"Rando-Log-Load verworfen (Session gewechselt/Randomize): "
+                    f"gen={gen}/{self._rando_load_gen} randomizing={self._randomizing} "
+                    f"session={session} log={log_path}")
+                return
+            logger.info(f"Rando-Log übernommen: gen={gen} session={session} log={log_path}")
+            self.randomizer.adopt_log_parser(parser)
+            apply_rando_after_session_load(self.munchlax, self.randomizer, self.pl, logger)
+        except Exception as err:
+            logger.error(f"Rando-Log-Load beim Session-Wechsel fehlgeschlagen: {type(err)}, {err}")
+            logger.error(traceback.format_exc())
 
     # -- Verbindung: Rolle -----------------------------------------------------
 
@@ -989,6 +1035,12 @@ class MainMenu(MDScreen):
 
     async def _run_randomization(self) -> None:
         success, message, slot_dirs = False, "", None
+        # Laufenden Session-Load-Parse entwerten: dessen (altes) Log darf das
+        # frische Randomize-Ergebnis nicht überschreiben. _randomizing deckt
+        # Loads ab, die WÄHREND des Randomize geplant werden; der zweite Bump
+        # im finally entwertet sie auch nach dem Ende.
+        self._rando_load_gen += 1
+        self._randomizing = True
         try:
             success, message, slot_dirs = await self.randomizer.randomize()
             if success:
@@ -999,6 +1051,8 @@ class MainMenu(MDScreen):
             show_snackbar(f"Randomisierung fehlgeschlagen: {err}", level='error', duration=6.0)
             return
         finally:
+            self._randomizing = False
+            self._rando_load_gen += 1
             self.randomize_button.disabled = False
             self._set_button_text(self.randomize_button, "Randomisieren")
         # Ergebnis-Dialog ausserhalb des try: ein Fehler hier soll nicht als

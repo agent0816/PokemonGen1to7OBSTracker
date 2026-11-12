@@ -125,6 +125,65 @@ class RandomizerController:
     def get_log_data(self) -> RandomizerLogData | None:
         return self.log_parser.get_data()
 
+    def find_active_run_log(self, local_slots: list[int], session_path: str) -> str | None:
+        """Pfad des Randomizer-Logs im aktiven Run für den ersten lokalen Slot
+        mit existierender Datei (Muster wie ``backend.rom_path.resolve_own_rom_path``).
+        ``None`` ohne Session/``runs/``-Ordner, ohne aktiven Run oder ohne Log-Datei.
+
+        ``session_path`` wird vom Caller eingefroren übergeben (nicht live aus
+        ``self.configsave`` gelesen — Executor-Thread vs. Session-Wechsel). Ohne
+        vorhandenen ``runs/``-Ordner kein RunManager: dessen __init__ legt den
+        Ordner an und würde sonst gelöschte Sessions wiederbeleben."""
+        if not session_path or not (Path(session_path) / "runs").is_dir():
+            return None
+        try:
+            run_manager = RunManager(session_path)
+        except Exception as err:
+            self.logger.error(f"RunManager-Init fehlgeschlagen: {type(err).__name__},{err}")
+            self.logger.error(traceback.format_exc())
+            return None
+        active = run_manager.get_active_run()
+        if not active or not active.get("run_id"):
+            return None
+        roms = (run_manager.get_run_paths(active["run_id"]) or {}).get("roms", {}) or {}
+        for slot in local_slots:
+            log = (roms.get(slot) or {}).get("log")
+            if log and Path(log).is_file():
+                return str(Path(log).resolve())
+        return None
+
+    def load_active_run_log(self, local_slots: list[int],
+                            session_path: str) -> tuple[RandomizerLogParser, str | None]:
+        """Parst das Log des aktiven Runs in eine FRISCHE Parser-Instanz.
+
+        Executor-tauglich: mutiert ``self`` nicht — der Kivy-Thread liest
+        ``get_log_data()`` parallel (Tasche/Boxen/Teams), ein halb gefüllter
+        Parser wäre dort sichtbar. Der Caller übernimmt das Ergebnis per
+        ``adopt_log_parser`` (atomarer Referenz-Tausch). Ohne Log bleibt der
+        neue Parser leer → alte Session-Daten werden nicht vererbt.
+
+        Hintergrund: Bisher wurde das Log nur bei ``randomize()`` oder manuellem
+        Import geparst; nach jedem App-Neustart fielen TM-Typen und Gen-3-
+        Abilities auf Vanilla zurück (Live-Session 2026-11-11).
+        """
+        parser = RandomizerLogParser()
+        log_path = self.find_active_run_log(local_slots, session_path)
+        if log_path is None:
+            self.logger.info(
+                f"Session-Load: kein Randomizer-Log im aktiven Run für Slots {local_slots} "
+                f"(session={session_path})"
+            )
+            return parser, None
+        if parser.parse(log_path) is None:
+            self.logger.warning(f"Session-Load: Randomizer-Log nicht parsebar: {log_path}")
+        else:
+            self.logger.info(f"Session-Load: Randomizer-Log geparst: {log_path}")
+        return parser, log_path
+
+    def adopt_log_parser(self, parser: RandomizerLogParser) -> None:
+        """Übernimmt einen per ``load_active_run_log`` befüllten Parser."""
+        self.log_parser = parser
+
     async def _randomize_one(self, base_args: list[str], jar_dir: str,
                               input_rom: str, settings: str,
                               rom_target: Path, log_target: Path,

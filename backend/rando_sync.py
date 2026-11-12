@@ -83,6 +83,33 @@ def sync_rando_abilities(rando_data) -> None:
     pokedecoder.set_gen3_abilities(lut if lut else None)
 
 
+def apply_rando_after_session_load(munchlax, randomizer, pl: dict, logger) -> None:
+    """Nach dem Session-Load (Log des aktiven Runs übernommen).
+
+    Mit Rando-Daten: wie nach einem Randomize (Munchlax-Dicts + Push, Ability-LUT).
+    Ohne Daten:
+    - Halten lokale Slots noch Maps (= Session-Wechsel aus einer Rando-Session):
+      wie ``apply_rando_to_munchlax`` ohne Daten → Slots leeren + leerer Push,
+      damit die neue Session keine fremden TM-Typen erbt (die Begründung in
+      ``Munchlax.clear_everything`` — laufende Emulator-ROMs — gilt nach
+      ``disconnect_all`` + Session-Wechsel nicht).
+    - Sonst (App-Start, Maps leer): nur Ability-LUT zurücksetzen, kein Push.
+    """
+    if randomizer.get_log_data():
+        apply_rando_to_munchlax(munchlax, randomizer, pl, logger)
+        return
+    local_slots = local_player_slots(pl, logger)
+    with _state_lock(munchlax):
+        stale = [s for s in local_slots
+                 if munchlax.rando_tm_moves.get(s) or munchlax.rando_hm_moves.get(s)]
+    if stale:
+        logger.info(f"Session-Load: keine Rando-Daten, alte Maps für Slots {stale} werden geleert")
+        apply_rando_to_munchlax(munchlax, randomizer, pl, logger)
+    else:
+        pokedecoder.set_gen3_abilities(None)
+        logger.info("Session-Load: keine Rando-Daten — Vanilla-Abilities, kein Rando-Push")
+
+
 def apply_rando_to_munchlax(munchlax, randomizer, pl: dict, logger) -> None:
     """Schreibt die TM/HM-Zuordnung des Randomizers in Munchlax und pusht sie an
     den Server. Jedes lokale Player-Slot bekommt denselben rando_data-Snapshot

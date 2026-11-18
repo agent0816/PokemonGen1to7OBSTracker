@@ -30,6 +30,7 @@ from backend.bag_view import (
 )
 from backend.classes.pokedex_db import PokedexDB
 from backend.logging_setup import get_logger
+from backend.perf_probe import perf_span
 from backend.player_display import button_text, labels_for_owners, owner_label
 from backend.tm_type_resolver import resolve_tm_hm_sprite
 from frontend.widgets.md_common import player_names_of, show_snackbar
@@ -256,6 +257,7 @@ class BagMenu(MDScreen):
         if self._reload_pending:
             self._start_load_task()
 
+    @perf_span("bag._load_from_db")
     def _load_from_db(self, session: str | None = None) -> list[dict]:
         """Liest bag_inventory + bag_first_seen und joint pro (owner, edition, item_id)."""
         if session is None:
@@ -329,6 +331,7 @@ class BagMenu(MDScreen):
         self._last_signature = sig
         self._apply_filters()
 
+    @perf_span("bag._signature")
     def _signature(self) -> tuple:
         # Neben den Zeilen fließen auch Rando-TM/HM-Mapping (Sprites), items_path
         # und die remote-Flags (Candy-Button) in das Rendering ein — sonst bliebe
@@ -453,6 +456,7 @@ class BagMenu(MDScreen):
     def _owner_title(self, owner: str) -> str:
         return owner_label(owner, player_names_of(screen=self))
 
+    @perf_span("bag._apply_filters")
     def _apply_filters(self) -> None:
         pocket_key = None if self._pocket_label == "alle" else pocket_key_from_label(self._pocket_label)
         try:
@@ -481,6 +485,7 @@ class BagMenu(MDScreen):
         for section in sections:
             self.content_box.add_widget(self._build_section(section))
 
+    @perf_span("bag._build_section")
     def _build_section(self, section: dict) -> MDBoxLayout:
         owner = str(section["owner"])
         edition = str(section["edition"])

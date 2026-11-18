@@ -43,7 +43,7 @@ from backend.rando_sync import apply_rando_to_munchlax
 from backend.logging_setup import (get_logger, get_console_level, set_console_level,
                                     list_known_modules, get_module_level, set_module_level)
 from backend.dev_mode import is_developer
-from backend.perf_probe import perf_log, perf_span
+from backend.perf_probe import ENABLED as PERF_ENABLED, perf_log, perf_span
 from frontend.perf_hooks import count_widgets
 from frontend.widgets.md_common import bind_theme_color, show_snackbar, confirm_dialog
 from frontend.widgets.settings_widgets import (LABEL_W, DropdownField, browse_row,
@@ -1127,6 +1127,31 @@ class SettingsMenu(MDScreen):
         finally:
             self._suspend_save = prev
 
+        # --- Performance-Messung (TRACKER_PERF) ---------------------------
+        # Auch im Release-Build schaltbar; perf_probe liest das Flag beim
+        # Import, daher greift der Schalter erst nach einem Neustart.
+        perf_card = _section_card("Performance-Messung")
+        perf_card.add_widget(MDLabel(
+            text=("Schreibt Ladezeiten der Screens nach logs/perf.log "
+                  f"(landet auch im Support-Bundle). Aktuell: "
+                  f"{'aktiv' if PERF_ENABLED else 'aus'}. Wirkt nach Neustart."),
+            role="small", adaptive_height=True))
+        perf_row = MDBoxLayout(orientation="horizontal", size_hint_y=None,
+                               adaptive_height=True, spacing=dp(8))
+        perf_row.add_widget(MDLabel(text="Messung beim nächsten Start aktivieren",
+                                    role="small", valign="center"))
+        self._perf_switch = MDSwitch()
+        prev = self._suspend_save
+        self._suspend_save = True
+        try:
+            self._perf_switch.active = app_state.get_perf_messung()
+        finally:
+            self._suspend_save = prev
+        self._perf_switch.bind(active=self._on_perf_switch)
+        perf_row.add_widget(self._perf_switch)
+        perf_card.add_widget(perf_row)
+        pane.add_widget(perf_card)
+
         card = _section_card("Logging")
         self._console_level = DropdownField(LOG_LEVELS, get_console_level(),
                                             lambda v: set_console_level(v))
@@ -1184,6 +1209,28 @@ class SettingsMenu(MDScreen):
         except Exception as err:
             logger.error(f"Akzentfarbe setzen fehlgeschlagen: {err}\n{traceback.format_exc()}")
             show_snackbar("Akzentfarbe konnte nicht gespeichert werden.", level='error', duration=4.0)
+
+    def _on_perf_switch(self, _sw, active: bool) -> None:
+        """Perf-Messung app-weit speichern; Neustart-Dialog, wenn Zustand wechselt."""
+        if self._suspend_save:
+            return
+        try:
+            app_state.set_perf_messung(active)
+            logger.info(f"Performance-Messung fuer naechsten Start: {active}")
+        except Exception as err:
+            logger.error(f"Perf-Schalter speichern fehlgeschlagen: {err}\n{traceback.format_exc()}")
+            show_snackbar("Einstellung konnte nicht gespeichert werden.", level='error', duration=4.0)
+            return
+        if bool(active) == PERF_ENABLED:
+            return
+        confirm_dialog(
+            "Performance-Messung",
+            ("Die Messung startet nach einem Neustart." if active
+             else "Die Messung endet nach einem Neustart."),
+            on_confirm=lambda: MDApp.get_running_app().relaunch(),
+            confirm_text="Jetzt neu starten",
+            cancel_text="Später",
+        )
 
     def _on_ui_segment(self, ui_value: str, active: bool) -> None:
         # MDSegmentedButton feuert active=True fürs neu gewählte und active=False

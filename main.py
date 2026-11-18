@@ -67,6 +67,13 @@ Config.read("backend/kivy_config/gui.ini")
 # app_state hat KEINEN Kivy-Import und ist daher hier (vor dem FEApp-Import und
 # vor init_config_folder) sicher ladbar; fehlt die Datei noch, liefert es 'md'.
 from backend import app_state as _app_state
+# Performance-Messung: GUI-Schalter (app_state.perf_messung) setzt TRACKER_PERF,
+# sofern nicht schon per Env gesetzt. Muss vor dem ersten Import von
+# backend.perf_probe passieren (ENABLED wird beim Import gelesen).
+if not os.environ.get('TRACKER_PERF', '').strip() and _app_state.get_perf_messung():
+    os.environ['TRACKER_PERF'] = '1'
+    os.environ['TRACKER_PERF_FROM_APP_STATE'] = '1'  # Relaunch entfernt es wieder
+    logger.info("Performance-Messung aktiv (app_state.yml) -> logs/perf.log")
 _env_ui = os.environ.get('TRACKER_UI', '').strip().lower()
 if _env_ui in (_app_state.UI_MD, _app_state.UI_CLASSIC):
     _ui_mode = _env_ui

@@ -346,6 +346,10 @@ class TrackerCoreMixin:
         for key in [k for k in env if k.startswith("NUITKA_ONEFILE")]:
             env.pop(key, None)
         env.pop("TRACKER_UI", None)
+        # Vom GUI-Schalter gesetztes TRACKER_PERF nicht vererben, sonst bliebe
+        # die Messung nach dem Ausschalten an (main.py setzt es neu, wenn aktiv).
+        if env.pop("TRACKER_PERF_FROM_APP_STATE", None) == "1":
+            env.pop("TRACKER_PERF", None)
         logger.info(f"Relaunch für UI-Wechsel: {cmd}")
         subprocess.Popen(cmd, env=env)
 

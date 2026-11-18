@@ -1,6 +1,8 @@
 """Mess-Instrumentierung für die Performance-Analyse (Kivy-frei).
 
-Aktivierung ausschließlich per Umgebungsvariable ``TRACKER_PERF=1``. Ohne Flag
+Aktivierung per Umgebungsvariable ``TRACKER_PERF=1`` — oder per GUI-Schalter
+(Einstellungen → Logging → Performance-Messung, ``app_state.perf_messung``),
+den ``main.py`` vor dem Import in ``TRACKER_PERF`` übersetzt. Ohne Flag
 ist alles ein No-op: der Decorator gibt die Originalfunktion zurück, der
 Context-Manager tut nichts, es entsteht keine ``logs/perf.log``.
 

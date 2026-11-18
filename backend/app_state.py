@@ -49,6 +49,9 @@ DEFAULT_STATE = {
     'primary_palette': 'Orange',
     # Config-Backup vor Update: so viele config_*.zip bleiben liegen.
     'config_backup_keep': 5,
+    # Performance-Messung (TRACKER_PERF) per GUI-Schalter; greift erst nach
+    # Neustart, weil perf_probe das Flag beim Import liest.
+    'perf_messung': False,
 }
 
 
@@ -99,6 +102,16 @@ def is_onboarding_done() -> bool:
 def set_onboarding_done(value: bool = True) -> None:
     state = load_app_state()
     state['onboarding_done'] = bool(value)
+    save_app_state(state)
+
+
+def get_perf_messung() -> bool:
+    return bool(load_app_state().get('perf_messung', False))
+
+
+def set_perf_messung(value: bool) -> None:
+    state = load_app_state()
+    state['perf_messung'] = bool(value)
     save_app_state(state)
 
 

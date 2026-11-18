@@ -34,6 +34,7 @@ from backend.encounter_view import (
     group_soullink, group_title, is_soullink, unlinked_encounters,
 )
 from backend.logging_setup import get_logger
+from backend.perf_probe import perf_span
 from backend.player_display import button_text, labels_for_owners, labels_for_slots, owner_name
 from backend.player_colors import player_rgba
 from backend.pokedex_view import load_species_de, row_slot
@@ -791,6 +792,7 @@ class EncounterMenu(MDScreen):
         if self._reload_pending:
             self._start_load_task()
 
+    @perf_span("enc._load_from_db")
     def _load_from_db(self, session: str | None = None) -> list[dict]:
         if session is None:
             session = str(self.configsave) if self.configsave is not None else ""
@@ -917,6 +919,7 @@ class EncounterMenu(MDScreen):
         self._filter_event = None
         self._apply_filters()
 
+    @perf_span("enc._apply_filters")
     def _apply_filters(self) -> None:
         query = (self.search_input.text or "").strip()
         self._set_player_filter_visible(not is_soullink(self.nuz))
@@ -1019,6 +1022,7 @@ class EncounterMenu(MDScreen):
         if self._render_batch(0):
             self._render_event = Clock.schedule_interval(self._render_batch, 0)
 
+    @perf_span("enc._render_batch")
     def _render_batch(self, _dt) -> bool:
         batch = self._pending[:RENDER_BATCH]
         del self._pending[:RENDER_BATCH]

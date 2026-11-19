@@ -29,6 +29,7 @@ from kivymd.uix.slider import MDSlider, MDSliderHandle, MDSliderValueLabel
 
 from backend.logging_setup import get_logger
 from backend.snapshot_manager import SnapshotManager
+from backend.timer_view import race_status_suffix, split_lines
 from backend.soullink_presets import load_presets, apply_preset, preset_choices
 from backend.nuzlocke_view import (
     TEAM_LETTERS, MODE_LABELS, MODE_LABEL_TO_VALUE,
@@ -406,12 +407,15 @@ class NuzlockeMenu(MDScreen):
                                      font_style="Display", adaptive_height=True)
         race_card.add_widget(self._race_display)
         rbtns = _row(height=dp(56), spacing=dp(6))
-        rbtns.add_widget(_action_button("Start", lambda: self._send(self.munchlax.send_timer_start()), style="filled"))
-        rbtns.add_widget(_action_button("Pause", lambda: self._send(self.munchlax.send_timer_pause_request())))
-        rbtns.add_widget(_action_button("Fortsetzen", lambda: self._send(self.munchlax.send_timer_resume_request())))
+        rbtns.add_widget(_action_button("Start", self._start_race, style="filled"))
+        rbtns.add_widget(_action_button("Pause", lambda: self._request_race("pause")))
+        rbtns.add_widget(_action_button("Fortsetzen", lambda: self._request_race("resume")))
         rbtns.add_widget(_action_button("Split", lambda: self._send(self.munchlax.send_timer_split("manual")), style="tonal"))
         rbtns.add_widget(_action_button("Reset", lambda: self._send(self.munchlax.send_timer_reset())))
         race_card.add_widget(rbtns)
+        # Splits (Server zählt sie schon immer, angezeigt wurden sie nie)
+        self._race_splits = MDLabel(text="", role="small", adaptive_height=True)
+        race_card.add_widget(self._race_splits)
         box.add_widget(race_card)
 
         cd_card = _card("Countdown")
@@ -966,12 +970,13 @@ class NuzlockeMenu(MDScreen):
         Clock.schedule_once(lambda _dt: show_snackbar(f"Snapshot gelöscht: {snap_id}", level='success'), 0)
 
     # ----------------------------------------------------------------- Timer
-    def _send(self, coro) -> None:
-        """Timer-/Countdown-Coro über den Munchlax-Loop senden (eigener Thread)."""
+    def _send(self, coro) -> bool:
+        """Timer-/Countdown-Coro über den Munchlax-Loop senden (eigener Thread).
+        False = verworfen (nicht verbunden / kein Event-Loop)."""
         if not getattr(self.munchlax, "is_connected", False):
             show_snackbar("Server nicht verbunden — Timer-Aktion verworfen.", level='info')
             coro.close()
-            return
+            return False
 
         async def _runner():
             try:
@@ -984,6 +989,8 @@ class NuzlockeMenu(MDScreen):
             # wurde nie awaited → selbst schliessen (sonst "never awaited").
             coro.close()
             logger.warning("Timer-Send-Task nicht gestartet (kein Event-Loop)")
+            return False
+        return True
 
     def _send_countdown_start(self) -> None:
         try:
@@ -994,12 +1001,60 @@ class NuzlockeMenu(MDScreen):
         label = (self._cd_label.text or "").strip()
         self._send(self.munchlax.send_countdown_start(seconds, label))
 
+    def _start_race(self, *_args) -> None:
+        """Start: bei pausiertem Timer ist das für Mitspieler eine Fortsetzen-
+        Anfrage (Server-Konsens) → gleicher Pfad inkl. Hinweis-Popup."""
+        ts = getattr(self.munchlax, "timer_state", None) or {}
+        if not self._is_host() and ts.get("start_ts") is not None and not ts.get("running"):
+            self._request_race("resume")
+            return
+        if ts.get("running"):
+            show_snackbar("Race-Timer läuft bereits.", level='info')
+            return
+        self._send(self.munchlax.send_timer_start())
+
+    def _request_race(self, kind: str) -> None:
+        """Pause/Fortsetzen: Host wirkt direkt (Server), Mitspieler stellen eine
+        Konsens-Anfrage → Hinweis-Popup, die anderen darauf anzusprechen."""
+        ts = getattr(self.munchlax, "timer_state", None) or {}
+        what = "Pause" if kind == "pause" else "Fortsetzen"
+        # Wirkungslose Klicks nicht senden und kein "angefragt"-Popup zeigen
+        if ts.get("start_ts") is None:
+            show_snackbar("Race-Timer ist nicht gestartet.", level='info')
+            return
+        if kind == "pause" and not ts.get("running"):
+            show_snackbar("Race-Timer ist bereits pausiert.", level='info')
+            return
+        if kind == "resume" and ts.get("running"):
+            show_snackbar("Race-Timer läuft bereits.", level='info')
+            return
+        coro = (self.munchlax.send_timer_pause_request() if kind == "pause"
+                else self.munchlax.send_timer_resume_request())
+        if not self._send(coro) or self._is_host():
+            return
+        dlg = getattr(self, "_race_hint_dialog", None)
+        if dlg is not None and dlg.parent is not None:
+            return  # Hinweis ist schon offen (Doppelklick)
+        required = int(ts.get("consent_required") or 0)
+        need = f"alle {required} Spieler" if required else "alle Spieler"
+        logger.info(f"Timer-{what}-Anfrage gesendet (Nicht-Host, Konsens {need})")
+        self._race_hint_dialog = confirm_dialog(
+            f"{what} angefragt",
+            f"Deine Anfrage ist beim Host. Der Race-Timer wechselt erst, wenn {need} "
+            f"auf „{what}“ gedrückt haben (oder der Host es direkt macht).\n\n"
+            f"Sag den anderen Bescheid, dass eine Anfrage offen ist.",
+            on_confirm=lambda: None, confirm_text="OK", cancel_text=None,
+            icon="timer-pause-outline" if kind == "pause" else "timer-play-outline")
+
     def _timer_tick(self, _dt) -> None:
         try:
             elapsed = self.munchlax.current_timer_elapsed()
             ts = getattr(self.munchlax, "timer_state", None) or {}
-            suffix = "" if ts.get("running") else " (Pause)"
-            self._race_display.text = format_hms(elapsed) + suffix
+            self._race_display.text = format_hms(elapsed) + race_status_suffix(ts)
+            lines = split_lines(ts)
+            splits_text = ("Splits:\n" + "\n".join(lines)) if lines else ""
+            if self._race_splits.text != splits_text:
+                self._race_splits.text = splits_text
             cd = getattr(self.munchlax, "countdown_state", None) or {}
             if cd.get("duration_seconds", 0) <= 0:
                 self._cd_display.text = "Countdown: --:--:--"

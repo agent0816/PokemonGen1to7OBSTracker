@@ -681,9 +681,10 @@ class Arceus:
                         f"({battle['label']})"
                     )
                     asyncio.create_task(self.broadcast_soullink_versus_battle(battle))
-                elif isinstance(data, dict) and data.get("type") == "timer_start":
-                    self._timer_start()
-                    asyncio.create_task(self.broadcast_timer_state())
+                elif isinstance(data, dict) and data.get("type") in (
+                        "timer_start", "timer_pause_request", "timer_resume_request"):
+                    if self._handle_timer_control(client_id, data.get("type")):
+                        asyncio.create_task(self.broadcast_timer_state())
                 elif isinstance(data, dict) and data.get("type") == "timer_reset":
                     self._timer_reset()
                     asyncio.create_task(self.broadcast_timer_state())
@@ -691,12 +692,6 @@ class Arceus:
                     label = data.get("label", "split")
                     split = self._timer_split(label, source=data.get("source", "manual"))
                     if split is not None:
-                        asyncio.create_task(self.broadcast_timer_state())
-                elif isinstance(data, dict) and data.get("type") == "timer_pause_request":
-                    if self._timer_add_consent("pause", client_id):
-                        asyncio.create_task(self.broadcast_timer_state())
-                elif isinstance(data, dict) and data.get("type") == "timer_resume_request":
-                    if self._timer_add_consent("resume", client_id):
                         asyncio.create_task(self.broadcast_timer_state())
                 elif isinstance(data, dict) and data.get("type") == "countdown_start":
                     duration = float(data.get("duration_seconds", 0.0) or 0.0)
@@ -2800,6 +2795,57 @@ class Arceus:
         }
         ts.setdefault("splits", []).append(split)
         return split
+
+    def _handle_timer_control(self, client_id, msg_type: str) -> bool:
+        """Start/Pause/Fortsetzen des Race-Timers. True = Broadcast nötig.
+
+        User-Entscheid 2026-11-19: Host pausiert/setzt direkt fort, Mitspieler
+        brauchen weiter den Konsens aller Spieler. "Start" eines Mitspielers auf
+        pausiertem Timer zählt als Fortsetzen-Anfrage (kein Umgehen über Start).
+        """
+        host = self._is_host_client(client_id)
+        ts = self.timer_state
+        if msg_type == "timer_start":
+            if ts.get("running"):
+                # Läuft schon: nichts tun (sonst löschte _timer_start offene
+                # Konsens-Anfragen der anderen)
+                return False
+            paused = ts.get("start_ts") is not None and not ts.get("running")
+            if paused and not host:
+                self.logger.info(f"timer_start von Nicht-Host {client_id} bei Pause → Resume-Anfrage")
+                return self._timer_add_consent("resume", client_id)
+            self._timer_start()
+            return True
+        kind = "pause" if msg_type == "timer_pause_request" else "resume"
+        if host:
+            return self._timer_force(kind)
+        return self._timer_add_consent(kind, client_id)
+
+    def _timer_force(self, kind: str) -> bool:
+        """Host: Race-Timer ohne Konsens pausieren/fortsetzen.
+
+        Liefert True, wenn sich der Zustand geändert hat (→ Broadcast). Offene
+        Konsens-Anfragen der Mitspieler werden dabei verworfen.
+        """
+        ts = self.timer_state
+        if ts.get("start_ts") is None:
+            self.logger.info(f"Timer-{kind} (Host) ignoriert: Timer nicht gestartet")
+            return False
+        if kind == "pause" and ts.get("running"):
+            ts["running"] = False
+            ts["pause_start_ts"] = time.time()
+        elif kind == "resume" and not ts.get("running") and ts.get("pause_start_ts") is not None:
+            ts["pause_total_seconds"] = (ts.get("pause_total_seconds", 0.0)
+                                         + (time.time() - ts["pause_start_ts"]))
+            ts["pause_start_ts"] = None
+            ts["running"] = True
+        else:
+            self.logger.info(f"Timer-{kind} (Host) ohne Wirkung: running={ts.get('running')}")
+            return False
+        ts["pause_consent"] = []
+        ts["resume_consent"] = []
+        self.logger.info(f"Timer {'pausiert' if kind == 'pause' else 'resumed'} (Host)")
+        return True
 
     def _timer_add_consent(self, kind: str, client_id: str) -> bool:
         ts = self.timer_state

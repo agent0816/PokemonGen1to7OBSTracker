@@ -12,6 +12,7 @@ from kivymd.uix.button import MDIconButton
 from kivymd.uix.label import MDLabel, MDIcon
 
 from backend.logging_setup import get_logger
+from backend.timer_view import race_status_suffix
 from frontend.widgets.md_common import format_hms as _format_hms
 from frontend.widgets.md_common import show_snackbar as _snackbar
 
@@ -119,6 +120,20 @@ class StatusItem(MDBoxLayout):
         self.add_widget(self.dot)
         self.name_label = MDLabel(text=label, adaptive_width=True, pos_hint={"center_y": 0.5})
         self.add_widget(self.name_label)
+        self._compact = False
+
+    def set_name(self, name: str) -> None:
+        """Anzeigename ändern (Clients); im Kompakt-Modus bleibt das Label leer."""
+        self._label = name
+        if not self._compact and self.name_label.text != name:
+            self.name_label.text = name
+
+    def set_compact(self, compact: bool) -> None:
+        """Kompakt = nur Status-Punkt (Name ausgeblendet, Platz für den Timer)."""
+        if compact == self._compact:
+            return
+        self._compact = compact
+        self.name_label.text = "" if compact else self._label
 
     def refresh(self) -> None:
         try:
@@ -140,8 +155,8 @@ class TimerChip(MDBoxLayout):
     Der Timer läuft server-authoritativ (Arceus), gespiegelt in Munchlax. Dieser
     Chip zeigt den Zustand und navigiert bei Klick auf den Text ins NuzlockeMenu
     (Timer-Tab). Ist die eigene Rolle Host, blendet er zusätzlich einen Pause-/
-    Start-Button ein, der den Race-Timer über denselben konsens-basierten Request
-    pausiert/fortsetzt wie der Timer-Tab (send_timer_pause_request /
+    Start-Button ein, der den Race-Timer über denselben Request wie der Timer-Tab
+    pausiert/fortsetzt (send_timer_pause_request /
     send_timer_resume_request). Sichtbar nur, solange ein Timer oder aktiver
     Countdown existiert; sonst ausgeblendet (opacity 0).
     """
@@ -175,7 +190,7 @@ class TimerChip(MDBoxLayout):
         # Host-Steuerung nur eingeblendet, wenn Rolle==Host und der jeweilige
         # Timer existiert. Icon spiegelt den aktuellen Zustand.
         #  - ctrl   = Race-Timer: Start (reset/nie gestartet) / Pause / Fortsetzen
-        #             über den konsens-basierten Request (wie Timer-Tab).
+        #             über den Pause-/Resume-Request (Host: Server pausiert direkt).
         #  - cd_ctrl = Countdown: Pause / Fortsetzen (direkt, kein Konsens).
         self.race_label = MDLabel(text="", adaptive_width=True, pos_hint={"center_y": 0.5})
         self.add_widget(self.race_label)
@@ -236,6 +251,8 @@ class TimerChip(MDBoxLayout):
         show_race = self._race["present"] and host
         self.ctrl.disabled = not show_race
         self.ctrl.opacity = 1 if show_race else 0
+        # Ausgeblendet ohne Breite — sonst frisst er Platz in der Leiste
+        self.ctrl.width = dp(28) if show_race else 0
         race_icon = "pause" if self._race["running"] else "play"
         if self.ctrl.icon != race_icon:
             self.ctrl.icon = race_icon
@@ -243,6 +260,7 @@ class TimerChip(MDBoxLayout):
         show_cd = self._cd["present"] and not self._cd["finished"] and host
         self.cd_ctrl.disabled = not show_cd
         self.cd_ctrl.opacity = 1 if show_cd else 0
+        self.cd_ctrl.width = dp(28) if show_cd else 0
         cd_icon = "pause" if self._cd["running"] else "play"
         if self.cd_ctrl.icon != cd_icon:
             self.cd_ctrl.icon = cd_icon
@@ -277,9 +295,8 @@ class TimerChip(MDBoxLayout):
             race["started"] = timer_state.get("start_ts") is not None
             elapsed = munchlax.current_timer_elapsed()
             # "(Pause)" nur wenn wirklich gestartet-und-pausiert; frischer/reset-
-            # Timer zeigt schlicht 00:00:00.
-            suffix = " (Pause)" if (race["started"] and not race["running"]) else ""
-            race_text = _format_hms(elapsed) + suffix
+            # Timer zeigt schlicht 00:00:00. Offene Konsens-Anfragen mit n/m.
+            race_text = _format_hms(elapsed) + race_status_suffix(timer_state)
         countdown = getattr(munchlax, "countdown_state", None) or {}
         # Countdown nur, wenn tatsächlich einer gesetzt ist (duration > 0).
         if countdown.get("duration_seconds", 0) > 0:
@@ -299,8 +316,8 @@ class TimerChip(MDBoxLayout):
 
     def _toggle_race(self, *_args) -> None:
         """Host: Race-Timer starten/pausieren/fortsetzen.
-         - laeuft    → Pause-Request (Konsens, wie Timer-Tab)
-         - gestartet+pausiert → Resume-Request (Konsens)
+         - laeuft    → Pause-Request (Host → Server pausiert direkt)
+         - gestartet+pausiert → Resume-Request (Host → direkt)
          - resettet/nie gestartet → Start (direkt, wie Timer-Tab "Start")."""
         munchlax = self._connected_munchlax()
         if munchlax is None:
@@ -420,18 +437,29 @@ class StatusBarMD(MDBoxLayout):
         # nur im Hauptmenü. Dynamisch je Poll aus arceus/munchlax-Snapshots.
         self._app = app
         self._client_items: dict = {}
-        self.add_widget(MDLabel(text="|", adaptive_width=True, pos_hint={"center_y": 0.5},
-                                theme_text_color="Hint"))
+        self._client_sep = MDLabel(text="|", adaptive_width=True, pos_hint={"center_y": 0.5},
+                                   theme_text_color="Hint")
+        self.add_widget(self._client_sep)
         self.client_area = MDBoxLayout(adaptive_width=True, spacing=dp(12))
         self.add_widget(self.client_area)
 
         # Spacer schiebt den Timer-Slot nach rechts
-        self.add_widget(Widget())
+        self._spacer = Widget()
+        self.add_widget(self._spacer)
         # Race-/Countdown-Timer read-only; Klick → NuzlockeMenu.
         self.timer_slot = MDBoxLayout(adaptive_width=True, spacing=dp(4))
         self.timer_chip = TimerChip(app)
         self.timer_slot.add_widget(self.timer_chip)
         self.add_widget(self.timer_slot)
+
+        # Kompakt-Stufen gegen Overflow (Live-Session 2026-11-18: Countdown
+        # verschwand rechts bei schmalem Fenster): 0 = voll, 1 = nur Punkte,
+        # 2 = zusätzlich Clients ausgeblendet, 3 = nur noch der Timer.
+        # _stage_need[s] = benötigte Breite in Stufe s (gemessen), Rückweg mit
+        # Hysterese.
+        self._compact_stage = 0
+        self._stage_need: dict[int, float] = {}
+        self.bind(width=lambda *_: Clock.schedule_once(self._update_compact, 0))
 
         self._refresh_all(0)
         self._poll_event = Clock.schedule_interval(self._refresh_all, 1)
@@ -441,6 +469,57 @@ class StatusBarMD(MDBoxLayout):
             item.refresh()
         self._refresh_clients()
         self.timer_chip.refresh()
+        # Nächster Frame: Labels haben dann ihre neue Breite
+        Clock.schedule_once(self._update_compact, 0)
+
+    def _needed_width(self) -> float:
+        """Summe der Breiten aller Kinder außer dem Spacer (+ Abstände, Padding)."""
+        kids = [c for c in self.children if c is not self._spacer]
+        pad = self.padding[0] + self.padding[2]
+        return sum(c.width for c in kids) + self.spacing * max(0, len(kids) - 1) + pad
+
+    def _apply_stage(self, stage: int) -> None:
+        self._compact_stage = stage
+        compact = stage >= 1
+        for item in self._items:
+            item.set_compact(compact)
+        for item in self._client_items.values():
+            item.set_compact(compact)
+        # Ab Stufe 2 Widgets aus der Leiste nehmen statt auf Breite 0 zu
+        # setzen (adaptive Breiten überschreiben das). Reihenfolge je Stufe neu.
+        order: list = []
+        if stage < 3:
+            order.extend(self._items)
+        if stage < 2:
+            order.extend([self._client_sep, self.client_area])
+        order.extend([self._spacer, self.timer_slot])
+        if list(reversed(self.children)) != order:
+            self.clear_widgets()
+            for w in order:
+                self.add_widget(w)
+
+    def _update_compact(self, _dt=None) -> None:
+        try:
+            if self.width <= 1:
+                return
+            need = self._needed_width()
+            stage = self._compact_stage
+            timer_w = self.timer_slot.width
+            if need > self.width and stage < 3:
+                # Ohne Timer-Anteil merken: dessen Text ändert sich laufend
+                # ("Pause angefragt 1/4" kommt/geht) — sonst Stufen-Pendeln.
+                self._stage_need[stage] = need - timer_w
+                self._apply_stage(stage + 1)
+                logger.debug(f"StatusBar kompakt: Stufe {stage + 1} (Breite {self.width:.0f} < {need:.0f})")
+                # Nächste Stufe sofort prüfen (nach Layout), nicht erst im 1s-Refresh
+                Clock.schedule_once(self._update_compact, 0.05)
+                return
+            # Zurück, wenn die vorige Stufe mit dem AKTUELLEN Timer wieder passt
+            prev_rest = self._stage_need.get(stage - 1) if stage > 0 else None
+            if prev_rest is not None and self.width >= prev_rest + timer_w + dp(24):
+                self._apply_stage(stage - 1)
+        except Exception:
+            logger.warning(f"StatusBar-Kompakt-Update fehlgeschlagen: {traceback.format_exc()}")
 
     def _refresh_clients(self) -> None:
         """Verbundene Clients im Footer nachziehen (Dot + Name pro Client)."""
@@ -469,10 +548,11 @@ class StatusBarMD(MDBoxLayout):
                 item = self._client_items.get(cid)
                 if item is None:
                     item = StatusItem(name, provider)
+                    item.set_compact(self._compact_stage >= 1)
                     self.client_area.add_widget(item)
                     self._client_items[cid] = item
-                elif item.name_label.text != name:
-                    item.name_label.text = name
+                else:
+                    item.set_name(name)
                 item.refresh()
             # Verwaiste entfernen
             for cid in list(self._client_items.keys()):

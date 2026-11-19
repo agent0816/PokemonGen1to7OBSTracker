@@ -245,7 +245,23 @@ class Update(Screen):
         self._apply_update_result(new_archive, only_if_current="Splash",
                                   no_update_target=no_update_target)
 
+    @staticmethod
+    def _is_md_ui() -> bool:
+        """True, wenn die KivyMD-App läuft (dann MDDialog statt Kivy-Popup)."""
+        try:
+            from kivymd.app import MDApp
+            return isinstance(App.get_running_app(), MDApp)
+        except Exception:
+            return False
+
     def show_update_popup(self, new_archive):
+        if self._is_md_ui():
+            try:
+                self._show_update_dialog_md(new_archive)
+                return
+            except Exception as err:
+                # Fallback auf das klassische Popup — Update darf nicht ausfallen
+                logger.error(f"MD-Update-Dialog fehlgeschlagen, nutze Popup: {err}\n{traceback.format_exc()}")
         box = BoxLayout(orientation='vertical')
         text = f'Update verfügbar: Version {new_archive.version}'
         self._status_label = Label(text=text)
@@ -270,6 +286,80 @@ class Update(Screen):
         self.popup = Popup(title='Update verfügbar!', content=box,
                            size_hint=(None, None), size=(600, 300), auto_dismiss=False)
         self.popup.open()
+
+    def _show_update_dialog_md(self, new_archive):
+        """Update-Dialog in MD-Optik (Phase 5 Fix-Plan 2026-11-11). Gleiche
+        Attribute wie das Popup (_status_label, progress_bar, _download_btn,
+        _cancel_btn, popup), damit Download-/Backup-Pfad unverändert bleibt."""
+        from kivymd.uix.button import MDButton, MDButtonText
+        from kivymd.uix.dialog import (
+            MDDialog, MDDialogButtonContainer, MDDialogContentContainer,
+            MDDialogHeadlineText, MDDialogIcon,
+        )
+        from kivymd.uix.label import MDLabel
+        from kivymd.uix.progressindicator import MDLinearProgressIndicator
+        from kivy.metrics import dp
+        from kivy.uix.widget import Widget
+
+        self._status_label = MDLabel(
+            text=f'Version {new_archive.version} ist verfügbar.' + '\n\n'
+                 + 'Vor der Installation wird die Konfiguration gesichert. '
+                 'Die App startet danach neu.',
+            adaptive_height=True)
+        self.progress_bar = MDLinearProgressIndicator(
+            value=0, size_hint_y=None, height=dp(4), type="determinate")
+        self._download_btn = MDButton(MDButtonText(text='Herunterladen und installieren'),
+                                      style='filled')
+        self._download_btn.bind(on_release=lambda *_a: self.download_update())
+        self._cancel_btn = MDButton(MDButtonText(text='Später'), style='text')
+        self._cancel_btn.bind(on_release=self.cancel_update)
+        self.popup = MDDialog(
+            MDDialogIcon(icon='update'),
+            MDDialogHeadlineText(text='Update verfügbar'),
+            MDDialogContentContainer(self._status_label, self.progress_bar,
+                                     orientation='vertical', spacing=dp(12)),
+            MDDialogButtonContainer(Widget(), self._cancel_btn, self._download_btn,
+                                    spacing=dp(8)),
+            auto_dismiss=False,
+        )
+        logger.info(f"Update-Dialog (MD) geöffnet: Version {new_archive.version}")
+        self.popup.open()
+
+    def _ask_update_without_backup_md(self):
+        from kivymd.uix.button import MDButton, MDButtonText
+        from kivymd.uix.dialog import (
+            MDDialog, MDDialogButtonContainer, MDDialogHeadlineText, MDDialogIcon,
+            MDDialogSupportingText,
+        )
+        from kivy.metrics import dp
+        from kivy.uix.widget import Widget
+
+        dialog = None
+
+        def _go(*_args):
+            dialog.dismiss()
+            logger.info("Update ohne Config-Backup bestätigt.")
+            self._start_update_task(skip_backup=True)
+
+        def _abort(*_args):
+            dialog.dismiss()
+            self._set_status("Update abgebrochen: Backup fehlgeschlagen.")
+            self._set_download_enabled(True)
+
+        dialog = MDDialog(
+            MDDialogIcon(icon='alert'),
+            MDDialogHeadlineText(text='Backup fehlgeschlagen'),
+            MDDialogSupportingText(
+                text='Die Konfiguration konnte nicht gesichert werden '
+                     '(Details in logs/frontend.log). Update trotzdem installieren?'),
+            MDDialogButtonContainer(
+                Widget(),
+                MDButton(MDButtonText(text='Abbrechen'), style='text', on_release=_abort),
+                MDButton(MDButtonText(text='Trotzdem updaten'), style='filled', on_release=_go),
+                spacing=dp(8)),
+            auto_dismiss=False,
+        )
+        dialog.open()
 
     def _set_status(self, text):
         label = getattr(self, "_status_label", None)
@@ -311,6 +401,12 @@ class Update(Screen):
         return True
 
     def _ask_update_without_backup(self):
+        if self._is_md_ui():
+            try:
+                self._ask_update_without_backup_md()
+                return
+            except Exception as err:
+                logger.error(f"MD-Backup-Dialog fehlgeschlagen, nutze Popup: {err}\n{traceback.format_exc()}")
         box = BoxLayout(orientation='vertical', spacing=10, padding=10)
         box.add_widget(Label(
             text="Config-Backup fehlgeschlagen (Details in logs/frontend.log).\n"

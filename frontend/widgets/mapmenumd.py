@@ -240,6 +240,15 @@ class MapCanvas(Widget):
                         size=(2 * (r + dp(1.5)), 2 * (r + dp(1.5))))
                 Color(0.15, 0.5, 1, 1)
                 Ellipse(pos=(cx - r, cy - r), size=(2 * r, 2 * r))
+                # Belegt-Rand der Marker-Zelle erneut obenauf, sonst verdeckt
+                # der Positions-Punkt die rote Markierung (Live-Session 2026-11-18,
+                # Pokémon-Turm teilt die Zelle mit Lavandia).
+                Color(0.85, 0.12, 0.12, 0.95)
+                for ms in self.occupied_sections:
+                    for (x, y, w, h) in self.hotspots.get(ms, {}).get("rects", ()):
+                        if (x, y, w, h) in rects:
+                            sx, sy, sw, sh = self._px_rect(x, y, w, h)
+                            Line(rectangle=(sx, sy, sw, sh), width=1.6)
 
     # --- Interaktion ----------------------------------------------------------
 

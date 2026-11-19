@@ -146,6 +146,28 @@ def clamp_player_count(value, lo: int = 1, hi: int = 4, default: int = 2) -> int
     return max(lo, min(hi, count))
 
 
+# Spielrelevante nuz-Keys ohne rule_-Präfix, die der Host für alle festlegt
+# (User 2026-11-19: "Der Host setzt die Regeln fest"). Live-Session 2026-11-18:
+# satougame hatte lokal gifts_are_additional=False → sein Relaxo-Static wurde
+# verworfen, bei den anderen gebucht. Werden als config["settings"] gesendet und
+# von Clients nur im Speicher gespiegelt (wie rules).
+SYNCED_SETTINGS: tuple[str, ...] = (
+    "gifts_are_additional",
+    "fossils_repeatable",
+    "static_encounters_separate",
+    "encounter_methods_separate",
+    "shiny_clause",
+    "dupes_clause",
+    "soullink_death_sync",
+    "soullink_box_sync",
+)
+
+
+def synced_settings(nuz: dict) -> dict:
+    """Die vom Host an alle Clients verteilten Nicht-rule_-Einstellungen."""
+    return {k: nuz[k] for k in SYNCED_SETTINGS if k in nuz}
+
+
 def collect_config(mode_value: str, owner_rows, nuz: dict) -> dict:
     """Baut das Config-Dict fuer send_soullink_config aus den Owner-Zeilen + nuz.
 
@@ -171,6 +193,7 @@ def collect_config(mode_value: str, owner_rows, nuz: dict) -> dict:
         "team_membership": team_map,
         "expected_owners": owners,
         "rules": rules,
+        "settings": synced_settings(nuz),
     }
 
 

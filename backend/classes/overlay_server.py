@@ -144,9 +144,8 @@ class OverlayServer:
             }
             payload["new_slots"] = slot_mapping.get('new_slots', [])
             payload["removed_slots"] = slot_mapping.get('removed_slots', [])
-        for p in payload.get('team', []):
-            if p.get('dexnr', 0) != 0:
-                self.logger.debug(f"SSE slot={p['slot']}: dexnr={p['dexnr']}, item={p.get('item','')}, nickname={p.get('nickname','')}")
+        # Kein Pro-Slot-Debug pro Broadcast mehr (Live-Session 2026-11-18:
+        # zweitgrößter Posten in main.log); Team steht in munchlax/bizhawk-Logs.
         data = json.dumps(payload, ensure_ascii=False)
         event = f"event: {update_type}\ndata: {data}\n\n"
         dead = []

@@ -22,7 +22,7 @@ from backend.encounter_edit import find_rebind_candidate, new_encounter
 from backend.graveyard import GraveyardDB, graveyard_path
 from backend.logging_setup import get_logger
 from backend.msg_log_throttle import MessageLogThrottle
-from backend.nuzlocke_view import dragon_rage_badge_limit
+from backend.nuzlocke_view import SYNCED_SETTINGS, dragon_rage_badge_limit
 
 # Mindestabstand zwischen automatischen Box-Refreshs pro Spieler.
 # Verhindert Box-Read-Stürme z.B. bei Team-Reorder-Spam oder Evolutionen.
@@ -675,6 +675,50 @@ class Munchlax:
         """Kopie der PC-Boxen eines Spielers (Liste von Box-Listen)."""
         with self.state_lock:
             return [list(box) for box in (self.boxes.get(player_id) or [])]
+
+    def _mirror_host_config(self, config: dict) -> int:
+        """Host-Regeln (rule_*), Modus und Einstellungen (SYNCED_SETTINGS) aus
+        der empfangenen soullink_config ins lokale nuz spiegeln (nur Speicher,
+        nuzlocke.yml bleibt). Liefert die Anzahl gespiegelter Keys. Nur für
+        Nicht-Host-Clients aufrufen (Host-Guard beim Aufrufer)."""
+        mirrored_count = 0
+        if isinstance(self.nuz, dict):
+            # Nur spiegeln wenn Host das rules-Feld explizit gesetzt
+            # hat. Fehlender Key (alter Server ohne rules-Field)
+            # darf NICHT alle lokalen rule_*-Keys loeschen —
+            # Clear-All ist nur bei explizit leerem {} korrekt.
+            raw_rules = config.get("rules")
+            if isinstance(raw_rules, dict):
+                # Alte rule_*-Keys, die der Host nicht mehr sendet
+                # (Preset-Wechsel mit kleinerem Rule-Set), explizit
+                # entfernen — sonst behaelt der Client seinen
+                # Pre-Broadcast-Default und first_type_dupe_slots
+                # blockt obwohl Host die Regel entfernt hat.
+                for key in [
+                    k for k in list(self.nuz.keys())
+                    if isinstance(k, str) and k.startswith("rule_")
+                ]:
+                    if key not in raw_rules:
+                        self.nuz.pop(key, None)
+                for rule_key, val in raw_rules.items():
+                    if isinstance(rule_key, str) and rule_key.startswith("rule_"):
+                        self.nuz[rule_key] = val
+                        mirrored_count += 1
+            mode_val = config.get("mode")
+            if isinstance(mode_val, str) and mode_val:
+                self.nuz["run_mode"] = mode_val
+            # Nicht-rule_-Einstellungen des Hosts (gifts_are_additional
+            # usw.). Fehlt das Feld (alter Host), lokale Werte behalten.
+            raw_settings = config.get("settings")
+            if isinstance(raw_settings, dict):
+                for key in SYNCED_SETTINGS:
+                    if key in raw_settings and self.nuz.get(key) != raw_settings[key]:
+                        self.logger.info(
+                            f"Host-Einstellung übernommen: {key}="
+                            f"{raw_settings[key]!r} (lokal {self.nuz.get(key)!r})")
+                        self.nuz[key] = raw_settings[key]
+                        mirrored_count += 1
+        return mirrored_count
 
     def snapshot_soullink_config(self) -> dict:
         with self.state_lock:
@@ -1593,32 +1637,8 @@ class Munchlax:
                             is_host = bool(self.rem.get("start_server", False))
                         except AttributeError:
                             is_host = False
-                        mirrored_count = 0
-                        if not is_host and isinstance(self.nuz, dict):
-                            # Nur spiegeln wenn Host das rules-Feld explizit gesetzt
-                            # hat. Fehlender Key (alter Server ohne rules-Field)
-                            # darf NICHT alle lokalen rule_*-Keys loeschen —
-                            # Clear-All ist nur bei explizit leerem {} korrekt.
-                            raw_rules = self.soullink_config.get("rules")
-                            if isinstance(raw_rules, dict):
-                                # Alte rule_*-Keys, die der Host nicht mehr sendet
-                                # (Preset-Wechsel mit kleinerem Rule-Set), explizit
-                                # entfernen — sonst behaelt der Client seinen
-                                # Pre-Broadcast-Default und first_type_dupe_slots
-                                # blockt obwohl Host die Regel entfernt hat.
-                                for key in [
-                                    k for k in list(self.nuz.keys())
-                                    if isinstance(k, str) and k.startswith("rule_")
-                                ]:
-                                    if key not in raw_rules:
-                                        self.nuz.pop(key, None)
-                                for rule_key, val in raw_rules.items():
-                                    if isinstance(rule_key, str) and rule_key.startswith("rule_"):
-                                        self.nuz[rule_key] = val
-                                        mirrored_count += 1
-                            mode_val = self.soullink_config.get("mode")
-                            if isinstance(mode_val, str) and mode_val:
-                                self.nuz["run_mode"] = mode_val
+                        mirrored_count = (0 if is_host
+                                          else self._mirror_host_config(self.soullink_config))
                         log_raw = self.soullink_config.get('rules')
                         log_rules = (
                             list(log_raw.keys()) if isinstance(log_raw, dict) else "absent"

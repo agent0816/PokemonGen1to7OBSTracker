@@ -29,6 +29,14 @@ SAMPLE_BUFFER = 600
 STACK_DUMP_FRAME_S = 0.2
 STACK_DEPTH = 8
 STACK_TOP = 6
+# Heap-Zensus (Leck-Suche, Live-Session 2026-11-18: Gen-2-GC wuchs 0,3 s → 14,7 s):
+# Objekte nach Typ zählen, Delta zum letzten Zensus loggen. Kostet selbst
+# ~0,5–2 s Main-Thread → selten: alle CENSUS_INTERVAL_S und nach langem
+# Gen-2-GC (≥ CENSUS_GC_TRIGGER_S), aber nie öfter als CENSUS_MIN_GAP_S.
+CENSUS_INTERVAL_S = 600.0
+CENSUS_GC_TRIGGER_S = 1.0
+CENSUS_MIN_GAP_S = 300.0
+CENSUS_TOP = 25
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Strong-Refs auf Frame-Watchdog-State (Clock hält nur schwache Refs auf Methoden)
@@ -91,6 +99,7 @@ def install_frame_watchdog(screen_manager: Any) -> None:
     _watchdog_state["event"] = Clock.schedule_interval(_tick, 0)
     _install_gc_logger()
     _start_stack_sampler()
+    _install_heap_census()
 
 
 # --- Nachruckler-Diagnose ----------------------------------------------------
@@ -114,11 +123,81 @@ def _install_gc_logger() -> None:
                 perf_log(f"gc gen={info.get('generation')} ms={dur * 1000.0:.1f} "
                          f"collected={info.get('collected')} "
                          f"uncollectable={info.get('uncollectable')}")
+            if info.get("generation") == 2 and dur >= CENSUS_GC_TRIGGER_S:
+                # Nicht im GC-Callback zählen (gc.get_objects hier unzulässig/teuer)
+                _census_state["gc_trigger"] = True
         except Exception:
             pass  # GC-Callback darf nie werfen
 
     _gc_state["cb"] = _cb
     gc.callbacks.append(_cb)
+
+
+_census_state: dict[str, Any] = {}
+
+
+def _heap_census(reason: str) -> None:
+    """Objekt-Zählung nach Typ (Modul.Klasse) mit Delta zum vorigen Zensus.
+
+    perf.log-Zeilen:
+      heap_census reason=… objects=… delta=… ms=… gc_counts=…
+      heap_top type=… n=… delta=…   (Top nach Delta, dann Top nach Anzahl)
+    """
+    t0 = time.perf_counter()
+    _census_state["gc_trigger"] = False  # eigener Zensus-GC soll nicht neu triggern
+    objs = gc.get_objects()
+    # Nach Typ-Objekt zählen (C-schnell, keine Millionen Strings), erst danach
+    # die wenigen distinkten Typen benennen.
+    by_type = Counter(map(type, objs))
+    total = len(objs)
+    del objs
+    counts: Counter = Counter()
+    for t, n in by_type.items():
+        counts[f"{getattr(t, '__module__', '?')}.{getattr(t, '__qualname__', t.__name__)}"] += n
+    del by_type
+    prev: Counter = _census_state.get("last") or Counter()
+    prev_total = _census_state.get("last_total")
+    _census_state["last"] = counts
+    _census_state["last_total"] = total
+    _census_state["last_ts"] = time.monotonic()
+    ms = (time.perf_counter() - t0) * 1000.0
+    delta_total = "-" if prev_total is None else f"{total - prev_total:+d}"
+    perf_log(f"heap_census reason={reason} objects={total} delta={delta_total} "
+             f"ms={ms:.0f} gc_counts={gc.get_count()} garbage={len(gc.garbage)}")
+    if prev:
+        growth = sorted(((counts[k] - prev.get(k, 0), k) for k in counts),
+                        reverse=True)[:CENSUS_TOP]
+        for d, k in growth:
+            if d <= 0:
+                break
+            perf_log(f"  heap_grow type={k} n={counts[k]} delta={d:+d}")
+    for k, n in counts.most_common(CENSUS_TOP):
+        perf_log(f"  heap_top type={k} n={n} delta={n - prev.get(k, 0):+d}")
+
+
+def _install_heap_census() -> None:
+    """Periodischer + GC-getriggerter Heap-Zensus (nur TRACKER_PERF)."""
+    if _census_state.get("ev") is not None:
+        return
+    _census_state["gc_trigger"] = False
+    _census_state["started"] = time.monotonic()
+
+    def _tick(_dt) -> None:
+        try:
+            now = time.monotonic()
+            last = _census_state.get("last_ts")
+            gap_ok = last is None or now - last >= CENSUS_MIN_GAP_S
+            if _census_state.get("gc_trigger") and gap_ok:
+                _census_state["gc_trigger"] = False
+                _heap_census("gc2")
+            elif last is None and now - _census_state["started"] >= 60.0:
+                _heap_census("baseline")  # 1 min nach Start
+            elif last is not None and now - last >= CENSUS_INTERVAL_S:
+                _heap_census("periodisch")
+        except Exception:
+            perf_log(f"heap_census-Fehler: {traceback.format_exc()}")
+
+    _census_state["ev"] = Clock.schedule_interval(_tick, 5.0)
 
 
 # (perf_counter, kompakter Stack des Main-Threads) — vom Sampler-Thread befüllt

@@ -454,8 +454,11 @@ class EncounterTracker:
                 )
                 route_belegt = False
             if route_belegt and not shiny_exception:
+                kind = ("Static-Encounter uebersprungen (Route bereits belegt, "
+                        "gifts_are_additional=False)") if is_static else \
+                    "Wild-Encounter uebersprungen (Route bereits belegt)"
                 self.logger.info(
-                    f"Wild-Encounter uebersprungen (Route bereits belegt): "
+                    f"{kind}: "
                     f"owner={owner} edition={edition} dex={opponent.get('dexnr')} "
                     f"route={route}"
                 )

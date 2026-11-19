@@ -371,16 +371,9 @@ class Bizhawk:
                     proc_t0 = time.perf_counter()
                     recv_dt = proc_t0 - recv_t0
                     tick_counter_snapshot = counter
-                    # Reduzierter Tick-Log: nur 1x pro Sekunde statt 60x. Pro-Frame-
-                    # Debug fuellte bizhawk.log mit >23k Zeilen pro 2MB-File und
-                    # erzwang eine File-Rotation alle paar Minuten — Disk-I/O-Spike
-                    # genau waehrend der Lua auf Response wartet.
-                    if counter % 60 == 0:
-                        self.logger.debug(
-                            f"Tick {counter}: client={client_id}, "
-                            f"in_battle={in_battle}, "
-                            f"queue_len={len(self.box_request_queues.get(client_id, []))}"
-                        )
+                    # Kein Pro-Tick-Log mehr (Live-Session 2026-11-18: größter
+                    # Einzelposten in main.log). Tick-Summary alle 60 s + SLOW TICK
+                    # decken die Diagnose ab (lag-diagnose-instrumente).
                     flush_on_request = self._flush_requested.get(client_id, False)
                     if (counter == 1 and self.bh["save_automatically"]) or self.about_to_exit or flush_on_request:
                         tick_phase = "save_ram"
@@ -1273,10 +1266,12 @@ class Bizhawk:
             if not pockets:
                 return
             await self._call_on_munchlax(self.munchlax.update_bag(player, edition, pockets))
-            self.logger.debug(
-                f"Auto-Bag-Refresh player={player}: "
-                f"{', '.join(f'{k}={len(v)}' for k, v in pockets.items())}"
-            )
+            # Nur bei geänderten Pocket-Größen loggen (sonst ~1 Zeile/s)
+            summary = ', '.join(f'{k}={len(v)}' for k, v in pockets.items())
+            last = self.__dict__.setdefault("_bag_log_summary", {})
+            if last.get(client_id) != summary:
+                last[client_id] = summary
+                self.logger.debug(f"Auto-Bag-Refresh player={player}: {summary}")
         except Exception as err:
             self.logger.warning(f"Auto-Bag-Refresh player={player} fehlgeschlagen: {type(err)},{err}")
             self.logger.warning(f"{traceback.format_exc()}")

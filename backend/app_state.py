@@ -52,6 +52,11 @@ DEFAULT_STATE = {
     # Performance-Messung (TRACKER_PERF) per GUI-Schalter; greift erst nach
     # Neustart, weil perf_probe das Flag beim Import liest.
     'perf_messung': False,
+    # Countdown-Ende-Ton (persönlich, nicht session-gebunden): Ton-ID aus
+    # backend.countdown_sound.TONE_LABELS, eigene WAV-Datei, Lautstärke 0–100.
+    'countdown_tone': 'doppelpiep',
+    'countdown_sound_file': '',
+    'countdown_volume': 80,
 }
 
 
@@ -146,4 +151,29 @@ def set_theme(style: str | None = None, palette: str | None = None) -> None:
         state['theme_style'] = style
     if palette is not None:
         state['primary_palette'] = palette
+    save_app_state(state)
+
+
+def get_countdown_sound() -> tuple[str, str, int]:
+    """(Ton-ID, eigene Datei, Lautstärke 0–100); ungültige Werte → Defaults."""
+    state = load_app_state()
+    tone = str(state.get('countdown_tone') or 'doppelpiep')
+    path = str(state.get('countdown_sound_file') or '')
+    try:
+        volume = max(0, min(100, int(state.get('countdown_volume', 80))))
+    except (TypeError, ValueError):
+        volume = 80
+    return tone, path, volume
+
+
+def set_countdown_sound(tone: str | None = None, path: str | None = None,
+                        volume: int | None = None) -> None:
+    """Speichert die Countdown-Ton-Einstellung (None = unverändert)."""
+    state = load_app_state()
+    if tone is not None:
+        state['countdown_tone'] = str(tone)
+    if path is not None:
+        state['countdown_sound_file'] = str(path)
+    if volume is not None:
+        state['countdown_volume'] = max(0, min(100, int(volume)))
     save_app_state(state)

@@ -152,6 +152,10 @@ class _DriveApp(MDApp):
         self.menu._apply_filters()
         after = self._cards()
         self.check("karte_wiederverwendet", before is not None and after and after[0] is before)
+        # Wieder-Eintritt: Karten-Cache bleibt (Live-Session 2026-11-18: Vollaufbau)
+        self.menu.on_pre_enter()
+        self.check("cache_nach_eintritt", len(self.menu._card_cache) >= 1,
+                   len(self.menu._card_cache))
         self.shot("02_encounter_soullink")
         self._next(self.s_finish, 0.8)
 
@@ -162,7 +166,7 @@ class _DriveApp(MDApp):
 _EXPECTED = {"host_sync_button", "flat_hinweis_sichtbar", "soullink_hinweis_weg",
     "flat_5_zeilen", "flat_keine_karten", "spieler_filter_bob",
     "soullink_1_gruppe", "soullink_2_member", "soullink_keine_flat_zeilen",
-    "karte_wiederverwendet",
+    "karte_wiederverwendet", "cache_nach_eintritt",
 }
 
 

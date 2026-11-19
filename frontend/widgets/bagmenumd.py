@@ -6,6 +6,7 @@ nicht, siehe Memory reference_recycleview_screenmanager). Datenfluss, Rando-
 TM/HM-Lookup und Sonderbonbon-Schreiben sind 1:1 aus frontend/widgets/bagmenu.py.
 """
 import asyncio
+import time
 import traceback
 from pathlib import Path
 
@@ -40,6 +41,9 @@ logger = get_logger(__name__, 'logs/bagmenu.log')
 CARD_MIN_WIDTH = dp(260)
 ITEM_ROW_H = dp(34)
 ICON_W = dp(28)
+# Zeit-Budget pro Frame für den Zeilen-Aufbau (Live-Session 2026-11-18:
+# synchroner Komplettaufbau 3,0–3,6 s). Mindestens 1 Schritt pro Frame.
+RENDER_BUDGET_S = 0.04
 
 
 def _label(text: str, bold: bool = False, role: str | None = None, **kwargs) -> MDLabel:
@@ -113,6 +117,14 @@ class BagMenu(MDScreen):
         self._refresh_event = None
         self._menus: list[MDDropdownMenu] = []
         self._tasks: set[asyncio.Task] = set()
+        # Sektions-Cache: Schlüssel = Inhalt der Sektion (_section_key) →
+        # fertig gebauter Block. Unveränderte Spieler-Sektionen werden beim
+        # 5-s-Refresh/Filtern wiederverwendet statt neu gebaut.
+        self._section_cache: dict[tuple, MDBoxLayout] = {}
+        # Ausstehende Aufbau-Schritte (Zeilen) des laufenden Renders
+        self._render_steps: list = []
+        self._render_event = None
+        self._filter_debounce = None
 
         root = MDBoxLayout(orientation="vertical", padding="10dp", spacing="8dp")
 
@@ -137,16 +149,15 @@ class BagMenu(MDScreen):
         filter_bar.add_widget(self.pocket_button)
         self.search_input = MDTextField(MDTextFieldHintText(text="Name oder ID …"),
                                         mode="outlined", size_hint_x=0.4)
-        # Debounce: nicht bei jedem Tastendruck alles neu aufbauen
-        self._filter_trigger = Clock.create_trigger(lambda _dt: self._apply_filters(), 0.15)
-        self.search_input.bind(text=lambda _i, _v: self._filter_trigger())
+        # Trailing-Debounce: erst 0,3 s nach dem letzten Tastendruck filtern
+        self.search_input.bind(text=lambda _i, _v: self._schedule_filter())
         filter_bar.add_widget(self.search_input)
         root.add_widget(filter_bar)
 
         sub_bar = MDBoxLayout(orientation="horizontal", size_hint_y=None, height="40dp", spacing="10dp")
         sub_bar.add_widget(MDLabel(text="nur Bälle", size_hint_x=None, width="90dp", valign="center"))
         self.balls_only_switch = MDSwitch(pos_hint={"center_y": .5})
-        self.balls_only_switch.bind(active=lambda _i, _v: self._filter_trigger())
+        self.balls_only_switch.bind(active=lambda _i, _v: self._schedule_filter())
         sub_bar.add_widget(self.balls_only_switch)
         self.count_label = MDLabel(text="0 Einträge", valign="center", halign="right")
         sub_bar.add_widget(self.count_label)
@@ -195,6 +206,8 @@ class BagMenu(MDScreen):
         self._candy_count_per_section.clear()
         self._all_rows = []
         self._rendered = False
+        self._cancel_render()
+        self._section_cache.clear()
         manager = self.manager
         if manager is not None and manager.current_screen is not self:
             # Nicht sichtbar: nur Inhalt der alten Session verwerfen; on_pre_enter
@@ -480,13 +493,84 @@ class BagMenu(MDScreen):
 
     # --- Rendern -----------------------------------------------------------------
 
+    def _schedule_filter(self) -> None:
+        if self._filter_debounce is not None:
+            self._filter_debounce.cancel()
+        self._filter_debounce = Clock.schedule_once(lambda _dt: self._apply_filters(), 0.3)
+
+    def _cancel_render(self) -> None:
+        if self._render_event is not None:
+            self._render_event.cancel()
+            self._render_event = None
+        self._render_steps = []
+        if self._filter_debounce is not None:
+            self._filter_debounce.cancel()
+            self._filter_debounce = None
+
+    def _section_key(self, section: dict) -> tuple:
+        """Alles, was in den Sektions-Block eingebacken wird."""
+        owner = str(section["owner"])
+        edition = str(section["edition"])
+        rando_tm, rando_hm = self._rando_moves_for_owner(owner)
+        pockets = tuple(
+            (p["label"], tuple((r.get("item_id"), r.get("qty")) for r in p["items"]))
+            for p in section["pockets"])
+        return (owner, edition, section.get("edition_name"), self._owner_title(owner),
+                self._can_write_for_owner(owner, edition),
+                (self.sp.get("items_path") if self.sp else "") or "",
+                tuple(sorted((rando_tm or {}).items())), tuple(sorted((rando_hm or {}).items())),
+                pockets)
+
     def _render_sections(self, sections: list[dict]) -> None:
+        """Unveränderte Sektionen aus dem Cache, neue als Gerüst sofort und ihre
+        Item-Zeilen gebatcht mit Zeit-Budget pro Frame."""
+        self._cancel_render()
         self.content_box.clear_widgets()
+        steps: list = []
+        cache_next: dict[tuple, MDBoxLayout] = {}
+        reused = 0
         for section in sections:
-            self.content_box.add_widget(self._build_section(section))
+            key = self._section_key(section)
+            block = self._section_cache.get(key)
+            if block is not None and block.parent is None and key not in cache_next:
+                reused += 1
+            else:
+                block = self._build_section(section, steps)
+            cache_next.setdefault(key, block)
+            self.content_box.add_widget(block)
+        logger.debug(f"BagMenu render: {len(sections)} Sektionen, {reused} aus Cache, "
+                     f"{len(steps)} Zeilen-Schritte")
+        # Cache = genau die Blöcke dieses Renders (Sweep). Wiederverwendete sind
+        # komplett; neue trägt ihr Abschluss-Schritt nach, sobald sie fertig sind.
+        self._section_cache = {k: b for k, b in cache_next.items()
+                               if self._section_cache.get(k) is b}
+        if not steps:
+            return
+        self._render_steps = steps
+        if self._render_batch(0):
+            self._render_event = Clock.schedule_interval(self._render_batch, 0)
+
+    @perf_span("bag._render_batch")
+    def _render_batch(self, _dt) -> bool:
+        t0 = time.perf_counter()
+        while self._render_steps:
+            step = self._render_steps.pop(0)
+            try:
+                step()
+            except Exception as err:
+                logger.error(f"BagMenu Zeilen-Aufbau fehlgeschlagen: {type(err)},{err}")
+                logger.error(traceback.format_exc())
+            if time.perf_counter() - t0 >= RENDER_BUDGET_S:
+                break
+        if self._render_steps:
+            return True
+        self._render_event = None
+        return False
 
     @perf_span("bag._build_section")
-    def _build_section(self, section: dict) -> MDBoxLayout:
+    def _build_section(self, section: dict, steps: list) -> MDBoxLayout:
+        """Sektions-Gerüst (Titel, Pocket-Karten mit fester Höhe). Die Item-
+        Zeilen werden als Schritte an ``steps`` angehängt."""
         owner = str(section["owner"])
         edition = str(section["edition"])
         block = MDBoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
@@ -517,10 +601,16 @@ class BagMenu(MDScreen):
         for pocket in section["pockets"]:
             card = PocketCard(pocket["label"], fixed_height=card_h)
             for row in pocket["items"]:
-                card.add_widget(self._make_item_row(edition, row, rando_tm, rando_hm))
-            # Trailing Spacer hält den Inhalt bei fester Höhe oben bündig.
-            card.add_widget(Widget())
+                steps.append(lambda c=card, r=row: c.add_widget(
+                    self._make_item_row(edition, r, rando_tm, rando_hm)))
+            # Trailing Spacer hält den Inhalt bei fester Höhe oben bündig
+            # (als letzter Schritt, damit er nach den Zeilen steht).
+            steps.append(lambda c=card: c.add_widget(Widget()))
             grid.add_widget(card)
+        # Abschluss-Schritt: Block ist komplett → sofort cachebar (auch wenn ein
+        # späterer Render den laufenden abbricht; nie halb gebaute Blöcke).
+        key = self._section_key(section)
+        steps.append(lambda k=key, b=block: self._section_cache.__setitem__(k, b))
         block.add_widget(grid)
         return block
 

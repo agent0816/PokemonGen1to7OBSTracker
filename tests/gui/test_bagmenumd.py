@@ -120,6 +120,18 @@ class _DriveApp(MDApp):
     def s_player(self):
         self.menu._pick_player("Bob_2", "Spieler 2")
         self.check("spieler_bob_2_karten", len(self._cards()) == 2, len(self._cards()))
+        self.menu._pick_player("alle", "alle")
+        self._next(self.s_cache, 0.5)
+
+    def s_cache(self):
+        # Unveränderte Sektionen werden wiederverwendet (Live-Session 2026-11-18:
+        # Komplettaufbau 3,6 s bei jedem Refresh/Filter)
+        before = list(self.menu.content_box.children)
+        self.menu._apply_filters()
+        after = list(self.menu.content_box.children)
+        self.check("sektionen_wiederverwendet",
+                   len(before) == 2 and [id(w) for w in before] == [id(w) for w in after],
+                   (len(before), len(after)))
         self._next(self.s_finish, 0.8)
 
     def s_finish(self):
@@ -130,6 +142,7 @@ _EXPECTED = {
     "alle_5_karten", "count_6", "sektion_alice", "sektion_bob", "item_namen", "qty_label",
     "kein_candy_ohne_emulator", "pocket_medizin_2_karten", "pocket_count_2",
     "baelle_2_karten", "baelle_count_3", "baelle_kein_potion", "spieler_bob_2_karten",
+    "sektionen_wiederverwendet",
 }
 
 

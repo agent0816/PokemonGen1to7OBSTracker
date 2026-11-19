@@ -53,7 +53,10 @@ ENC_CARD_MIN_WIDTH = dp(240)
 # Mindestbreite je Mitglied (Sprite 48dp + lesbarer Text) für 3–4-Spieler-Gruppen
 MEMBER_MIN_WIDTH = dp(160)
 ENC_CARD_HEIGHT = dp(96)
-RENDER_BATCH = 12
+# Zeit-Budget pro Frame beim Karten-Aufbau: Gruppenkarten kosten ~130 ms
+# (Live-Session 2026-11-18: 12er-Batch = 1,1–2,1 s Frame). Mindestens 1 Karte
+# pro Frame, Cache-Treffer sind billig → viele pro Frame.
+RENDER_BUDGET_S = 0.04
 # Trailing-Debounce: Suche erst filtern, wenn das Tippen pausiert; Link-Event-
 # Bursts (Gruppe anlegen, Remote-Batch) zu einem Reload zusammenfassen.
 SEARCH_DEBOUNCE_S = 0.3
@@ -712,9 +715,12 @@ class EncounterMenu(MDScreen):
     def on_pre_enter(self, *args) -> None:
         # Immer frisch laden: Encounter ändern sich live während des Spielens
         # (Parität zur Klassik, die bei jedem Eintritt neu lädt). _reload ist
-        # async + gebatcht, der DB-Round-Trip ist günstig. Sprite-Cache mit
-        # leeren: Sprite-Pfad/-Repo kann in den Settings in-place geändert sein.
-        self._clear_caches()
+        # async + gebatcht, der DB-Round-Trip ist günstig. Nur den Sprite-Cache
+        # leeren (Sprite-Pfad/-Repo kann in den Settings geändert sein). Den
+        # Karten-Cache BEHALTEN: der Schlüssel enthält Inhalt + Sprite-Pfad,
+        # unveränderte Karten werden wiederverwendet statt neu gebaut
+        # (Live-Session 2026-11-18: Vollaufbau bei jedem Eintritt, 1–14 s).
+        self._sprite_cache.clear()
         self._update_import_button()
         self._reload()
 
@@ -1024,10 +1030,12 @@ class EncounterMenu(MDScreen):
 
     @perf_span("enc._render_batch")
     def _render_batch(self, _dt) -> bool:
-        batch = self._pending[:RENDER_BATCH]
-        del self._pending[:RENDER_BATCH]
-        for grid, kind, item in batch:
+        t0 = time.perf_counter()
+        while self._pending:
+            grid, kind, item = self._pending.pop(0)
             grid.add_widget(self._card_for(kind, item))
+            if time.perf_counter() - t0 >= RENDER_BUDGET_S:
+                break
         if not self._pending:
             self._render_event = None
             # Sweep: nur Karten des fertigen Renders behalten (kein Leck)

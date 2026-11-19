@@ -30,6 +30,7 @@ from kivymd.uix.slider import MDSlider, MDSliderHandle, MDSliderValueLabel
 from backend.logging_setup import get_logger
 from backend.snapshot_manager import SnapshotManager
 from backend.timer_view import race_status_suffix, split_lines
+from backend import app_state, countdown_sound
 from backend.soullink_presets import load_presets, apply_preset, preset_choices
 from backend.nuzlocke_view import (
     TEAM_LETTERS, MODE_LABELS, MODE_LABEL_TO_VALUE,
@@ -414,7 +415,10 @@ class NuzlockeMenu(MDScreen):
         rbtns.add_widget(_action_button("Reset", lambda: self._send(self.munchlax.send_timer_reset())))
         race_card.add_widget(rbtns)
         # Splits (Server zählt sie schon immer, angezeigt wurden sie nie)
-        self._race_splits = MDLabel(text="", role="small", adaptive_height=True)
+        self._race_splits = MDLabel(text="", role="small", size_hint_y=None, height=0)
+        # Höhe folgt dem Text; leer = 0 (sonst Leerraum unter den Buttons)
+        self._race_splits.bind(texture_size=lambda lbl, ts: setattr(
+            lbl, "height", ts[1] if lbl.text else 0))
         race_card.add_widget(self._race_splits)
         box.add_widget(race_card)
 
@@ -437,6 +441,7 @@ class NuzlockeMenu(MDScreen):
         cbtns.add_widget(_action_button("Fortsetzen", lambda: self._send(self.munchlax.send_countdown_resume())))
         cbtns.add_widget(_action_button("Abbrechen", lambda: self._send(self.munchlax.send_countdown_cancel())))
         cd_card.add_widget(cbtns)
+        self._build_countdown_sound_rows(cd_card)
         box.add_widget(cd_card)
         return box
 
@@ -1055,6 +1060,8 @@ class NuzlockeMenu(MDScreen):
             splits_text = ("Splits:\n" + "\n".join(lines)) if lines else ""
             if self._race_splits.text != splits_text:
                 self._race_splits.text = splits_text
+                if not splits_text:
+                    self._race_splits.height = 0
             cd = getattr(self.munchlax, "countdown_state", None) or {}
             if cd.get("duration_seconds", 0) <= 0:
                 self._cd_display.text = "Countdown: --:--:--"
@@ -1073,21 +1080,116 @@ class NuzlockeMenu(MDScreen):
 
     def _on_countdown_finished(self, label: str, duration_seconds: float) -> None:
         logger.info(f"Countdown fertig: '{label}' ({duration_seconds}s)")
+        self._play_countdown_sound()
 
-        def _beep():
-            try:
-                import winsound
-                winsound.Beep(1000, 400)
-                winsound.Beep(1500, 400)
-            except Exception as err:
-                logger.warning(f"winsound.Beep failed: {err}")
+    # ------------------------------------------------- Countdown-Ton (Einstellung)
+    def _build_countdown_sound_rows(self, cd_card) -> None:
+        """Ton-Auswahl (Standardtöne/eigene WAV), Lautstärke, Test. Persönliche
+        Einstellung in app_state.yml (nicht session-gebunden, kein Server-Push)."""
+        tone, path, volume = app_state.get_countdown_sound()
+        self._cd_tone_labels = dict(countdown_sound.TONE_LABELS)
+        srow = _row(height=dp(56))
+        srow.add_widget(MDLabel(text="Ton am Ende", size_hint_x=None, width=LABEL_W,
+                                role="small", valign="center"))
+        self._cd_tone_dd = DropdownField(
+            list(self._cd_tone_labels.values()),
+            self._cd_tone_labels.get(tone, self._cd_tone_labels[countdown_sound.DEFAULT_TONE]),
+            self._on_cd_tone_select)
+        srow.add_widget(self._cd_tone_dd)
+        srow.add_widget(_action_button("Test", self._play_countdown_sound, style="tonal"))
+        cd_card.add_widget(srow)
 
-        # winsound.Beep blockiert ~0.8s — in den Executor auslagern, damit der
-        # Kivy-/Event-Loop nicht einfriert.
+        vrow = _row(height=dp(48))
+        vrow.add_widget(MDLabel(text="Lautstärke", size_hint_x=None, width=LABEL_W,
+                                role="small", valign="center"))
+        self._cd_volume_slider = MDSlider(MDSliderHandle(), MDSliderValueLabel(),
+                                          min=0, max=100, step=5, value=volume)
+        self._cd_volume_slider.bind(value=lambda _i, v: self._on_cd_volume(v))
+        vrow.add_widget(self._cd_volume_slider)
+        cd_card.add_widget(vrow)
+
+        frow = _row(height=dp(48))
+        frow.add_widget(_action_button("WAV-Datei wählen …", self._pick_cd_sound_file, style="tonal"))
+        self._cd_file_label = MDLabel(text="", role="small", valign="center", shorten=True,
+                                      shorten_from="left")
+        frow.add_widget(self._cd_file_label)
+        cd_card.add_widget(frow)
+        self._cd_volume_save_ev = None
+        self._refresh_cd_file_label(tone, path)
+
+    def _refresh_cd_file_label(self, tone: str, path: str) -> None:
+        if tone == countdown_sound.CUSTOM_TONE:
+            self._cd_file_label.text = (f"Datei: {path}" if path
+                                        else "Keine Datei gewählt — Standardton")
+        else:
+            self._cd_file_label.text = f"Datei: {path}" if path else "(nur für „Eigene Datei“)"
+
+    def _on_cd_tone_select(self, label: str) -> None:
+        tone = next((k for k, v in self._cd_tone_labels.items() if v == label),
+                    countdown_sound.DEFAULT_TONE)
         try:
-            asyncio.get_event_loop().run_in_executor(None, _beep)
+            app_state.set_countdown_sound(tone=tone)
+        except Exception as err:
+            logger.error(f"Countdown-Ton speichern fehlgeschlagen: {err}\n{traceback.format_exc()}")
+            show_snackbar("Ton konnte nicht gespeichert werden.", level='error')
+            return
+        logger.info(f"Countdown-Ton gewählt: {tone}")
+        _t, path, _v = app_state.get_countdown_sound()
+        self._refresh_cd_file_label(tone, path)
+        if tone == countdown_sound.CUSTOM_TONE and not path:
+            self._pick_cd_sound_file()
+
+    def _on_cd_volume(self, value) -> None:
+        # Slider feuert beim Ziehen laufend → Speichern entprellen
+        if self._cd_volume_save_ev is not None:
+            self._cd_volume_save_ev.cancel()
+        self._cd_volume_save_ev = Clock.schedule_once(
+            lambda _dt: self._save_cd_volume(int(value)), 0.4)
+
+    def _save_cd_volume(self, volume: int) -> None:
+        self._cd_volume_save_ev = None
+        try:
+            app_state.set_countdown_sound(volume=volume)
+            logger.info(f"Countdown-Lautstärke: {volume}")
+        except Exception as err:
+            logger.error(f"Countdown-Lautstärke speichern fehlgeschlagen: {err}\n{traceback.format_exc()}")
+
+    def _pick_cd_sound_file(self) -> None:
+        from frontend.widgets.file_picker_md import pick_file
+        _t, path, _v = app_state.get_countdown_sound()
+        start = str(Path(path).parent) if path else None
+        pick_file(self._on_cd_sound_file, start_path=start, filters=["*.wav"],
+                  title="Countdown-Ton (WAV) wählen")
+
+    def _on_cd_sound_file(self, path: str) -> None:
+        try:
+            countdown_sound.check_wav_file(path)
+        except Exception as err:
+            logger.warning(f"Countdown-Datei abgelehnt ({path}): {err}")
+            show_snackbar(f"Datei nicht nutzbar: {err}", level='error', duration=6.0)
+            return
+        try:
+            app_state.set_countdown_sound(tone=countdown_sound.CUSTOM_TONE, path=path)
+        except Exception as err:
+            logger.error(f"Countdown-Datei speichern fehlgeschlagen: {err}\n{traceback.format_exc()}")
+            show_snackbar("Datei konnte nicht gespeichert werden.", level='error')
+            return
+        logger.info(f"Countdown-Datei gewählt: {path}")
+        self._cd_tone_dd.set_value(self._cd_tone_labels[countdown_sound.CUSTOM_TONE])
+        self._refresh_cd_file_label(countdown_sound.CUSTOM_TONE, path)
+
+    def _play_countdown_sound(self) -> None:
+        """Ton gemäß Einstellung im Executor abspielen (blockiert sonst den Loop)."""
+        tone, path, volume = app_state.get_countdown_sound()
+        slider = getattr(self, "_cd_volume_slider", None)
+        if slider is not None:
+            volume = int(slider.value)  # "Test" direkt nach dem Ziehen: aktueller Wert
+        try:
+            asyncio.get_running_loop().run_in_executor(
+                None, countdown_sound.play_blocking, tone, path, volume)
         except RuntimeError:
-            _beep()
+            # Kein laufender Loop (z.B. Test): direkt abspielen
+            countdown_sound.play_blocking(tone, path, volume)
 
     # --------------------------------------------------- Session / Lifecycle
     def _load_from_nuz(self) -> None:

@@ -969,6 +969,7 @@ class NuzlockeMenu(Screen):
         # Alle rule_* Keys aus nuz mitschicken, damit Server sie für
         # Enforcement (Ersttyp-Clash etc.) auslesen kann.
         rules = {k: v for k, v in self.nuz.items() if k.startswith("rule_")}
+        from backend.nuzlocke_view import synced_settings
         return {
             "mode": mode_value,
             "player_count": len(owners),
@@ -976,6 +977,7 @@ class NuzlockeMenu(Screen):
             "team_membership": team_map,
             "expected_owners": owners,
             "rules": rules,
+            "settings": synced_settings(self.nuz),
         }
 
     def _send_config(self):

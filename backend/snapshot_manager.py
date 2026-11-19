@@ -132,7 +132,7 @@ class SnapshotManager:
         entries = []
         if not self.backup_root.exists():
             return entries
-        for sub in sorted(self.backup_root.iterdir(), reverse=True):
+        for sub in self.backup_root.iterdir():
             if not sub.is_dir():
                 continue
             meta_path = sub / "snapshot.yml"
@@ -145,6 +145,10 @@ class SnapshotManager:
                 entries.append(meta)
             except Exception as err:
                 logger.warning(f"snapshot.yml laden fehlgeschlagen {meta_path}: {err}")
+        # Neueste zuerst nach Zeitstempel — NICHT nach Ordnername
+        # ({label}_{ts} sortiert nach Label). Screens und WipeBanner
+        # (entries[0] = neuester Snapshot) übernehmen diese Reihenfolge.
+        entries.sort(key=_snapshot_sort_key, reverse=True)
         return entries
 
     def restore(self, snap_id: str) -> bool:
@@ -516,6 +520,23 @@ class SnapshotManager:
         except Exception as err:
             logger.debug(f"team snapshot failed: {err}")
             return {}
+
+
+def _snapshot_sort_key(meta: dict) -> tuple[str, str]:
+    """Sortschlüssel (UTC-Zeitstempel im create()-Format, Ordnername).
+
+    ``timestamp`` ist "%Y-%m-%dT%H-%M-%SZ" und damit als String sortierbar.
+    Fehlt/kaputt: Ordner-mtime im selben Format. Ordnername als Tiebreaker
+    (zwei Snapshots in derselben Sekunde)."""
+    path = str(meta.get("_path") or "")
+    ts = meta.get("timestamp")
+    if not isinstance(ts, str) or len(ts) != 20:
+        try:
+            mtime = Path(path).stat().st_mtime
+            ts = datetime.fromtimestamp(mtime, timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+        except (OSError, ValueError):
+            ts = ""
+    return ts, Path(path).name if path else ""
 
 
 def _safe_filename(s: str) -> str:

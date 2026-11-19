@@ -1061,6 +1061,19 @@ class Bizhawk:
                     return False, "Verbindung zum Emulator während des Schreibens verloren."
                 if result == 0x01:
                     self.logger.info(f"edit_pokemon {client_id} {target}: {plan.summary} (Versuch {attempt})")
+                    # Level/max_hp ändern sich sprunghaft → HP-Consistency-Filter
+                    # neu baselinen, sonst verwirft er Folge-Reads als Battle-RAM
+                    # und verschluckt einen Tod (Live-Session 2026-11-18).
+                    # Best-effort: darf das Edit-Ergebnis nicht kippen.
+                    try:
+                        pv = target.get("personality")
+                        if self.munchlax is not None and pv is not None:
+                            self._dispatch_on_munchlax(self.munchlax.reset_hp_state(
+                                int(client_id[7:]), int(pv)))
+                    except Exception as err:
+                        self.logger.warning(
+                            f"edit_pokemon {client_id}: HP-State-Reset fehlgeschlagen: {err}\n"
+                            f"{traceback.format_exc()}")
                     if is_boxed:
                         player = int(client_id[7:])
                         task = asyncio.create_task(self._auto_refresh_boxes(client_id, player))

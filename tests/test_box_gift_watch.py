@@ -204,6 +204,27 @@ def test_echter_tracker_bucht_evoli_an_layout_188(tmp_path):
         db.close()
 
 
+def test_echter_tracker_bucht_spielothek_preis_an_layout_189(tmp_path):
+    """Live-Session 2026-11-18: Kauf in der Preisboerse (Layout 189) wurde
+    nicht gebucht. Erster Kauf zaehlt, weitere Kaeufe nicht."""
+    from backend.classes.pokedex_db import PokedexDB
+    from backend.encounter_tracker import EncounterTracker
+    db = PokedexDB(tmp_path)
+    db.connect()
+    try:
+        tracker = EncounterTracker(db, {})
+        res = tracker.process_gift_encounter(
+            owner="Tester_3", edition=EDITION_FR, personality=4085624523, dexnr=135,
+            lvl=9, shiny=False, route=0, map_header_id=189)
+        assert res is not None and res.method == "gift"
+        again = tracker.process_gift_encounter(
+            owner="Tester_3", edition=EDITION_FR, personality=4085624524, dexnr=63,
+            lvl=9, shiny=False, route=0, map_header_id=189)
+        assert again is None
+    finally:
+        db.close()
+
+
 def test_halb_geschriebener_slot_checksum_falsch_kein_gift():
     bh = _make(boxes_seq=[[[None]], [[_mon(777, checksum_ok=False)]]])
     asyncio.run(_walk(bh, [GIFT_LAYOUT, 187]))

@@ -213,6 +213,8 @@ def _bh_stub(edition: int) -> Bizhawk:
     bh._poke_io_locks = {}
     bh._in_battle = {}
     bh._edit_tasks = set()
+    bh.munchlax = None
+    bh._munchlax_loop = None
     return bh
 
 
@@ -243,6 +245,38 @@ def test_edit_pokemon_party_feuerrot() -> None:
     assert ok, msg
     p = pokedecoder.pokemon3(lua._read(party_ptr + 100, 100), FEUERROT)
     assert p.lvl == 25 and p.checksum_given == p.checksum_calculated
+
+
+def test_edit_pokemon_setzt_hp_state_zurueck() -> None:
+    """Live-Session 2026-11-18: Editor-Level-Sprung blockierte die Tod-Erkennung.
+    Nach erfolgreichem Write muss der HP-State in Munchlax verworfen werden."""
+    party_ptr = 0x02024284
+    mem: dict[int, int] = {}
+    _load(mem, party_ptr + 100, _bisasam_party(10))
+    bh = _bh_stub(FEUERROT)
+    calls = []
+
+    class _FakeMunchlax:
+        async def reset_hp_state(self, player_id, pv):
+            calls.append((player_id, pv))
+
+    bh.munchlax = _FakeMunchlax()
+    lua = _FakeLua(bh, "player001", mem)
+
+    async def _go():
+        task = asyncio.create_task(lua.run())
+        try:
+            res = await bh.edit_pokemon(
+                "player001", {"kind": "party", "slot": 1, "personality": 0x12345678},
+                PokemonEdit(new_level=25, moves=[33, 45, 0, 0]))
+            await asyncio.sleep(0.01)
+            return res
+        finally:
+            task.cancel()
+
+    ok, msg = asyncio.run(_go())
+    assert ok, msg
+    assert calls == [(1, 0x12345678)]
 
 
 def test_edit_pokemon_box_indirekt_mit_retry() -> None:

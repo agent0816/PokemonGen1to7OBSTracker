@@ -167,6 +167,18 @@
     count: 1
     edition: [34, 35]
 
+# Spielothek-Preisbörse Prismania — Pokemon gegen Münzen (Abra/Piepi/Dratini/
+# Sichlor bzw. Pinsir/Porygon, im Randomizer beliebig)
+# 189 = LAYOUT_CELADON_CITY_GAME_CORNER_PRIZE_ROOM (pokefirered layouts.json,
+# Position 189; 27 = Spielothek selbst). Live-Log 2026-11-18: alle 4 Spieler
+# kauften in 189 (Webz0r Blitza Lv 9) — mehrfach kaufbar, erster Kauf zählt.
+189:
+  - type: gift
+    name: Spielothek-Preis
+    count: 1
+    edition: [34, 35]
+    repeatable: false
+
 # Mondberg B2F — Fossil-Wahl
 116:
   - type: fossil

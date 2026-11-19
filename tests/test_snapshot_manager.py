@@ -374,6 +374,32 @@ def test_list_returns_newest_first(session_dir, bh_env, tmp_path, monkeypatch):
     assert a in ids and b in ids
 
 
+def test_list_sortiert_nach_zeitstempel_nicht_label(session_dir, bh_env, tmp_path, monkeypatch):
+    """Live-Session 2026-11-18: Liste war umgekehrt alphabetisch nach Label,
+    WipeBanner nahm entries[0] als neuesten Snapshot."""
+    monkeypatch.chdir(tmp_path)
+    sm = SnapshotManager(session_dir, "sess_a", bh_config=bh_env["bh_config"])
+    snaps = {
+        "zzz_alt_2026-11-18T18-00-00Z": "2026-11-18T18-00-00Z",
+        "aaa_neu_2026-11-18T21-00-00Z": "2026-11-18T21-00-00Z",
+        "mmm_mitte_2026-11-18T19-30-00Z": "2026-11-18T19-30-00Z",
+    }
+    for snap_id, ts in snaps.items():
+        d = sm.backup_root / snap_id
+        d.mkdir(parents=True)
+        (d / "snapshot.yml").write_text(
+            yaml.dump({"id": snap_id, "label": snap_id.split("_")[0], "timestamp": ts}),
+            encoding="utf-8")
+    # Ohne timestamp: Fallback auf Ordner-mtime (jetzt → neuester)
+    d = sm.backup_root / "ohne_ts"
+    d.mkdir()
+    (d / "snapshot.yml").write_text(yaml.dump({"id": "ohne_ts", "label": "x"}), encoding="utf-8")
+
+    ids = [e["id"] for e in sm.list()]
+    assert ids == ["ohne_ts", "aaa_neu_2026-11-18T21-00-00Z",
+                   "mmm_mitte_2026-11-18T19-30-00Z", "zzz_alt_2026-11-18T18-00-00Z"]
+
+
 def test_delete_removes_dir(session_dir, bh_env, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     sm = SnapshotManager(session_dir, "sess_a", bh_config=bh_env["bh_config"])

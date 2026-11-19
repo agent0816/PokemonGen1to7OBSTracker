@@ -133,6 +133,14 @@ UNBUFFERED_DICT_TYPES = frozenset({
 #   2. Initial-Read-Guard (state is None -> False beim allerersten Read)
 WIPE_ZERO_READ_THRESHOLD = 1
 
+# Re-Baseline des max_hp-Plausibilitaets-Filters: ein neues (max_hp, lvl)-Paar
+# mit unplausiblem Level-Sprung (Pokemon-Editor, Pension, Mehrfach-Level-Up)
+# wird uebernommen, sobald es in so vielen aufeinanderfolgenden Reads mit
+# cur_hp > 0 identisch geliefert wurde. Ohne das blieb der Filter nach einem
+# Editor-Level-Sprung dauerhaft im Verwerfen-Zustand und verschluckte den
+# spaeteren Tod (Live-Session 2026-11-18, Smettbo 29->42).
+HP_REBASELINE_READS = 3
+
 # Mindestabstand zwischen zwei Neuaufbau-Versuchen einer PokedexDB, deren
 # Verbindung fehlt (siehe Munchlax._ensure_pokedex_db)
 POKEDEX_DB_REBUILD_BACKOFF_S = 5.0
@@ -3781,6 +3789,18 @@ class Munchlax:
         )
         return run_id
 
+    async def reset_hp_state(self, player_id: int, personality: int) -> None:
+        """HP-Consistency-State eines Pokemon verwerfen (nach Editor-Write).
+
+        Läuft per _dispatch_on_munchlax auf dem Munchlax-Loop — derselbe Loop,
+        auf dem _evaluate_team_deaths den State liest/mutiert. Der nächste Read
+        wird neue Baseline, ein danach folgender HP=0-Read zählt sofort.
+        """
+        removed = self._pokemon_hp_state.pop((player_id, personality), None)
+        self.logger.info(
+            f"HP-State zurückgesetzt (Editor): player={player_id} pv={personality} "
+            f"vorhanden={removed is not None}")
+
     def _is_pokemon_dead(self, player_id, slot) -> bool:
         """Consistency-Check für HP=0.
 
@@ -3791,6 +3811,9 @@ class Munchlax:
 
         max_hp-Wechsel mit unplausiblem Level-Diff = wahrscheinlich Battle-RAM-Read
         an falscher Adresse (Gen 6/7): Read verwerfen, Debounce-Zähler nicht erhöhen.
+        Ausnahme: dasselbe neue (max_hp, lvl)-Paar HP_REBASELINE_READS-mal in Folge
+        mit voller HP → neue Baseline (Pensions-/Mehrfach-Level-Sprung). Der
+        Pokemon-Editor setzt den State direkt zurück (reset_hp_state).
         """
         if isinstance(slot, dict):
             pv = slot.get("personality")
@@ -3826,14 +3849,35 @@ class Munchlax:
                 if lvl_diff in (0, 1):
                     plausible = True
             if not plausible:
-                self.logger.debug(
-                    f"HP-Read verworfen (Battle-RAM?): player={player_id} pv={pv} "
-                    f"max_hp {state['last_max_hp']}->{max_hp} lvl {last_lvl}->{lvl}"
+                # Re-Baseline: dasselbe neue Paar mehrfach in Folge mit HP > 0
+                # = echter Wert (Editor/Pension), kein Battle-RAM-Ausreisser.
+                # Nur Reads mit VOLLER HP zählen: Editor/Pension liefern volle
+                # HP, ein falscher Battle-RAM-Wert im Kampf schwankt (Treffer).
+                pair = (max_hp, lvl)
+                full = bool(cur_hp) and cur_hp == max_hp
+                if full and pair == state.get("pending_pair"):
+                    state["pending_reads"] = state.get("pending_reads", 0) + 1
+                else:
+                    state["pending_pair"] = pair if full else None
+                    state["pending_reads"] = 1 if full else 0
+                if state["pending_reads"] < HP_REBASELINE_READS:
+                    self.logger.debug(
+                        f"HP-Read verworfen (Battle-RAM?): player={player_id} pv={pv} "
+                        f"max_hp {state['last_max_hp']}->{max_hp} lvl {last_lvl}->{lvl} "
+                        f"(stabil {state['pending_reads']}/{HP_REBASELINE_READS})"
+                    )
+                    # Zero-Reads NICHT hochzählen, state NICHT aktualisieren
+                    return state["zero_reads"] >= WIPE_ZERO_READ_THRESHOLD
+                self.logger.info(
+                    f"HP-Baseline neu: player={player_id} pv={pv} "
+                    f"max_hp {state['last_max_hp']}->{max_hp} lvl {last_lvl}->{lvl} "
+                    f"({HP_REBASELINE_READS} stabile Reads)"
                 )
-                # Zero-Reads NICHT hochzählen, state NICHT aktualisieren
-                return state["zero_reads"] >= WIPE_ZERO_READ_THRESHOLD
+                state["zero_reads"] = 0
 
         # Read akzeptieren + State updaten
+        state["pending_pair"] = None
+        state["pending_reads"] = 0
         state["last_max_hp"] = max_hp
         state["last_lvl"] = lvl
 

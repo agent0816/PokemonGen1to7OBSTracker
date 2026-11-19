@@ -763,6 +763,9 @@ class MapMenu(MDScreen):
                 continue
         self._route_catches = grouped
         self._starter_rows = starters
+        logger.info(
+            f"Karte: Encounter geladen edition={edition} slot={slot} "
+            f"rows={len(rows)} routen={len(grouped)} starter={len(starters)}")
         self._refresh_occupied()
         # Legende nachziehen, falls schon eine Route gewählt war, bevor die
         # Daten da waren (sonst bliebe sie fälschlich auf "Route frei").
@@ -776,8 +779,15 @@ class MapMenu(MDScreen):
         läuft danach in _load_catches. Eigene DB-Instanz im Executor-Thread."""
         db = None
         try:
+            # Ohne vorhandene DB nicht verbinden: connect() legt Ordner + leere
+            # DB an (z.B. bei leerem/falschem Session-Pfad).
+            if not session or not (Path(session) / "pokemon.db").is_file():
+                logger.warning(f"_query_catches: keine pokemon.db unter {session!r}")
+                return []
             db = PokedexDB(Path(session))
+            db.connect(quiet=True)
             if db.connection is None:
+                logger.error(f"_query_catches: DB-Verbindung fehlgeschlagen ({session!r})")
                 return []
             cur = db.connection.cursor()
             if edition:

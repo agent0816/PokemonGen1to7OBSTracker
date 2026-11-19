@@ -370,10 +370,12 @@ def group_soullink(
         result = [g for g in result if _match(g)]
 
     def _group_sort_key(g: dict) -> tuple:
-        # Offene Gruppen oben, neueste (höchste link_id) zuerst; Rest nach Route
+        # Offene Gruppen oben, neueste (höchste link_id) zuerst; Rest nach Route.
+        # link_id als Tiebreaker: mehrere Gruppen derselben Route (Gift, Static,
+        # Spielothek …) sonst in Dict-Reihenfolge → springen zwischen Renders.
         if g["agg_status"] == "pending":
             return (0, -_as_int(g["link_id"]))
-        return (1, *_route_sort_key(g["route"], False))
+        return (1, *_route_sort_key(g["route"], False), _as_int(g["link_id"]))
 
     result.sort(key=_group_sort_key)
     return result

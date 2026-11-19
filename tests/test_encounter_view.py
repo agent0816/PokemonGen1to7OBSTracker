@@ -303,3 +303,18 @@ def test_aggregate_link_status_dead_wins():
     assert aggregate_link_status(["caught", "dead"], 2) == "dead"
     assert aggregate_link_status(["dead"], 2) == "dead"
     assert aggregate_link_status(["caught", "not_caught"], 2) == "failed"
+
+
+def test_group_soullink_gleiche_route_stabil_nach_link_id():
+    """Live-Session 2026-11-18: Gruppen derselben Route (Prismania) drehten
+    sich je nach Dict-Reihenfolge der Links."""
+    links = {
+        9: _link(9, 94, {"Ash": _mem(9)}, state="complete"),
+        3: _link(3, 94, {"Ash": _mem(3)}, state="complete"),
+        5: _link(5, 50, {"Ash": _mem(5)}, state="complete"),
+        7: _link(7, 94, {"Ash": _mem(7)}, state="complete"),
+    }
+    ids = [g["link_id"] for g in ev.group_soullink(links, [], SPECIES_DE)]
+    assert ids == [5, 3, 7, 9]
+    rev = dict(reversed(list(links.items())))
+    assert [g["link_id"] for g in ev.group_soullink(rev, [], SPECIES_DE)] == ids
